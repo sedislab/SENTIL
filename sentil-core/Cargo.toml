@@ -1,0 +1,31 @@
+[package]
+name = "sentil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL"
+categories = ["science", "simulation"]
+keywords = ["temporal-logic", "runtime-verification", "monitoring", "stl"]
+
+[lib]
+name = "sentil"
+path = "src/lib.rs"
+
+[[example]]
+name = "offline_monitoring"
+
+[[example]]
+name = "online_streaming"
+
+[[example]]
+name = "probabilistic"
+required-features = ["statistical"]
+
+[[example]]
+name = "synthesis"
+required-features = ["synthesis"]
+
+[dependencies]
+thiserror = { workspace = true }
