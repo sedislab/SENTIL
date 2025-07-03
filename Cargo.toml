@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["sentil-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = [
+    "Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>",
+    "Ernest Bonnah",
+    "SEDIS Lab, Baylor University",
+]
+repository = "https://github.com/sedislab/SENTIL"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+proptest = "1"
