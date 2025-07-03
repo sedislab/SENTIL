@@ -1,0 +1,11 @@
+# Rust build output (Cargo.lock is committed for reproducible builds)
+target/
+*.rs.bk
+*.pdb
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
