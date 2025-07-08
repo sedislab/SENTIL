@@ -23,3 +23,7 @@
     clippy::similar_names,
     reason = "the temporal logic uses conventional short names like phi, psi, and rho that are intentionally close"
 )]
+
+pub mod error;
+
+pub use error::ParseError;
