@@ -90,3 +90,61 @@ pub enum Expr {
     /// A reference to a named signal.
     Variable(String),
 }
+
+/// The relation between an estimated satisfaction probability and the threshold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbabilityOp {
+    /// The probability is at least the threshold.
+    GreaterEqual,
+    /// The probability exceeds the threshold.
+    Greater,
+    /// The probability is at most the threshold.
+    LessEqual,
+    /// The probability is below the threshold.
+    Less,
+}
+
+/// A time interval `[lower, upper]` over which a temporal operator quantifies.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Interval {
+    pub lower: f64,
+    pub upper: Option<f64>,
+}
+
+impl Interval {
+    /// A bounded interval `[lower, upper]`.
+    pub fn bounded(lower: f64, upper: f64) -> Self {
+        Self {
+            lower,
+            upper: Some(upper),
+        }
+    }
+
+    /// An interval `[lower, inf)` unbounded above.
+    pub fn from_lower(lower: f64) -> Self {
+        Self { lower, upper: None }
+    }
+
+    /// The interval `[0, inf)`.
+    pub fn unbounded() -> Self {
+        Self {
+            lower: 0.0,
+            upper: None,
+        }
+    }
+
+    /// Whether the interval has a finite upper bound.
+    pub fn is_bounded(&self) -> bool {
+        self.upper.is_some()
+    }
+
+    /// Whether `t` lies in the interval.
+    pub fn contains(&self, t: f64) -> bool {
+        t >= self.lower && self.upper.is_none_or(|u| t <= u)
+    }
+
+    /// The upper bound, or positive infinity when unbounded.
+    pub fn upper_or_infinity(&self) -> f64 {
+        self.upper.unwrap_or(f64::INFINITY)
+    }
+}
