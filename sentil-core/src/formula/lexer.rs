@@ -206,4 +206,99 @@ impl Lexer {
         };
         Ok(kind)
     }
+
+    fn maybe_eq(&mut self, with_eq: TokenKind, without: TokenKind) -> TokenKind {
+        if self.peek() == '=' {
+            self.advance();
+            with_eq
+        } else {
+            without
+        }
+    }
+
+    fn word(&mut self) -> TokenKind {
+        let start = self.pos;
+        while !self.at_end() && (self.peek().is_alphanumeric() || self.peek() == '_') {
+            self.advance();
+        }
+        let text: String = self.chars[start..self.pos].iter().collect();
+        match text.as_str() {
+            "always" | "globally" | "G" => TokenKind::Always,
+            "eventually" | "finally" | "F" => TokenKind::Eventually,
+            "until" | "U" => TokenKind::Until,
+            "next" | "X" => TokenKind::Next,
+            "since" | "S" => TokenKind::Since,
+            "historically" | "H" => TokenKind::Historically,
+            "once" | "O" => TokenKind::Once,
+            "and" => TokenKind::And,
+            "or" => TokenKind::Or,
+            "not" => TokenKind::Not,
+            "implies" => TokenKind::Implies,
+            "P" => TokenKind::Probability,
+            "inf" => TokenKind::Infinity,
+            _ => TokenKind::Identifier(text),
+        }
+    }
+
+    fn number(&mut self, line: usize, column: usize) -> Result<TokenKind, ParseError> {
+        let start = self.pos;
+        let mut seen_dot = false;
+        while !self.at_end() {
+            let ch = self.peek();
+            if ch.is_ascii_digit() {
+                self.advance();
+            } else if ch == '.' && !seen_dot {
+                seen_dot = true;
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        if matches!(self.peek(), 'e' | 'E') {
+            self.advance();
+            if matches!(self.peek(), '+' | '-') {
+                self.advance();
+            }
+            if !self.peek().is_ascii_digit() {
+                let text: String = self.chars[start..self.pos].iter().collect();
+                return Err(ParseError::at(
+                    format!("number `{text}` needs a digit after the exponent"),
+                    line,
+                    column,
+                ));
+            }
+            while !self.at_end() && self.peek().is_ascii_digit() {
+                self.advance();
+            }
+        }
+        let text: String = self.chars[start..self.pos].iter().collect();
+        match text.parse::<f64>() {
+            Ok(value) if value.is_finite() => Ok(TokenKind::Number(value)),
+            Ok(_) => Err(ParseError::at(
+                format!("number `{text}` is out of range; use `inf` for an unbounded interval"),
+                line,
+                column,
+            )),
+            Err(_) => Err(ParseError::at(
+                format!("`{text}` is not a valid number"),
+                line,
+                column,
+            )),
+        }
+    }
+
+    fn skip_trivia(&mut self) {
+        while !self.at_end() {
+            let ch = self.peek();
+            if ch.is_whitespace() {
+                self.advance();
+            } else if ch == '#' {
+                while !self.at_end() && self.peek() != '\n' {
+                    self.advance();
+                }
+            } else {
+                break;
+            }
+        }
+    }
 }
