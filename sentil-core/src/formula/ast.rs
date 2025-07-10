@@ -324,3 +324,90 @@ impl fmt::Display for ProbabilityOp {
         f.write_str(s)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pred(name: &str, op: ComparisonOp, c: f64) -> Formula {
+        Formula::Predicate(Predicate {
+            lhs: Expr::Variable(name.into()),
+            op,
+            rhs: Expr::Literal(c),
+        })
+    }
+
+    #[test]
+    fn display_renders_a_bounded_temporal_formula() {
+        let f = Formula::Always(
+            Interval::bounded(0.0, 10.0),
+            Box::new(pred("x", ComparisonOp::Less, 5.0)),
+        );
+        assert_eq!(f.to_string(), "always[0, 10](x < 5)");
+    }
+
+    #[test]
+    fn unbounded_interval_prints_inf() {
+        let f = Formula::Eventually(
+            Interval::unbounded(),
+            Box::new(pred("x", ComparisonOp::Greater, 0.0)),
+        );
+        assert_eq!(f.to_string(), "eventually[0, inf](x > 0)");
+    }
+
+    #[test]
+    fn variables_are_sorted_and_deduplicated() {
+        let f = Formula::And(
+            Box::new(pred("speed", ComparisonOp::Greater, 60.0)),
+            Box::new(pred("rpm", ComparisonOp::Less, 4000.0)),
+        );
+        assert_eq!(f.variables(), vec!["rpm".to_string(), "speed".to_string()]);
+    }
+
+    #[test]
+    fn depth_counts_operator_nesting() {
+        let inner = pred("x", ComparisonOp::Less, 5.0);
+        let f = Formula::And(
+            Box::new(Formula::Always(
+                Interval::bounded(0.0, 10.0),
+                Box::new(inner.clone()),
+            )),
+            Box::new(inner),
+        );
+        assert_eq!(f.depth(), 3);
+    }
+
+    #[test]
+    fn interval_contains_is_inclusive_at_both_ends() {
+        let i = Interval::bounded(0.0, 10.0);
+        assert!(i.contains(0.0) && i.contains(10.0) && i.contains(5.0));
+        assert!(!i.contains(-0.1) && !i.contains(10.1));
+        assert!(Interval::unbounded().contains(1e9));
+        assert!(!Interval::unbounded().contains(-1.0));
+    }
+
+    #[test]
+    fn probabilistic_operator_renders_threshold() {
+        let f = Formula::Probabilistic(
+            ProbabilityOp::GreaterEqual,
+            0.95,
+            Box::new(pred("x", ComparisonOp::Greater, 0.0)),
+        );
+        assert_eq!(f.to_string(), "P>=0.95(x > 0)");
+    }
+
+    #[test]
+    fn nested_arithmetic_term_parenthesizes() {
+        let term = Expr::Binary(
+            BinaryOp::Add,
+            Box::new(Expr::Variable("x".into())),
+            Box::new(Expr::Binary(
+                BinaryOp::Mul,
+                Box::new(Expr::Variable("y".into())),
+                Box::new(Expr::Literal(2.0)),
+            )),
+        );
+        assert_eq!(term.to_string(), "(x + (y * 2))");
+        assert_eq!(term.depth(), 3);
+    }
+}
