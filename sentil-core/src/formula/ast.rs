@@ -229,3 +229,98 @@ impl Expr {
         }
     }
 }
+
+impl fmt::Display for Formula {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Formula::Predicate(p) => write!(f, "{p}"),
+            Formula::Not(inner) => write!(f, "not({inner})"),
+            Formula::And(l, r) => write!(f, "({l} and {r})"),
+            Formula::Or(l, r) => write!(f, "({l} or {r})"),
+            Formula::Implies(l, r) => write!(f, "({l} implies {r})"),
+            Formula::Always(i, inner) => write!(f, "always{i}({inner})"),
+            Formula::Eventually(i, inner) => write!(f, "eventually{i}({inner})"),
+            Formula::Until(i, l, r) => write!(f, "({l} until{i} {r})"),
+            Formula::Next(inner) => write!(f, "next({inner})"),
+            Formula::Since(i, l, r) => write!(f, "({l} since{i} {r})"),
+            Formula::Historically(i, inner) => write!(f, "historically{i}({inner})"),
+            Formula::Once(i, inner) => write!(f, "once{i}({inner})"),
+            Formula::Probabilistic(op, threshold, inner) => write!(f, "P{op}{threshold}({inner})"),
+        }
+    }
+}
+
+impl fmt::Display for Predicate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} {}", self.lhs, self.op, self.rhs)
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Binary(op, l, r) => write!(f, "({l} {op} {r})"),
+            Expr::Call(name, args) => {
+                write!(f, "{name}(")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                write!(f, ")")
+            }
+            Expr::Literal(v) => write!(f, "{v}"),
+            Expr::Variable(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+impl fmt::Display for Interval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.upper {
+            Some(u) => write!(f, "[{}, {}]", self.lower, u),
+            None => write!(f, "[{}, inf]", self.lower),
+        }
+    }
+}
+
+impl fmt::Display for ComparisonOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ComparisonOp::Less => "<",
+            ComparisonOp::LessEqual => "<=",
+            ComparisonOp::Greater => ">",
+            ComparisonOp::GreaterEqual => ">=",
+            ComparisonOp::Equal => "==",
+            ComparisonOp::NotEqual => "!=",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
+            BinaryOp::Pow => "^",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for ProbabilityOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ProbabilityOp::GreaterEqual => ">=",
+            ProbabilityOp::Greater => ">",
+            ProbabilityOp::LessEqual => "<=",
+            ProbabilityOp::Less => "<",
+        };
+        f.write_str(s)
+    }
+}
