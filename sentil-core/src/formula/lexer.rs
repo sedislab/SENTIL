@@ -102,3 +102,108 @@ struct Lexer {
     line: usize,
     column: usize,
 }
+
+impl Lexer {
+    fn new(input: &str) -> Self {
+        Self {
+            chars: input.chars().collect(),
+            pos: 0,
+            line: 1,
+            column: 1,
+        }
+    }
+
+    fn run(mut self) -> Result<Vec<Token>, ParseError> {
+        let mut tokens = Vec::new();
+        loop {
+            self.skip_trivia();
+            if self.at_end() {
+                tokens.push(Token {
+                    kind: TokenKind::End,
+                    line: self.line,
+                    column: self.column,
+                });
+                return Ok(tokens);
+            }
+            tokens.push(self.next_token()?);
+        }
+    }
+
+    fn next_token(&mut self) -> Result<Token, ParseError> {
+        let line = self.line;
+        let column = self.column;
+        let ch = self.peek();
+
+        let kind = if ch.is_alphabetic() || ch == '_' {
+            self.word()
+        } else if ch.is_ascii_digit()
+            || (ch == '.' && self.peek_next().is_some_and(|c| c.is_ascii_digit()))
+        {
+            self.number(line, column)?
+        } else {
+            self.symbol(line, column)?
+        };
+
+        Ok(Token { kind, line, column })
+    }
+
+    fn symbol(&mut self, line: usize, column: usize) -> Result<TokenKind, ParseError> {
+        let ch = self.peek();
+        self.advance();
+        let kind = match ch {
+            '(' => TokenKind::LeftParen,
+            ')' => TokenKind::RightParen,
+            '[' => TokenKind::LeftBracket,
+            ']' => TokenKind::RightBracket,
+            ',' => TokenKind::Comma,
+            '+' => TokenKind::Plus,
+            '*' => TokenKind::Star,
+            '/' => TokenKind::Slash,
+            '%' => TokenKind::Percent,
+            '^' => TokenKind::Caret,
+            '-' => {
+                if self.peek() == '>' {
+                    self.advance();
+                    TokenKind::Implies
+                } else {
+                    TokenKind::Minus
+                }
+            }
+            '<' => self.maybe_eq(TokenKind::LessEqual, TokenKind::Less),
+            '>' => self.maybe_eq(TokenKind::GreaterEqual, TokenKind::Greater),
+            '!' => self.maybe_eq(TokenKind::NotEqual, TokenKind::Not),
+            '&' => {
+                if self.peek() == '&' {
+                    self.advance();
+                }
+                TokenKind::And
+            }
+            '|' => {
+                if self.peek() == '|' {
+                    self.advance();
+                }
+                TokenKind::Or
+            }
+            '=' => {
+                if self.peek() == '=' {
+                    self.advance();
+                    TokenKind::Equal
+                } else {
+                    return Err(ParseError::at(
+                        "stray `=`; write `==` to compare for equality",
+                        line,
+                        column,
+                    ));
+                }
+            }
+            other => {
+                return Err(ParseError::at(
+                    format!("unexpected character `{other}`"),
+                    line,
+                    column,
+                ));
+            }
+        };
+        Ok(kind)
+    }
+}
