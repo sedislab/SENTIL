@@ -148,3 +148,84 @@ impl Interval {
         self.upper.unwrap_or(f64::INFINITY)
     }
 }
+
+impl Formula {
+    /// The signals the formula mentions, sorted and deduplicated.
+    pub fn variables(&self) -> Vec<String> {
+        let mut vars = Vec::new();
+        self.collect_variables(&mut vars);
+        vars.sort();
+        vars.dedup();
+        vars
+    }
+
+    /// The nesting depth.
+    pub fn depth(&self) -> usize {
+        match self {
+            Formula::Predicate(_) => 1,
+            Formula::Not(f)
+            | Formula::Next(f)
+            | Formula::Always(_, f)
+            | Formula::Eventually(_, f)
+            | Formula::Historically(_, f)
+            | Formula::Once(_, f)
+            | Formula::Probabilistic(_, _, f) => 1 + f.depth(),
+            Formula::And(l, r)
+            | Formula::Or(l, r)
+            | Formula::Implies(l, r)
+            | Formula::Until(_, l, r)
+            | Formula::Since(_, l, r) => 1 + l.depth().max(r.depth()),
+        }
+    }
+
+    fn collect_variables(&self, vars: &mut Vec<String>) {
+        match self {
+            Formula::Predicate(p) => {
+                p.lhs.collect_variables(vars);
+                p.rhs.collect_variables(vars);
+            }
+            Formula::Not(f)
+            | Formula::Next(f)
+            | Formula::Always(_, f)
+            | Formula::Eventually(_, f)
+            | Formula::Historically(_, f)
+            | Formula::Once(_, f)
+            | Formula::Probabilistic(_, _, f) => f.collect_variables(vars),
+            Formula::And(l, r)
+            | Formula::Or(l, r)
+            | Formula::Implies(l, r)
+            | Formula::Until(_, l, r)
+            | Formula::Since(_, l, r) => {
+                l.collect_variables(vars);
+                r.collect_variables(vars);
+            }
+        }
+    }
+}
+
+impl Expr {
+    /// The nesting depth of the term.
+    pub fn depth(&self) -> usize {
+        match self {
+            Expr::Binary(_, l, r) => 1 + l.depth().max(r.depth()),
+            Expr::Call(_, args) => 1 + args.iter().map(Expr::depth).max().unwrap_or(0),
+            Expr::Variable(_) | Expr::Literal(_) => 1,
+        }
+    }
+
+    fn collect_variables(&self, vars: &mut Vec<String>) {
+        match self {
+            Expr::Binary(_, l, r) => {
+                l.collect_variables(vars);
+                r.collect_variables(vars);
+            }
+            Expr::Call(_, args) => {
+                for arg in args {
+                    arg.collect_variables(vars);
+                }
+            }
+            Expr::Variable(name) => vars.push(name.clone()),
+            Expr::Literal(_) => {}
+        }
+    }
+}
