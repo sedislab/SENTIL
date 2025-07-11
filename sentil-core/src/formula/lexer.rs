@@ -331,3 +331,110 @@ impl Lexer {
         self.pos >= self.chars.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kinds(input: &str) -> Vec<TokenKind> {
+        tokenize(input)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.kind)
+            .collect()
+    }
+
+    #[test]
+    fn lexes_a_simple_predicate() {
+        assert_eq!(
+            kinds("x < 5"),
+            vec![
+                TokenKind::Identifier("x".into()),
+                TokenKind::Less,
+                TokenKind::Number(5.0),
+                TokenKind::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn capital_and_word_keywords_alias() {
+        assert_eq!(kinds("G")[0], TokenKind::Always);
+        assert_eq!(kinds("globally")[0], TokenKind::Always);
+        assert_eq!(kinds("finally")[0], TokenKind::Eventually);
+        assert_eq!(
+            kinds("F U X S H O P")[..7],
+            [
+                TokenKind::Eventually,
+                TokenKind::Until,
+                TokenKind::Next,
+                TokenKind::Since,
+                TokenKind::Historically,
+                TokenKind::Once,
+                TokenKind::Probability,
+            ]
+        );
+    }
+
+    #[test]
+    fn symbolic_logical_operators() {
+        assert_eq!(
+            kinds("& && | || ! != ->"),
+            vec![
+                TokenKind::And,
+                TokenKind::And,
+                TokenKind::Or,
+                TokenKind::Or,
+                TokenKind::Not,
+                TokenKind::NotEqual,
+                TokenKind::Implies,
+                TokenKind::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn numbers_handle_dot_prefix_and_exponents() {
+        assert_eq!(kinds(".5")[0], TokenKind::Number(0.5));
+        assert_eq!(kinds("1e-6")[0], TokenKind::Number(1e-6));
+        assert_eq!(kinds("2.5E3")[0], TokenKind::Number(2500.0));
+        assert_eq!(kinds("3.14e+2")[0], TokenKind::Number(314.0));
+    }
+
+    #[test]
+    fn minus_is_its_own_token() {
+        assert_eq!(
+            kinds("x < -5"),
+            vec![
+                TokenKind::Identifier("x".into()),
+                TokenKind::Less,
+                TokenKind::Minus,
+                TokenKind::Number(5.0),
+                TokenKind::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn comments_and_whitespace_are_skipped_with_line_tracking() {
+        let tokens = tokenize("always # a note\n[0, inf]").unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Always);
+        assert_eq!(tokens[0].line, 1);
+        assert_eq!(tokens[1].kind, TokenKind::LeftBracket);
+        assert_eq!(tokens[1].line, 2);
+    }
+
+    #[test]
+    fn stray_equals_is_a_helpful_error() {
+        let err = tokenize("x = 5").unwrap_err();
+        assert!(err.message.contains("=="));
+        assert_eq!(err.column, 3);
+    }
+
+    #[test]
+    fn unexpected_character_reports_its_column() {
+        let err = tokenize("x @ 5").unwrap_err();
+        assert!(err.message.contains("unexpected character"));
+        assert_eq!(err.column, 3);
+    }
+}
