@@ -163,4 +163,109 @@ impl Parser {
         Ok(Formula::Probabilistic(op, threshold, Box::new(inner)))
     }
 
+    fn primary(&mut self) -> Result<Formula, ParseError> {
+        if matches!(self.peek(), TokenKind::LeftParen) {
+            self.bump();
+            let inner = self.formula()?;
+            self.expect(&TokenKind::RightParen, "`)` to close the group")?;
+            return Ok(inner);
+        }
+        self.predicate()
+    }
+
+    fn predicate(&mut self) -> Result<Formula, ParseError> {
+        let lhs = self.expr()?;
+        let op = self.comparison_op()?;
+        let rhs = self.expr()?;
+        Ok(Formula::Predicate(Predicate { lhs, op, rhs }))
+    }
+
+    fn expr(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.factor()?;
+        loop {
+            let op = match self.peek() {
+                TokenKind::Plus => BinaryOp::Add,
+                TokenKind::Minus => BinaryOp::Sub,
+                _ => break,
+            };
+            self.bump();
+            let right = self.factor()?;
+            left = Expr::Binary(op, Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn factor(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.power()?;
+        loop {
+            let op = match self.peek() {
+                TokenKind::Star => BinaryOp::Mul,
+                TokenKind::Slash => BinaryOp::Div,
+                TokenKind::Percent => BinaryOp::Mod,
+                _ => break,
+            };
+            self.bump();
+            let right = self.power()?;
+            left = Expr::Binary(op, Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn power(&mut self) -> Result<Expr, ParseError> {
+        let base = self.term()?;
+        if matches!(self.peek(), TokenKind::Caret) {
+            self.bump();
+            let exponent = self.power()?;
+            return Ok(Expr::Binary(
+                BinaryOp::Pow,
+                Box::new(base),
+                Box::new(exponent),
+            ));
+        }
+        Ok(base)
+    }
+
+    fn term(&mut self) -> Result<Expr, ParseError> {
+        match self.peek() {
+            TokenKind::LeftParen => {
+                self.bump();
+                let inner = self.expr()?;
+                self.expect(&TokenKind::RightParen, "`)` to close the parentheses")?;
+                Ok(inner)
+            }
+            TokenKind::Minus => {
+                self.bump();
+                let operand = self.term()?;
+                Ok(Expr::Binary(
+                    BinaryOp::Sub,
+                    Box::new(Expr::Literal(0.0)),
+                    Box::new(operand),
+                ))
+            }
+            TokenKind::Number(n) => {
+                let value = *n;
+                self.bump();
+                Ok(Expr::Literal(value))
+            }
+            TokenKind::Identifier(name) => {
+                let name = name.clone();
+                self.bump();
+                if matches!(self.peek(), TokenKind::LeftParen) {
+                    self.bump();
+                    Ok(Expr::Call(name, self.call_arguments()?))
+                } else {
+                    Ok(Expr::Variable(name))
+                }
+            }
+            other => {
+                let (line, column) = self.position();
+                Err(ParseError::at(
+                    format!("expected a value or `(`, found {}", other.describe()),
+                    line,
+                    column,
+                ))
+            }
+        }
+    }
+
 }
