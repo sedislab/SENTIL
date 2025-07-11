@@ -369,4 +369,63 @@ impl Parser {
         }
     }
 
+    fn comparison_op(&mut self) -> Result<ComparisonOp, ParseError> {
+        let op = match self.peek() {
+            TokenKind::Less => ComparisonOp::Less,
+            TokenKind::LessEqual => ComparisonOp::LessEqual,
+            TokenKind::Greater => ComparisonOp::Greater,
+            TokenKind::GreaterEqual => ComparisonOp::GreaterEqual,
+            TokenKind::Equal => ComparisonOp::Equal,
+            TokenKind::NotEqual => ComparisonOp::NotEqual,
+            other => {
+                let (line, column) = self.position();
+                return Err(ParseError::at(
+                    format!(
+                        "expected a comparison (<, <=, >, >=, ==, !=), found {}",
+                        other.describe()
+                    ),
+                    line,
+                    column,
+                ));
+            }
+        };
+        self.bump();
+        Ok(op)
+    }
+
+    fn probability_op(&mut self) -> Result<ProbabilityOp, ParseError> {
+        let op = match self.peek() {
+            TokenKind::GreaterEqual => ProbabilityOp::GreaterEqual,
+            TokenKind::Greater => ProbabilityOp::Greater,
+            TokenKind::LessEqual => ProbabilityOp::LessEqual,
+            TokenKind::Less => ProbabilityOp::Less,
+            other => {
+                let (line, column) = self.position();
+                return Err(ParseError::at(
+                    format!(
+                        "`P` must be followed by >=, >, <=, or <, found {}",
+                        other.describe()
+                    ),
+                    line,
+                    column,
+                ));
+            }
+        };
+        self.bump();
+        Ok(op)
+    }
+
+    fn expect(&mut self, kind: &TokenKind, what: &str) -> Result<(), ParseError> {
+        if core::mem::discriminant(self.peek()) == core::mem::discriminant(kind) {
+            self.bump();
+            Ok(())
+        } else {
+            let (line, column) = self.position();
+            Err(ParseError::at(
+                format!("expected {what}, found {}", self.peek().describe()),
+                line,
+                column,
+            ))
+        }
+    }
 }
