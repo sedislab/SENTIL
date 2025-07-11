@@ -301,4 +301,33 @@ impl Lexer {
             }
         }
     }
+
+    fn peek(&self) -> char {
+        if self.at_end() {
+            '\0'
+        } else {
+            self.chars[self.pos]
+        }
+    }
+
+    fn peek_next(&self) -> Option<char> {
+        self.chars.get(self.pos + 1).copied()
+    }
+
+    fn advance(&mut self) {
+        if self.at_end() {
+            return;
+        }
+        if self.chars[self.pos] == '\n' {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
+        self.pos += 1;
+    }
+
+    fn at_end(&self) -> bool {
+        self.pos >= self.chars.len()
+    }
 }
