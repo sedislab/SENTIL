@@ -268,4 +268,105 @@ impl Parser {
         }
     }
 
+    fn call_arguments(&mut self) -> Result<Vec<Expr>, ParseError> {
+        let mut args = Vec::new();
+        if matches!(self.peek(), TokenKind::RightParen) {
+            self.bump();
+            return Ok(args);
+        }
+        loop {
+            args.push(self.expr()?);
+            if matches!(self.peek(), TokenKind::Comma) {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RightParen, "`)` to close the argument list")?;
+        Ok(args)
+    }
+
+    fn interval(&mut self) -> Result<Interval, ParseError> {
+        if !matches!(self.peek(), TokenKind::LeftBracket) {
+            return Ok(Interval::unbounded());
+        }
+        let (line, column) = self.position();
+        self.bump();
+        let lower = self.bound()?;
+        self.expect(&TokenKind::Comma, "`,` between the interval bounds")?;
+        let upper = self.bound()?;
+        self.expect(&TokenKind::RightBracket, "`]` to close the interval")?;
+
+        let lower = lower.ok_or_else(|| {
+            ParseError::at("an interval's lower bound cannot be `inf`", line, column)
+        })?;
+        if lower < 0.0 {
+            return Err(ParseError::at(
+                format!("an interval's lower bound must be at least 0, found {lower}"),
+                line,
+                column,
+            ));
+        }
+        if let Some(u) = upper {
+            if lower > u {
+                return Err(ParseError::at(
+                    format!("interval lower bound {lower} is greater than upper bound {u}"),
+                    line,
+                    column,
+                ));
+            }
+        }
+        Ok(Interval { lower, upper })
+    }
+
+    fn bound(&mut self) -> Result<Option<f64>, ParseError> {
+        match self.peek() {
+            TokenKind::Infinity => {
+                self.bump();
+                Ok(None)
+            }
+            TokenKind::Minus => {
+                self.bump();
+                Ok(Some(-self.number("an interval bound")?))
+            }
+            TokenKind::Number(n) => {
+                let value = *n;
+                self.bump();
+                Ok(Some(value))
+            }
+            other => {
+                let (line, column) = self.position();
+                Err(ParseError::at(
+                    format!("expected a number or `inf`, found {}", other.describe()),
+                    line,
+                    column,
+                ))
+            }
+        }
+    }
+
+    fn number(&mut self, what: &str) -> Result<f64, ParseError> {
+        if let TokenKind::Number(n) = self.peek() {
+            let value = *n;
+            self.bump();
+            Ok(value)
+        } else {
+            let (line, column) = self.position();
+            Err(ParseError::at(
+                format!("expected {what}, found {}", self.peek().describe()),
+                line,
+                column,
+            ))
+        }
+    }
+
+    fn signed_number(&mut self, what: &str) -> Result<f64, ParseError> {
+        if matches!(self.peek(), TokenKind::Minus) {
+            self.bump();
+            Ok(-self.number(what)?)
+        } else {
+            self.number(what)
+        }
+    }
+
 }
