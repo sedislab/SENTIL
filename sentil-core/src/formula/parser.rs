@@ -79,4 +79,88 @@ impl Parser {
         Ok(left)
     }
 
+    fn until(&mut self) -> Result<Formula, ParseError> {
+        let left = self.since()?;
+        if matches!(self.peek(), TokenKind::Until) {
+            self.bump();
+            let interval = self.interval()?;
+            let right = self.until()?;
+            return Ok(Formula::Until(interval, Box::new(left), Box::new(right)));
+        }
+        Ok(left)
+    }
+
+    fn since(&mut self) -> Result<Formula, ParseError> {
+        let left = self.temporal()?;
+        if matches!(self.peek(), TokenKind::Since) {
+            self.bump();
+            let interval = self.interval()?;
+            let right = self.since()?;
+            return Ok(Formula::Since(interval, Box::new(left), Box::new(right)));
+        }
+        Ok(left)
+    }
+
+    fn temporal(&mut self) -> Result<Formula, ParseError> {
+        match self.peek() {
+            TokenKind::Always => {
+                self.bump();
+                let interval = self.interval()?;
+                Ok(Formula::Always(interval, Box::new(self.unary()?)))
+            }
+            TokenKind::Eventually => {
+                self.bump();
+                let interval = self.interval()?;
+                Ok(Formula::Eventually(interval, Box::new(self.unary()?)))
+            }
+            TokenKind::Historically => {
+                self.bump();
+                let interval = self.interval()?;
+                Ok(Formula::Historically(interval, Box::new(self.unary()?)))
+            }
+            TokenKind::Once => {
+                self.bump();
+                let interval = self.interval()?;
+                Ok(Formula::Once(interval, Box::new(self.unary()?)))
+            }
+            TokenKind::Next => {
+                self.bump();
+                Ok(Formula::Next(Box::new(self.unary()?)))
+            }
+            _ => self.unary(),
+        }
+    }
+
+    fn unary(&mut self) -> Result<Formula, ParseError> {
+        if matches!(self.peek(), TokenKind::Not) {
+            self.bump();
+            return Ok(Formula::Not(Box::new(self.unary()?)));
+        }
+        self.probabilistic()
+    }
+
+    fn probabilistic(&mut self) -> Result<Formula, ParseError> {
+        if !matches!(self.peek(), TokenKind::Probability) {
+            return self.primary();
+        }
+        let (line, column) = self.position();
+        self.bump();
+        let op = self.probability_op()?;
+        let threshold = self.signed_number("a probability threshold")?;
+        if !(0.0..=1.0).contains(&threshold) {
+            return Err(ParseError::at(
+                format!("probability threshold {threshold} must lie between 0 and 1"),
+                line,
+                column,
+            ));
+        }
+        self.expect(&TokenKind::LeftParen, "`(` to open the probabilistic body")?;
+        let inner = self.formula()?;
+        self.expect(
+            &TokenKind::RightParen,
+            "`)` to close the probabilistic body",
+        )?;
+        Ok(Formula::Probabilistic(op, threshold, Box::new(inner)))
+    }
+
 }
