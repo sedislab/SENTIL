@@ -106,3 +106,69 @@ where
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "these arithmetic results are exact integer-valued f64 values"
+    )]
+
+    use super::*;
+    use crate::formula::Formula;
+
+    fn margin(formula: &str, values: &[(&str, f64)]) -> f64 {
+        let f = Formula::parse(formula).unwrap();
+        let Formula::Predicate(p) = f else {
+            panic!("expected a predicate")
+        };
+        let lookup = |name: &str| values.iter().find(|(n, _)| *n == name).map(|(_, v)| *v);
+        eval_predicate(&p, &lookup).unwrap()
+    }
+
+    #[test]
+    fn predicate_margins_over_a_binding() {
+        assert_eq!(margin("x > 5", &[("x", 8.0)]), 3.0);
+        assert_eq!(margin("x < 5", &[("x", 8.0)]), -3.0);
+        assert_eq!(margin("x + y < 10", &[("x", 3.0), ("y", 2.0)]), 5.0);
+    }
+
+    #[test]
+    fn arithmetic_obeys_precedence_and_functions() {
+        assert_eq!(margin("x + y * 2 > 0", &[("x", 1.0), ("y", 3.0)]), 7.0);
+        assert_eq!(margin("abs(x - 10) < 1", &[("x", 7.0)]), -2.0);
+        assert_eq!(margin("2 ^ 3 ^ 2 > 0", &[]), 512.0);
+        assert_eq!(margin("max(x, y) > 0", &[("x", 4.0), ("y", 9.0)]), 9.0);
+    }
+
+    #[test]
+    fn unknown_variable_is_an_error() {
+        let f = Formula::parse("x > 0").unwrap();
+        let Formula::Predicate(p) = f else {
+            unreachable!()
+        };
+        let err = eval_predicate(&p, &|_: &str| None).unwrap_err();
+        assert!(matches!(err, Error::UnknownVariable { .. }));
+    }
+
+    #[test]
+    fn division_by_zero_names_the_term() {
+        let f = Formula::parse("x / y > 0").unwrap();
+        let Formula::Predicate(p) = f else {
+            unreachable!()
+        };
+        let lookup = |name: &str| Some(if name == "x" { 1.0 } else { 0.0 });
+        let err = eval_predicate(&p, &lookup).unwrap_err();
+        assert!(matches!(err, Error::DivisionByZero { .. }));
+    }
+
+    #[test]
+    fn wrong_arity_is_reported() {
+        let f = Formula::parse("sin(x, y) > 0").unwrap();
+        let Formula::Predicate(p) = f else {
+            unreachable!()
+        };
+        let err = eval_predicate(&p, &|_: &str| Some(1.0)).unwrap_err();
+        assert!(matches!(err, Error::UnknownFunction { arity: 2, .. }));
+    }
+}
