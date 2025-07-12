@@ -429,3 +429,85 @@ impl Parser {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::ast::{ComparisonOp, Formula};
+    use super::parse;
+
+    fn round_trip(input: &str, canonical: &str) {
+        let f = parse(input).expect("should parse");
+        assert_eq!(f.to_string(), canonical);
+    }
+
+    #[test]
+    fn simple_predicate() {
+        round_trip("x < 5", "x < 5");
+    }
+
+    #[test]
+    fn and_binds_tighter_than_implies() {
+        round_trip(
+            "a > 0 and b > 0 implies c > 0",
+            "((a > 0 and b > 0) implies c > 0)",
+        );
+    }
+
+    #[test]
+    fn or_is_left_associative() {
+        round_trip("a > 0 or b > 0 or c > 0", "((a > 0 or b > 0) or c > 0)");
+    }
+
+    #[test]
+    fn until_binds_tighter_than_and() {
+        round_trip(
+            "a > 0 until b > 0 and c > 0",
+            "((a > 0 until[0, inf] b > 0) and c > 0)",
+        );
+    }
+
+    #[test]
+    fn temporal_with_and_without_interval() {
+        round_trip("always[0, 10](x < 5)", "always[0, 10](x < 5)");
+        round_trip("eventually(x > 0)", "eventually[0, inf](x > 0)");
+    }
+
+    #[test]
+    fn ltl_shorthands_and_symbols() {
+        round_trip(
+            "G[0, inf](!(x_1 > 0) && y_2 > 0 -> F(z == 5))",
+            "always[0, inf](((not(x_1 > 0) and y_2 > 0) implies eventually[0, inf](z == 5)))",
+        );
+    }
+
+    #[test]
+    fn arithmetic_precedence_and_unary_minus() {
+        round_trip("x + y * 2 < 10", "(x + (y * 2)) < 10");
+        round_trip("x < -5", "x < (0 - 5)");
+        round_trip("2 ^ 3 ^ 2 > 0", "(2 ^ (3 ^ 2)) > 0");
+    }
+
+    #[test]
+    fn function_calls() {
+        round_trip("abs(x - 1) < 2", "abs((x - 1)) < 2");
+        round_trip("max(x, y, 0) > 0", "max(x, y, 0) > 0");
+    }
+
+    #[test]
+    fn probabilistic_with_nested_temporal() {
+        round_trip(
+            "P>=0.95(always[0, 10](x > 5))",
+            "P>=0.95(always[0, 10](x > 5))",
+        );
+    }
+
+    #[test]
+    fn until_is_right_associative() {
+        round_trip(
+            "a > 0 until b > 0 until c > 0",
+            "(a > 0 until[0, inf] (b > 0 until[0, inf] c > 0))",
+        );
+    }
+
+    #[test]
+}
