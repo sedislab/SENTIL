@@ -116,3 +116,56 @@ impl Trace {
         &self.signals
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_a_trace_and_lists_signals_sorted() {
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("speed", [10.0, 5.0, 1.0]).unwrap();
+        trace.add_signal("altitude", [100.0, 90.0, 80.0]).unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), ["altitude", "speed"]);
+    }
+
+    #[test]
+    fn indexed_trace_uses_integer_times() {
+        let trace = Trace::indexed(4);
+        assert_eq!(trace.times(), &[0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn non_monotonic_times_are_rejected() {
+        let err = Trace::new([0.0, 2.0, 1.0]).unwrap_err();
+        assert!(matches!(err, Error::NonMonotonicTime { .. }));
+    }
+
+    #[test]
+    fn non_finite_time_is_rejected() {
+        let err = Trace::new([0.0, f64::NAN]).unwrap_err();
+        assert!(matches!(err, Error::NonFiniteSample { kind: "time", .. }));
+    }
+
+    #[test]
+    fn mismatched_signal_length_is_rejected() {
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        let err = trace.add_signal("x", [1.0, 2.0]).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::SignalLengthMismatch {
+                expected: 3,
+                found: 2,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn non_finite_value_is_rejected() {
+        let mut trace = Trace::new([0.0, 1.0]).unwrap();
+        let err = trace.add_signal("x", [1.0, f64::INFINITY]).unwrap_err();
+        assert!(matches!(err, Error::NonFiniteSample { kind: "value", .. }));
+    }
+}
