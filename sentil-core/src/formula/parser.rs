@@ -510,4 +510,48 @@ mod tests {
     }
 
     #[test]
+    fn missing_value_points_at_the_offending_token() {
+        let err = parse("always[0, 10](x > )").unwrap_err();
+        assert!(err.message.contains("expected a value"));
+        assert_eq!(err.column, 19);
+    }
+
+    #[test]
+    fn infinite_lower_bound_is_rejected() {
+        let err = parse("always[inf, 10](x > 0)").unwrap_err();
+        assert!(err.message.contains("lower bound cannot be `inf`"));
+    }
+
+    #[test]
+    fn lower_above_upper_is_rejected() {
+        let err = parse("always[10, 5](x > 0)").unwrap_err();
+        assert!(err.message.contains("greater than upper bound"));
+    }
+
+    #[test]
+    fn probability_threshold_out_of_range() {
+        let err = parse("P>=1.5(x > 0)").unwrap_err();
+        assert!(err.message.contains("between 0 and 1"));
+    }
+
+    #[test]
+    fn trailing_tokens_are_an_error() {
+        let err = parse("x > 0 y > 0").unwrap_err();
+        assert!(err.message.contains("after a complete formula"));
+    }
+
+    #[test]
+    fn negative_interval_bound_parses() {
+        let f = parse("historically[0, 5](x > 0)").unwrap();
+        assert!(matches!(f, Formula::Historically(..)));
+    }
+
+    #[test]
+    fn equality_predicate() {
+        let f = parse("x == 5").unwrap();
+        match f {
+            Formula::Predicate(p) => assert_eq!(p.op, ComparisonOp::Equal),
+            _ => panic!("expected a predicate"),
+        }
+    }
 }
