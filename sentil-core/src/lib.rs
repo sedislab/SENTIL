@@ -26,6 +26,8 @@
 
 pub mod error;
 pub mod formula;
+pub mod semantics;
 
 pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
+pub use semantics::Robustness;
