@@ -92,4 +92,27 @@ impl Trace {
         Ok(())
     }
 
+    /// The sample times, in increasing order.
+    pub fn times(&self) -> &[f64] {
+        &self.times
+    }
+
+    /// The number of time points.
+    pub fn len(&self) -> usize {
+        self.times.len()
+    }
+
+    /// Whether the trace has no time points.
+    pub fn is_empty(&self) -> bool {
+        self.times.is_empty()
+    }
+
+    /// The names of the signals in the trace, in sorted order.
+    pub fn variables(&self) -> Vec<&str> {
+        self.signals.keys().map(String::as_str).collect()
+    }
+
+    pub(crate) fn signals(&self) -> &BTreeMap<String, Vec<f64>> {
+        &self.signals
+    }
 }
