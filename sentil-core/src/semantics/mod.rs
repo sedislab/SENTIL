@@ -2,5 +2,6 @@
 
 mod eval;
 mod robustness;
+mod window;
 
 pub use robustness::Robustness;
