@@ -129,3 +129,100 @@ impl MonotonicDeque {
         self.window.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "the deque selects an exact value from the window, so equality with the naive scan is exact"
+    )]
+
+    use super::*;
+    use proptest::prelude::*;
+
+    fn naive(values: &[f64], times: &[f64], off_a: f64, off_b: f64, want_min: bool) -> Vec<f64> {
+        times
+            .iter()
+            .map(|&center| {
+                let (lower, upper) = (center + off_a, center + off_b);
+                let init = if want_min {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                };
+                times
+                    .iter()
+                    .zip(values)
+                    .filter(|(&t, _)| t >= lower && t <= upper)
+                    .fold(
+                        init,
+                        |acc, (_, &v)| {
+                            if want_min {
+                                acc.min(v)
+                            } else {
+                                acc.max(v)
+                            }
+                        },
+                    )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn matches_a_worked_example() {
+        let times = [0.0, 1.0, 2.0, 3.0, 4.0];
+        let values = [5.0, 2.0, 7.0, 1.0, 3.0];
+        assert_eq!(
+            sliding_window_min(&values, &times, 0.0, 2.0),
+            vec![2.0, 1.0, 1.0, 1.0, 3.0]
+        );
+        assert_eq!(
+            sliding_window_max(&values, &times, 0.0, 2.0),
+            vec![7.0, 7.0, 7.0, 3.0, 3.0]
+        );
+    }
+
+    fn times_and_values() -> impl Strategy<Value = (Vec<f64>, Vec<f64>)> {
+        prop::collection::vec((0.1f64..5.0, -100.0f64..100.0), 1..40).prop_map(|pairs| {
+            let mut t = 0.0;
+            let mut times = Vec::with_capacity(pairs.len());
+            let mut values = Vec::with_capacity(pairs.len());
+            for (gap, value) in pairs {
+                t += gap;
+                times.push(t);
+                values.push(value);
+            }
+            (times, values)
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn deque_equals_naive_for_bounded_windows(
+            (times, values) in times_and_values(),
+            a in 0.0f64..10.0,
+            width in 0.0f64..20.0,
+        ) {
+            let b = a + width;
+            prop_assert_eq!(sliding_window_min(&values, &times, a, b), naive(&values, &times, a, b, true));
+            prop_assert_eq!(sliding_window_max(&values, &times, a, b), naive(&values, &times, a, b, false));
+            prop_assert_eq!(sliding_window_min(&values, &times, -b, -a), naive(&values, &times, -b, -a, true));
+            prop_assert_eq!(sliding_window_max(&values, &times, -b, -a), naive(&values, &times, -b, -a, false));
+        }
+
+        #[test]
+        fn deque_equals_naive_for_unbounded_windows(
+            (times, values) in times_and_values(),
+            a in 0.0f64..10.0,
+        ) {
+            prop_assert_eq!(
+                sliding_window_min(&values, &times, a, f64::INFINITY),
+                naive(&values, &times, a, f64::INFINITY, true)
+            );
+            prop_assert_eq!(
+                sliding_window_max(&values, &times, f64::NEG_INFINITY, -a),
+                naive(&values, &times, f64::NEG_INFINITY, -a, false)
+            );
+        }
+    }
+}
