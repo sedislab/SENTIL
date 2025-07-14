@@ -29,3 +29,6 @@ required-features = ["synthesis"]
 
 [dependencies]
 thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
