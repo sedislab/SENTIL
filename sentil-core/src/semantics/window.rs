@@ -1,12 +1,6 @@
 //! Sliding-window minimum and maximum over a monotonic deque.
 //!
-//! Temporal operators reduce to taking the infimum or supremum of a signal over
-//! a window that slides forward in time. A monotonic deque does this
-//! in amortized constant time per sample, holding only the candidate extrema for
-//! the current and future windows rather than the whole window. aWe prove this in
-//! Lean: the front of the deque is always the window extremum, the front is dropped
-//! once its timestamp falls below the window's left edge, and the back is dropped
-//! while it is dominated by an incoming value.
+//! The deque invariant is proved in `proofs/`.
 
 use std::collections::VecDeque;
 
@@ -87,4 +81,51 @@ fn sweep(values: &[f64], times: &[f64], off_a: f64, off_b: f64, extremum: Extrem
     }
 
     result
+}
+
+/// The online counterpart of [`sliding_window_min`].
+#[derive(Debug, Default)]
+pub(crate) struct MonotonicDeque {
+    window: std::collections::VecDeque<(f64, f64)>,
+}
+
+impl MonotonicDeque {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn push_min(&mut self, time: f64, value: f64) {
+        if value.is_nan() || time.is_nan() {
+            return;
+        }
+        while self.window.back().is_some_and(|&(_, back)| back >= value) {
+            self.window.pop_back();
+        }
+        self.window.push_back((time, value));
+    }
+
+    pub(crate) fn push_max(&mut self, time: f64, value: f64) {
+        if value.is_nan() || time.is_nan() {
+            return;
+        }
+        while self.window.back().is_some_and(|&(_, back)| back <= value) {
+            self.window.pop_back();
+        }
+        self.window.push_back((time, value));
+    }
+
+    /// Drops front entries strictly before `time_limit`.
+    pub(crate) fn evict_before(&mut self, time_limit: f64) {
+        while self.window.front().is_some_and(|&(t, _)| t < time_limit) {
+            self.window.pop_front();
+        }
+    }
+
+    pub(crate) fn front_value(&self) -> Option<f64> {
+        self.window.front().map(|&(_, v)| v)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.window.clear();
+    }
 }
