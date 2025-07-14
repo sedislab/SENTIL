@@ -74,7 +74,7 @@ fn sweep(values: &[f64], times: &[f64], off_a: f64, off_b: f64, extremum: Extrem
 
         // Drop candidates that have fallen off the window's left edge.
         while let Some(&front) = candidates.front() {
-            if times[front] <= window_left {
+            if times[front] < window_left {
                 candidates.pop_front();
             } else {
                 break;
