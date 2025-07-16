@@ -40,3 +40,88 @@ impl Formula {
         Ok(values[0])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "these robustness values are exact integer-valued f64 results"
+    )]
+
+    use crate::formula::Formula;
+    use crate::signal::Trace;
+
+    fn robustness(formula: &str, times: &[f64], signals: &[(&str, &[f64])]) -> f64 {
+        let phi = Formula::parse(formula).unwrap();
+        let mut trace = Trace::new(times.to_vec()).unwrap();
+        for (name, values) in signals {
+            trace.add_signal(name, values.to_vec()).unwrap();
+        }
+        phi.robustness(&trace).unwrap()
+    }
+
+    #[test]
+    fn predicate_robustness_is_the_margin_at_the_start() {
+        assert_eq!(robustness("x > 5", &[0.0], &[("x", &[8.0])]), 3.0);
+        assert_eq!(robustness("x < 5", &[0.0], &[("x", &[8.0])]), -3.0);
+    }
+
+    #[test]
+    fn always_takes_the_window_minimum() {
+        assert_eq!(
+            robustness(
+                "always[0, 2](x > 0)",
+                &[0.0, 1.0, 2.0],
+                &[("x", &[10.0, 5.0, 1.0])]
+            ),
+            1.0
+        );
+    }
+
+    #[test]
+    fn eventually_takes_the_window_maximum() {
+        assert_eq!(
+            robustness(
+                "eventually[0, 3](x > 10)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[8.0, 8.0, 8.0, 8.0])]
+            ),
+            -2.0
+        );
+    }
+
+    #[test]
+    fn boolean_operators_combine_margins() {
+        let times = [0.0];
+        assert_eq!(
+            robustness("x > 0 and y > 0", &times, &[("x", &[5.0]), ("y", &[3.0])]),
+            3.0
+        );
+        assert_eq!(
+            robustness("x > 0 or y > 0", &times, &[("x", &[-1.0]), ("y", &[3.0])]),
+            3.0
+        );
+        assert_eq!(robustness("not(x > 5)", &times, &[("x", &[3.0])]), 2.0);
+        assert_eq!(
+            robustness(
+                "(x > 10) implies (y > 0)",
+                &times,
+                &[("x", &[15.0]), ("y", &[3.0])]
+            ),
+            3.0
+        );
+    }
+
+    #[test]
+    fn historically_scans_the_past_window() {
+        assert_eq!(
+            robustness(
+                "historically[0, 5](x > 0)",
+                &[0.0, 1.0, 2.0],
+                &[("x", &[2.0, -5.0, 3.0])]
+            ),
+            2.0
+        );
+    }
+
+}
