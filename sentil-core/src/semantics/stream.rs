@@ -368,3 +368,103 @@ impl Node for FutureEventuallyNode {
         self.child.reset();
     }
 }
+
+/// `phi until[a, b] psi`: psi must hold somewhere in the future window with phi
+/// holding until then. Unbounded until folds with a constant-space recurrence;
+/// the bounded case keeps a short buffer and resolves with a delay of `b`.
+struct UntilNode {
+    phi: Box<dyn Node>,
+    psi: Box<dyn Node>,
+    buffer: VecDeque<(f64, f64, f64)>,
+    offset_start: f64,
+    offset_end: f64,
+    bounded: bool,
+    first_time: Option<f64>,
+    unbounded_dp: f64,
+}
+
+impl Node for UntilNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let r_phi = extract_concrete(self.phi.update(time, state)?)?;
+        let r_psi = extract_concrete(self.psi.update(time, state)?)?;
+        let first = *self.first_time.get_or_insert(time);
+        self.buffer.push_back((time, r_phi, r_psi));
+
+        if !self.bounded {
+            // Maler-Nickovic recurrence.
+            self.unbounded_dp = r_psi.max(r_phi.min(self.unbounded_dp));
+            return Ok(Robustness::Interval(self.unbounded_dp, f64::INFINITY));
+        }
+
+        let query_time = time - self.offset_end;
+        if query_time < first {
+            return Ok(Robustness::Interval(
+                self.until_over(first, time),
+                f64::INFINITY,
+            ));
+        }
+
+        while let Some(&(t, _, _)) = self.buffer.front() {
+            if t < query_time {
+                self.buffer.pop_front();
+            } else {
+                break;
+            }
+        }
+        let start = query_time + self.offset_start;
+        let end = query_time + self.offset_end;
+        Ok(Robustness::Concrete(self.until_over(start, end)))
+    }
+
+    fn reset(&mut self) {
+        self.buffer.clear();
+        self.first_time = None;
+        self.unbounded_dp = f64::NEG_INFINITY;
+        self.phi.reset();
+        self.psi.reset();
+    }
+}
+
+impl UntilNode {
+    /// The until robustness over witness times in `[start, end]`: the best over
+    /// those times of `min(psi, inf of phi from the query time up to but not
+    /// including the witness)`.
+    fn until_over(&self, start: f64, end: f64) -> f64 {
+        let mut best = f64::NEG_INFINITY;
+        let mut min_phi = f64::INFINITY;
+        for &(t, phi, psi) in &self.buffer {
+            if t < start {
+                continue;
+            }
+            if t > end {
+                break;
+            }
+            best = best.max(psi.min(min_phi));
+            min_phi = min_phi.min(phi);
+        }
+        best
+    }
+}
+
+/// `next phi`, reporting the child's value one step behind.
+struct NextNode {
+    child: Box<dyn Node>,
+    initialized: bool,
+}
+
+impl Node for NextNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let child = extract_concrete(self.child.update(time, state)?)?;
+        if self.initialized {
+            Ok(Robustness::Concrete(child))
+        } else {
+            self.initialized = true;
+            Ok(Robustness::Interval(f64::NEG_INFINITY, f64::INFINITY))
+        }
+    }
+
+    fn reset(&mut self) {
+        self.initialized = false;
+        self.child.reset();
+    }
+}
