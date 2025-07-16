@@ -100,3 +100,93 @@ impl Node for BinaryNode {
         self.right.reset();
     }
 }
+
+/// Extracts the settled value an immediate-output operator needs from a child.
+///
+/// Past-time operators and the operands of until and since must see a concrete
+/// value each step. A child that still returns an interval is a future-time
+/// operator nested where only present data is available; the monitor rejects
+/// that composition when it is built, so this is a guard rather than a usual path.
+fn extract_concrete(robustness: Robustness) -> Result<f64> {
+    match robustness {
+        Robustness::Concrete(v) => Ok(v),
+        Robustness::Interval(..) => Err(Error::Unsupported {
+            feature: "a future-time operator nested where only present data is available",
+        }),
+    }
+}
+
+/// `historically[a, b] phi`: the past-time mirror of `always`.
+///
+/// A sample only enters the window once it has aged past the lower bound `a`, so
+/// it sits in a delay buffer until mature, then joins a monotonic deque that
+/// holds the running minimum over the window's far edge `[t - b, t - a]`.
+struct HistoricallyNode {
+    child: Box<dyn Node>,
+    delay: VecDeque<(f64, f64)>,
+    window: MonotonicDeque,
+    offset_lower: f64,
+    width: f64,
+}
+
+impl Node for HistoricallyNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let value = extract_concrete(self.child.update(time, state)?)?;
+        self.delay.push_back((time, value));
+        let maturity = time - self.offset_lower + MATURITY_EPSILON;
+        while let Some(&(t, v)) = self.delay.front() {
+            if t <= maturity {
+                self.window.push_min(t, v);
+                self.delay.pop_front();
+            } else {
+                break;
+            }
+        }
+        self.window.evict_before((time - self.width).max(0.0));
+        // Positive infinity reports a property that has never been violated.
+        Ok(Robustness::Concrete(
+            self.window.front_value().unwrap_or(f64::INFINITY),
+        ))
+    }
+
+    fn reset(&mut self) {
+        self.delay.clear();
+        self.window.clear();
+        self.child.reset();
+    }
+}
+
+/// `once[a, b] phi`: the past-time mirror of `eventually`.
+struct OnceNode {
+    child: Box<dyn Node>,
+    delay: VecDeque<(f64, f64)>,
+    window: MonotonicDeque,
+    offset_lower: f64,
+    width: f64,
+}
+
+impl Node for OnceNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let value = extract_concrete(self.child.update(time, state)?)?;
+        self.delay.push_back((time, value));
+        let maturity = time - self.offset_lower + MATURITY_EPSILON;
+        while let Some(&(t, v)) = self.delay.front() {
+            if t <= maturity {
+                self.window.push_max(t, v);
+                self.delay.pop_front();
+            } else {
+                break;
+            }
+        }
+        self.window.evict_before((time - self.width).max(0.0));
+        Ok(Robustness::Concrete(
+            self.window.front_value().unwrap_or(f64::NEG_INFINITY),
+        ))
+    }
+
+    fn reset(&mut self) {
+        self.delay.clear();
+        self.window.clear();
+        self.child.reset();
+    }
+}
