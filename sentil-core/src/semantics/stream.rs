@@ -190,3 +190,73 @@ impl Node for OnceNode {
         self.child.reset();
     }
 }
+
+/// `phi since[a, b] psi`: the past-time mirror of `until`.
+///
+/// Each matured candidate carries the value of `psi` at its time and the running
+/// minimum of `phi` from then to now; the robustness is the best such pair over
+/// the window. Dominated candidates are pruned so the list stays short.
+struct SinceNode {
+    phi: Box<dyn Node>,
+    psi: Box<dyn Node>,
+    candidates: VecDeque<(f64, f64, f64)>,
+    delay: VecDeque<(f64, f64, f64)>,
+    offset_lower: f64,
+    width: f64,
+}
+
+impl Node for SinceNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let r_phi = extract_concrete(self.phi.update(time, state)?)?;
+        let r_psi = extract_concrete(self.psi.update(time, state)?)?;
+
+        for entry in &mut self.delay {
+            entry.2 = entry.2.min(r_phi);
+        }
+        for entry in &mut self.candidates {
+            entry.2 = entry.2.min(r_phi);
+        }
+        self.delay.push_back((time, r_psi, f64::INFINITY));
+
+        let maturity = time - self.offset_lower + MATURITY_EPSILON;
+        while let Some(&(t, psi_val, min_phi)) = self.delay.front() {
+            if t > maturity {
+                break;
+            }
+            self.delay.pop_front();
+            while let Some(&(_, last_psi, last_phi)) = self.candidates.back() {
+                let score_last = last_psi.min(last_phi);
+                let score_new = psi_val.min(min_phi);
+                if score_last <= score_new && last_phi <= min_phi {
+                    self.candidates.pop_back();
+                } else {
+                    break;
+                }
+            }
+            self.candidates.push_back((t, psi_val, min_phi));
+        }
+
+        let start = (time - self.width).max(0.0);
+        while let Some(&(t, _, _)) = self.candidates.front() {
+            if t < start {
+                self.candidates.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        let best = self
+            .candidates
+            .iter()
+            .map(|&(_, psi, phi)| psi.min(phi))
+            .fold(f64::NEG_INFINITY, f64::max);
+        Ok(Robustness::Concrete(best))
+    }
+
+    fn reset(&mut self) {
+        self.candidates.clear();
+        self.delay.clear();
+        self.phi.reset();
+        self.psi.reset();
+    }
+}
