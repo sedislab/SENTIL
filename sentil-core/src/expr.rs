@@ -115,4 +115,73 @@ impl Program {
         Ok(stack[0])
     }
 
+    fn emit_formula(&mut self, formula: &Formula, symbols: &[String]) -> Result<()> {
+        match formula {
+            Formula::Predicate(p) => {
+                self.emit_expr(&p.lhs, symbols)?;
+                self.emit_expr(&p.rhs, symbols)?;
+                self.ops.push(Op::Margin(p.op));
+                Ok(())
+            }
+            Formula::Not(f) => {
+                self.emit_formula(f, symbols)?;
+                self.ops.push(Op::Neg);
+                Ok(())
+            }
+            Formula::And(l, r) => self.emit_binary_formula(l, r, Op::And, symbols),
+            Formula::Or(l, r) => self.emit_binary_formula(l, r, Op::Or, symbols),
+            Formula::Implies(l, r) => {
+                self.emit_formula(l, symbols)?;
+                self.ops.push(Op::Neg);
+                self.emit_formula(r, symbols)?;
+                self.ops.push(Op::Or);
+                Ok(())
+            }
+            _ => Err(Error::Unsupported {
+                feature: "a temporal or probabilistic operator inside an atomic subformula",
+            }),
+        }
+    }
+
+    fn emit_binary_formula(
+        &mut self,
+        left: &Formula,
+        right: &Formula,
+        op: Op,
+        symbols: &[String],
+    ) -> Result<()> {
+        self.emit_formula(left, symbols)?;
+        self.emit_formula(right, symbols)?;
+        self.ops.push(op);
+        Ok(())
+    }
+
+    fn emit_expr(&mut self, expr: &Expr, symbols: &[String]) -> Result<()> {
+        match expr {
+            Expr::Literal(v) => self.ops.push(Op::Const(*v)),
+            Expr::Variable(name) => {
+                let slot = symbols
+                    .iter()
+                    .position(|n| n == name)
+                    .ok_or_else(|| Error::UnknownVariable { name: name.clone() })?;
+                self.ops.push(Op::Var(slot));
+            }
+            Expr::Binary(op, lhs, rhs) => {
+                self.emit_expr(lhs, symbols)?;
+                self.emit_expr(rhs, symbols)?;
+                let op = match op {
+                    BinaryOp::Add => Op::Add,
+                    BinaryOp::Sub => Op::Sub,
+                    BinaryOp::Mul => Op::Mul,
+                    BinaryOp::Pow => Op::Pow,
+                    BinaryOp::Div => Op::Div(self.push_term(format!("{lhs} / {rhs}"))),
+                    BinaryOp::Mod => Op::Rem(self.push_term(format!("{lhs} % {rhs}"))),
+                };
+                self.ops.push(op);
+            }
+            Expr::Call(name, args) => self.emit_call(name, args, symbols)?,
+        }
+        Ok(())
+    }
+
 }
