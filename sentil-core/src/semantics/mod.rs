@@ -7,6 +7,8 @@ mod window;
 
 pub use robustness::Robustness;
 
+pub(crate) use eval::predicate_margin;
+
 use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::signal::Trace;

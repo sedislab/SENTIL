@@ -25,6 +25,7 @@
 )]
 
 pub mod error;
+mod expr;
 pub mod formula;
 pub mod semantics;
 pub mod signal;
