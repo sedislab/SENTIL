@@ -184,4 +184,83 @@ impl Program {
         Ok(())
     }
 
+    fn emit_call(&mut self, name: &str, args: &[Expr], symbols: &[String]) -> Result<()> {
+        let unary = |this: &mut Self, op: Op| -> Result<()> {
+            let [arg] = args else {
+                return Err(Error::UnknownFunction {
+                    name: name.to_owned(),
+                    arity: args.len(),
+                });
+            };
+            this.emit_expr(arg, symbols)?;
+            this.ops.push(op);
+            Ok(())
+        };
+        match name {
+            "abs" => unary(self, Op::Abs),
+            "sqrt" => unary(self, Op::Sqrt),
+            "exp" => unary(self, Op::Exp),
+            "ln" => unary(self, Op::Ln),
+            "log" => unary(self, Op::Log),
+            "sin" => unary(self, Op::Sin),
+            "cos" => unary(self, Op::Cos),
+            "tan" => unary(self, Op::Tan),
+            "floor" => unary(self, Op::Floor),
+            "ceil" => unary(self, Op::Ceil),
+            "min" | "max" => {
+                let [lhs, rhs] = args else {
+                    return Err(Error::UnknownFunction {
+                        name: name.to_owned(),
+                        arity: args.len(),
+                    });
+                };
+                self.emit_expr(lhs, symbols)?;
+                self.emit_expr(rhs, symbols)?;
+                self.ops
+                    .push(if name == "min" { Op::FnMin } else { Op::FnMax });
+                Ok(())
+            }
+            _ => Err(Error::UnknownFunction {
+                name: name.to_owned(),
+                arity: args.len(),
+            }),
+        }
+    }
+
+    fn push_term(&mut self, term: String) -> usize {
+        let index = self.terms.len();
+        self.terms.push(term);
+        index
+    }
+
+    fn computed_depth(&self) -> usize {
+        let mut height: usize = 0;
+        let mut max = 0usize;
+        for op in &self.ops {
+            height = match op {
+                Op::Var(_) | Op::Const(_) => height + 1,
+                Op::Add
+                | Op::Sub
+                | Op::Mul
+                | Op::Pow
+                | Op::Div(_)
+                | Op::Rem(_)
+                | Op::FnMin
+                | Op::FnMax
+                | Op::And
+                | Op::Or
+                | Op::Margin(_) => height - 1,
+                _ => height,
+            };
+            max = max.max(height);
+        }
+        max
+    }
+}
+
+#[inline]
+fn fold(stack: &mut [f64], sp: usize, op: fn(f64, f64) -> f64) -> usize {
+    let b = stack[sp - 1];
+    stack[sp - 2] = op(stack[sp - 2], b);
+    sp - 1
 }
