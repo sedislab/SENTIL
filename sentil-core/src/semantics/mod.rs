@@ -3,6 +3,7 @@
 mod discrete;
 mod eval;
 mod robustness;
+mod stream;
 mod window;
 
 pub use robustness::Robustness;
