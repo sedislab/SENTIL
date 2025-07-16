@@ -124,4 +124,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn nested_always_eventually() {
+        let r = robustness(
+            "always[0, 2](eventually[0, 1](p > 0))",
+            &[0.0, 1.0, 2.0],
+            &[("p", &[1.0, -1.0, 1.0])],
+        );
+        assert_eq!(r, 1.0);
+    }
+
+    #[test]
+    fn unbounded_until() {
+        let r = robustness(
+            "p > 0 until q > 0",
+            &[0.0, 1.0, 2.0],
+            &[("p", &[1.0, 1.0, -3.0]), ("q", &[-1.0, -1.0, 1.0])],
+        );
+        assert_eq!(r, 1.0);
+    }
+
+    #[test]
+    fn probabilistic_operator_is_rejected_by_deterministic_robustness() {
+        let phi = Formula::parse("P>=0.9(x > 0)").unwrap();
+        let mut trace = Trace::new([0.0]).unwrap();
+        trace.add_signal("x", [1.0]).unwrap();
+        assert!(matches!(
+            phi.robustness(&trace),
+            Err(crate::Error::ProbabilisticOperator)
+        ));
+    }
+
+    #[test]
+    fn empty_trace_is_an_error() {
+        let phi = Formula::parse("x > 0").unwrap();
+        let trace = Trace::default();
+        assert!(matches!(
+            phi.robustness(&trace),
+            Err(crate::Error::EmptyTrace)
+        ));
+    }
 }
