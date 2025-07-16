@@ -7,6 +7,7 @@ mod stream;
 mod window;
 
 pub use robustness::Robustness;
+pub use stream::StreamMonitor;
 
 pub(crate) use eval::predicate_margin;
 

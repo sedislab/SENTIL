@@ -468,3 +468,117 @@ impl Node for NextNode {
         self.child.reset();
     }
 }
+
+fn bounds(robustness: Robustness) -> (f64, f64) {
+    (robustness.lower(), robustness.upper())
+}
+
+/// Drops buffered `(time, _)` entries whose time is strictly before `limit`.
+fn drop_front_before(buffer: &mut VecDeque<(f64, f64)>, limit: f64) {
+    while let Some(&(t, _)) = buffer.front() {
+        if t < limit {
+            buffer.pop_front();
+        } else {
+            break;
+        }
+    }
+}
+
+/// An online monitor that evaluates a formula incrementally.
+pub struct StreamMonitor {
+    root: Box<dyn Node>,
+    symbols: Arc<SymbolTable>,
+    buffer: Vec<f64>,
+}
+
+impl StreamMonitor {
+    /// Builds a monitor for a formula given as text.
+    ///
+    /// ```
+    /// use sentil::StreamMonitor;
+    ///
+    /// let mut monitor = StreamMonitor::new("x > 0 and y < 10")?;
+    /// let rho = monitor.update(0.0, &[("x", 5.0), ("y", 2.0)])?;
+    /// assert_eq!(rho.value(), 5.0);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a parse error for malformed input, and [`Error::Unsupported`] for an
+    /// operator this monitor does not handle.
+    pub fn new(formula: &str) -> Result<Self> {
+        Self::from_formula(&Formula::parse(formula)?)
+    }
+
+    /// Builds a monitor from an already-parsed formula.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Unsupported`] for an operator this monitor does not handle.
+    pub fn from_formula(formula: &Formula) -> Result<Self> {
+        validate_streaming(formula)?;
+        let symbols = Arc::new(SymbolTable::from_formula(formula));
+        let root = build_node(formula, &symbols)?;
+        let buffer = vec![0.0; symbols.len()];
+        Ok(Self {
+            root,
+            symbols,
+            buffer,
+        })
+    }
+
+    /// Folds in one timestep, given the current value of each variable, and
+    /// returns the robustness so far.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnknownVariable`] if a variable the formula needs has no
+    /// value in `values`, [`Error::NonFiniteSample`] if `time` is not finite, or
+    /// [`Error::NonMonotonicTime`] if it does not follow the previous step.
+    pub fn update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Robustness> {
+        for (idx, name) in self.symbols.names.iter().enumerate() {
+            match values.iter().find(|(n, _)| n == name) {
+                Some((_, v)) => self.buffer[idx] = *v,
+                None => return Err(Error::UnknownVariable { name: name.clone() }),
+            }
+        }
+        // Detach the buffer borrow from `self` so the node can borrow it shared.
+        let mut buffer = std::mem::take(&mut self.buffer);
+        let result = self.root.update(time, &buffer);
+        std::mem::swap(&mut self.buffer, &mut buffer);
+        result
+    }
+
+    /// Folds in one timestep from values packed by [`StreamMonitor::symbol_index`]
+    /// order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnknownVariable`] if `values` is shorter than the number
+    /// of variables the formula needs.
+    pub fn update_dense(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
+        if values.len() < self.symbols.len() {
+            return Err(Error::UnknownVariable {
+                name: self.symbols.names[values.len()].clone(),
+            });
+        }
+        self.root.update(time, values)
+    }
+
+    /// The packed-slice index of a variable, for use with
+    /// [`StreamMonitor::update_dense`].
+    pub fn symbol_index(&self, name: &str) -> Option<usize> {
+        self.symbols.index(name)
+    }
+
+    /// The number of variables the formula references.
+    pub fn variable_count(&self) -> usize {
+        self.symbols.len()
+    }
+
+    /// Clears all state.
+    pub fn reset(&mut self) {
+        self.root.reset();
+    }
+}
