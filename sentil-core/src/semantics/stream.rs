@@ -260,3 +260,111 @@ impl Node for SinceNode {
         self.psi.reset();
     }
 }
+
+/// `always[a, b] phi`, settling the verdict for the time `b` behind the present.
+struct FutureAlwaysNode {
+    child: Box<dyn Node>,
+    buffer: VecDeque<(f64, f64)>,
+    window: MonotonicDeque,
+    offset_start: f64,
+    offset_end: f64,
+    bounded: bool,
+    first_time: Option<f64>,
+    global_min: f64,
+}
+
+impl Node for FutureAlwaysNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let child = self.child.update(time, state)?;
+        let concrete = matches!(child, Robustness::Concrete(_));
+        let (lo, hi) = bounds(child);
+        let first = *self.first_time.get_or_insert(time);
+
+        self.buffer.push_back((time, lo));
+        self.window.push_min(time, lo);
+        self.global_min = self.global_min.min(hi);
+
+        if !self.bounded {
+            return Ok(Robustness::Interval(f64::NEG_INFINITY, self.global_min));
+        }
+
+        let query_time = time - self.offset_end;
+        if query_time < first {
+            let partial = self.window.front_value().unwrap_or(f64::INFINITY);
+            return Ok(Robustness::Interval(f64::NEG_INFINITY, partial));
+        }
+
+        let window_start = query_time + self.offset_start;
+        self.window.evict_before(window_start);
+        drop_front_before(&mut self.buffer, window_start);
+        let min_rob = self.window.front_value().unwrap_or(f64::INFINITY);
+
+        if concrete {
+            Ok(Robustness::Concrete(min_rob))
+        } else {
+            Ok(Robustness::Interval(min_rob, self.global_min))
+        }
+    }
+
+    fn reset(&mut self) {
+        self.buffer.clear();
+        self.window.clear();
+        self.first_time = None;
+        self.global_min = f64::INFINITY;
+        self.child.reset();
+    }
+}
+
+/// `eventually[a, b] phi`: the dual of `always`, settling on a supremum.
+struct FutureEventuallyNode {
+    child: Box<dyn Node>,
+    buffer: VecDeque<(f64, f64)>,
+    window: MonotonicDeque,
+    offset_start: f64,
+    offset_end: f64,
+    bounded: bool,
+    first_time: Option<f64>,
+    global_max: f64,
+}
+
+impl Node for FutureEventuallyNode {
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let child = self.child.update(time, state)?;
+        let concrete = matches!(child, Robustness::Concrete(_));
+        let (lo, hi) = bounds(child);
+        let first = *self.first_time.get_or_insert(time);
+
+        self.buffer.push_back((time, hi));
+        self.window.push_max(time, hi);
+        self.global_max = self.global_max.max(lo);
+
+        if !self.bounded {
+            return Ok(Robustness::Interval(self.global_max, f64::INFINITY));
+        }
+
+        let query_time = time - self.offset_end;
+        if query_time < first {
+            let partial = self.window.front_value().unwrap_or(f64::NEG_INFINITY);
+            return Ok(Robustness::Interval(partial, f64::INFINITY));
+        }
+
+        let window_start = query_time + self.offset_start;
+        self.window.evict_before(window_start);
+        drop_front_before(&mut self.buffer, window_start);
+        let max_rob = self.window.front_value().unwrap_or(f64::NEG_INFINITY);
+
+        if concrete {
+            Ok(Robustness::Concrete(max_rob))
+        } else {
+            Ok(Robustness::Interval(self.global_max, max_rob))
+        }
+    }
+
+    fn reset(&mut self) {
+        self.buffer.clear();
+        self.window.clear();
+        self.first_time = None;
+        self.global_max = f64::NEG_INFINITY;
+        self.child.reset();
+    }
+}
