@@ -582,3 +582,29 @@ impl StreamMonitor {
         self.root.reset();
     }
 }
+
+/// Whether a formula carries any temporal or probabilistic operator.
+fn is_temporal(formula: &Formula) -> bool {
+    match formula {
+        Formula::Predicate(_) => false,
+        Formula::Not(f) => is_temporal(f),
+        Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
+            is_temporal(l) || is_temporal(r)
+        }
+        _ => true,
+    }
+}
+
+/// Builds a node for a maximal non-temporal subformula.
+fn atomic_node(formula: &Formula, names: &[String]) -> Result<Box<dyn Node>> {
+    let program = Program::compile(formula, names)?;
+    let scratch = program.scratch();
+    Ok(Box::new(AtomicNode { program, scratch }))
+}
+
+fn offsets(interval: crate::formula::Interval) -> (f64, f64, bool) {
+    match interval.upper {
+        Some(b) => (interval.lower, b, true),
+        None => (interval.lower, 0.0, false),
+    }
+}
