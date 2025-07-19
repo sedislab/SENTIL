@@ -758,3 +758,86 @@ fn validate_streaming(formula: &Formula) -> Result<()> {
         Formula::Probabilistic(_, _, g) => validate_streaming(g),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "streaming robustness here matches the offline reference exactly"
+    )]
+    #![allow(
+        clippy::cast_precision_loss,
+        reason = "test trace indices are tiny, so the index-to-time cast is exact"
+    )]
+
+    use super::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn streams_a_boolean_formula() {
+        let mut monitor = StreamMonitor::new("x > 0 and y < 10").unwrap();
+        assert_eq!(
+            monitor
+                .update(0.0, &[("x", 5.0), ("y", 2.0)])
+                .unwrap()
+                .value(),
+            5.0
+        );
+        assert_eq!(
+            monitor
+                .update(1.0, &[("x", 1.0), ("y", 12.0)])
+                .unwrap()
+                .value(),
+            -2.0
+        );
+    }
+
+    #[test]
+    fn dense_update_matches_named_update() {
+        let mut monitor = StreamMonitor::new("x > 0 and y > 0").unwrap();
+        let xi = monitor.symbol_index("x").unwrap();
+        let yi = monitor.symbol_index("y").unwrap();
+        let mut packed = vec![0.0; monitor.variable_count()];
+        packed[xi] = 3.0;
+        packed[yi] = 7.0;
+        assert_eq!(monitor.update_dense(0.0, &packed).unwrap().value(), 3.0);
+    }
+
+    #[test]
+    fn negation_and_implication_stream() {
+        let mut monitor = StreamMonitor::new("not(x > 5)").unwrap();
+        assert_eq!(monitor.update(0.0, &[("x", 3.0)]).unwrap().value(), 2.0);
+
+        let mut imp = StreamMonitor::new("(x > 10) implies (y > 0)").unwrap();
+        assert_eq!(
+            imp.update(0.0, &[("x", 15.0), ("y", 3.0)]).unwrap().value(),
+            3.0
+        );
+    }
+
+    #[test]
+    fn missing_value_is_an_error() {
+        let mut monitor = StreamMonitor::new("x > 0 and y > 0").unwrap();
+        assert!(matches!(
+            monitor.update(0.0, &[("x", 1.0)]),
+            Err(Error::UnknownVariable { .. })
+        ));
+    }
+
+    #[test]
+    fn future_inside_past_is_rejected() {
+        assert!(matches!(
+            StreamMonitor::new("historically[0, 5](eventually[0, 2](x > 0))"),
+            Err(Error::Unsupported { .. })
+        ));
+        assert!(matches!(
+            StreamMonitor::new("(eventually[0, 2](x > 0)) until[0, 3] (y > 0)"),
+            Err(Error::Unsupported { .. })
+        ));
+        assert!(StreamMonitor::new("always[0, 2](eventually[0, 1](x > 0))").is_ok());
+        assert!(StreamMonitor::new("always[0, 2](historically[0, 1](x > 0))").is_ok());
+    }
+
+    /// Once a future window has fully arrived, the online verdict for that past
+    /// time is concrete and must equal the offline robustness there.
+}
