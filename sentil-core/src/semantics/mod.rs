@@ -1,4 +1,6 @@
 //! Robustness semantics: turning a formula and a signal trace into a margin.
+//!
+//! Every evaluation mode should reference these.
 
 mod dense;
 mod discrete;
@@ -48,10 +50,21 @@ impl Formula {
 
     /// The robustness over a trace read as a continuous, piecewise-linear signal.
     ///
+    /// ```
+    /// use sentil::{Formula, Trace};
+    ///
+    /// let phi = Formula::parse("always[0, 1.5](x > 0)")?;
+    /// let mut trace = Trace::new([0.0, 1.0, 2.0])?;
+    /// trace.add_signal("x", [1.0, 1.0, -3.0])?;
+    /// assert_eq!(phi.robustness_dense(&trace)?, -1.0);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::EmptyTrace`] for an empty trace and
-    /// [`Error::UnknownVariable`] for a missing signal.
+    /// Returns [`Error::EmptyTrace`] for an empty trace,
+    /// [`Error::UnknownVariable`] for a missing signal, and
+    /// [`Error::Unsupported`] if a predicate is nonlinear in the signals.
     pub fn robustness_dense(&self, trace: &Trace) -> Result<f64> {
         if trace.is_empty() {
             return Err(Error::EmptyTrace);
