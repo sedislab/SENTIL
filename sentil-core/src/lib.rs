@@ -29,6 +29,8 @@ mod expr;
 pub mod formula;
 pub mod semantics;
 pub mod signal;
+#[cfg(feature = "statistical")]
+pub mod stats;
 
 pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
