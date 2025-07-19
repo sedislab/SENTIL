@@ -608,3 +608,98 @@ fn offsets(interval: crate::formula::Interval) -> (f64, f64, bool) {
         None => (interval.lower, 0.0, false),
     }
 }
+
+fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn Node>> {
+    if !is_temporal(formula) {
+        return atomic_node(formula, &symbols.names);
+    }
+    match formula {
+        Formula::Not(inner) => Ok(Box::new(NotNode {
+            child: build_node(inner, symbols)?,
+        })),
+        Formula::And(l, r) => Ok(Box::new(BinaryNode {
+            left: build_node(l, symbols)?,
+            right: build_node(r, symbols)?,
+            combine: Robustness::min,
+        })),
+        Formula::Or(l, r) => Ok(Box::new(BinaryNode {
+            left: build_node(l, symbols)?,
+            right: build_node(r, symbols)?,
+            combine: Robustness::max,
+        })),
+        Formula::Implies(l, r) => Ok(Box::new(BinaryNode {
+            left: build_node(l, symbols)?,
+            right: build_node(r, symbols)?,
+            combine: Robustness::implies,
+        })),
+        Formula::Historically(interval, inner) => Ok(Box::new(HistoricallyNode {
+            child: build_node(inner, symbols)?,
+            delay: VecDeque::new(),
+            window: MonotonicDeque::new(),
+            offset_lower: interval.lower,
+            width: interval.upper_or_infinity(),
+        })),
+        Formula::Once(interval, inner) => Ok(Box::new(OnceNode {
+            child: build_node(inner, symbols)?,
+            delay: VecDeque::new(),
+            window: MonotonicDeque::new(),
+            offset_lower: interval.lower,
+            width: interval.upper_or_infinity(),
+        })),
+        Formula::Since(interval, l, r) => Ok(Box::new(SinceNode {
+            phi: build_node(l, symbols)?,
+            psi: build_node(r, symbols)?,
+            candidates: VecDeque::new(),
+            delay: VecDeque::new(),
+            offset_lower: interval.lower,
+            width: interval.upper_or_infinity(),
+        })),
+        Formula::Always(interval, inner) => {
+            let (offset_start, offset_end, bounded) = offsets(*interval);
+            Ok(Box::new(FutureAlwaysNode {
+                child: build_node(inner, symbols)?,
+                buffer: VecDeque::new(),
+                window: MonotonicDeque::new(),
+                offset_start,
+                offset_end,
+                bounded,
+                first_time: None,
+                global_min: f64::INFINITY,
+            }))
+        }
+        Formula::Eventually(interval, inner) => {
+            let (offset_start, offset_end, bounded) = offsets(*interval);
+            Ok(Box::new(FutureEventuallyNode {
+                child: build_node(inner, symbols)?,
+                buffer: VecDeque::new(),
+                window: MonotonicDeque::new(),
+                offset_start,
+                offset_end,
+                bounded,
+                first_time: None,
+                global_max: f64::NEG_INFINITY,
+            }))
+        }
+        Formula::Until(interval, l, r) => {
+            let (offset_start, offset_end, bounded) = offsets(*interval);
+            Ok(Box::new(UntilNode {
+                phi: build_node(l, symbols)?,
+                psi: build_node(r, symbols)?,
+                buffer: VecDeque::new(),
+                offset_start,
+                offset_end,
+                bounded,
+                first_time: None,
+                unbounded_dp: f64::NEG_INFINITY,
+            }))
+        }
+        Formula::Next(inner) => Ok(Box::new(NextNode {
+            child: build_node(inner, symbols)?,
+            initialized: false,
+        })),
+        Formula::Probabilistic(..) => Err(Error::Unsupported {
+            feature: "probabilistic operators need the statistical monitor",
+        }),
+        Formula::Predicate(_) => atomic_node(formula, &symbols.names),
+    }
+}
