@@ -840,4 +840,80 @@ mod tests {
 
     /// Once a future window has fully arrived, the online verdict for that past
     /// time is concrete and must equal the offline robustness there.
+    fn future_resolves_to_offline(
+        formula: &str,
+        delay: usize,
+        times: &[f64],
+        signals: &[(&str, &[f64])],
+    ) {
+        let offline = offline_values(formula, times, signals);
+        let mut monitor = StreamMonitor::new(formula).unwrap();
+        let slots: Vec<usize> = signals
+            .iter()
+            .map(|(n, _)| monitor.symbol_index(n).unwrap())
+            .collect();
+        let mut packed = vec![0.0; monitor.variable_count()];
+        for (i, &t) in times.iter().enumerate() {
+            for (s, (_, values)) in signals.iter().enumerate() {
+                packed[slots[s]] = values[i];
+            }
+            let robustness = monitor.update_dense(t, &packed).unwrap();
+            if i >= delay {
+                assert!(
+                    robustness.lower() == robustness.upper(),
+                    "{formula} should have resolved by step {i}"
+                );
+                assert_eq!(
+                    robustness.value(),
+                    offline[i - delay],
+                    "{formula} at step {i}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn future_operators_resolve_to_the_offline_value() {
+        let times = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let x = [3.0, -1.0, 4.0, 2.0, -5.0, 1.0, 6.0];
+        future_resolves_to_offline("always[0, 3](x > 0)", 3, &times, &[("x", &x)]);
+        future_resolves_to_offline("eventually[0, 2](x > 5)", 2, &times, &[("x", &x)]);
+        future_resolves_to_offline("next(x > 0)", 1, &times, &[("x", &x)]);
+        let y = [-1.0, -1.0, 2.0, -1.0, 3.0, -1.0, 1.0];
+        future_resolves_to_offline(
+            "x > 0 until[0, 3] y > 0",
+            3,
+            &times,
+            &[("x", &x), ("y", &y)],
+        );
+    }
+
+    /// Streams a formula and collects each step's robustness value.
+    fn stream_values(formula: &str, times: &[f64], signals: &[(&str, &[f64])]) -> Vec<f64> {
+        let mut monitor = StreamMonitor::new(formula).unwrap();
+        let slots: Vec<usize> = signals
+            .iter()
+            .map(|(n, _)| monitor.symbol_index(n).unwrap())
+            .collect();
+        let mut packed = vec![0.0; monitor.variable_count()];
+        let mut out = Vec::with_capacity(times.len());
+        for (i, &t) in times.iter().enumerate() {
+            for (s, (_, values)) in signals.iter().enumerate() {
+                packed[slots[s]] = values[i];
+            }
+            out.push(monitor.update_dense(t, &packed).unwrap().value());
+        }
+        out
+    }
+
+    fn offline_values(formula: &str, times: &[f64], signals: &[(&str, &[f64])]) -> Vec<f64> {
+        let phi = crate::Formula::parse(formula).unwrap();
+        let map: std::collections::BTreeMap<String, Vec<f64>> = signals
+            .iter()
+            .map(|(n, v)| ((*n).to_string(), v.to_vec()))
+            .collect();
+        super::super::discrete::robustness_trace(&phi, times, &map).unwrap()
+    }
+
+    #[test]
 }
