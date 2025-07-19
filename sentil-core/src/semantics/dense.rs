@@ -144,3 +144,92 @@ fn is_constant(expr: &Expr) -> bool {
         Expr::Call(_, args) => args.iter().all(is_constant),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::float_cmp, reason = "the dense values here are exact")]
+    #![allow(
+        clippy::cast_precision_loss,
+        reason = "test trace indices are tiny, so the index-to-time cast is exact"
+    )]
+
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::formula::Formula;
+
+    fn dense_at_start(formula: &str, times: &[f64], signals: &[(&str, &[f64])]) -> f64 {
+        let phi = Formula::parse(formula).unwrap();
+        let map: BTreeMap<String, Vec<f64>> = signals
+            .iter()
+            .map(|(n, v)| ((*n).to_string(), v.to_vec()))
+            .collect();
+        robustness_signal(&phi, times, &map).unwrap().at(times[0])
+    }
+
+    #[test]
+    fn dense_catches_a_window_edge_between_samples() {
+        let r = dense_at_start(
+            "always[0, 1.5](x > 0)",
+            &[0.0, 1.0, 2.0],
+            &[("x", &[1.0, 1.0, -3.0])],
+        );
+        assert_eq!(r, -1.0);
+    }
+
+    #[test]
+    fn dense_agrees_with_samples_when_the_window_lands_on_them() {
+        let r = dense_at_start(
+            "always[0, 2](x > 0)",
+            &[0.0, 1.0, 2.0],
+            &[("x", &[10.0, 5.0, 1.0])],
+        );
+        assert_eq!(r, 1.0);
+    }
+
+    #[test]
+    fn equality_predicate_finds_the_crossing() {
+        let r = dense_at_start(
+            "eventually[0, 2](x == 0)",
+            &[0.0, 2.0],
+            &[("x", &[1.0, -1.0])],
+        );
+        assert_eq!(r, 0.0);
+    }
+
+    #[test]
+    fn nonlinear_predicate_is_rejected() {
+        let phi = Formula::parse("always[0, 1](x * y > 0)").unwrap();
+        let map: BTreeMap<String, Vec<f64>> =
+            [("x".to_string(), vec![1.0]), ("y".to_string(), vec![1.0])]
+                .into_iter()
+                .collect();
+        assert!(matches!(
+            robustness_signal(&phi, &[0.0], &map),
+            Err(Error::Unsupported { .. })
+        ));
+    }
+
+    proptest! {
+        #[test]
+        fn dense_matches_discrete_on_aligned_windows(
+            values in prop::collection::vec(-20.0f64..20.0, 1..30),
+        ) {
+            let times: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
+            let map: BTreeMap<String, Vec<f64>> =
+                [("x".to_string(), values.clone())].into_iter().collect();
+            for formula in [
+                "always[0, 3](x > 0)",
+                "eventually[0, 2](x > 5)",
+                "historically[0, 2](x > -5)",
+            ] {
+                let phi = Formula::parse(formula).unwrap();
+                let dense = robustness_signal(&phi, &times, &map).unwrap();
+                let discrete = super::super::discrete::robustness_trace(&phi, &times, &map).unwrap();
+                for (i, &t) in times.iter().enumerate() {
+                    prop_assert_eq!(dense.at(t), discrete[i], "{} at t={}", formula, t);
+                }
+            }
+        }
+    }
+}
