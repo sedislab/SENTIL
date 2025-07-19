@@ -1,5 +1,6 @@
 //! Robustness semantics: turning a formula and a signal trace into a margin.
 
+mod dense;
 mod discrete;
 mod eval;
 mod robustness;
@@ -42,6 +43,19 @@ impl Formula {
         }
         let values = discrete::robustness_trace(self, trace.times(), trace.signals())?;
         Ok(values[0])
+    }
+
+    /// The robustness over a trace read as a continuous, piecewise-linear signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyTrace`] for an empty trace and
+    /// [`Error::UnknownVariable`] for a missing signal.
+    pub fn robustness_dense(&self, trace: &Trace) -> Result<f64> {
+        if trace.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        dense::robustness_eager(self, trace)
     }
 }
 
