@@ -56,7 +56,8 @@ impl Formula {
         if trace.is_empty() {
             return Err(Error::EmptyTrace);
         }
-        dense::robustness_eager(self, trace)
+        let signal = dense::robustness_signal(self, trace.times(), trace.signals())?;
+        Ok(signal.at(trace.times()[0]))
     }
 }
 

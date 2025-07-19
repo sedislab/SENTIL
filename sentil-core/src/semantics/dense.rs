@@ -1,61 +1,73 @@
-//! Dense-time robustness over continuous signals.
+//! Dense-time robustness over piecewise-linear signals.
 //!
-//! Signals are read as continuous between their samples. This first version
-//! resamples each signal onto a fine uniform grid and runs the discrete
-//! evaluator over it, trading exactness for the grid step.
+//! The trace's samples are read as a continuous signal, linear between points.
+//! Each subformula becomes a [`Pwl`] robustness signal, and the answer at any
+//! time is read off that. Dense and discrete agree at the samples; they part
+//! when a temporal window's edge, or an equality predicate's zero, falls between
+//! samples, which dense captures exactly.
+//!
+//! Predicates must be linear in the signals. A linear term stays linear between
+//! samples, so sampling it and joining the points reproduces it exactly; a
+//! nonlinear term would curve between samples, so it is rejected rather than
+//! silently approximated.
 
 use std::collections::BTreeMap;
 
-use super::discrete::robustness_trace;
-use crate::error::Result;
-use crate::formula::Formula;
-use crate::signal::Trace;
+use super::eval::eval_expr;
+use super::pwl::{combine, crossing, window, Pwl};
+use crate::error::{Error, Result};
+use crate::formula::{BinaryOp, ComparisonOp, Expr, Formula, Predicate};
 
-/// How many grid points to place between two original samples.
-const SUBDIVISIONS: usize = 16;
-
-/// The dense robustness at the trace start, via a resampled grid.
-pub(crate) fn robustness_eager(formula: &Formula, trace: &Trace) -> Result<f64> {
-    let (times, signals) = resample(trace.times(), trace.signals());
-    let values = robustness_trace(formula, &times, &signals)?;
-    Ok(values[0])
-}
-
-/// Linearly interpolates every signal onto a uniform grid.
-fn resample(
+pub(crate) fn robustness_signal(
+    formula: &Formula,
     times: &[f64],
     signals: &BTreeMap<String, Vec<f64>>,
-) -> (Vec<f64>, BTreeMap<String, Vec<f64>>) {
-    if times.len() < 2 {
-        return (times.to_vec(), signals.clone());
-    }
-    let mut grid = Vec::new();
-    for pair in times.windows(2) {
-        let (a, b) = (pair[0], pair[1]);
-        for k in 0..SUBDIVISIONS {
-            grid.push(a + (b - a) * (k as f64) / (SUBDIVISIONS as f64));
-        }
-    }
-    grid.push(times[times.len() - 1]);
-    let resampled = signals
-        .iter()
-        .map(|(name, values)| {
-            let column = grid.iter().map(|&t| interpolate(times, values, t)).collect();
-            (name.clone(), column)
-        })
-        .collect();
-    (grid, resampled)
-}
-
-fn interpolate(times: &[f64], values: &[f64], t: f64) -> f64 {
-    match times.binary_search_by(|x| x.partial_cmp(&t).unwrap()) {
-        Ok(i) => values[i],
-        Err(0) => values[0],
-        Err(i) if i >= times.len() => values[values.len() - 1],
-        Err(i) => {
-            let (t0, t1) = (times[i - 1], times[i]);
-            let (v0, v1) = (values[i - 1], values[i]);
-            v0 + (v1 - v0) * (t - t0) / (t1 - t0)
-        }
+) -> Result<Pwl> {
+    match formula {
+        Formula::Predicate(p) => predicate(p, times, signals),
+        Formula::Not(f) => Ok(robustness_signal(f, times, signals)?.negate()),
+        Formula::And(l, r) => Ok(combine(
+            &robustness_signal(l, times, signals)?,
+            &robustness_signal(r, times, signals)?,
+            f64::min,
+        )),
+        Formula::Or(l, r) => Ok(combine(
+            &robustness_signal(l, times, signals)?,
+            &robustness_signal(r, times, signals)?,
+            f64::max,
+        )),
+        Formula::Implies(l, r) => Ok(combine(
+            &robustness_signal(l, times, signals)?.negate(),
+            &robustness_signal(r, times, signals)?,
+            f64::max,
+        )),
+        Formula::Always(interval, f) => Ok(window(
+            &robustness_signal(f, times, signals)?,
+            interval.lower,
+            interval.upper_or_infinity(),
+            true,
+        )),
+        Formula::Eventually(interval, f) => Ok(window(
+            &robustness_signal(f, times, signals)?,
+            interval.lower,
+            interval.upper_or_infinity(),
+            false,
+        )),
+        Formula::Historically(interval, f) => Ok(window(
+            &robustness_signal(f, times, signals)?,
+            -interval.upper_or_infinity(),
+            -interval.lower,
+            true,
+        )),
+        Formula::Once(interval, f) => Ok(window(
+            &robustness_signal(f, times, signals)?,
+            -interval.upper_or_infinity(),
+            -interval.lower,
+            false,
+        )),
+        Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
+        _ => Err(Error::Unsupported {
+            feature: "the until, since, and next operators in dense time (added next)",
+        }),
     }
 }
