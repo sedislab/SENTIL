@@ -60,3 +60,102 @@ impl Pwl {
         acc
     }
 }
+
+/// Combines two signals pointwise with `op`, inserting the times where they
+/// cross so the result stays exact between the inputs' breakpoints.
+pub(crate) fn combine(a: &Pwl, b: &Pwl, op: fn(f64, f64) -> f64) -> Pwl {
+    let mut times: Vec<f64> = a.times().chain(b.times()).collect();
+    times.sort_by(f64::total_cmp);
+    times.dedup();
+
+    let mut crossings = Vec::new();
+    for pair in times.windows(2) {
+        let (t0, t1) = (pair[0], pair[1]);
+        let d0 = a.at(t0) - b.at(t0);
+        let d1 = a.at(t1) - b.at(t1);
+        if d0 != 0.0 && d1 != 0.0 && (d0 < 0.0) != (d1 < 0.0) {
+            let crossing = t0 + (t1 - t0) * d0 / (d0 - d1);
+            if crossing > t0 && crossing < t1 {
+                crossings.push(crossing);
+            }
+        }
+    }
+    times.extend(crossings);
+    times.sort_by(f64::total_cmp);
+    times.dedup();
+
+    Pwl::new(
+        times
+            .into_iter()
+            .map(|t| (t, op(a.at(t), b.at(t))))
+            .collect(),
+    )
+}
+
+/// The sliding-window extremum of `child`, where the window at query time `t`
+/// is `[t + off_a, t + off_b]`. Future operators pass `(a, b)`; past operators
+/// pass `(-b, -a)`. An infinite offset opens that side of the window.
+pub(crate) fn window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl {
+    let (lo_t, hi_t) = child.domain();
+    let mut queries = vec![lo_t, hi_t];
+    for s in child.times() {
+        for offset in [off_a, off_b] {
+            if offset.is_finite() {
+                let q = s - offset;
+                if q >= lo_t && q <= hi_t {
+                    queries.push(q);
+                }
+            }
+        }
+    }
+    queries.sort_by(f64::total_cmp);
+    queries.dedup();
+
+    Pwl::new(
+        queries
+            .into_iter()
+            .map(|t| (t, child.extremum_over(t + off_a, t + off_b, take_min)))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::float_cmp, reason = "these piecewise-linear values are exact")]
+
+    use super::*;
+
+    #[test]
+    fn interpolates_between_breakpoints_and_holds_outside() {
+        let p = Pwl::new(vec![(0.0, 0.0), (2.0, 4.0)]);
+        assert_eq!(p.at(-1.0), 0.0);
+        assert_eq!(p.at(1.0), 2.0);
+        assert_eq!(p.at(2.0), 4.0);
+        assert_eq!(p.at(5.0), 4.0);
+    }
+
+    #[test]
+    fn pointwise_minimum_inserts_the_crossing() {
+        let rising = Pwl::new(vec![(0.0, -1.0), (2.0, 1.0)]);
+        let falling = Pwl::new(vec![(0.0, 1.0), (2.0, -1.0)]);
+        let lower = combine(&rising, &falling, f64::min);
+        assert_eq!(lower.at(1.0), 0.0);
+        assert_eq!(lower.at(0.0), -1.0);
+        assert_eq!(lower.at(2.0), -1.0);
+    }
+
+    #[test]
+    fn window_minimum_sees_a_sub_sample_dip_at_the_edge() {
+        let x = Pwl::new(vec![(0.0, 1.0), (1.0, 1.0), (2.0, -3.0)]);
+        let always = window(&x, 0.0, 1.5, true);
+        assert_eq!(always.at(0.0), -1.0);
+    }
+
+    #[test]
+    fn unbounded_window_takes_the_suffix_extremum() {
+        let x = Pwl::new(vec![(0.0, 3.0), (1.0, -2.0), (2.0, 5.0)]);
+        let eventually = window(&x, 0.0, f64::INFINITY, false);
+        assert_eq!(eventually.at(0.0), 5.0);
+        assert_eq!(eventually.at(1.5), 5.0);
+    }
+}
