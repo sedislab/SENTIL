@@ -3,6 +3,7 @@
 mod dense;
 mod discrete;
 mod eval;
+mod pwl;
 mod robustness;
 mod stream;
 mod window;
