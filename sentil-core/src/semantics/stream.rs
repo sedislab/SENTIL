@@ -916,4 +916,78 @@ mod tests {
     }
 
     #[test]
+    fn historically_streams_the_running_minimum() {
+        let times = [0.0, 1.0, 2.0, 3.0, 4.0];
+        let x = [2.0, -1.0, 3.0, 5.0, 1.0];
+        assert_eq!(
+            stream_values("historically[0, 2](x > 0)", &times, &[("x", &x)]),
+            offline_values("historically[0, 2](x > 0)", &times, &[("x", &x)])
+        );
+    }
+
+    #[test]
+    fn once_and_since_stream_like_offline() {
+        let times = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let x = [-3.0, 1.0, 8.0, -2.0, 4.0, 0.5];
+        let y = [-1.0, -1.0, 2.0, -1.0, -1.0, 3.0];
+        assert_eq!(
+            stream_values("once[0, 3](x > 5)", &times, &[("x", &x)]),
+            offline_values("once[0, 3](x > 5)", &times, &[("x", &x)])
+        );
+        assert_eq!(
+            stream_values("x > 0 since y > 0", &times, &[("x", &x), ("y", &y)]),
+            offline_values("x > 0 since y > 0", &times, &[("x", &x), ("y", &y)])
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn past_operators_stream_exactly_like_offline(
+            values in prop::collection::vec(-20.0f64..20.0, 1..40),
+        ) {
+            let times: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
+            for formula in [
+                "historically[0, 3](x > 0)",
+                "once[1, 4](x > 5)",
+                "historically[0, 1](x > -10)",
+            ] {
+                let online = stream_values(formula, &times, &[("x", &values)]);
+                let offline = offline_values(formula, &times, &[("x", &values)]);
+                prop_assert_eq!(online, offline, "mismatch for {}", formula);
+            }
+        }
+
+        #[test]
+        fn future_operators_resolve_to_offline(
+            xs in prop::collection::vec(-20.0f64..20.0, 1..40),
+            ys in prop::collection::vec(-20.0f64..20.0, 1..40),
+        ) {
+            let n = xs.len().min(ys.len());
+            let times: Vec<f64> = (0..n).map(|i| i as f64).collect();
+            let x = &xs[..n];
+            let y = &ys[..n];
+            for (formula, delay, signals) in [
+                ("always[0, 3](x > 0)", 3usize, &[("x", x)][..]),
+                ("eventually[1, 4](x > 5)", 4, &[("x", x)][..]),
+                ("next(x > 0)", 1, &[("x", x)][..]),
+                ("x > 0 until[0, 3] y > 0", 3, &[("x", x), ("y", y)][..]),
+            ] {
+                let offline = offline_values(formula, &times, signals);
+                let mut monitor = StreamMonitor::new(formula).unwrap();
+                let slots: Vec<usize> =
+                    signals.iter().map(|(s, _)| monitor.symbol_index(s).unwrap()).collect();
+                let mut packed = vec![0.0; monitor.variable_count()];
+                for (i, &t) in times.iter().enumerate() {
+                    for (s, (_, vals)) in signals.iter().enumerate() {
+                        packed[slots[s]] = vals[i];
+                    }
+                    let robustness = monitor.update_dense(t, &packed).unwrap();
+                    if i >= delay {
+                        prop_assert_eq!(robustness.lower(), robustness.upper(), "{} unresolved at {}", formula, i);
+                        prop_assert_eq!(robustness.value(), offline[i - delay], "{} at {}", formula, i);
+                    }
+                }
+            }
+        }
+    }
 }
