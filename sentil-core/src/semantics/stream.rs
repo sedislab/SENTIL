@@ -703,3 +703,58 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
         Formula::Predicate(_) => atomic_node(formula, &symbols.names),
     }
 }
+
+/// Whether a future-time operator appears anywhere in the subtree.
+fn contains_future(formula: &Formula) -> bool {
+    match formula {
+        Formula::Always(..) | Formula::Eventually(..) | Formula::Until(..) | Formula::Next(..) => {
+            true
+        }
+        Formula::Predicate(_) => false,
+        Formula::Not(g)
+        | Formula::Historically(_, g)
+        | Formula::Once(_, g)
+        | Formula::Probabilistic(_, _, g) => contains_future(g),
+        Formula::And(l, r)
+        | Formula::Or(l, r)
+        | Formula::Implies(l, r)
+        | Formula::Since(_, l, r) => contains_future(l) || contains_future(r),
+    }
+}
+
+/// Rejects compositions the online monitor cannot evaluate: a future-time
+/// operator inside a past-time operator or inside the operand of until, since,
+/// or next, where only present data is available.
+fn validate_streaming(formula: &Formula) -> Result<()> {
+    let present = |f: &Formula| -> Result<()> {
+        if contains_future(f) {
+            Err(Error::Unsupported {
+                feature: "a future-time operator nested inside a past-time operator or the \
+                          operand of until, since, or next; evaluate this formula offline instead",
+            })
+        } else {
+            Ok(())
+        }
+    };
+    match formula {
+        Formula::Predicate(_) => Ok(()),
+        Formula::Not(g) | Formula::Always(_, g) | Formula::Eventually(_, g) => {
+            validate_streaming(g)
+        }
+        Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
+            validate_streaming(l)?;
+            validate_streaming(r)
+        }
+        Formula::Historically(_, g) | Formula::Once(_, g) | Formula::Next(g) => {
+            present(g)?;
+            validate_streaming(g)
+        }
+        Formula::Until(_, l, r) | Formula::Since(_, l, r) => {
+            present(l)?;
+            present(r)?;
+            validate_streaming(l)?;
+            validate_streaming(r)
+        }
+        Formula::Probabilistic(_, _, g) => validate_streaming(g),
+    }
+}
