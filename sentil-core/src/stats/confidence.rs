@@ -121,3 +121,52 @@ fn normal_quantile(p: f64) -> f64 {
             / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "the clamped bounds 0.0 and 1.0 are produced exactly"
+    )]
+
+    use super::*;
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-5
+    }
+
+    #[test]
+    fn z_scores_match_the_standard_values() {
+        assert!(close(z_score(0.90), 1.644_854));
+        assert!(close(z_score(0.95), 1.959_964));
+        assert!(close(z_score(0.99), 2.575_829));
+    }
+
+    #[test]
+    fn wilson_matches_known_intervals() {
+        let half = wilson_interval(50, 100, 0.95);
+        assert!(close(half.lower, 0.403_831) && close(half.upper, 0.596_169));
+
+        let rare = wilson_interval(5, 100, 0.95);
+        assert!(close(rare.lower, 0.021_544) && close(rare.upper, 0.111_750));
+    }
+
+    #[test]
+    fn wilson_stays_in_range_at_the_extremes() {
+        let none = wilson_interval(0, 100, 0.95);
+        assert_eq!(none.lower, 0.0);
+        assert!(none.upper > 0.0 && none.upper < 0.05);
+
+        let all = wilson_interval(100, 100, 0.95);
+        assert_eq!(all.upper, 1.0);
+        assert!(all.lower > 0.95 && all.lower < 1.0);
+    }
+
+    #[test]
+    fn no_trials_gives_the_whole_range() {
+        let ci = wilson_interval(0, 0, 0.95);
+        assert_eq!((ci.lower, ci.upper), (0.0, 1.0));
+        assert!(ci.contains(0.5));
+        assert!(close(ci.width(), 1.0));
+    }
+}
