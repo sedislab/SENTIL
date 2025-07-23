@@ -37,6 +37,8 @@ enum Kind {
     Uniform { low: f64, high: f64 },
     LogNormal { mu: f64, sigma: f64 },
     Exponential { lambda: f64 },
+    Gamma { shape: f64, scale: f64 },
+    Beta { alpha: f64, beta: f64 },
 }
 
 impl NoiseModel {
@@ -127,6 +129,56 @@ impl NoiseModel {
         })
     }
 
+    /// A gamma distribution with the given `shape` and `scale`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite or not positive.
+    pub fn gamma(shape: f64, scale: f64) -> Result<Self> {
+        finite("Gamma", "shape", shape)?;
+        finite("Gamma", "scale", scale)?;
+        if shape <= 0.0 {
+            return Err(invalid(
+                "Gamma",
+                format!("shape must be positive, got {shape}"),
+            ));
+        }
+        if scale <= 0.0 {
+            return Err(invalid(
+                "Gamma",
+                format!("scale must be positive, got {scale}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::Gamma { shape, scale },
+        })
+    }
+
+    /// A beta distribution over `[0, 1]` with shape parameters `alpha` and `beta`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite or not positive.
+    pub fn beta(alpha: f64, beta: f64) -> Result<Self> {
+        finite("Beta", "alpha", alpha)?;
+        finite("Beta", "beta", beta)?;
+        if alpha <= 0.0 {
+            return Err(invalid(
+                "Beta",
+                format!("alpha must be positive, got {alpha}"),
+            ));
+        }
+        if beta <= 0.0 {
+            return Err(invalid(
+                "Beta",
+                format!("beta must be positive, got {beta}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::Beta { alpha, beta },
+        })
+    }
+
     /// Draws one value from the distribution.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         match self.kind {
@@ -141,6 +193,42 @@ impl NoiseModel {
                 (mu + sigma * z).exp()
             }
             Kind::Exponential { lambda } => -(1.0 - rng.random::<f64>()).ln() / lambda,
+            Kind::Gamma { shape, scale } => sample_gamma(rng, shape, scale),
+            Kind::Beta { alpha, beta } => {
+                let x = sample_gamma(rng, alpha, 1.0);
+                let y = sample_gamma(rng, beta, 1.0);
+                if x + y > 0.0 {
+                    x / (x + y)
+                } else {
+                    0.5
+                }
+            }
+        }
+    }
+}
+
+/// A gamma variate by Marsaglia and Tsang's method.
+#[allow(
+    clippy::many_single_char_names,
+    reason = "d, c, z, v, u are the variable names from Marsaglia and Tsang's paper"
+)]
+fn sample_gamma<R: Rng + ?Sized>(rng: &mut R, shape: f64, scale: f64) -> f64 {
+    if shape < 1.0 {
+        let u: f64 = rng.random();
+        return sample_gamma(rng, shape + 1.0, scale) * u.powf(1.0 / shape);
+    }
+    let d = shape - 1.0 / 3.0;
+    let c = 1.0 / (9.0 * d).sqrt();
+    loop {
+        let z: f64 = rng.sample(StandardNormal);
+        let v = (1.0 + c * z).powi(3);
+        if v <= 0.0 {
+            continue;
+        }
+        let u: f64 = rng.random();
+        let z2 = z * z;
+        if u < 1.0 - 0.0331 * z2 * z2 || u.ln() < 0.5 * z2 + d * (1.0 - v + v.ln()) {
+            return d * v * scale;
         }
     }
 }
@@ -218,6 +306,37 @@ mod tests {
         assert!((sum / f64::from(n) - 0.25).abs() < 0.01);
     }
 
+    fn mean_of(model: &NoiseModel, seed: u64, n: u32) -> f64 {
+        let mut rng = StdRng::seed_from_u64(seed);
+        (0..n).map(|_| model.sample(&mut rng)).sum::<f64>() / f64::from(n)
+    }
+
+    #[test]
+    fn gamma_is_positive_with_the_right_mean() {
+        let model = NoiseModel::gamma(2.0, 1.5).unwrap();
+        let mut rng = StdRng::seed_from_u64(7);
+        for _ in 0..1000 {
+            assert!(model.sample(&mut rng) > 0.0);
+        }
+        assert!((mean_of(&model, 7, 200_000) - 3.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn gamma_with_small_shape_uses_the_boost_path() {
+        let model = NoiseModel::gamma(0.4, 2.0).unwrap();
+        assert!((mean_of(&model, 8, 300_000) - 0.8).abs() < 0.05);
+    }
+
+    #[test]
+    fn beta_stays_in_the_unit_interval_with_the_right_mean() {
+        let model = NoiseModel::beta(2.0, 3.0).unwrap();
+        let mut rng = StdRng::seed_from_u64(9);
+        for _ in 0..1000 {
+            assert!((0.0..=1.0).contains(&model.sample(&mut rng)));
+        }
+        assert!((mean_of(&model, 9, 200_000) - 0.4).abs() < 0.01);
+    }
+
     #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
@@ -248,6 +367,9 @@ mod tests {
         assert!(NoiseModel::log_normal(0.0, -1.0).is_err());
         assert!(NoiseModel::exponential(0.0).is_err());
         assert!(NoiseModel::exponential(-2.0).is_err());
+        assert!(NoiseModel::gamma(0.0, 1.0).is_err());
+        assert!(NoiseModel::gamma(1.0, -1.0).is_err());
+        assert!(NoiseModel::beta(-1.0, 1.0).is_err());
     }
 
     #[test]
