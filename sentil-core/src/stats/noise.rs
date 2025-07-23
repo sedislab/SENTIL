@@ -32,18 +32,97 @@ pub struct NoiseModel {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Kind {
-    Dirac { value: f64 },
-    Gaussian { mean: f64, std_dev: f64 },
-    Uniform { low: f64, high: f64 },
-    LogNormal { mu: f64, sigma: f64 },
-    Exponential { lambda: f64 },
-    Gamma { shape: f64, scale: f64 },
-    Beta { alpha: f64, beta: f64 },
-    Weibull { shape: f64, scale: f64 },
-    Rayleigh { scale: f64 },
-    Gumbel { location: f64, scale: f64 },
-    Cauchy { location: f64, scale: f64 },
-    StudentT { df: f64, location: f64, scale: f64 },
+    Dirac {
+        value: f64,
+    },
+    Gaussian {
+        mean: f64,
+        std_dev: f64,
+    },
+    Uniform {
+        low: f64,
+        high: f64,
+    },
+    LogNormal {
+        mu: f64,
+        sigma: f64,
+    },
+    Exponential {
+        lambda: f64,
+    },
+    Gamma {
+        shape: f64,
+        scale: f64,
+    },
+    Beta {
+        alpha: f64,
+        beta: f64,
+    },
+    Weibull {
+        shape: f64,
+        scale: f64,
+    },
+    Rayleigh {
+        scale: f64,
+    },
+    Gumbel {
+        location: f64,
+        scale: f64,
+    },
+    Cauchy {
+        location: f64,
+        scale: f64,
+    },
+    StudentT {
+        df: f64,
+        location: f64,
+        scale: f64,
+    },
+    TruncatedNormal {
+        mean: f64,
+        std_dev: f64,
+        lower: f64,
+        upper: f64,
+    },
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct RawNoiseModel {
+    kind: Kind,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<RawNoiseModel> for NoiseModel {
+    type Error = String;
+
+    fn try_from(raw: RawNoiseModel) -> core::result::Result<Self, Self::Error> {
+        let model = match raw.kind {
+            Kind::Dirac { value } => Self::dirac(value),
+            Kind::Gaussian { mean, std_dev } => Self::gaussian(mean, std_dev),
+            Kind::Uniform { low, high } => Self::uniform(low, high),
+            Kind::LogNormal { mu, sigma } => Self::log_normal(mu, sigma),
+            Kind::Exponential { lambda } => Self::exponential(lambda),
+            Kind::Gamma { shape, scale } => Self::gamma(shape, scale),
+            Kind::Beta { alpha, beta } => Self::beta(alpha, beta),
+            Kind::Weibull { shape, scale } => Self::weibull(shape, scale),
+            Kind::Rayleigh { scale } => Self::rayleigh(scale),
+            Kind::Gumbel { location, scale } => Self::gumbel(location, scale),
+            Kind::Cauchy { location, scale } => Self::cauchy(location, scale),
+            Kind::StudentT { df, location, scale } => Self::student_t(df, location, scale),
+            Kind::TruncatedNormal {
+                mean,
+                std_dev,
+                lower,
+                upper,
+            } => Self::truncated_normal(mean, std_dev, lower, upper),
+            Kind::Poisson { lambda } => Self::poisson(lambda),
+            Kind::Binomial { n, p } => Self::binomial(n, p),
+            Kind::Bootstrap { residuals } => Self::bootstrap(residuals),
+            Kind::Mixture { weights, components, .. } => Self::mixture(weights, components),
+        };
+        model.map_err(|e| e.to_string())
+    }
 }
 
 impl NoiseModel {
@@ -253,6 +332,32 @@ impl NoiseModel {
         })
     }
 
+    /// A Gaussian truncated to `[lower, upper]`, drawn by rejection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite, the standard deviation is not positive, or `lower` is not strictly below `upper`.
+    pub fn truncated_normal(mean: f64, std_dev: f64, lower: f64, upper: f64) -> Result<Self> {
+        finite("TruncatedNormal", "mean", mean)?;
+        positive("TruncatedNormal", "standard deviation", std_dev)?;
+        finite("TruncatedNormal", "lower bound", lower)?;
+        finite("TruncatedNormal", "upper bound", upper)?;
+        if lower >= upper {
+            return Err(invalid(
+                "TruncatedNormal",
+                format!("lower bound {lower} must be strictly below upper bound {upper}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::TruncatedNormal {
+                mean,
+                std_dev,
+                lower,
+                upper,
+            },
+        })
+    }
+
     /// Draws one value from the distribution.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         match self.kind {
@@ -298,6 +403,26 @@ impl NoiseModel {
                 let chi2 = sample_gamma(rng, df / 2.0, 2.0);
                 let denom = (chi2 / df).sqrt().max(f64::MIN_POSITIVE);
                 location + scale * z / denom
+            }
+            // Rejection: redraw a Gaussian until it lands inside the bounds. The
+            // cap stops a pathological far-tail interval from looping; it then
+            // falls back to the clamped mean.
+            Kind::TruncatedNormal {
+                mean,
+                std_dev,
+                lower,
+                upper,
+            } => {
+                let mut out = mean.clamp(lower, upper);
+                for _ in 0..256 {
+                    let z: f64 = rng.sample(StandardNormal);
+                    let x = mean + std_dev * z;
+                    if (lower..=upper).contains(&x) {
+                        out = x;
+                        break;
+                    }
+                }
+                out
             }
         }
     }
@@ -488,6 +613,17 @@ mod tests {
     }
 
     #[test]
+    fn truncated_normal_respects_its_bounds() {
+        let model = NoiseModel::truncated_normal(0.0, 1.0, -1.0, 1.5).unwrap();
+        let mut rng = StdRng::seed_from_u64(15);
+        for _ in 0..5000 {
+            assert!((-1.0..=1.5).contains(&model.sample(&mut rng)));
+        }
+        let symmetric = NoiseModel::truncated_normal(0.0, 1.0, -2.0, 2.0).unwrap();
+        assert!(mean_of(&symmetric, 16, 200_000).abs() < 0.02);
+    }
+
+    #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
         let mut a = StdRng::seed_from_u64(42);
@@ -525,6 +661,8 @@ mod tests {
         assert!(NoiseModel::gumbel(f64::NAN, 1.0).is_err());
         assert!(NoiseModel::cauchy(0.0, -1.0).is_err());
         assert!(NoiseModel::student_t(0.0, 0.0, 1.0).is_err());
+        assert!(NoiseModel::truncated_normal(0.0, 1.0, 2.0, 2.0).is_err());
+        assert!(NoiseModel::truncated_normal(0.0, -1.0, -1.0, 1.0).is_err());
     }
 
     #[test]
