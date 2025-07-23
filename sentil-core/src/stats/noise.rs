@@ -42,6 +42,8 @@ enum Kind {
     Weibull { shape: f64, scale: f64 },
     Rayleigh { scale: f64 },
     Gumbel { location: f64, scale: f64 },
+    Cauchy { location: f64, scale: f64 },
+    StudentT { df: f64, location: f64, scale: f64 },
 }
 
 impl NoiseModel {
@@ -220,6 +222,37 @@ impl NoiseModel {
         })
     }
 
+    /// A Cauchy distribution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite or `scale` is not positive.
+    pub fn cauchy(location: f64, scale: f64) -> Result<Self> {
+        finite("Cauchy", "location", location)?;
+        positive("Cauchy", "scale", scale)?;
+        Ok(Self {
+            kind: Kind::Cauchy { location, scale },
+        })
+    }
+
+    /// A Student's t distribution, shifted by `location` and scaled by `scale`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite, or `df` or `scale` is not positive.
+    pub fn student_t(df: f64, location: f64, scale: f64) -> Result<Self> {
+        positive("StudentT", "degrees of freedom", df)?;
+        finite("StudentT", "location", location)?;
+        positive("StudentT", "scale", scale)?;
+        Ok(Self {
+            kind: Kind::StudentT {
+                df,
+                location,
+                scale,
+            },
+        })
+    }
+
     /// Draws one value from the distribution.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         match self.kind {
@@ -251,6 +284,20 @@ impl NoiseModel {
             Kind::Gumbel { location, scale } => {
                 let u = rng.random::<f64>().max(f64::MIN_POSITIVE);
                 location - scale * (-u.ln()).ln()
+            }
+            Kind::Cauchy { location, scale } => {
+                let u: f64 = rng.random();
+                location + scale * (std::f64::consts::PI * (u - 0.5)).tan()
+            }
+            Kind::StudentT {
+                df,
+                location,
+                scale,
+            } => {
+                let z: f64 = rng.sample(StandardNormal);
+                let chi2 = sample_gamma(rng, df / 2.0, 2.0);
+                let denom = (chi2 / df).sqrt().max(f64::MIN_POSITIVE);
+                location + scale * z / denom
             }
         }
     }
@@ -421,6 +468,26 @@ mod tests {
     }
 
     #[test]
+    fn cauchy_is_centered_at_its_location() {
+        let model = NoiseModel::cauchy(3.0, 2.0).unwrap();
+        let mut rng = StdRng::seed_from_u64(13);
+        let n = 200_000u32;
+        let mut below = 0u32;
+        for _ in 0..n {
+            if model.sample(&mut rng) < 3.0 {
+                below += 1;
+            }
+        }
+        assert!((f64::from(below) / f64::from(n) - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn student_t_mean_approaches_its_location() {
+        let model = NoiseModel::student_t(10.0, 2.0, 1.0).unwrap();
+        assert!((mean_of(&model, 14, 200_000) - 2.0).abs() < 0.05);
+    }
+
+    #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
         let mut a = StdRng::seed_from_u64(42);
@@ -456,6 +523,8 @@ mod tests {
         assert!(NoiseModel::weibull(1.0, 0.0).is_err());
         assert!(NoiseModel::rayleigh(-1.0).is_err());
         assert!(NoiseModel::gumbel(f64::NAN, 1.0).is_err());
+        assert!(NoiseModel::cauchy(0.0, -1.0).is_err());
+        assert!(NoiseModel::student_t(0.0, 0.0, 1.0).is_err());
     }
 
     #[test]
