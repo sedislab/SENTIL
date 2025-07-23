@@ -32,10 +32,12 @@ default = ["statistical"]
 
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.
-statistical = []
+statistical = ["dep:rand", "dep:rand_distr"]
 
 [dependencies]
 thiserror = { workspace = true }
+rand = { workspace = true, optional = true }
+rand_distr = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
