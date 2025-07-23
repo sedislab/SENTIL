@@ -35,6 +35,8 @@ enum Kind {
     Dirac { value: f64 },
     Gaussian { mean: f64, std_dev: f64 },
     Uniform { low: f64, high: f64 },
+    LogNormal { mu: f64, sigma: f64 },
+    Exponential { lambda: f64 },
 }
 
 impl NoiseModel {
@@ -88,6 +90,43 @@ impl NoiseModel {
         })
     }
 
+    /// A log-normal distribution with log-mean `mu` and log-standard-deviation `sigma`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite or `sigma` is negative.
+    pub fn log_normal(mu: f64, sigma: f64) -> Result<Self> {
+        finite("LogNormal", "log-mean", mu)?;
+        finite("LogNormal", "log-standard-deviation", sigma)?;
+        if sigma < 0.0 {
+            return Err(invalid(
+                "LogNormal",
+                format!("log-standard-deviation must be non-negative, got {sigma}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::LogNormal { mu, sigma },
+        })
+    }
+
+    /// An exponential distribution with rate `lambda`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lambda` is not finite or not positive.
+    pub fn exponential(lambda: f64) -> Result<Self> {
+        finite("Exponential", "rate", lambda)?;
+        if lambda <= 0.0 {
+            return Err(invalid(
+                "Exponential",
+                format!("rate must be positive, got {lambda}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::Exponential { lambda },
+        })
+    }
+
     /// Draws one value from the distribution.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         match self.kind {
@@ -97,6 +136,11 @@ impl NoiseModel {
                 mean + std_dev * z
             }
             Kind::Uniform { low, high } => low + (high - low) * rng.random::<f64>(),
+            Kind::LogNormal { mu, sigma } => {
+                let z: f64 = rng.sample(StandardNormal);
+                (mu + sigma * z).exp()
+            }
+            Kind::Exponential { lambda } => -(1.0 - rng.random::<f64>()).ln() / lambda,
         }
     }
 }
@@ -154,6 +198,27 @@ mod tests {
     }
 
     #[test]
+    fn zero_sigma_log_normal_is_a_point_mass() {
+        let mut rng = StdRng::seed_from_u64(4);
+        let model = NoiseModel::log_normal(1.5, 0.0).unwrap();
+        assert_eq!(model.sample(&mut rng), 1.5_f64.exp());
+    }
+
+    #[test]
+    fn exponential_is_positive_with_the_right_mean() {
+        let mut rng = StdRng::seed_from_u64(5);
+        let model = NoiseModel::exponential(4.0).unwrap();
+        let n = 200_000u32;
+        let mut sum = 0.0;
+        for _ in 0..n {
+            let x = model.sample(&mut rng);
+            assert!(x > 0.0);
+            sum += x;
+        }
+        assert!((sum / f64::from(n) - 0.25).abs() < 0.01);
+    }
+
+    #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
         let mut a = StdRng::seed_from_u64(42);
@@ -180,6 +245,9 @@ mod tests {
             })
         ));
         assert!(NoiseModel::dirac(f64::NAN).is_err());
+        assert!(NoiseModel::log_normal(0.0, -1.0).is_err());
+        assert!(NoiseModel::exponential(0.0).is_err());
+        assert!(NoiseModel::exponential(-2.0).is_err());
     }
 
     #[test]
