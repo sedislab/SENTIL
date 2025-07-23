@@ -101,6 +101,11 @@ pub enum Error {
         /// What was wrong with the parameters.
         reason: String,
     },
+
+    /// Statistical checking was asked to run on a formula not wrapped in the
+    /// probabilistic operator.
+    #[error("statistical checking needs a formula wrapped in the probabilistic operator `P`")]
+    NotProbabilistic,
 }
 
 /// A formula failed to parse.
