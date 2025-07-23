@@ -91,6 +91,13 @@ enum Kind {
         n: u64,
         p: f64,
     },
+    Bootstrap {
+        residuals: Vec<f64>,
+    },
+    Mixture {
+        weights: Vec<f64>,
+        components: Vec<NoiseModel>,
+    },
 }
 
 #[cfg(feature = "serde")]
@@ -401,10 +408,85 @@ impl NoiseModel {
         })
     }
 
+    /// An empirical distribution that resamples observed `residuals` with replacement.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `residuals` is empty or holds a non-finite value.
+    pub fn bootstrap(residuals: impl Into<Vec<f64>>) -> Result<Self> {
+        let residuals = residuals.into();
+        if residuals.is_empty() {
+            return Err(invalid(
+                "Bootstrap",
+                "residuals must be non-empty".to_owned(),
+            ));
+        }
+        if let Some(bad) = residuals.iter().find(|v| !v.is_finite()) {
+            return Err(invalid(
+                "Bootstrap",
+                format!("every residual must be finite, found {bad}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::Bootstrap { residuals },
+        })
+    }
+
+    /// A mixture that draws a component in proportion to its `weight`, then draws from that component.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are no components, the lengths disagree, a weight is negative or not finite, or the weights sum to zero.
+    pub fn mixture(weights: impl Into<Vec<f64>>, components: Vec<NoiseModel>) -> Result<Self> {
+        let weights = weights.into();
+        if components.is_empty() {
+            return Err(invalid(
+                "Mixture",
+                "a mixture needs at least one component".to_owned(),
+            ));
+        }
+        if weights.len() != components.len() {
+            return Err(invalid(
+                "Mixture",
+                format!(
+                    "weights length ({}) must equal components length ({})",
+                    weights.len(),
+                    components.len()
+                ),
+            ));
+        }
+        let mut total = 0.0;
+        for (i, &w) in weights.iter().enumerate() {
+            if !w.is_finite() || w < 0.0 {
+                return Err(invalid(
+                    "Mixture",
+                    format!("weight at index {i} must be finite and non-negative, got {w}"),
+                ));
+            }
+            total += w;
+        }
+        if total <= 0.0 {
+            return Err(invalid(
+                "Mixture",
+                "weights must sum to a positive value".to_owned(),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::Mixture {
+                weights,
+                components,
+            },
+        })
+    }
+
     /// Draws one value from the distribution.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "a flat dispatch with one arm per distribution reads better than fragmenting it"
+    )]
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
-        match self.kind {
-            Kind::Dirac { value } => value,
+        match &self.kind {
+            Kind::Dirac { value } => *value,
             Kind::Gaussian { mean, std_dev } => {
                 let z: f64 = rng.sample(StandardNormal);
                 mean + std_dev * z
@@ -415,10 +497,10 @@ impl NoiseModel {
                 (mu + sigma * z).exp()
             }
             Kind::Exponential { lambda } => -(1.0 - rng.random::<f64>()).ln() / lambda,
-            Kind::Gamma { shape, scale } => sample_gamma(rng, shape, scale),
+            Kind::Gamma { shape, scale } => sample_gamma(rng, *shape, *scale),
             Kind::Beta { alpha, beta } => {
-                let x = sample_gamma(rng, alpha, 1.0);
-                let y = sample_gamma(rng, beta, 1.0);
+                let x = sample_gamma(rng, *alpha, 1.0);
+                let y = sample_gamma(rng, *beta, 1.0);
                 if x + y > 0.0 {
                     x / (x + y)
                 } else {
@@ -456,11 +538,11 @@ impl NoiseModel {
                 lower,
                 upper,
             } => {
-                let mut out = mean.clamp(lower, upper);
+                let mut out = mean.clamp(*lower, *upper);
                 for _ in 0..256 {
                     let z: f64 = rng.sample(StandardNormal);
                     let x = mean + std_dev * z;
-                    if (lower..=upper).contains(&x) {
+                    if (*lower..=*upper).contains(&x) {
                         out = x;
                         break;
                     }
@@ -470,7 +552,7 @@ impl NoiseModel {
             // Knuth's method for a modest rate; for a large rate the Poisson is
             // close to a Gaussian, which avoids a long inner loop.
             Kind::Poisson { lambda } => {
-                if lambda < 30.0 {
+                if *lambda < 30.0 {
                     let threshold = (-lambda).exp();
                     let mut k = 0.0;
                     let mut product = 1.0;
@@ -491,12 +573,29 @@ impl NoiseModel {
             // counts noise models use.
             Kind::Binomial { n, p } => {
                 let mut count = 0.0;
-                for _ in 0..n {
-                    if rng.random::<f64>() < p {
+                for _ in 0..*n {
+                    if rng.random::<f64>() < *p {
                         count += 1.0;
                     }
                 }
                 count
+            }
+            Kind::Bootstrap { residuals } => residuals[rng.random_range(0..residuals.len())],
+            Kind::Mixture {
+                weights,
+                components,
+            } => {
+                let total: f64 = weights.iter().sum();
+                let mut threshold = rng.random::<f64>() * total;
+                let mut chosen = &components[components.len() - 1];
+                for (w, component) in weights.iter().zip(components) {
+                    threshold -= w;
+                    if threshold <= 0.0 {
+                        chosen = component;
+                        break;
+                    }
+                }
+                chosen.sample(rng)
             }
         }
     }
@@ -716,6 +815,39 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_only_returns_observed_values() {
+        let model = NoiseModel::bootstrap(vec![1.0, 2.0, 9.0]).unwrap();
+        let mut rng = StdRng::seed_from_u64(20);
+        for _ in 0..2000 {
+            let x = model.sample(&mut rng);
+            assert!(x == 1.0 || x == 2.0 || x == 9.0);
+        }
+    }
+
+    #[test]
+    fn mixture_picks_components_by_weight() {
+        let model = NoiseModel::mixture(
+            vec![1.0, 3.0],
+            vec![
+                NoiseModel::dirac(0.0).unwrap(),
+                NoiseModel::dirac(10.0).unwrap(),
+            ],
+        )
+        .unwrap();
+        let mut rng = StdRng::seed_from_u64(21);
+        let n = 200_000u32;
+        let mut tens = 0u32;
+        for _ in 0..n {
+            let x = model.sample(&mut rng);
+            assert!(x == 0.0 || x == 10.0);
+            if x == 10.0 {
+                tens += 1;
+            }
+        }
+        assert!((f64::from(tens) / f64::from(n) - 0.75).abs() < 0.01);
+    }
+
+    #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
         let mut a = StdRng::seed_from_u64(42);
@@ -758,6 +890,11 @@ mod tests {
         assert!(NoiseModel::poisson(0.0).is_err());
         assert!(NoiseModel::binomial(0, 0.5).is_err());
         assert!(NoiseModel::binomial(10, 1.5).is_err());
+        assert!(NoiseModel::bootstrap(Vec::new()).is_err());
+        assert!(NoiseModel::bootstrap(vec![1.0, f64::NAN]).is_err());
+        let one = vec![NoiseModel::dirac(0.0).unwrap()];
+        assert!(NoiseModel::mixture(vec![1.0, 2.0], one).is_err());
+        assert!(NoiseModel::mixture(Vec::new(), Vec::new()).is_err());
     }
 
     #[test]
