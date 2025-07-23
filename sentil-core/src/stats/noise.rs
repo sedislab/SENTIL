@@ -84,6 +84,13 @@ enum Kind {
         lower: f64,
         upper: f64,
     },
+    Poisson {
+        lambda: f64,
+    },
+    Binomial {
+        n: u64,
+        p: f64,
+    },
 }
 
 #[cfg(feature = "serde")]
@@ -358,6 +365,42 @@ impl NoiseModel {
         })
     }
 
+    /// A Poisson distribution of counts with rate `lambda`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lambda` is not finite or not positive.
+    pub fn poisson(lambda: f64) -> Result<Self> {
+        positive("Poisson", "rate", lambda)?;
+        Ok(Self {
+            kind: Kind::Poisson { lambda },
+        })
+    }
+
+    /// The count of successes in `n` trials with success probability `p`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `n` is zero or `p` is not finite or outside `[0, 1]`.
+    pub fn binomial(n: u64, p: f64) -> Result<Self> {
+        if n == 0 {
+            return Err(invalid(
+                "Binomial",
+                "number of trials must be positive".to_owned(),
+            ));
+        }
+        finite("Binomial", "success probability", p)?;
+        if !(0.0..=1.0).contains(&p) {
+            return Err(invalid(
+                "Binomial",
+                format!("success probability must be in [0, 1], got {p}"),
+            ));
+        }
+        Ok(Self {
+            kind: Kind::Binomial { n, p },
+        })
+    }
+
     /// Draws one value from the distribution.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         match self.kind {
@@ -423,6 +466,37 @@ impl NoiseModel {
                     }
                 }
                 out
+            }
+            // Knuth's method for a modest rate; for a large rate the Poisson is
+            // close to a Gaussian, which avoids a long inner loop.
+            Kind::Poisson { lambda } => {
+                if lambda < 30.0 {
+                    let threshold = (-lambda).exp();
+                    let mut k = 0.0;
+                    let mut product = 1.0;
+                    loop {
+                        k += 1.0;
+                        product *= rng.random::<f64>();
+                        if product <= threshold {
+                            break;
+                        }
+                    }
+                    k - 1.0
+                } else {
+                    let z: f64 = rng.sample(StandardNormal);
+                    (lambda + lambda.sqrt() * z).round().max(0.0)
+                }
+            }
+            // Counting Bernoulli trials is exact and cheap for the small trial
+            // counts noise models use.
+            Kind::Binomial { n, p } => {
+                let mut count = 0.0;
+                for _ in 0..n {
+                    if rng.random::<f64>() < p {
+                        count += 1.0;
+                    }
+                }
+                count
             }
         }
     }
@@ -624,6 +698,24 @@ mod tests {
     }
 
     #[test]
+    fn poisson_counts_have_the_right_mean() {
+        let small = NoiseModel::poisson(3.5).unwrap();
+        assert!((mean_of(&small, 17, 200_000) - 3.5).abs() < 0.05);
+        let large = NoiseModel::poisson(50.0).unwrap();
+        assert!((mean_of(&large, 18, 200_000) - 50.0).abs() < 0.3);
+    }
+
+    #[test]
+    fn binomial_counts_have_the_right_mean() {
+        let model = NoiseModel::binomial(20, 0.3).unwrap();
+        let mut rng = StdRng::seed_from_u64(19);
+        for _ in 0..1000 {
+            assert!((0.0..=20.0).contains(&model.sample(&mut rng)));
+        }
+        assert!((mean_of(&model, 19, 200_000) - 6.0).abs() < 0.05);
+    }
+
+    #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
         let mut a = StdRng::seed_from_u64(42);
@@ -663,6 +755,9 @@ mod tests {
         assert!(NoiseModel::student_t(0.0, 0.0, 1.0).is_err());
         assert!(NoiseModel::truncated_normal(0.0, 1.0, 2.0, 2.0).is_err());
         assert!(NoiseModel::truncated_normal(0.0, -1.0, -1.0, 1.0).is_err());
+        assert!(NoiseModel::poisson(0.0).is_err());
+        assert!(NoiseModel::binomial(0, 0.5).is_err());
+        assert!(NoiseModel::binomial(10, 1.5).is_err());
     }
 
     #[test]
