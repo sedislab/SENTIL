@@ -28,7 +28,7 @@ pub struct SmcConfig {
 impl Default for SmcConfig {
     fn default() -> Self {
         Self {
-            samples: 1_000,
+            samples: 10_000,
             confidence: 0.95,
             seed: 42,
         }
