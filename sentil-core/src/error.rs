@@ -106,6 +106,17 @@ pub enum Error {
     /// probabilistic operator.
     #[error("statistical checking needs a formula wrapped in the probabilistic operator `P`")]
     NotProbabilistic,
+
+    /// A trace could not be read from a file or other source.
+    #[error("could not read trace: {message}")]
+    Ingest {
+        /// The source path, when the data came from a file.
+        path: Option<String>,
+        /// The 1-based row where reading failed, when known.
+        row: Option<usize>,
+        /// What went wrong.
+        message: String,
+    },
 }
 
 /// A formula failed to parse.

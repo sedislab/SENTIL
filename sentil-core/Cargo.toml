@@ -28,17 +28,21 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["statistical"]
+default = ["statistical", "ingest"]
 
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.
 statistical = ["dep:rand", "dep:rand_distr", "dep:rand_chacha"]
+# Reading traces from files. CSV and TSV need only this; the columnar and
+# database formats add their own features on top.
+ingest = ["dep:csv"]
 
 [dependencies]
 thiserror = { workspace = true }
 rand = { workspace = true, optional = true }
 rand_distr = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
