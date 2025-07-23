@@ -362,6 +362,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "rand",
+ "rand_chacha",
  "rand_distr",
  "thiserror",
 ]
