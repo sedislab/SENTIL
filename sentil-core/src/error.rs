@@ -92,6 +92,15 @@ pub enum Error {
         /// What is not supported.
         feature: &'static str,
     },
+
+    /// A noise model was given parameters outside its valid range.
+    #[error("invalid {model} noise model: {reason}")]
+    InvalidNoiseModel {
+        /// The distribution family, for example `Gaussian`.
+        model: &'static str,
+        /// What was wrong with the parameters.
+        reason: String,
+    },
 }
 
 /// A formula failed to parse.
