@@ -80,3 +80,66 @@ impl LiftingRegistry {
         Ok(noisy)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "Dirac noise gives exact, predictable shifts"
+    )]
+
+    use super::*;
+
+    fn base() -> Trace {
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", [10.0, 20.0, 30.0]).unwrap();
+        trace.add_signal("y", [1.0, 2.0, 3.0]).unwrap();
+        trace
+    }
+
+    #[test]
+    fn additive_dirac_shifts_only_the_registered_signal() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::dirac(5.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let noisy = lifting.lift(&base(), 1).unwrap();
+        assert_eq!(noisy.signals()["x"], vec![15.0, 25.0, 35.0]);
+        assert_eq!(noisy.signals()["y"], vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn multiplicative_dirac_scales_the_signal() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::dirac(2.0).unwrap(),
+            NoiseInteraction::Multiplicative,
+        );
+        let noisy = lifting.lift(&base(), 1).unwrap();
+        assert_eq!(noisy.signals()["x"], vec![20.0, 40.0, 60.0]);
+    }
+
+    #[test]
+    fn lifting_is_reproducible_from_a_seed() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let first = lifting.lift(&base(), 99).unwrap();
+        let second = lifting.lift(&base(), 99).unwrap();
+        assert_eq!(first.signals()["x"], second.signals()["x"]);
+    }
+
+    #[test]
+    fn an_empty_registry_is_the_identity() {
+        let lifting = LiftingRegistry::new();
+        assert!(lifting.is_empty());
+        let noisy = lifting.lift(&base(), 1).unwrap();
+        assert_eq!(noisy.signals()["x"], vec![10.0, 20.0, 30.0]);
+    }
+}
