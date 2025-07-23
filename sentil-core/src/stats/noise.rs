@@ -39,6 +39,9 @@ enum Kind {
     Exponential { lambda: f64 },
     Gamma { shape: f64, scale: f64 },
     Beta { alpha: f64, beta: f64 },
+    Weibull { shape: f64, scale: f64 },
+    Rayleigh { scale: f64 },
+    Gumbel { location: f64, scale: f64 },
 }
 
 impl NoiseModel {
@@ -179,6 +182,44 @@ impl NoiseModel {
         })
     }
 
+    /// A Weibull distribution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite or not positive.
+    pub fn weibull(shape: f64, scale: f64) -> Result<Self> {
+        positive("Weibull", "shape", shape)?;
+        positive("Weibull", "scale", scale)?;
+        Ok(Self {
+            kind: Kind::Weibull { shape, scale },
+        })
+    }
+
+    /// A Rayleigh distribution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `scale` is not finite or not positive.
+    pub fn rayleigh(scale: f64) -> Result<Self> {
+        positive("Rayleigh", "scale", scale)?;
+        Ok(Self {
+            kind: Kind::Rayleigh { scale },
+        })
+    }
+
+    /// A Gumbel (maximum) distribution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a parameter is not finite or `scale` is not positive.
+    pub fn gumbel(location: f64, scale: f64) -> Result<Self> {
+        finite("Gumbel", "location", location)?;
+        positive("Gumbel", "scale", scale)?;
+        Ok(Self {
+            kind: Kind::Gumbel { location, scale },
+        })
+    }
+
     /// Draws one value from the distribution.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         match self.kind {
@@ -203,8 +244,27 @@ impl NoiseModel {
                     0.5
                 }
             }
+            Kind::Weibull { shape, scale } => {
+                scale * (-(1.0 - rng.random::<f64>()).ln()).powf(1.0 / shape)
+            }
+            Kind::Rayleigh { scale } => scale * (-2.0 * (1.0 - rng.random::<f64>()).ln()).sqrt(),
+            Kind::Gumbel { location, scale } => {
+                let u = rng.random::<f64>().max(f64::MIN_POSITIVE);
+                location - scale * (-u.ln()).ln()
+            }
         }
     }
+}
+
+fn positive(model: &'static str, name: &str, value: f64) -> Result<()> {
+    finite(model, name, value)?;
+    if value <= 0.0 {
+        return Err(invalid(
+            model,
+            format!("{name} must be positive, got {value}"),
+        ));
+    }
+    Ok(())
 }
 
 /// A gamma variate by Marsaglia and Tsang's method.
@@ -338,6 +398,29 @@ mod tests {
     }
 
     #[test]
+    fn weibull_with_unit_shape_is_exponential() {
+        let model = NoiseModel::weibull(1.0, 2.0).unwrap();
+        let mut rng = StdRng::seed_from_u64(10);
+        for _ in 0..1000 {
+            assert!(model.sample(&mut rng) >= 0.0);
+        }
+        assert!((mean_of(&model, 10, 200_000) - 2.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn rayleigh_has_the_right_mean() {
+        let model = NoiseModel::rayleigh(2.0).unwrap();
+        let expected = 2.0 * (std::f64::consts::FRAC_PI_2).sqrt();
+        assert!((mean_of(&model, 11, 200_000) - expected).abs() < 0.05);
+    }
+
+    #[test]
+    fn gumbel_has_the_right_mean() {
+        let model = NoiseModel::gumbel(0.0, 1.0).unwrap();
+        assert!((mean_of(&model, 12, 200_000) - 0.577_215_664_9).abs() < 0.05);
+    }
+
+    #[test]
     fn sampling_is_reproducible_from_a_seed() {
         let model = NoiseModel::gaussian(0.0, 1.0).unwrap();
         let mut a = StdRng::seed_from_u64(42);
@@ -370,6 +453,9 @@ mod tests {
         assert!(NoiseModel::gamma(0.0, 1.0).is_err());
         assert!(NoiseModel::gamma(1.0, -1.0).is_err());
         assert!(NoiseModel::beta(-1.0, 1.0).is_err());
+        assert!(NoiseModel::weibull(1.0, 0.0).is_err());
+        assert!(NoiseModel::rayleigh(-1.0).is_err());
+        assert!(NoiseModel::gumbel(f64::NAN, 1.0).is_err());
     }
 
     #[test]
