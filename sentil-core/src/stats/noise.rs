@@ -87,4 +87,31 @@ impl NoiseModel {
             kind: Kind::Uniform { low, high },
         })
     }
+
+    /// Draws one value from the distribution.
+    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+        match self.kind {
+            Kind::Dirac { value } => value,
+            Kind::Gaussian { mean, std_dev } => {
+                let z: f64 = rng.sample(StandardNormal);
+                mean + std_dev * z
+            }
+            Kind::Uniform { low, high } => low + (high - low) * rng.random::<f64>(),
+        }
+    }
+}
+
+fn finite(model: &'static str, name: &str, value: f64) -> Result<()> {
+    if value.is_finite() {
+        Ok(())
+    } else {
+        Err(invalid(
+            model,
+            format!("{name} must be finite, got {value}"),
+        ))
+    }
+}
+
+fn invalid(model: &'static str, reason: String) -> Error {
+    Error::InvalidNoiseModel { model, reason }
 }
