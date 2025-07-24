@@ -555,19 +555,21 @@ impl StreamMonitor {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::UnknownVariable`] if `values` is shorter than the number
-    /// of variables the formula needs.
-    pub fn update_dense(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
+    /// Returns [`Error::PackedLength`] if `values` is shorter than the number of
+    /// variables the formula needs, [`Error::NonFiniteSample`] if `time` is not
+    /// finite, or [`Error::NonMonotonicTime`] if it does not follow the previous step.
+    pub fn update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
         if values.len() < self.symbols.len() {
-            return Err(Error::UnknownVariable {
-                name: self.symbols.names[values.len()].clone(),
+            return Err(Error::PackedLength {
+                expected: self.symbols.len(),
+                found: values.len(),
             });
         }
         self.root.update(time, values)
     }
 
     /// The packed-slice index of a variable, for use with
-    /// [`StreamMonitor::update_dense`].
+    /// [`StreamMonitor::update_packed`].
     pub fn symbol_index(&self, name: &str) -> Option<usize> {
         self.symbols.index(name)
     }
@@ -800,7 +802,7 @@ mod tests {
         let mut packed = vec![0.0; monitor.variable_count()];
         packed[xi] = 3.0;
         packed[yi] = 7.0;
-        assert_eq!(monitor.update_dense(0.0, &packed).unwrap().value(), 3.0);
+        assert_eq!(monitor.update_packed(0.0, &packed).unwrap().value(), 3.0);
     }
 
     #[test]
@@ -857,7 +859,7 @@ mod tests {
             for (s, (_, values)) in signals.iter().enumerate() {
                 packed[slots[s]] = values[i];
             }
-            let robustness = monitor.update_dense(t, &packed).unwrap();
+            let robustness = monitor.update_packed(t, &packed).unwrap();
             if i >= delay {
                 assert!(
                     robustness.lower() == robustness.upper(),
@@ -901,7 +903,7 @@ mod tests {
             for (s, (_, values)) in signals.iter().enumerate() {
                 packed[slots[s]] = values[i];
             }
-            out.push(monitor.update_dense(t, &packed).unwrap().value());
+            out.push(monitor.update_packed(t, &packed).unwrap().value());
         }
         out
     }
@@ -981,7 +983,7 @@ mod tests {
                     for (s, (_, vals)) in signals.iter().enumerate() {
                         packed[slots[s]] = vals[i];
                     }
-                    let robustness = monitor.update_dense(t, &packed).unwrap();
+                    let robustness = monitor.update_packed(t, &packed).unwrap();
                     if i >= delay {
                         prop_assert_eq!(robustness.lower(), robustness.upper(), "{} unresolved at {}", formula, i);
                         prop_assert_eq!(robustness.value(), offline[i - delay], "{} at {}", formula, i);

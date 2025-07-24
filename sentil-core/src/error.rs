@@ -79,6 +79,15 @@ pub enum Error {
     #[error("cannot evaluate robustness over an empty trace")]
     EmptyTrace,
 
+    /// A packed streaming update carried fewer values than the formula needs.
+    #[error("the packed update slice has {found} values but the formula needs {expected}")]
+    PackedLength {
+        /// The number of variables the formula references.
+        expected: usize,
+        /// The number of values supplied.
+        found: usize,
+    },
+
     /// A probabilistic operator reached deterministic evaluation.
     #[error(
         "the probabilistic operator `P` needs statistical evaluation; \
