@@ -122,6 +122,22 @@ mod tests {
     }
 
     #[test]
+    fn boundary_robustness_counts_as_satisfied() {
+        let phi = Formula::parse("P>=0.5(x >= 0)").unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::dirac(0.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let result = phi
+            .check(&trace(&[0.0]), &lifting, &SmcConfig::default())
+            .unwrap();
+        assert_eq!(result.probability, 1.0);
+        assert!(result.holds);
+    }
+
+    #[test]
     fn a_non_probabilistic_formula_is_rejected() {
         let phi = Formula::parse("x > 0").unwrap();
         assert!(matches!(

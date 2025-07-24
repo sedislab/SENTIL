@@ -62,7 +62,9 @@ pub(crate) fn check(
     for i in 0..config.samples {
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
         let noisy = lifting.lift_with(trace, &mut rng)?;
-        if inner.robustness(&noisy)? > 0.0 {
+        // A robustness of exactly zero counts as satisfied, matching
+        // `Robustness::is_satisfied`, so the boundary is treated consistently.
+        if inner.robustness(&noisy)? >= 0.0 {
             satisfactions += 1;
         }
     }
