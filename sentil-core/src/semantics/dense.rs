@@ -67,7 +67,7 @@ pub(crate) fn robustness_signal(
         )),
         Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
         _ => Err(Error::Unsupported {
-            feature: "the until, since, and next operators in dense time (added next)",
+            feature: "until, since, and next in dense time; use discrete robustness for those",
         }),
     }
 }
