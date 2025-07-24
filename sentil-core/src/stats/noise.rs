@@ -661,6 +661,131 @@ impl NoiseModel {
         }
         Self::bootstrap(reservoir)
     }
+
+    /// Fits a Gaussian mixture of `components` modes by expectation-maximization,
+    /// capped at `max_iters` iterations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Fit`] if `components` is zero, there are fewer samples than components, or a sample is not finite.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "sample and component counts are exact in f64"
+    )]
+    #[allow(
+        clippy::many_single_char_names,
+        reason = "i, j, and x are the standard EM index and sample names"
+    )]
+    pub fn fit_gaussian_mixture(
+        samples: &[f64],
+        components: usize,
+        max_iters: usize,
+    ) -> Result<Self> {
+        if components == 0 {
+            return Err(fit_error(
+                "Gaussian mixture",
+                "need at least one component".to_owned(),
+            ));
+        }
+        if samples.len() < components {
+            return Err(fit_error(
+                "Gaussian mixture",
+                format!(
+                    "need at least {components} samples for {components} components, got {}",
+                    samples.len()
+                ),
+            ));
+        }
+        check_finite("Gaussian mixture", samples)?;
+
+        let mut sorted = samples.to_vec();
+        sorted.sort_by(f64::total_cmp);
+        let chunk = sorted.len() / components;
+        let bounds = |i: usize| {
+            let start = i * chunk;
+            let end = if i == components - 1 {
+                sorted.len()
+            } else {
+                (i + 1) * chunk
+            };
+            (start, end)
+        };
+        let mut means: Vec<f64> = (0..components)
+            .map(|i| {
+                let (s, e) = bounds(i);
+                sorted[s..e].iter().sum::<f64>() / (e - s) as f64
+            })
+            .collect();
+        let mut variances: Vec<f64> = (0..components)
+            .map(|i| {
+                let (s, e) = bounds(i);
+                let m = means[i];
+                (sorted[s..e].iter().map(|x| (x - m).powi(2)).sum::<f64>() / (e - s) as f64)
+                    .max(1e-6)
+            })
+            .collect();
+        let mut weights = vec![1.0 / components as f64; components];
+
+        for _ in 0..max_iters {
+            let mut responsibility = vec![vec![0.0; components]; samples.len()];
+            for (i, &x) in samples.iter().enumerate() {
+                let log_resp: Vec<f64> = (0..components)
+                    .map(|j| weights[j].ln() + log_gaussian_pdf(x, means[j], variances[j].sqrt()))
+                    .collect();
+                let max_log = log_resp.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                if max_log.is_finite() {
+                    let log_sum: f64 = log_resp.iter().map(|&lr| (lr - max_log).exp()).sum();
+                    let log_norm = max_log + log_sum.ln();
+                    for j in 0..components {
+                        responsibility[i][j] = (log_resp[j] - log_norm).exp();
+                    }
+                } else {
+                    responsibility[i].fill(1.0 / components as f64);
+                }
+            }
+
+            let mut shift: f64 = 0.0;
+            for j in 0..components {
+                let total: f64 = responsibility.iter().map(|r| r[j]).sum();
+                if total < 1e-9 {
+                    continue;
+                }
+                let mean = samples
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| responsibility[i][j] * x)
+                    .sum::<f64>()
+                    / total;
+                let variance = samples
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| responsibility[i][j] * (x - mean).powi(2))
+                    .sum::<f64>()
+                    / total;
+                shift = shift
+                    .max((mean - means[j]).abs())
+                    .max((variance - variances[j]).abs());
+                weights[j] = total / samples.len() as f64;
+                means[j] = mean;
+                variances[j] = variance.max(1e-6);
+            }
+            if shift < 1e-6 {
+                break;
+            }
+        }
+
+        let parts = means
+            .iter()
+            .zip(&variances)
+            .map(|(&m, &v)| Self::gaussian(m, v.sqrt()))
+            .collect::<Result<Vec<_>>>()?;
+        Self::mixture(weights, parts)
+    }
+}
+
+fn log_gaussian_pdf(x: f64, mean: f64, std_dev: f64) -> f64 {
+    let z = (x - mean) / std_dev;
+    -0.5 * z * z - std_dev.ln() - 0.5 * (2.0 * std::f64::consts::PI).ln()
 }
 
 fn positive(model: &'static str, name: &str, value: f64) -> Result<()> {
@@ -965,6 +1090,34 @@ mod tests {
         assert!(NoiseModel::fit_bootstrap(&[]).is_err());
         assert!(NoiseModel::fit_bootstrap_reservoir(&[], 10).is_err());
         assert!(NoiseModel::fit_bootstrap_reservoir(&[1.0], 0).is_err());
+        assert!(NoiseModel::fit_gaussian_mixture(&[1.0], 2, 50).is_err());
+        assert!(NoiseModel::fit_gaussian_mixture(&[1.0, 2.0], 0, 50).is_err());
+        assert!(NoiseModel::fit_gaussian_mixture(&[1.0, f64::NAN], 1, 50).is_err());
+    }
+
+    #[test]
+    fn fit_gaussian_mixture_recovers_two_modes() {
+        let low = NoiseModel::gaussian(-5.0, 1.0).unwrap();
+        let high = NoiseModel::gaussian(5.0, 1.0).unwrap();
+        let mut rng = StdRng::seed_from_u64(40);
+        let mut data: Vec<f64> = (0..25_000).map(|_| low.sample(&mut rng)).collect();
+        data.extend((0..25_000).map(|_| high.sample(&mut rng)));
+        let fitted = NoiseModel::fit_gaussian_mixture(&data, 2, 100).unwrap();
+
+        let mut rng = StdRng::seed_from_u64(41);
+        let n = 200_000u32;
+        let (mut sum, mut near_low, mut near_high) = (0.0, 0u32, 0u32);
+        for _ in 0..n {
+            let x = fitted.sample(&mut rng);
+            sum += x;
+            if x < -2.0 {
+                near_low += 1;
+            } else if x > 2.0 {
+                near_high += 1;
+            }
+        }
+        assert!((sum / f64::from(n)).abs() < 0.2);
+        assert!(near_low > n / 3 && near_high > n / 3);
     }
 
     #[test]
