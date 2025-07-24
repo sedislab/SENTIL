@@ -1,6 +1,7 @@
 //! Noise models for stochastic signal lifting.
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use rand_distr::StandardNormal;
 
 use crate::error::{Error, Result};
@@ -599,6 +600,67 @@ impl NoiseModel {
             }
         }
     }
+
+    /// Fits a Gaussian to sample residuals by maximum likelihood.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Fit`] if there are fewer than two samples or a sample is not finite.
+    #[allow(clippy::cast_precision_loss, reason = "sample counts are exact in f64")]
+    pub fn fit_gaussian(samples: &[f64]) -> Result<Self> {
+        if samples.len() < 2 {
+            return Err(fit_error(
+                "Gaussian MLE",
+                format!("need at least 2 samples, got {}", samples.len()),
+            ));
+        }
+        check_finite("Gaussian MLE", samples)?;
+        let n = samples.len() as f64;
+        let mean = samples.iter().sum::<f64>() / n;
+        let variance = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        Self::gaussian(mean, variance.sqrt())
+    }
+
+    /// Builds a bootstrap model that resamples the given residuals directly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `samples` is empty or holds a non-finite value.
+    pub fn fit_bootstrap(samples: &[f64]) -> Result<Self> {
+        Self::bootstrap(samples.to_vec())
+    }
+
+    /// Builds a bootstrap model from at most `max_samples` residuals, thinned by reservoir sampling.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Fit`] if `samples` is empty or `max_samples` is zero.
+    pub fn fit_bootstrap_reservoir(samples: &[f64], max_samples: usize) -> Result<Self> {
+        if samples.is_empty() {
+            return Err(fit_error(
+                "bootstrap reservoir",
+                "need at least one sample".to_owned(),
+            ));
+        }
+        if max_samples == 0 {
+            return Err(fit_error(
+                "bootstrap reservoir",
+                "max_samples must be positive".to_owned(),
+            ));
+        }
+        if samples.len() <= max_samples {
+            return Self::bootstrap(samples.to_vec());
+        }
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut reservoir = samples[..max_samples].to_vec();
+        for (i, &value) in samples.iter().enumerate().skip(max_samples) {
+            let j = rng.random_range(0..=i);
+            if j < max_samples {
+                reservoir[j] = value;
+            }
+        }
+        Self::bootstrap(reservoir)
+    }
 }
 
 fn positive(model: &'static str, name: &str, value: f64) -> Result<()> {
@@ -651,6 +713,20 @@ fn finite(model: &'static str, name: &str, value: f64) -> Result<()> {
 
 fn invalid(model: &'static str, reason: String) -> Error {
     Error::InvalidNoiseModel { model, reason }
+}
+
+fn fit_error(method: &'static str, message: String) -> Error {
+    Error::Fit { method, message }
+}
+
+fn check_finite(method: &'static str, samples: &[f64]) -> Result<()> {
+    if let Some(pos) = samples.iter().position(|v| !v.is_finite()) {
+        return Err(fit_error(
+            method,
+            format!("sample {pos} is not finite: {}", samples[pos]),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -845,6 +921,50 @@ mod tests {
             }
         }
         assert!((f64::from(tens) / f64::from(n) - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn fit_gaussian_recovers_the_mean() {
+        let source = NoiseModel::gaussian(5.0, 2.0).unwrap();
+        let mut rng = StdRng::seed_from_u64(30);
+        let data: Vec<f64> = (0..50_000).map(|_| source.sample(&mut rng)).collect();
+        let fitted = NoiseModel::fit_gaussian(&data).unwrap();
+        assert!((mean_of(&fitted, 31, 200_000) - 5.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn fit_bootstrap_only_returns_observed_values() {
+        let model = NoiseModel::fit_bootstrap(&[2.0, 4.0, 8.0]).unwrap();
+        let mut rng = StdRng::seed_from_u64(32);
+        for _ in 0..1000 {
+            let x = model.sample(&mut rng);
+            assert!(x == 2.0 || x == 4.0 || x == 8.0);
+        }
+    }
+
+    #[test]
+    fn fit_bootstrap_reservoir_thins_and_is_reproducible() {
+        let data: Vec<f64> = (0..1000).map(f64::from).collect();
+        let a = NoiseModel::fit_bootstrap_reservoir(&data, 100).unwrap();
+        let b = NoiseModel::fit_bootstrap_reservoir(&data, 100).unwrap();
+        assert_eq!(a, b);
+        let mut rng = StdRng::seed_from_u64(33);
+        for _ in 0..1000 {
+            let x = a.sample(&mut rng);
+            assert!((0.0..=999.0).contains(&x) && x.fract() == 0.0);
+        }
+    }
+
+    #[test]
+    fn fitters_reject_bad_input() {
+        assert!(matches!(
+            NoiseModel::fit_gaussian(&[1.0]),
+            Err(Error::Fit { .. })
+        ));
+        assert!(NoiseModel::fit_gaussian(&[1.0, f64::NAN, 3.0]).is_err());
+        assert!(NoiseModel::fit_bootstrap(&[]).is_err());
+        assert!(NoiseModel::fit_bootstrap_reservoir(&[], 10).is_err());
+        assert!(NoiseModel::fit_bootstrap_reservoir(&[1.0], 0).is_err());
     }
 
     #[test]

@@ -117,6 +117,15 @@ pub enum Error {
         /// What went wrong.
         message: String,
     },
+
+    /// Fitting a noise model to sample data failed.
+    #[error("could not fit a {method} model: {message}")]
+    Fit {
+        /// The fitting method, for example `Gaussian MLE`.
+        method: &'static str,
+        /// What went wrong.
+        message: String,
+    },
 }
 
 /// A formula failed to parse.
