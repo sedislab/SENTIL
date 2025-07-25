@@ -52,6 +52,30 @@ impl Trace {
         })
     }
 
+    /// Builds a trace with a single signal in one step.
+    ///
+    /// ```
+    /// use sentil::Trace;
+    ///
+    /// let trace = Trace::from_signal([0.0, 1.0, 2.0], "x", [10.0, 5.0, 1.0])?;
+    /// assert_eq!(trace.variables(), vec!["x"]);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the times are not finite or strictly increasing, or
+    /// if the signal's length does not match the number of time points.
+    pub fn from_signal(
+        times: impl Into<Vec<f64>>,
+        name: &str,
+        values: impl Into<Vec<f64>>,
+    ) -> Result<Self> {
+        let mut trace = Self::new(times)?;
+        trace.add_signal(name, values)?;
+        Ok(trace)
+    }
+
     /// Builds an empty trace with unit-spaced integer times `0, 1, ..., len - 1`.
     pub fn indexed(len: usize) -> Self {
         #[allow(
