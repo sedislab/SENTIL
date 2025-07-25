@@ -36,3 +36,7 @@ pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
 pub use semantics::{Robustness, StreamMonitor};
 pub use signal::Trace;
+#[cfg(feature = "statistical")]
+pub use stats::{
+    ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, SmcResult,
+};
