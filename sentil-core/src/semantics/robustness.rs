@@ -17,10 +17,28 @@ impl Robustness {
 
     /// A single representative value: the margin itself when concrete, or the
     /// midpoint of the interval otherwise.
+    ///
+    /// While streaming, a temporal formula can return an unresolved
+    /// [`Interval`](Self::Interval), and its midpoint is only provisional (it can
+    /// even be infinite). Use [`concrete`](Self::concrete) when you need the
+    /// settled answer rather than a representative one.
     pub fn value(&self) -> f64 {
         match *self {
             Robustness::Concrete(r) => r,
             Robustness::Interval(lower, upper) => f64::midpoint(lower, upper),
+        }
+    }
+
+    /// Whether the verdict has settled to a single value.
+    pub fn is_resolved(&self) -> bool {
+        matches!(self, Robustness::Concrete(_))
+    }
+
+    /// The settled margin, or `None` while the verdict is still an interval.
+    pub fn concrete(&self) -> Option<f64> {
+        match *self {
+            Robustness::Concrete(r) => Some(r),
+            Robustness::Interval(..) => None,
         }
     }
 
@@ -41,7 +59,10 @@ impl Robustness {
     /// Whether the property is satisfied, using the representative value.
     ///
     /// A robustness of exactly zero counts as satisfied, matching the convention
-    /// that a predicate holds on its boundary.
+    /// that a predicate holds on its boundary. On an unresolved
+    /// [`Interval`](Self::Interval) this decides from the midpoint and is
+    /// therefore provisional; check [`is_resolved`](Self::is_resolved) first if a
+    /// final verdict is required.
     pub fn is_satisfied(&self) -> bool {
         self.value() >= 0.0
     }
@@ -96,6 +117,17 @@ mod tests {
     )]
 
     use super::*;
+
+    #[test]
+    fn concrete_settles_only_when_resolved() {
+        let settled = Robustness::Concrete(2.0);
+        assert!(settled.is_resolved());
+        assert_eq!(settled.concrete(), Some(2.0));
+
+        let pending = Robustness::Interval(-1.0, 3.0);
+        assert!(!pending.is_resolved());
+        assert_eq!(pending.concrete(), None);
+    }
 
     #[test]
     fn conjunction_takes_the_minimum_and_disjunction_the_maximum() {
