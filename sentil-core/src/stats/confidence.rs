@@ -5,6 +5,8 @@
     reason = "sample counts are far below 2^53, so the count-to-float casts are exact"
 )]
 
+use crate::error::{Error, Result};
+
 /// An interval that contains the true probability at the stated confidence.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConfidenceInterval {
@@ -62,6 +64,46 @@ pub fn wilson_interval(successes: u64, trials: u64, level: f64) -> ConfidenceInt
 #[must_use]
 pub fn z_score(level: f64) -> f64 {
     normal_quantile(0.5 * (1.0 + level))
+}
+
+/// How many samples a fixed-sample estimate needs to land within `epsilon` of the
+/// true probability with confidence `1 - delta`, by the Chernoff-Hoeffding bound
+/// `ceil(ln(2 / delta) / (2 epsilon^2))`.
+///
+/// ```
+/// use sentil::stats::chernoff_hoeffding_samples;
+///
+/// assert_eq!(chernoff_hoeffding_samples(0.1, 0.05)?, 185);
+/// # Ok::<(), sentil::Error>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidConfig`] if `epsilon` is not positive or `delta` is not in `(0, 1)`.
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    reason = "the count is positive and finite, and clamped to u64::MAX"
+)]
+pub fn chernoff_hoeffding_samples(epsilon: f64, delta: f64) -> Result<u64> {
+    if !epsilon.is_finite() || epsilon <= 0.0 {
+        return Err(Error::InvalidConfig {
+            context: "Chernoff-Hoeffding",
+            message: format!("epsilon must be finite and positive, got {epsilon}"),
+        });
+    }
+    if !delta.is_finite() || delta <= 0.0 || delta >= 1.0 {
+        return Err(Error::InvalidConfig {
+            context: "Chernoff-Hoeffding",
+            message: format!("delta must be in (0, 1), got {delta}"),
+        });
+    }
+    let n = ((2.0 / delta).ln() / (2.0 * epsilon * epsilon)).ceil();
+    Ok(if n >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        n as u64
+    })
 }
 
 /// The inverse of the standard normal cumulative distribution, by Acklam's
@@ -316,6 +358,23 @@ mod tests {
         let cp = clopper_pearson(20, 100, 0.95);
         let w = wilson_interval(20, 100, 0.95);
         assert!(cp.lower <= w.lower && cp.upper >= w.upper);
+    }
+
+    #[test]
+    fn chernoff_hoeffding_sizes_the_sample_count() {
+        assert_eq!(chernoff_hoeffding_samples(0.1, 0.05).unwrap(), 185);
+        assert!(chernoff_hoeffding_samples(0.01, 0.01).unwrap() > 26_000);
+        assert!(chernoff_hoeffding_samples(0.0, 0.05).is_err());
+        assert!(chernoff_hoeffding_samples(0.1, 1.0).is_err());
+        assert!(chernoff_hoeffding_samples(f64::NAN, 0.05).is_err());
+    }
+
+    #[test]
+    fn wilson_sizing_is_about_half_the_distribution_free_count() {
+        assert_eq!(wilson_samples(0.01, 0.95).unwrap(), 9604);
+        assert_eq!(chernoff_hoeffding_samples(0.01, 0.05).unwrap(), 18445);
+        assert!(wilson_samples(-1.0, 0.95).is_err());
+        assert!(wilson_samples(0.01, 0.0).is_err());
     }
 
     #[test]

@@ -135,6 +135,15 @@ pub enum Error {
         /// What went wrong.
         message: String,
     },
+
+    /// A statistical procedure was handed an invalid configuration.
+    #[error("invalid {context} configuration: {message}")]
+    InvalidConfig {
+        /// The procedure, for example `Chernoff-Hoeffding` or `SPRT`.
+        context: &'static str,
+        /// What was wrong with the configuration.
+        message: String,
+    },
 }
 
 /// A formula failed to parse.

@@ -5,7 +5,9 @@ mod lifting;
 mod noise;
 mod smc;
 
-pub use confidence::{clopper_pearson, wilson_interval, z_score, ConfidenceInterval};
+pub use confidence::{
+    chernoff_hoeffding_samples, clopper_pearson, wilson_interval, z_score, ConfidenceInterval,
+};
 pub use lifting::LiftingRegistry;
 pub use noise::{NoiseInteraction, NoiseModel};
 pub use smc::{SmcConfig, SmcResult};
