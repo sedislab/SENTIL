@@ -122,6 +122,134 @@ fn normal_quantile(p: f64) -> f64 {
     }
 }
 
+/// The Clopper-Pearson exact interval for `successes` out of `trials`.
+///
+/// ```
+/// use sentil::stats::clopper_pearson;
+///
+/// let ci = clopper_pearson(50, 100, 0.95);
+/// assert!((ci.lower - 0.398_28).abs() < 1e-3);
+/// assert!((ci.upper - 0.601_72).abs() < 1e-3);
+/// ```
+#[must_use]
+pub fn clopper_pearson(successes: u64, trials: u64, level: f64) -> ConfidenceInterval {
+    if trials == 0 || !(0.0 < level && level < 1.0) {
+        return whole_range(level);
+    }
+    let successes = successes.min(trials);
+    let k = successes as f64;
+    let n = trials as f64;
+    let alpha = 1.0 - level;
+    let lower = if successes == 0 {
+        0.0
+    } else {
+        beta_quantile(alpha / 2.0, k, n - k + 1.0)
+    };
+    let upper = if successes == trials {
+        1.0
+    } else {
+        beta_quantile(1.0 - alpha / 2.0, k + 1.0, n - k)
+    };
+    ConfidenceInterval {
+        lower,
+        upper,
+        level,
+    }
+}
+
+fn beta_quantile(p: f64, a: f64, b: f64) -> f64 {
+    if p <= 0.0 {
+        return 0.0;
+    }
+    if p >= 1.0 {
+        return 1.0;
+    }
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..100 {
+        let mid = f64::midpoint(lo, hi);
+        if regularized_incomplete_beta(a, b, mid) < p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    f64::midpoint(lo, hi)
+}
+
+fn regularized_incomplete_beta(a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    let front =
+        (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp();
+    if x < (a + 1.0) / (a + b + 2.0) {
+        front * beta_continued_fraction(a, b, x) / a
+    } else {
+        1.0 - front * beta_continued_fraction(b, a, 1.0 - x) / b
+    }
+}
+
+fn nonzero(v: f64) -> f64 {
+    const TINY: f64 = 1e-300;
+    if v.abs() < TINY {
+        TINY
+    } else {
+        v
+    }
+}
+
+fn lentz_step(num: f64, c: &mut f64, d: &mut f64) -> f64 {
+    *d = 1.0 / nonzero(1.0 + num * *d);
+    *c = nonzero(1.0 + num / *c);
+    *d * *c
+}
+
+#[allow(
+    clippy::many_single_char_names,
+    reason = "a, b, x, c, d, h are the standard names for Lentz's continued fraction"
+)]
+fn beta_continued_fraction(a: f64, b: f64, x: f64) -> f64 {
+    let mut c = 1.0;
+    let mut d = 1.0 / nonzero(1.0 - (a + b) * x / (a + 1.0));
+    let mut h = d;
+    for m in 1..200 {
+        let m = f64::from(m);
+        let even = m * (b - m) * x / ((a + 2.0 * m - 1.0) * (a + 2.0 * m));
+        h *= lentz_step(even, &mut c, &mut d);
+        let odd = -(a + m) * (a + b + m) * x / ((a + 2.0 * m) * (a + 2.0 * m + 1.0));
+        let delta = lentz_step(odd, &mut c, &mut d);
+        h *= delta;
+        if (delta - 1.0).abs() < 1e-14 {
+            break;
+        }
+    }
+    h
+}
+
+/// Natural log of the gamma function by the Lanczos approximation.
+fn ln_gamma(x: f64) -> f64 {
+    const C: [f64; 8] = [
+        676.520_368_121_885_1,
+        -1_259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+    let x = x - 1.0;
+    let mut a = 0.999_999_999_999_809_9;
+    let t = x + 7.5;
+    for (i, &c) in C.iter().enumerate() {
+        a += c / (x + i as f64 + 1.0);
+    }
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -168,5 +296,38 @@ mod tests {
         assert_eq!((ci.lower, ci.upper), (0.0, 1.0));
         assert!(ci.contains(0.5));
         assert!(close(ci.width(), 1.0));
+    }
+
+    fn close3(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-3
+    }
+
+    #[test]
+    fn clopper_pearson_matches_known_intervals() {
+        // Values from R's binom.test at 95%.
+        let half = clopper_pearson(50, 100, 0.95);
+        assert!(close3(half.lower, 0.398_28) && close3(half.upper, 0.601_72));
+        let rare = clopper_pearson(5, 100, 0.95);
+        assert!(close3(rare.lower, 0.016_43) && close3(rare.upper, 0.112_80));
+    }
+
+    #[test]
+    fn clopper_pearson_is_at_least_as_wide_as_wilson() {
+        let cp = clopper_pearson(20, 100, 0.95);
+        let w = wilson_interval(20, 100, 0.95);
+        assert!(cp.lower <= w.lower && cp.upper >= w.upper);
+    }
+
+    #[test]
+    fn clopper_pearson_handles_the_extremes() {
+        let none = clopper_pearson(0, 10, 0.95);
+        assert_eq!(none.lower, 0.0);
+        assert!(close3(none.upper, 0.308_5));
+
+        let all = clopper_pearson(100, 100, 0.95);
+        assert_eq!(all.upper, 1.0);
+
+        let empty = clopper_pearson(0, 0, 0.95);
+        assert_eq!((empty.lower, empty.upper), (0.0, 1.0));
     }
 }
