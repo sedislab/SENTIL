@@ -58,16 +58,32 @@ pub(crate) fn check(
     lifting: &LiftingRegistry,
     config: &SmcConfig,
 ) -> Result<SmcResult> {
-    let mut satisfactions = 0u64;
-    for i in 0..config.samples {
+    // Sample `i` is seeded independently, so the count is the same however the
+    // samples are scheduled, and a robustness of exactly zero counts as
+    // satisfied, matching `Robustness::is_satisfied`.
+    let satisfies = |i: u64| -> Result<bool> {
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
         let noisy = lifting.lift_with(trace, &mut rng)?;
-        // A robustness of exactly zero counts as satisfied, matching
-        // `Robustness::is_satisfied`, so the boundary is treated consistently.
-        if inner.robustness(&noisy)? >= 0.0 {
-            satisfactions += 1;
+        Ok(inner.robustness(&noisy)? >= 0.0)
+    };
+
+    #[cfg(feature = "parallel")]
+    let satisfactions = {
+        use rayon::prelude::*;
+        (0..config.samples)
+            .into_par_iter()
+            .map(|i| satisfies(i).map(u64::from))
+            .try_reduce(|| 0, |a, b| Ok(a + b))?
+    };
+    #[cfg(not(feature = "parallel"))]
+    let satisfactions = {
+        let mut count = 0u64;
+        for i in 0..config.samples {
+            count += u64::from(satisfies(i)?);
         }
-    }
+        count
+    };
+
     let samples = config.samples;
     let probability = satisfactions as f64 / samples as f64;
     let interval = wilson_interval(satisfactions, samples, config.confidence);

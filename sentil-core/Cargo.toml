@@ -28,11 +28,15 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["statistical", "ingest"]
+default = ["statistical", "ingest", "parallel"]
 
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.
 statistical = ["dep:rand", "dep:rand_distr", "dep:rand_chacha"]
+
+# Spread Monte Carlo across cores with Rayon. Same answer as one thread; each
+# sample is seeded independently.
+parallel = ["statistical", "dep:rayon"]
 # Reading traces from files. CSV and TSV need only this; the columnar and
 # database formats add their own features on top.
 ingest = ["dep:csv"]
@@ -43,6 +47,7 @@ rand = { workspace = true, optional = true }
 rand_distr = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
