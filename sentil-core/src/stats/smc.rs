@@ -46,7 +46,7 @@ pub struct SmcResult {
     pub satisfactions: u64,
     /// How many realizations were drawn.
     pub samples: u64,
-    /// Whether the estimate meets the operator's threshold.
+    /// Whether the point estimate meets the operator's threshold.
     pub holds: bool,
 }
 
