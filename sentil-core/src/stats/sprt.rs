@@ -1,6 +1,12 @@
 //! Wald's sequential probability ratio test.
 
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+
+use super::lifting::LiftingRegistry;
 use crate::error::{Error, Result};
+use crate::formula::Formula;
+use crate::signal::Trace;
 
 /// The outcome of a sequential test.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -96,6 +102,31 @@ where
     })
 }
 
+impl Formula {
+    /// Decides a probabilistic specification sequentially.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotProbabilistic`] if the formula is not probabilistic.
+    pub fn check_sequential(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &SprtConfig,
+    ) -> Result<SprtResult> {
+        let Formula::Probabilistic(_, _, inner) = self else {
+            return Err(Error::NotProbabilistic);
+        };
+        let mut n = 0u64;
+        sequential_test(config, || {
+            n += 1;
+            let mut rng = ChaCha8Rng::seed_from_u64(n);
+            let noisy = lifting.lift_with(trace, &mut rng)?;
+            Ok(inner.robustness(&noisy)? >= 0.0)
+        })
+    }
+}
+
 fn unit(name: &str, value: f64) -> Result<()> {
     if value.is_finite() && value > 0.0 && value < 1.0 {
         Ok(())
@@ -110,5 +141,67 @@ fn config_error(message: String) -> Error {
     Error::InvalidConfig {
         context: "SPRT",
         message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel};
+
+    fn config() -> SprtConfig {
+        SprtConfig::new(0.4, 0.6, 0.05, 0.05, 5000).unwrap()
+    }
+
+    fn additive_gaussian(x: f64) -> (Trace, LiftingRegistry) {
+        let trace = Trace::from_signal([0.0], "x", [x]).unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 0.5).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        (trace, lifting)
+    }
+
+    #[test]
+    fn a_constant_source_decides_each_way() {
+        assert!(matches!(
+            sequential_test(&config(), || Ok(true)),
+            Ok(SprtResult::AcceptH1 { .. })
+        ));
+        assert!(matches!(
+            sequential_test(&config(), || Ok(false)),
+            Ok(SprtResult::AcceptH0 { .. })
+        ));
+    }
+
+    #[test]
+    fn check_sequential_decides_clear_properties_early() {
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let (trace, lifting) = additive_gaussian(5.0);
+        let held = phi.check_sequential(&trace, &lifting, &config()).unwrap();
+        assert!(matches!(held, SprtResult::AcceptH1 { samples } if samples < 5000));
+
+        let (trace, lifting) = additive_gaussian(-5.0);
+        let failed = phi.check_sequential(&trace, &lifting, &config()).unwrap();
+        assert!(matches!(failed, SprtResult::AcceptH0 { .. }));
+    }
+
+    #[test]
+    fn config_rejects_bad_parameters() {
+        assert!(SprtConfig::new(0.6, 0.4, 0.05, 0.05, 100).is_err());
+        assert!(SprtConfig::new(0.4, 0.6, 0.0, 0.05, 100).is_err());
+        assert!(SprtConfig::new(0.4, 0.6, 0.05, 0.05, 0).is_err());
+    }
+
+    #[test]
+    fn non_probabilistic_is_rejected() {
+        let phi = Formula::parse("x > 0").unwrap();
+        let (trace, lifting) = additive_gaussian(1.0);
+        assert!(matches!(
+            phi.check_sequential(&trace, &lifting, &config()),
+            Err(Error::NotProbabilistic)
+        ));
     }
 }
