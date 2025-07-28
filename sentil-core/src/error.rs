@@ -144,6 +144,17 @@ pub enum Error {
         /// What was wrong with the configuration.
         message: String,
     },
+
+    /// A rare-event splitting run hit a numerical problem.
+    #[error("adaptive splitting failed at particle {particle}, level {level}: {message}")]
+    Splitting {
+        /// The particle index where the problem arose.
+        particle: usize,
+        /// The level at which it arose.
+        level: usize,
+        /// What went wrong.
+        message: String,
+    },
 }
 
 /// A formula failed to parse.

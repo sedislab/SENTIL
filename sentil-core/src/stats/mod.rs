@@ -3,6 +3,7 @@
 mod confidence;
 mod lifting;
 mod noise;
+mod rare_events;
 mod smc;
 mod sprt;
 
@@ -11,6 +12,7 @@ pub use confidence::{
 };
 pub use lifting::LiftingRegistry;
 pub use noise::{NoiseInteraction, NoiseModel};
+pub use rare_events::RareEventSimulator;
 pub use smc::{SmcConfig, SmcResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
