@@ -160,20 +160,31 @@ fn run_level<S: RareEventSimulator>(
 ) -> LevelOutcome<S::State> {
     let mut state = particle.state.clone();
     let mut max_score = particle.max_score;
+    let mut best_state = particle.state.clone();
     for _ in 0..max_steps {
         *simulations += 1;
         state = simulator.step(&state, rng);
-        max_score = max_score.max(simulator.score(&state));
+        let score = simulator.score(&state);
+        if score > max_score {
+            max_score = score;
+            best_state = state.clone();
+        }
         let (terminal, violation) = simulator.is_terminal(&state);
         if terminal {
             return LevelOutcome {
-                survivor: violation.then(|| Particle { state, max_score }),
+                survivor: violation.then(|| Particle {
+                    state: best_state,
+                    max_score,
+                }),
                 max_score,
             };
         }
     }
     LevelOutcome {
-        survivor: Some(Particle { state, max_score }),
+        survivor: Some(Particle {
+            state: best_state,
+            max_score,
+        }),
         max_score,
     }
 }
