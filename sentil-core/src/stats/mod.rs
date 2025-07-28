@@ -4,6 +4,7 @@ mod confidence;
 mod lifting;
 mod noise;
 mod smc;
+mod sprt;
 
 pub use confidence::{
     chernoff_hoeffding_samples, clopper_pearson, wilson_interval, z_score, ConfidenceInterval,
@@ -11,6 +12,7 @@ pub use confidence::{
 pub use lifting::LiftingRegistry;
 pub use noise::{NoiseInteraction, NoiseModel};
 pub use smc::{SmcConfig, SmcResult};
+pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
 use crate::error::{Error, Result};
 use crate::formula::Formula;
