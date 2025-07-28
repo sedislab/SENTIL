@@ -59,7 +59,8 @@ struct LevelOutcome<S> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidConfig`] if `particles` is zero.
+/// Returns [`Error::InvalidConfig`] if `particles` is zero, and
+/// [`Error::Splitting`] if a particle's score becomes non-finite.
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -91,9 +92,17 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
         })
         .collect();
     simulations += particles as u64;
+    for (i, p) in population.iter().enumerate() {
+        if p.max_score.is_nan() {
+            return Err(splitting_error(i, 0, "initial score is not finite"));
+        }
+    }
 
     let mut probability = 1.0;
+    let mut level_score = f64::NEG_INFINITY;
+    let mut level = 0usize;
     loop {
+        level += 1;
         let mut outcomes = Vec::with_capacity(particles);
         for p in &population {
             let mut prng = ChaCha8Rng::seed_from_u64(rng.next_u64());
@@ -106,6 +115,11 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
             ));
         }
 
+        for (i, outcome) in outcomes.iter().enumerate() {
+            if outcome.max_score.is_nan() {
+                return Err(splitting_error(i, level, "score is not finite"));
+            }
+        }
         if outcomes
             .iter()
             .filter(|o| o.max_score >= target_score)
@@ -119,7 +133,16 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
         let mut scores: Vec<f64> = outcomes.iter().map(|o| o.max_score).collect();
         scores.sort_by(f64::total_cmp);
         let survivor_target = ((particles as f64) * 0.5).max(1.0) as usize;
-        let threshold = scores[particles - survivor_target].min(target_score);
+        let mut threshold = scores[particles - survivor_target];
+        if threshold <= level_score + 1e-7 {
+            // The level stalled; force a small step toward the best score seen.
+            let forced = (scores[particles - 1] - level_score) * 0.1;
+            if forced < 1e-6 {
+                break;
+            }
+            threshold = level_score + forced;
+        }
+        let threshold = threshold.min(target_score);
 
         let survivors: Vec<Particle<S::State>> = outcomes
             .into_iter()
@@ -134,6 +157,7 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
             });
         }
         probability *= k as f64 / particles as f64;
+        level_score = threshold;
         if threshold >= target_score {
             break;
         }
@@ -165,6 +189,12 @@ fn run_level<S: RareEventSimulator>(
         *simulations += 1;
         state = simulator.step(&state, rng);
         let score = simulator.score(&state);
+        if score.is_nan() {
+            return LevelOutcome {
+                survivor: None,
+                max_score: f64::NAN,
+            };
+        }
         if score > max_score {
             max_score = score;
             best_state = state.clone();
@@ -186,6 +216,14 @@ fn run_level<S: RareEventSimulator>(
             max_score,
         }),
         max_score,
+    }
+}
+
+fn splitting_error(particle: usize, level: usize, message: &str) -> Error {
+    Error::Splitting {
+        particle,
+        level,
+        message: message.to_owned(),
     }
 }
 
@@ -274,5 +312,77 @@ mod tests {
             step_prob: 0.5,
         };
         assert!(adaptive_multilevel_splitting(&sim, 0, 5.0, 10, 1).is_err());
+    }
+
+    struct RareFlagCleared<S>(S);
+
+    impl<S: RareEventSimulator> RareEventSimulator for RareFlagCleared<S> {
+        type State = S::State;
+
+        fn initial_state(&self, rng: &mut dyn RngCore) -> S::State {
+            self.0.initial_state(rng)
+        }
+
+        fn step(&self, state: &S::State, rng: &mut dyn RngCore) -> S::State {
+            self.0.step(state, rng)
+        }
+
+        fn is_terminal(&self, state: &S::State) -> (bool, bool) {
+            (self.0.is_terminal(state).0, false)
+        }
+
+        fn score(&self, state: &S::State) -> f64 {
+            self.0.score(state)
+        }
+    }
+
+    #[test]
+    fn clearing_the_rare_event_flag_leaves_the_estimate_alone() {
+        let sim = GamblersRuin {
+            target: 5.0,
+            failure: -5.0,
+            step_prob: 0.4,
+        };
+        let honest = adaptive_multilevel_splitting(&sim, 500, 5.0, 1000, 19).unwrap();
+        let cleared =
+            adaptive_multilevel_splitting(&RareFlagCleared(sim), 500, 5.0, 1000, 19).unwrap();
+        assert_eq!(honest, cleared);
+    }
+
+    #[derive(Clone)]
+    struct GoesNaN {
+        steps_until_nan: u64,
+    }
+
+    impl RareEventSimulator for GoesNaN {
+        type State = u64;
+
+        fn initial_state(&self, _rng: &mut dyn RngCore) -> u64 {
+            0
+        }
+
+        fn step(&self, state: &u64, _rng: &mut dyn RngCore) -> u64 {
+            state + 1
+        }
+
+        fn is_terminal(&self, _state: &u64) -> (bool, bool) {
+            (false, false)
+        }
+
+        #[allow(clippy::cast_precision_loss, reason = "test step counts are tiny")]
+        fn score(&self, state: &u64) -> f64 {
+            if *state >= self.steps_until_nan {
+                f64::NAN
+            } else {
+                *state as f64
+            }
+        }
+    }
+
+    #[test]
+    fn a_non_finite_score_is_reported() {
+        let sim = GoesNaN { steps_until_nan: 5 };
+        let result = adaptive_multilevel_splitting(&sim, 100, 100.0, 1000, 42);
+        assert!(matches!(result, Err(Error::Splitting { level, .. }) if level >= 1));
     }
 }
