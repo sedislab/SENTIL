@@ -38,6 +38,6 @@ pub use semantics::{Robustness, StreamMonitor};
 pub use signal::Trace;
 #[cfg(feature = "statistical")]
 pub use stats::{
-    ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, SmcResult,
-    SprtConfig, SprtResult, StochasticSystem,
+    ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, RareEventConfig,
+    RareEventResult, SmcConfig, SmcResult, SprtConfig, SprtResult, StochasticSystem,
 };

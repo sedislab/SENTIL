@@ -13,7 +13,7 @@ pub use confidence::{
 };
 pub use lifting::LiftingRegistry;
 pub use noise::{NoiseInteraction, NoiseModel};
-pub use prstl_rare::StochasticSystem;
+pub use prstl_rare::{RareEventConfig, RareEventResult, StochasticSystem};
 pub use rare_events::{adaptive_multilevel_splitting, RareEventEstimate, RareEventSimulator};
 pub use smc::{SmcConfig, SmcResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};

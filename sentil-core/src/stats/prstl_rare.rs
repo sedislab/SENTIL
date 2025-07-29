@@ -85,6 +85,49 @@ impl StochasticSystem {
     }
 }
 
+/// Tuning for a rare-event run.
+///
+/// The defaults suit a first run: a few thousand particles, an automatic
+/// per-level step budget, a zero violation margin, and a fixed seed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RareEventConfig {
+    /// The particle population.
+    pub particles: usize,
+    /// How far a particle advances per level. `0` means automatic, about a tenth
+    /// of the horizon, which keeps each level partial so the splitting ladder can
+    /// form; setting it to the full horizon would collapse the run to plain Monte
+    /// Carlo.
+    pub max_steps_per_level: u64,
+    /// The violation margin; the rare event is robustness at or below `-margin`.
+    pub margin: f64,
+    /// The seed.
+    pub seed: u64,
+}
+
+impl Default for RareEventConfig {
+    fn default() -> Self {
+        Self {
+            particles: 4096,
+            max_steps_per_level: 0,
+            margin: 0.0,
+            seed: 42,
+        }
+    }
+}
+
+/// The outcome of a rare-event run.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RareEventResult {
+    /// The estimated satisfaction probability, `1 - violation_probability`.
+    pub probability: f64,
+    /// The raw splitting estimate of the tail violation probability.
+    pub violation_probability: f64,
+    /// Whether the satisfaction probability meets the operator's threshold.
+    pub holds: bool,
+    /// The total simulation steps run.
+    pub simulations: u64,
+}
+
 fn config_error(message: String) -> Error {
     Error::InvalidConfig {
         context: "stochastic system",
