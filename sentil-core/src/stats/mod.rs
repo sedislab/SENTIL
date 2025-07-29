@@ -17,8 +17,17 @@ pub use smc::{SmcConfig, SmcResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
 use crate::error::{Error, Result};
-use crate::formula::Formula;
+use crate::formula::{Formula, ProbabilityOp};
 use crate::signal::Trace;
+
+pub(crate) fn decides(op: ProbabilityOp, probability: f64, threshold: f64) -> bool {
+    match op {
+        ProbabilityOp::GreaterEqual => probability >= threshold,
+        ProbabilityOp::Greater => probability > threshold,
+        ProbabilityOp::LessEqual => probability <= threshold,
+        ProbabilityOp::Less => probability < threshold,
+    }
+}
 
 impl Formula {
     /// Decides a probabilistic specification `P~p(phi)` over a trace by sampling.

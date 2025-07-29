@@ -92,16 +92,6 @@ pub(crate) fn check(
         interval,
         satisfactions,
         samples,
-        holds: decides(op, probability, threshold),
+        holds: super::decides(op, probability, threshold),
     })
-}
-
-/// Whether an estimated probability meets the operator's threshold.
-fn decides(op: ProbabilityOp, probability: f64, threshold: f64) -> bool {
-    match op {
-        ProbabilityOp::GreaterEqual => probability >= threshold,
-        ProbabilityOp::Greater => probability > threshold,
-        ProbabilityOp::LessEqual => probability <= threshold,
-        ProbabilityOp::Less => probability < threshold,
-    }
 }
