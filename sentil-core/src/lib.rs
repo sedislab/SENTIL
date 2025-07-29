@@ -39,5 +39,5 @@ pub use signal::Trace;
 #[cfg(feature = "statistical")]
 pub use stats::{
     ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, SmcResult,
-    SprtConfig, SprtResult,
+    SprtConfig, SprtResult, StochasticSystem,
 };
