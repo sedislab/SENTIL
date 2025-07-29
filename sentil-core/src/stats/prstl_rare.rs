@@ -4,7 +4,10 @@ use std::collections::BTreeSet;
 
 use rand::RngCore;
 
+use super::{adaptive_multilevel_splitting, RareEventSimulator};
 use crate::error::{Error, Result};
+use crate::formula::Formula;
+use crate::signal::Trace;
 
 /// Draws an initial packed sample.
 type InitFn = Box<dyn Fn(&mut dyn RngCore) -> Vec<f64>>;
@@ -126,6 +129,131 @@ pub struct RareEventResult {
     pub holds: bool,
     /// The total simulation steps run.
     pub simulations: u64,
+}
+
+/// A trajectory prefix. The monitor is rebuilt and replayed when scoring rather
+/// than carried, since [`StreamMonitor`] is not cloneable.
+#[derive(Clone)]
+struct WalkState {
+    samples: Vec<Vec<f64>>,
+    last_value: Vec<f64>,
+    step_index: usize,
+    time: f64,
+}
+
+struct PrstlWalk<'a> {
+    inner: &'a Formula,
+    system: &'a StochasticSystem,
+    margin: f64,
+}
+
+impl RareEventSimulator for PrstlWalk<'_> {
+    type State = WalkState;
+
+    fn initial_state(&self, rng: &mut dyn RngCore) -> WalkState {
+        let v0 = self.system.initial(rng);
+        WalkState {
+            samples: vec![v0.clone()],
+            last_value: v0,
+            step_index: 0,
+            time: 0.0,
+        }
+    }
+
+    fn step(&self, state: &WalkState, rng: &mut dyn RngCore) -> WalkState {
+        if state.step_index >= self.system.horizon() {
+            return state.clone();
+        }
+        let next = self.system.advance(&state.last_value, state.time, rng);
+        let mut samples = state.samples.clone();
+        samples.push(next.clone());
+        WalkState {
+            samples,
+            last_value: next,
+            step_index: state.step_index + 1,
+            time: state.time + self.system.dt(),
+        }
+    }
+
+    fn is_terminal(&self, state: &WalkState) -> (bool, bool) {
+        let violated = self.score(state) >= self.margin;
+        (violated, violated)
+    }
+
+    /// The current violation: the negated robustness of the inner formula over the
+    /// prefix treated as a complete trace, which only ever sees what has happened
+    /// so far. A malformed system or evaluation error maps to NaN so the splitter
+    /// reports [`Error::Splitting`] rather than scoring on garbage.
+    fn score(&self, state: &WalkState) -> f64 {
+        let vars = self.system.variables();
+        let mut times = Vec::with_capacity(state.samples.len());
+        let mut t = 0.0;
+        for _ in &state.samples {
+            times.push(t);
+            t += self.system.dt();
+        }
+        let Ok(mut trace) = Trace::new(times) else {
+            return f64::NAN;
+        };
+        for (i, var) in vars.iter().enumerate() {
+            let column: Vec<f64> = state
+                .samples
+                .iter()
+                .map(|s| s.get(i).copied().unwrap_or(f64::NAN))
+                .collect();
+            if trace.add_signal(var, column).is_err() {
+                return f64::NAN;
+            }
+        }
+        match self.inner.robustness(&trace) {
+            Ok(rho) => (-rho).clamp(-1e12, 1e12),
+            Err(_) => f64::NAN,
+        }
+    }
+}
+
+impl Formula {
+    /// Estimates `P~p(phi)` over a user-defined stochastic `system` by adaptive
+    /// multilevel splitting, for satisfaction probabilities too small for plain
+    /// Monte Carlo to resolve. The inner formula should be safety-shaped, like
+    /// `always`. `probability` is the satisfaction probability.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotProbabilistic`] unless the formula is `P~p(phi)`, [`Error::InvalidConfig`] if the inner formula is not safety shaped, and any [`Error::Splitting`] from the run.
+    pub fn check_rare_event(
+        &self,
+        system: &StochasticSystem,
+        config: &RareEventConfig,
+    ) -> Result<RareEventResult> {
+        let Formula::Probabilistic(op, threshold, inner) = self else {
+            return Err(Error::NotProbabilistic);
+        };
+        let max_steps = if config.max_steps_per_level == 0 {
+            (system.horizon() as u64 / 10).max(1)
+        } else {
+            config.max_steps_per_level
+        };
+        let walk = PrstlWalk {
+            inner,
+            system,
+            margin: config.margin,
+        };
+        let est = adaptive_multilevel_splitting(
+            &walk,
+            config.particles,
+            config.margin,
+            max_steps,
+            config.seed,
+        )?;
+        let probability = 1.0 - est.probability;
+        Ok(RareEventResult {
+            probability,
+            violation_probability: est.probability,
+            holds: super::decides(*op, probability, *threshold),
+            simulations: est.simulations,
+        })
+    }
 }
 
 fn config_error(message: String) -> Error {
