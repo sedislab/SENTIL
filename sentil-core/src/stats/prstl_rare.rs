@@ -218,6 +218,11 @@ impl Formula {
     /// Monte Carlo to resolve. The inner formula should be safety-shaped, like
     /// `always`. `probability` is the satisfaction probability.
     ///
+    /// Read the result as an order-of-magnitude tail estimate. It is accurate for
+    /// moderately rare events and resolves events Monte Carlo reports as zero, but
+    /// far out in the tail the level selection biases the estimate, so widen
+    /// `particles` and trust the magnitude over the digits.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::NotProbabilistic`] unless the formula is `P~p(phi)`, [`Error::InvalidConfig`] if the inner formula is not safety shaped, and any [`Error::Splitting`] from the run.
@@ -260,5 +265,72 @@ fn config_error(message: String) -> Error {
     Error::InvalidConfig {
         context: "stochastic system",
         message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand_distr::{Distribution, StandardNormal};
+
+    fn random_walk(horizon: usize) -> StochasticSystem {
+        StochasticSystem::new(
+            ["x"],
+            1.0,
+            horizon,
+            |rng| vec![StandardNormal.sample(rng)],
+            |prev, _t, rng| {
+                let step: f64 = StandardNormal.sample(rng);
+                vec![prev[0] + step]
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn moderate_rare_event_lands_near_ground_truth() {
+        // P(the walk's running max reaches 8 within 15 steps) ~ 0.028 by 4e5-sample MC.
+        let phi = Formula::parse("P>=0.99(always(x < 8.0))").unwrap();
+        let config = RareEventConfig {
+            particles: 4000,
+            max_steps_per_level: 3,
+            margin: 0.0,
+            seed: 1,
+        };
+        let result = phi.check_rare_event(&random_walk(15), &config).unwrap();
+        let truth = 0.0281;
+        assert!(
+            result.violation_probability > truth / 3.0
+                && result.violation_probability < truth * 3.0,
+            "got {}",
+            result.violation_probability
+        );
+    }
+
+    #[test]
+    fn resolves_a_tail_event_monte_carlo_reports_as_zero() {
+        let phi = Formula::parse("P>=0.999(always(x < 8.0))").unwrap();
+        let config = RareEventConfig {
+            particles: 4000,
+            max_steps_per_level: 2,
+            margin: 0.0,
+            seed: 2,
+        };
+        let result = phi.check_rare_event(&random_walk(6), &config).unwrap();
+        assert!(result.violation_probability > 0.0);
+        assert!(result.probability < 1.0);
+    }
+
+    #[test]
+    fn a_non_probabilistic_formula_is_rejected() {
+        let phi = Formula::parse("always(x < 8.0)").unwrap();
+        let err = phi.check_rare_event(&random_walk(5), &RareEventConfig::default());
+        assert!(matches!(err, Err(Error::NotProbabilistic)));
+    }
+
+    #[test]
+    fn an_invalid_system_is_rejected() {
+        let build = StochasticSystem::new(["x"], 0.0, 5, |_| vec![0.0], |p, _, _| p.to_vec());
+        assert!(build.is_err());
     }
 }
