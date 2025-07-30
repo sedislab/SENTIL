@@ -79,10 +79,95 @@ impl MultiFormulaMonitor {
             None => Ok(results),
         }
     }
+
+    /// Resets every monitor.
+    pub fn reset(&mut self) {
+        for (_, monitor) in &mut self.monitors {
+            monitor.reset();
+        }
+    }
+
+    /// Removes the first formula registered under `id`.
+    pub fn remove(&mut self, id: &str) -> bool {
+        if let Some(position) = self.monitors.iter().position(|(name, _)| name == id) {
+            self.monitors.remove(position);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The ids currently monitored, in insertion order.
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.monitors.iter().map(|(id, _)| id.as_str())
+    }
+
+    /// The number of formulas in the bank.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.monitors.len()
+    }
+
+    /// Whether the bank holds no formulas.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.monitors.is_empty()
+    }
 }
 
 impl Default for MultiFormulaMonitor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::float_cmp, reason = "the asserted robustness values are exact")]
+
+    use super::*;
+
+    #[test]
+    fn results_keep_insertion_order() {
+        let mut bank = MultiFormulaMonitor::new();
+        bank.add("low", "x > 0").unwrap();
+        bank.add("high", "x > 10").unwrap();
+        let out = bank.update(0.0, &[("x", 5.0)]).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "low");
+        assert_eq!(out[1].0, "high");
+        assert_eq!(out[0].1.value(), 5.0);
+        assert_eq!(out[1].1.value(), -5.0);
+    }
+
+    #[test]
+    fn a_failing_formula_does_not_desync_the_others() {
+        let mut bank = MultiFormulaMonitor::new();
+        bank.add("a", "historically[0, 2](x > 0)").unwrap();
+        bank.add("b", "historically[0, 2](z > 0)").unwrap();
+        assert!(bank.update(0.0, &[("x", 1.0)]).is_err());
+        bank.update(1.0, &[("x", 5.0), ("z", 1.0)]).unwrap();
+        let out = bank.update(2.0, &[("x", 5.0), ("z", 1.0)]).unwrap();
+        let a = out.iter().find(|(id, _)| id == "a").unwrap().1;
+        assert_eq!(a.value(), 1.0);
+    }
+
+    #[test]
+    fn an_empty_bank_returns_no_results() {
+        let mut bank = MultiFormulaMonitor::new();
+        assert!(bank.is_empty());
+        assert_eq!(bank.update(0.0, &[("x", 1.0)]).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn formulas_can_be_listed_and_removed() {
+        let mut bank = MultiFormulaMonitor::new();
+        bank.add("a", "x > 0").unwrap();
+        bank.add("b", "x > 0").unwrap();
+        assert_eq!(bank.len(), 2);
+        assert_eq!(bank.ids().collect::<Vec<_>>(), ["a", "b"]);
+        assert!(bank.remove("a"));
+        assert!(!bank.remove("a"));
+        assert_eq!(bank.ids().collect::<Vec<_>>(), ["b"]);
     }
 }
