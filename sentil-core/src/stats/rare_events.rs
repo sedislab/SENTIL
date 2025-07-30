@@ -1,10 +1,4 @@
 //! Adaptive multilevel splitting for estimating rare-event probabilities.
-//!
-//! When the event of interest sits far out in the tail (below about `1e-6`),
-//! plain Monte Carlo almost never observes it. AMS instead evolves a population
-//! of particles through a ladder of rising score thresholds, clones the
-//! survivors at each level, and multiplies the per-level survival fractions into
-//! an estimate that stays accurate where Monte Carlo would report zero.
 
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -38,40 +32,35 @@ pub struct RareEventEstimate {
     pub simulations: u64,
 }
 
-#[derive(Clone)]
-struct Particle<S> {
-    state: S,
-    max_score: f64,
+struct Trajectory<S> {
+    states: Vec<S>,
+    z: f64,
 }
 
-struct LevelOutcome<S> {
-    /// The particle to carry forward, absent if it was absorbed into failure.
-    survivor: Option<Particle<S>>,
-    max_score: f64,
-}
-
-/// Estimates the probability that `simulator` reaches the rare event, defined as
-/// a score of at least `target_score`, by adaptive multilevel splitting.
+/// Estimates the probability that `simulator` reaches the rare event, defined as a
+/// score of at least `target_score`, by the last-particle form of adaptive
+/// multilevel splitting.
 ///
-/// `particles` is the population size; a larger population gives a tighter
-/// estimate. `max_steps_per_level` caps each particle's simulation per level, and
+/// Each iteration drops the single worst trajectory and regenerates it by
+/// branching a survivor from where it first crossed the current level, so the
+/// level rises one trajectory at a time and the estimate stays unbiased far out in
+/// the tail where a fixed-fraction scheme would not. `particles` sets the
+/// population (larger is tighter), `max_steps` caps a trajectory's length, and
 /// `seed` makes the run reproducible.
 ///
 /// # Errors
 ///
 /// Returns [`Error::InvalidConfig`] if `particles` is zero, and
-/// [`Error::Splitting`] if a particle's score becomes non-finite.
+/// [`Error::Splitting`] if a trajectory's score becomes non-finite.
 #[allow(
     clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "particle counts are small positive integers, exact in f64 and back"
+    reason = "particle counts are small positive integers, exact in f64"
 )]
 pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
     simulator: &S,
     particles: usize,
     target_score: f64,
-    max_steps_per_level: u64,
+    max_steps: u64,
     seed: u64,
 ) -> Result<RareEventEstimate> {
     if particles == 0 {
@@ -82,141 +71,140 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
     }
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut simulations = 0u64;
-
-    let mut population: Vec<Particle<S::State>> = (0..particles)
-        .map(|_| {
-            let mut prng = ChaCha8Rng::seed_from_u64(rng.next_u64());
-            let state = simulator.initial_state(&mut prng);
-            let max_score = simulator.score(&state);
-            Particle { state, max_score }
-        })
-        .collect();
-    simulations += particles as u64;
-    for (i, p) in population.iter().enumerate() {
-        if p.max_score.is_nan() {
-            return Err(splitting_error(i, 0, "initial score is not finite"));
-        }
+    let mut population: Vec<Trajectory<S::State>> = Vec::with_capacity(particles);
+    for i in 0..particles {
+        let mut prng = ChaCha8Rng::seed_from_u64(rng.next_u64());
+        let start = simulator.initial_state(&mut prng);
+        population.push(simulate(
+            simulator,
+            start,
+            &mut prng,
+            max_steps,
+            &mut simulations,
+            i,
+        )?);
     }
 
-    let mut probability = 1.0;
-    let mut level_score = f64::NEG_INFINITY;
-    let mut level = 0usize;
-    loop {
-        level += 1;
-        let mut outcomes = Vec::with_capacity(particles);
-        for p in &population {
-            let mut prng = ChaCha8Rng::seed_from_u64(rng.next_u64());
-            outcomes.push(run_level(
-                simulator,
-                p,
-                max_steps_per_level,
-                &mut prng,
-                &mut simulations,
-            ));
-        }
-
-        for (i, outcome) in outcomes.iter().enumerate() {
-            if outcome.max_score.is_nan() {
-                return Err(splitting_error(i, level, "score is not finite"));
-            }
-        }
-        if outcomes
-            .iter()
-            .filter(|o| o.max_score >= target_score)
-            .count()
-            == particles
-        {
+    let ratio = 1.0 - 1.0 / particles as f64;
+    // Bound the run so a target that can never be reached still terminates, by the
+    // point the estimate would have underflowed to nothing.
+    let cap = (particles as u64).saturating_mul(28);
+    let mut removed = 0u64;
+    while removed < cap {
+        let level = population.iter().fold(f64::INFINITY, |m, t| m.min(t.z));
+        if level >= target_score {
             break;
         }
-
-        // Promote the threshold to the score that about half the population clears.
-        let mut scores: Vec<f64> = outcomes.iter().map(|o| o.max_score).collect();
-        scores.sort_by(f64::total_cmp);
-        let survivor_target = ((particles as f64) * 0.5).max(1.0) as usize;
-        let mut threshold = scores[particles - survivor_target];
-        if threshold <= level_score + 1e-7 {
-            // The level stalled; force a small step toward the best score seen.
-            let forced = (scores[particles - 1] - level_score) * 0.1;
-            if forced < 1e-6 {
-                break;
-            }
-            threshold = level_score + forced;
-        }
-        let threshold = threshold.min(target_score);
-
-        let survivors: Vec<Particle<S::State>> = outcomes
-            .into_iter()
-            .filter(|o| o.max_score >= threshold)
-            .filter_map(|o| o.survivor)
+        let survivors: Vec<usize> = (0..particles)
+            .filter(|&i| population[i].z > level)
             .collect();
-        let k = survivors.len();
-        if k == 0 {
+        if survivors.is_empty() {
             return Ok(RareEventEstimate {
                 probability: 0.0,
                 simulations,
             });
         }
-        probability *= k as f64 / particles as f64;
-        level_score = threshold;
-        if threshold >= target_score {
-            break;
-        }
-        population = (0..particles)
-            .map(|_| survivors[rng.random_range(0..k)].clone())
+        let doomed: Vec<usize> = (0..particles)
+            .filter(|&i| population[i].z <= level)
             .collect();
+        for dead in doomed {
+            let src = survivors[rng.random_range(0..survivors.len())];
+            let mut prng = ChaCha8Rng::seed_from_u64(rng.next_u64());
+            population[dead] = branch(
+                simulator,
+                &population[src],
+                level,
+                &mut prng,
+                max_steps,
+                &mut simulations,
+                dead,
+            )?;
+            removed += 1;
+            if removed >= cap {
+                break;
+            }
+        }
     }
 
     Ok(RareEventEstimate {
-        probability,
+        probability: ratio.powf(removed as f64),
         simulations,
     })
 }
 
-/// Runs one particle for a single level, tracking its highest score and stopping
-/// early if it is absorbed into a terminal state. A particle absorbed into
-/// failure leaves no survivor.
-fn run_level<S: RareEventSimulator>(
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a trajectory's length fits u64"
+)]
+fn extend<S: RareEventSimulator>(
     simulator: &S,
-    particle: &Particle<S::State>,
+    mut states: Vec<S::State>,
+    mut z: f64,
     max_steps: u64,
     rng: &mut dyn RngCore,
     simulations: &mut u64,
-) -> LevelOutcome<S::State> {
-    let mut state = particle.state.clone();
-    let mut max_score = particle.max_score;
-    let mut best_state = particle.state.clone();
-    for _ in 0..max_steps {
+    index: usize,
+) -> Result<Trajectory<S::State>> {
+    while (states.len() as u64) <= max_steps {
+        let last = &states[states.len() - 1];
+        if simulator.is_terminal(last).0 {
+            break;
+        }
         *simulations += 1;
-        state = simulator.step(&state, rng);
-        let score = simulator.score(&state);
+        let next = simulator.step(last, rng);
+        let score = simulator.score(&next);
         if score.is_nan() {
-            return LevelOutcome {
-                survivor: None,
-                max_score: f64::NAN,
-            };
+            return Err(splitting_error(index, states.len(), "score is not finite"));
         }
-        if score > max_score {
-            max_score = score;
-            best_state = state.clone();
-        }
-        let (terminal, violation) = simulator.is_terminal(&state);
-        if terminal {
-            return LevelOutcome {
-                survivor: violation.then(|| Particle {
-                    state: best_state,
-                    max_score,
-                }),
-                max_score,
-            };
-        }
+        z = z.max(score);
+        states.push(next);
     }
-    LevelOutcome {
-        survivor: Some(Particle {
-            state: best_state,
-            max_score,
-        }),
-        max_score,
+    Ok(Trajectory { states, z })
+}
+
+fn simulate<S: RareEventSimulator>(
+    simulator: &S,
+    start: S::State,
+    rng: &mut dyn RngCore,
+    max_steps: u64,
+    simulations: &mut u64,
+    index: usize,
+) -> Result<Trajectory<S::State>> {
+    let z = simulator.score(&start);
+    if z.is_nan() {
+        return Err(splitting_error(index, 0, "score is not finite"));
     }
+    extend(
+        simulator,
+        vec![start],
+        z,
+        max_steps,
+        rng,
+        simulations,
+        index,
+    )
+}
+
+fn branch<S: RareEventSimulator>(
+    simulator: &S,
+    source: &Trajectory<S::State>,
+    level: f64,
+    rng: &mut dyn RngCore,
+    max_steps: u64,
+    simulations: &mut u64,
+    index: usize,
+) -> Result<Trajectory<S::State>> {
+    let cross = source
+        .states
+        .iter()
+        .position(|s| simulator.score(s) > level)
+        .unwrap_or(0);
+    let prefix: Vec<S::State> = source.states[..=cross].to_vec();
+    let z = prefix
+        .iter()
+        .map(|s| simulator.score(s))
+        .fold(f64::NEG_INFINITY, f64::max);
+    extend(simulator, prefix, z, max_steps, rng, simulations, index)
 }
 
 fn splitting_error(particle: usize, level: usize, message: &str) -> Error {
