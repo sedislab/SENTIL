@@ -5,11 +5,13 @@
 mod dense;
 mod discrete;
 mod eval;
+mod multi;
 mod pwl;
 mod robustness;
 mod stream;
 mod window;
 
+pub use multi::MultiFormulaMonitor;
 pub use robustness::Robustness;
 pub use stream::StreamMonitor;
 
