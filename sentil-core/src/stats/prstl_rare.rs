@@ -89,18 +89,10 @@ impl StochasticSystem {
 }
 
 /// Tuning for a rare-event run.
-///
-/// The defaults suit a first run: a few thousand particles, an automatic
-/// per-level step budget, a zero violation margin, and a fixed seed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RareEventConfig {
     /// The particle population.
     pub particles: usize,
-    /// How far a particle advances per level. `0` means automatic, about a tenth
-    /// of the horizon, which keeps each level partial so the splitting ladder can
-    /// form; setting it to the full horizon would collapse the run to plain Monte
-    /// Carlo.
-    pub max_steps_per_level: u64,
     /// The violation margin; the rare event is robustness at or below `-margin`.
     pub margin: f64,
     /// The seed.
@@ -111,7 +103,6 @@ impl Default for RareEventConfig {
     fn default() -> Self {
         Self {
             particles: 4096,
-            max_steps_per_level: 0,
             margin: 0.0,
             seed: 42,
         }
@@ -213,15 +204,7 @@ impl RareEventSimulator for PrstlWalk<'_> {
 }
 
 impl Formula {
-    /// Estimates `P~p(phi)` over a user-defined stochastic `system` by adaptive
-    /// multilevel splitting, for satisfaction probabilities too small for plain
-    /// Monte Carlo to resolve. The inner formula should be safety-shaped, like
-    /// `always`. `probability` is the satisfaction probability.
-    ///
-    /// Read the result as an order-of-magnitude tail estimate. It is accurate for
-    /// moderately rare events and resolves events Monte Carlo reports as zero, but
-    /// far out in the tail the level selection biases the estimate, so widen
-    /// `particles` and trust the magnitude over the digits.
+    /// Estimates `P~p(phi)` over a user-defined stochastic `system` by adaptive multilevel splitting.
     ///
     /// # Errors
     ///
@@ -234,11 +217,6 @@ impl Formula {
         let Formula::Probabilistic(op, threshold, inner) = self else {
             return Err(Error::NotProbabilistic);
         };
-        let max_steps = if config.max_steps_per_level == 0 {
-            (system.horizon() as u64 / 10).max(1)
-        } else {
-            config.max_steps_per_level
-        };
         let walk = PrstlWalk {
             inner,
             system,
@@ -248,7 +226,7 @@ impl Formula {
             &walk,
             config.particles,
             config.margin,
-            max_steps,
+            system.horizon() as u64,
             config.seed,
         )?;
         let probability = 1.0 - est.probability;
@@ -288,20 +266,19 @@ mod tests {
     }
 
     #[test]
-    fn moderate_rare_event_lands_near_ground_truth() {
+    fn rare_event_lands_near_ground_truth() {
         // P(the walk's running max reaches 8 within 15 steps) ~ 0.028 by 4e5-sample MC.
         let phi = Formula::parse("P>=0.99(always(x < 8.0))").unwrap();
         let config = RareEventConfig {
             particles: 4000,
-            max_steps_per_level: 3,
             margin: 0.0,
             seed: 1,
         };
         let result = phi.check_rare_event(&random_walk(15), &config).unwrap();
         let truth = 0.0281;
         assert!(
-            result.violation_probability > truth / 3.0
-                && result.violation_probability < truth * 3.0,
+            result.violation_probability > truth / 2.0
+                && result.violation_probability < truth * 2.0,
             "got {}",
             result.violation_probability
         );
@@ -312,7 +289,6 @@ mod tests {
         let phi = Formula::parse("P>=0.999(always(x < 8.0))").unwrap();
         let config = RareEventConfig {
             particles: 4000,
-            max_steps_per_level: 2,
             margin: 0.0,
             seed: 2,
         };
