@@ -282,6 +282,58 @@ mod tests {
         ));
     }
 
+    fn dense_at(formula: &str, t: f64, times: &[f64], signals: &[(&str, &[f64])]) -> f64 {
+        let phi = Formula::parse(formula).unwrap();
+        let map: BTreeMap<String, Vec<f64>> = signals
+            .iter()
+            .map(|(n, v)| ((*n).to_string(), v.to_vec()))
+            .collect();
+        robustness_signal(&phi, times, &map).unwrap().at(t)
+    }
+
+    #[test]
+    fn dense_until_takes_the_best_future_witness() {
+        let r = dense_at(
+            "(x > 0) until[0, 2] (y > 0)",
+            0.0,
+            &[0.0, 1.0, 2.0],
+            &[("x", &[10.0, 10.0, 10.0]), ("y", &[-2.0, 0.0, 2.0])],
+        );
+        assert_eq!(r, 2.0);
+    }
+
+    #[test]
+    fn dense_until_is_capped_by_a_dip_in_the_left_operand() {
+        let r = dense_at(
+            "(x > 0) until[1, 2] (y > 0)",
+            0.0,
+            &[0.0, 1.0, 2.0],
+            &[("x", &[10.0, -5.0, 10.0]), ("y", &[2.0, 2.0, 2.0])],
+        );
+        assert_eq!(r, -5.0);
+    }
+
+    #[test]
+    fn dense_since_takes_the_best_past_witness() {
+        let r = dense_at(
+            "(x > 0) since[0, 2] (y > 0)",
+            2.0,
+            &[0.0, 1.0, 2.0],
+            &[("x", &[10.0, 10.0, 10.0]), ("y", &[2.0, 0.0, -2.0])],
+        );
+        assert_eq!(r, 2.0);
+    }
+
+    #[test]
+    fn next_is_rejected_in_dense_time() {
+        let phi = Formula::parse("next(x > 0)").unwrap();
+        let map: BTreeMap<String, Vec<f64>> = [("x".to_string(), vec![1.0])].into_iter().collect();
+        assert!(matches!(
+            robustness_signal(&phi, &[0.0], &map),
+            Err(Error::Unsupported { .. })
+        ));
+    }
+
     proptest! {
         #[test]
         fn dense_matches_discrete_on_aligned_windows(
