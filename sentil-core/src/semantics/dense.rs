@@ -18,6 +18,9 @@ use super::pwl::{combine, crossing, window, Pwl};
 use crate::error::{Error, Result};
 use crate::formula::{BinaryOp, ComparisonOp, Expr, Formula, Predicate};
 
+/// Slack for comparing window edges against breakpoint times.
+const EPS: f64 = 1e-9;
+
 pub(crate) fn robustness_signal(
     formula: &Formula,
     times: &[f64],
@@ -65,11 +68,80 @@ pub(crate) fn robustness_signal(
             -interval.lower,
             false,
         )),
+        Formula::Until(interval, l, r) => Ok(until_signal(
+            &robustness_signal(l, times, signals)?,
+            &robustness_signal(r, times, signals)?,
+            interval.lower,
+            interval.upper_or_infinity(),
+        )),
+        Formula::Since(interval, l, r) => Ok(since_signal(
+            &robustness_signal(l, times, signals)?,
+            &robustness_signal(r, times, signals)?,
+            interval.lower,
+            interval.upper_or_infinity(),
+        )),
         Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
-        _ => Err(Error::Unsupported {
-            feature: "until, since, and next in dense time; use discrete robustness for those",
+        Formula::Next(_) => Err(Error::Unsupported {
+            feature: "next in dense time; use discrete robustness for it",
         }),
     }
+}
+
+/// A shared breakpoint grid for two signals, with both sampled on it.
+fn common_grid(phi: &Pwl, psi: &Pwl) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let mut times: Vec<f64> = phi.times().chain(psi.times()).collect();
+    times.sort_by(f64::total_cmp);
+    times.dedup();
+    let phi_vals = times.iter().map(|&t| phi.at(t)).collect();
+    let psi_vals = times.iter().map(|&t| psi.at(t)).collect();
+    (times, phi_vals, psi_vals)
+}
+
+/// Dense `phi U_[a,b] psi`: at each time the best future instant `s` in the window
+/// where `psi` holds and `phi` held throughout `[t, s]`.
+fn until_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
+    let (times, phi_vals, psi_vals) = common_grid(phi, psi);
+    let n = times.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    for i in 0..n {
+        let mut best = f64::NEG_INFINITY;
+        let mut phi_inf = f64::INFINITY;
+        for s in i..n {
+            phi_inf = phi_inf.min(phi_vals[s]);
+            let dt = times[s] - times[i];
+            if dt > b + EPS {
+                break;
+            }
+            if dt >= a - EPS {
+                best = best.max(psi_vals[s].min(phi_inf));
+            }
+        }
+        result[i] = best;
+    }
+    Pwl::new(times.into_iter().zip(result).collect())
+}
+
+/// Dense `phi S_[a,b] psi`: the past dual of [`until_signal`], scanning backward.
+fn since_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
+    let (times, phi_vals, psi_vals) = common_grid(phi, psi);
+    let n = times.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    for i in 0..n {
+        let mut best = f64::NEG_INFINITY;
+        let mut phi_inf = f64::INFINITY;
+        for s in (0..=i).rev() {
+            phi_inf = phi_inf.min(phi_vals[s]);
+            let dt = times[i] - times[s];
+            if dt > b + EPS {
+                break;
+            }
+            if dt >= a - EPS {
+                best = best.max(psi_vals[s].min(phi_inf));
+            }
+        }
+        result[i] = best;
+    }
+    Pwl::new(times.into_iter().zip(result).collect())
 }
 
 fn predicate(p: &Predicate, times: &[f64], signals: &BTreeMap<String, Vec<f64>>) -> Result<Pwl> {

@@ -42,7 +42,7 @@ impl Pwl {
         }
     }
 
-    fn times(&self) -> impl Iterator<Item = f64> + '_ {
+    pub(crate) fn times(&self) -> impl Iterator<Item = f64> + '_ {
         self.points.iter().map(|&(t, _)| t)
     }
 
