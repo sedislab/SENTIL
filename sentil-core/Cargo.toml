@@ -28,11 +28,14 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["statistical", "ingest", "parallel"]
+default = ["statistical", "ingest", "parallel", "synthesis"]
 
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.
 statistical = ["dep:rand", "dep:rand_distr", "dep:rand_chacha"]
+# Synthesizing inputs and controllers from a specification, on the CPU with no
+# extra dependencies. The MILP and GPU backends sit behind their own features.
+synthesis = []
 
 # Spread Monte Carlo across cores with Rayon. Same answer as one thread; each
 # sample is seeded independently.

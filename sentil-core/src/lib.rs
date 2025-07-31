@@ -31,6 +31,8 @@ pub mod semantics;
 pub mod signal;
 #[cfg(feature = "statistical")]
 pub mod stats;
+#[cfg(feature = "synthesis")]
+pub mod synthesis;
 
 pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
@@ -41,3 +43,5 @@ pub use stats::{
     ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, RareEventConfig,
     RareEventResult, SmcConfig, SmcResult, SprtConfig, SprtResult, StochasticSystem,
 };
+#[cfg(feature = "synthesis")]
+pub use synthesis::SmoothConfig;
