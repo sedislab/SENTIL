@@ -72,3 +72,40 @@ pub fn soft_max(values: &[f64], beta: f64) -> f64 {
     let sum: f64 = values.iter().map(|&x| (beta * (x - shift)).exp()).sum();
     shift + sum.ln() / beta
 }
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "the asserted bounds and conventions are exact"
+    )]
+
+    use super::*;
+
+    #[test]
+    fn soft_operators_bound_the_exact_ones() {
+        let values = [1.0, -2.0, 3.5, 0.25];
+        assert!(soft_min(&values, 5.0) <= -2.0);
+        assert!(soft_max(&values, 5.0) >= 3.5);
+    }
+
+    #[test]
+    fn higher_temperature_approaches_exact_min_and_max() {
+        let values = [1.0, -2.0, 3.5, 0.25];
+        assert!((soft_min(&values, 200.0) - (-2.0)).abs() < 0.05);
+        assert!((soft_max(&values, 200.0) - 3.5).abs() < 0.05);
+    }
+
+    #[test]
+    fn an_empty_slice_matches_the_exact_conventions() {
+        assert_eq!(soft_min(&[], 1.0), f64::INFINITY);
+        assert_eq!(soft_max(&[], 1.0), f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn config_rejects_a_non_positive_temperature() {
+        assert!(SmoothConfig::new(0.0).is_err());
+        assert!(SmoothConfig::new(-1.0).is_err());
+        assert!(SmoothConfig::new(f64::NAN).is_err());
+        assert_eq!(SmoothConfig::new(4.0).unwrap().temperature(), 4.0);
+    }
+}
