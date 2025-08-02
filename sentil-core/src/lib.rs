@@ -45,6 +45,6 @@ pub use stats::{
 };
 #[cfg(feature = "synthesis")]
 pub use synthesis::{
-    maximize, Bounds, LinearModel, SmoothConfig, SynthesisProblem, SynthesisResult, Synthesizer,
-    SystemModel,
+    maximize, symmetric_eigen, Bounds, LinearModel, SmoothConfig, SynthesisProblem,
+    SynthesisResult, Synthesizer, SystemModel,
 };
