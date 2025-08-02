@@ -14,6 +14,8 @@ use crate::formula::Formula;
 use crate::semantics::{eval_predicate, WINDOW_EPSILON};
 use crate::signal::Trace;
 
+const EPS: f64 = 1e-12;
+
 /// The temperature for smooth robustness.
 ///
 /// A higher temperature tracks the exact min and max more closely; a lower one is
@@ -160,11 +162,95 @@ fn soft_eval(
             beta,
             soft_max,
         )),
+        Formula::Until(interval, l, r) => Ok(soft_until(
+            &soft_eval(l, times, signals, beta)?,
+            &soft_eval(r, times, signals, beta)?,
+            times,
+            interval.lower,
+            interval.upper_or_infinity(),
+            beta,
+        )),
+        Formula::Since(interval, l, r) => Ok(soft_since(
+            &soft_eval(l, times, signals, beta)?,
+            &soft_eval(r, times, signals, beta)?,
+            times,
+            interval.lower,
+            interval.upper_or_infinity(),
+            beta,
+        )),
+        Formula::Next(f) => Ok(soft_next(&soft_eval(f, times, signals, beta)?)),
         Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
-        _ => Err(Error::Unsupported {
-            feature: "until, since, and next in smooth robustness",
-        }),
     }
+}
+
+fn soft_until(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64, beta: f64) -> Vec<f64> {
+    let n = phi.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    for i in 0..n {
+        let window_start = times[i] + a;
+        let window_end = if b.is_infinite() {
+            f64::INFINITY
+        } else {
+            times[i] + b
+        };
+        if window_start > times[n - 1] + EPS {
+            continue;
+        }
+        let first = times.partition_point(|&t| t < window_start - EPS);
+        let mut prefix = Vec::new();
+        let mut candidates = Vec::new();
+        for j in i..n {
+            if j > i {
+                prefix.push(phi[j - 1]);
+            }
+            if times[j] > window_end + EPS {
+                break;
+            }
+            if j >= first {
+                candidates.push(soft_min(&[psi[j], soft_min(&prefix, beta)], beta));
+            }
+        }
+        result[i] = soft_max(&candidates, beta);
+    }
+    result
+}
+
+fn soft_since(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64, beta: f64) -> Vec<f64> {
+    let n = phi.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    for i in 0..n {
+        let window_end = times[i] - a;
+        let window_start = if b.is_infinite() {
+            0.0
+        } else {
+            (times[i] - b).max(0.0)
+        };
+        let last = times.partition_point(|&t| t <= window_end + EPS);
+        let mut prefix = Vec::new();
+        let mut candidates = Vec::new();
+        for j in (0..=i).rev() {
+            if j < i {
+                prefix.push(phi[j + 1]);
+            }
+            if times[j] < window_start - EPS {
+                break;
+            }
+            if j < last {
+                candidates.push(soft_min(&[psi[j], soft_min(&prefix, beta)], beta));
+            }
+        }
+        result[i] = soft_max(&candidates, beta);
+    }
+    result
+}
+
+fn soft_next(inner: &[f64]) -> Vec<f64> {
+    let n = inner.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    if n > 1 {
+        result[..n - 1].copy_from_slice(&inner[1..]);
+    }
+    result
 }
 
 fn soft_window(
@@ -265,5 +351,60 @@ mod tests {
             .unwrap();
         assert!((smooth - exact).abs() < 0.1);
         assert!(smooth <= exact + 1e-9);
+    }
+
+    #[test]
+    fn a_bounded_window_keeps_its_edge_sample_on_an_accumulated_grid() {
+        let mut times = Vec::new();
+        let mut t = 0.0;
+        for _ in 0..8 {
+            times.push(t);
+            t += 0.1;
+        }
+        assert!(times[3] > 0.3);
+
+        let phi = Formula::parse("always[0, 0.3](x > 0)").unwrap();
+        let mut trace = Trace::new(times).unwrap();
+        trace
+            .add_signal("x", [3.0, 3.0, 3.0, 1.0, 3.0, 3.0, 3.0, 3.0])
+            .unwrap();
+        let exact = phi.robustness_signal(&trace).unwrap()[0];
+        assert_eq!(exact, 1.0);
+
+        for beta in [20.0, 200.0, 2000.0] {
+            let smooth = phi
+                .smooth_robustness(&trace, SmoothConfig::new(beta).unwrap())
+                .unwrap();
+            assert!(smooth <= exact + 1e-9, "beta {beta}: {smooth} over {exact}");
+            assert!(
+                smooth >= exact - 4.0_f64.ln() / beta,
+                "beta {beta}: {smooth} under {exact}"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_until_approaches_the_exact_value() {
+        let phi = Formula::parse("(x > 0) until[0, 2] (y > 0)").unwrap();
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", [3.0, 3.0, 3.0]).unwrap();
+        trace.add_signal("y", [-1.0, 1.0, 2.0]).unwrap();
+        let exact = phi.robustness(&trace).unwrap();
+        let smooth = phi
+            .smooth_robustness(&trace, SmoothConfig::new(200.0).unwrap())
+            .unwrap();
+        assert!((smooth - exact).abs() < 0.1);
+    }
+
+    #[test]
+    fn smooth_next_shifts_one_step() {
+        let phi = Formula::parse("next(x > 0)").unwrap();
+        let mut trace = Trace::new([0.0, 1.0]).unwrap();
+        trace.add_signal("x", [5.0, -3.0]).unwrap();
+        assert_eq!(
+            phi.smooth_robustness(&trace, SmoothConfig::default())
+                .unwrap(),
+            -3.0
+        );
     }
 }
