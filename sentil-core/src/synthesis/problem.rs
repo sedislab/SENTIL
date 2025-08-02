@@ -1,10 +1,23 @@
 //! Open-loop trajectory synthesis: find an input sequence that satisfies a spec.
 
+use super::cmaes::{cma_es, CmaConfig};
 use super::model::{Bounds, SystemModel};
 use super::pgrad::maximize;
 use super::smooth::SmoothConfig;
 use crate::error::Result;
 use crate::formula::Formula;
+
+/// The search backend a synthesis problem uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Backend {
+    /// Choose automatically; currently the gradient search.
+    #[default]
+    Auto,
+    /// Projected gradient ascent on the smooth robustness.
+    Gradient,
+    /// CMA-ES, a gradient-free search for a rugged landscape.
+    CmaEs,
+}
 
 /// An open-loop search for an input sequence that makes `spec` hold on `model`.
 pub struct SynthesisProblem<'a, M: SystemModel> {
@@ -13,6 +26,7 @@ pub struct SynthesisProblem<'a, M: SystemModel> {
     bounds: Bounds,
     smooth: SmoothConfig,
     max_iters: usize,
+    backend: Backend,
 }
 
 impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
@@ -26,6 +40,7 @@ impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
             bounds,
             smooth: SmoothConfig::default(),
             max_iters: 200,
+            backend: Backend::Auto,
         }
     }
 
@@ -43,10 +58,17 @@ impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
         self
     }
 
-    /// Sets the maximum number of ascent steps.
+    /// Sets the maximum number of search steps.
     #[must_use]
     pub fn with_budget(mut self, max_iters: usize) -> Self {
         self.max_iters = max_iters;
+        self
+    }
+
+    /// Selects the search backend.
+    #[must_use]
+    pub fn with_backend(mut self, backend: Backend) -> Self {
+        self.backend = backend;
         self
     }
 }
@@ -60,6 +82,8 @@ pub struct SynthesisResult {
     pub robustness: f64,
     /// Whether the specification holds.
     pub satisfies: bool,
+    /// The backend that produced this result, with `Auto` resolved to its choice.
+    pub backend: Backend,
 }
 
 /// Solves [`SynthesisProblem`]s.
@@ -78,13 +102,29 @@ impl Synthesizer {
         let model = problem.model;
         let spec = problem.spec;
         let start = vec![0.0; model.input_dimension()];
-        let objective = |u: &[f64]| spec.smooth_gradient(model, u, problem.smooth);
-        let (input, _) = maximize(objective, &start, &problem.bounds, problem.max_iters)?;
+        let (input, backend) = if problem.backend == Backend::CmaEs {
+            let objective = |u: &[f64]| spec.smooth_robustness(&model.rollout(u)?, problem.smooth);
+            let config = CmaConfig {
+                max_generations: problem.max_iters,
+                ..CmaConfig::default()
+            };
+            (
+                cma_es(objective, &start, &problem.bounds, config)?.0,
+                Backend::CmaEs,
+            )
+        } else {
+            let objective = |u: &[f64]| spec.smooth_gradient(model, u, problem.smooth);
+            (
+                maximize(objective, &start, &problem.bounds, problem.max_iters)?.0,
+                Backend::Gradient,
+            )
+        };
         let robustness = spec.robustness(&model.rollout(&input)?)?;
         Ok(SynthesisResult {
             satisfies: robustness >= 0.0,
             robustness,
             input,
+            backend,
         })
     }
 }
@@ -116,6 +156,18 @@ mod tests {
         let result = Synthesizer::solve(&problem).unwrap();
         assert!(result.satisfies, "robustness {}", result.robustness);
         assert!(result.robustness >= 0.0);
+    }
+
+    #[test]
+    fn the_cma_es_backend_also_satisfies_the_spec() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
+            .with_backend(Backend::CmaEs);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert!(result.satisfies, "robustness {}", result.robustness);
+        assert_eq!(result.backend, Backend::CmaEs);
     }
 
     #[test]
