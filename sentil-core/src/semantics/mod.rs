@@ -15,7 +15,9 @@ pub use multi::MultiFormulaMonitor;
 pub use robustness::Robustness;
 pub use stream::StreamMonitor;
 
-pub(crate) use eval::{eval_predicate, predicate_margin};
+#[cfg(feature = "synthesis")]
+pub(crate) use eval::eval_predicate;
+pub(crate) use eval::predicate_margin;
 
 use crate::error::{Error, Result};
 use crate::formula::Formula;
