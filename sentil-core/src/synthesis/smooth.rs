@@ -7,7 +7,12 @@
 //! approach the exact operators, and at every temperature the soft minimum stays
 //! at or below the true minimum and the soft maximum at or above the true maximum.
 
+use std::collections::BTreeMap;
+
 use crate::error::{Error, Result};
+use crate::formula::Formula;
+use crate::semantics::{eval_predicate, WINDOW_EPSILON};
+use crate::signal::Trace;
 
 /// The temperature for smooth robustness.
 ///
@@ -72,6 +77,77 @@ pub fn soft_max(values: &[f64], beta: f64) -> f64 {
     let sum: f64 = values.iter().map(|&x| (beta * (x - shift)).exp()).sum();
     shift + sum.ln() / beta
 }
+
+impl Formula {
+    /// The smooth robustness of the formula over a trace: a differentiable
+    /// surrogate for [`robustness`](Self::robustness) that synthesis can climb.
+    ///
+    /// It mirrors the exact robustness but with the soft minimum and maximum at
+    /// the configured temperature, so the result varies smoothly with the trace.
+    /// As the temperature rises it approaches the exact value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyTrace`] if the trace has no samples,
+    /// [`Error::UnknownVariable`] if the formula names a missing signal, and
+    /// [`Error::ProbabilisticOperator`] if the formula is probabilistic.
+    pub fn smooth_robustness(&self, trace: &Trace, config: SmoothConfig) -> Result<f64> {
+        if trace.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        let signal = soft_eval(self, trace.times(), trace.signals(), config.temperature())?;
+        Ok(signal[0])
+    }
+}
+
+/// The smooth robustness signal, mirroring `semantics::discrete::eval` with the
+/// soft minimum and maximum in place of the exact ones.
+fn soft_eval(
+    formula: &Formula,
+    times: &[f64],
+    signals: &BTreeMap<String, Vec<f64>>,
+    beta: f64,
+) -> Result<Vec<f64>> {
+    match formula {
+        Formula::Predicate(p) => (0..times.len())
+            .map(|i| {
+                let lookup = |name: &str| signals.get(name).and_then(|col| col.get(i)).copied();
+                eval_predicate(p, &lookup)
+            })
+            .collect(),
+        Formula::Not(f) => Ok(soft_eval(f, times, signals, beta)?
+            .into_iter()
+            .map(|x| -x)
+            .collect()),
+        Formula::And(l, r) => {
+            soft_combine(l, r, times, signals, beta, |x, y| soft_min(&[x, y], beta))
+        }
+        Formula::Or(l, r) => {
+            soft_combine(l, r, times, signals, beta, |x, y| soft_max(&[x, y], beta))
+        }
+        Formula::Implies(l, r) => {
+            soft_combine(l, r, times, signals, beta, |x, y| soft_max(&[-x, y], beta))
+        }
+        Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
+        _ => Err(Error::Unsupported {
+            feature: "temporal operators in smooth robustness",
+        }),
+    }
+}
+
+fn soft_combine(
+    left: &Formula,
+    right: &Formula,
+    times: &[f64],
+    signals: &BTreeMap<String, Vec<f64>>,
+    beta: f64,
+    op: impl Fn(f64, f64) -> f64,
+) -> Result<Vec<f64>> {
+    let left = soft_eval(left, times, signals, beta)?;
+    let right = soft_eval(right, times, signals, beta)?;
+    Ok(left.iter().zip(&right).map(|(&x, &y)| op(x, y)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -107,5 +183,19 @@ mod tests {
         assert!(SmoothConfig::new(-1.0).is_err());
         assert!(SmoothConfig::new(f64::NAN).is_err());
         assert_eq!(SmoothConfig::new(4.0).unwrap().temperature(), 4.0);
+    }
+
+    #[test]
+    fn smooth_robustness_approaches_the_exact_value() {
+        let phi = Formula::parse("(x > 0) and (y > 1)").unwrap();
+        let mut trace = Trace::new([0.0]).unwrap();
+        trace.add_signal("x", [3.0]).unwrap();
+        trace.add_signal("y", [4.0]).unwrap();
+        let exact = phi.robustness(&trace).unwrap();
+        let smooth = phi
+            .smooth_robustness(&trace, SmoothConfig::new(200.0).unwrap())
+            .unwrap();
+        assert!((smooth - exact).abs() < 0.05);
+        assert!(smooth <= exact + 1e-9);
     }
 }

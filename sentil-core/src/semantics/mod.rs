@@ -15,7 +15,7 @@ pub use multi::MultiFormulaMonitor;
 pub use robustness::Robustness;
 pub use stream::StreamMonitor;
 
-pub(crate) use eval::predicate_margin;
+pub(crate) use eval::{eval_predicate, predicate_margin};
 
 use crate::error::{Error, Result};
 use crate::formula::Formula;
