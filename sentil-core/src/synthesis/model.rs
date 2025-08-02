@@ -197,4 +197,21 @@ mod tests {
         assert!(Bounds::new([0.0], [1.0, 2.0]).is_err());
         assert!(Bounds::new([1.0], [0.0]).is_err());
     }
+
+    #[test]
+    fn integrator_rolls_input_to_the_expected_trace() {
+        let model =
+            LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 3).unwrap();
+        assert_eq!(model.input_dimension(), 3);
+        let trace = model.rollout(&[1.0, 1.0, 1.0]).unwrap();
+        assert_eq!(trace.times(), &[0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(trace.signals()["pos"], vec![0.0, 1.0, 2.0, 3.0]);
+        assert!(model.rollout(&[1.0]).is_err());
+    }
+
+    #[test]
+    fn a_shape_mismatch_is_rejected() {
+        let bad = LinearModel::new(vec![vec![1.0, 0.0]], vec![vec![1.0]], [0.0], ["x"], 1.0, 2);
+        assert!(bad.is_err());
+    }
 }
