@@ -201,3 +201,35 @@ fn transform(eigenvectors: &[Vec<f64>], scales: &[f64], vector: &[f64]) -> Vec<f
     }
     out
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovers_the_sphere_optimum() {
+        let objective = |x: &[f64]| Ok(-x.iter().map(|v| v * v).sum::<f64>());
+        let bounds = Bounds::new(vec![-5.0; 3], vec![5.0; 3]).unwrap();
+        let (best, value) =
+            cma_es(objective, &[3.0, -2.0, 4.0], &bounds, CmaConfig::default()).unwrap();
+        assert!(value > -1e-6);
+        for coordinate in &best {
+            assert!(coordinate.abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn solves_the_rosenbrock_valley() {
+        let objective = |x: &[f64]| {
+            let (a, b) = (1.0 - x[0], x[1] - x[0] * x[0]);
+            Ok(-a.mul_add(a, 100.0 * b * b))
+        };
+        let bounds = Bounds::new(vec![-5.0, -5.0], vec![5.0, 5.0]).unwrap();
+        let config = CmaConfig {
+            max_generations: 500,
+            ..CmaConfig::default()
+        };
+        let (best, value) = cma_es(objective, &[-1.0, 2.0], &bounds, config).unwrap();
+        assert!(value > -1e-3, "value {value}");
+        assert!((best[0] - 1.0).abs() < 0.05 && (best[1] - 1.0).abs() < 0.05);
+    }
+}
