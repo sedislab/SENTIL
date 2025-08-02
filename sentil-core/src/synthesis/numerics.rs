@@ -84,6 +84,67 @@ fn rotate(a: &mut [Vec<f64>], v: &mut [Vec<f64>], p: usize, q: usize, c: f64, s:
         row[q] = s * kp + c * kq;
     }
 }
+
+/// Solves `A x = b` for a symmetric positive-definite `A` by Cholesky
+/// factorization (`A = L Lᵀ`, then forward and back substitution).
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidConfig`] if `matrix` is not square, its size does not
+/// match `rhs`, or `matrix` is not positive-definite.
+#[allow(
+    clippy::many_single_char_names,
+    clippy::needless_range_loop,
+    reason = "standard factorization notation and explicit indexing read clearest here"
+)]
+pub fn solve_spd(matrix: &[Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
+    let n = matrix.len();
+    if matrix.iter().any(|row| row.len() != n) || rhs.len() != n {
+        return Err(Error::InvalidConfig {
+            context: "linear solve",
+            message: "matrix must be square and match the right-hand side".to_owned(),
+        });
+    }
+    let mut l = vec![vec![0.0; n]; n];
+    for j in 0..n {
+        let mut diagonal = matrix[j][j];
+        for k in 0..j {
+            diagonal -= l[j][k] * l[j][k];
+        }
+        if diagonal <= 0.0 {
+            return Err(Error::InvalidConfig {
+                context: "linear solve",
+                message: "matrix is not positive-definite".to_owned(),
+            });
+        }
+        l[j][j] = diagonal.sqrt();
+        for i in (j + 1)..n {
+            let mut entry = matrix[i][j];
+            for k in 0..j {
+                entry -= l[i][k] * l[j][k];
+            }
+            l[i][j] = entry / l[j][j];
+        }
+    }
+    let mut y = vec![0.0; n];
+    for i in 0..n {
+        let mut sum = rhs[i];
+        for k in 0..i {
+            sum -= l[i][k] * y[k];
+        }
+        y[i] = sum / l[i][i];
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut sum = y[i];
+        for k in (i + 1)..n {
+            sum -= l[k][i] * x[k];
+        }
+        x[i] = sum / l[i][i];
+    }
+    Ok(x)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +193,22 @@ mod tests {
     #[test]
     fn a_non_square_matrix_is_rejected() {
         assert!(symmetric_eigen(&[vec![1.0, 2.0]]).is_err());
+    }
+
+    #[test]
+    fn solves_a_positive_definite_system() {
+        let a = vec![vec![4.0, 1.0], vec![1.0, 3.0]];
+        let b = [1.0, 2.0];
+        let x = solve_spd(&a, &b).unwrap();
+        for (row, &rhs) in a.iter().zip(&b) {
+            let product: f64 = row.iter().zip(&x).map(|(c, xj)| c * xj).sum();
+            assert!((product - rhs).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn rejects_a_non_positive_definite_matrix() {
+        let indefinite = vec![vec![1.0, 2.0], vec![2.0, 1.0]];
+        assert!(solve_spd(&indefinite, &[1.0, 1.0]).is_err());
     }
 }

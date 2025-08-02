@@ -16,7 +16,7 @@ mod smooth;
 
 pub use cmaes::{cma_es, CmaConfig};
 pub use model::{Bounds, LinearModel, SystemModel};
-pub use numerics::symmetric_eigen;
+pub use numerics::{solve_spd, symmetric_eigen};
 pub use pgrad::maximize;
 pub use problem::{Backend, SynthesisProblem, SynthesisResult, Synthesizer};
 pub use smooth::{soft_max, soft_min, SmoothConfig};
