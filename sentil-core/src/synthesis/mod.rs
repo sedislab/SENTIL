@@ -6,6 +6,7 @@
 //! the monitor uses, so an optimizer can push a candidate uphill toward
 //! satisfaction. The open-loop and receding-horizon layers build on it.
 
+mod gradient;
 mod model;
 mod smooth;
 
