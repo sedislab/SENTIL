@@ -1,6 +1,21 @@
 //! System models and input bounds for synthesis.
 
 use crate::error::{Error, Result};
+use crate::signal::Trace;
+
+/// A system whose input sequence rolls forward into a trace of named signals.
+pub trait SystemModel {
+    /// The length of the packed input vector the model expects.
+    fn input_dimension(&self) -> usize;
+
+    /// Rolls the packed `input` into the trace its signals are read from.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `input` is not [`input_dimension`](Self::input_dimension)
+    /// long, or if the trace cannot be built.
+    fn rollout(&self, input: &[f64]) -> Result<Trace>;
+}
 
 /// Box bounds on a packed input vector: a lower and upper limit per coordinate.
 pub struct Bounds {
