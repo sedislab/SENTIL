@@ -36,3 +36,32 @@ impl Formula {
         Ok((value, gradient))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::synthesis::LinearModel;
+
+    #[test]
+    fn finite_difference_gradient_matches_the_analytic_one() {
+        let model =
+            LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["x"], 1.0, 1).unwrap();
+        let phi = Formula::parse("eventually[0, 1](x > 0)").unwrap();
+        let (beta, u) = (10.0, 0.5);
+        let (_, gradient) = phi
+            .smooth_gradient(&model, &[u], SmoothConfig::new(beta).unwrap())
+            .unwrap();
+        let analytic = 1.0 / (1.0 + (-beta * u).exp());
+        assert!((gradient[0] - analytic).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_rollout_error_propagates() {
+        let model =
+            LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["x"], 1.0, 1).unwrap();
+        let phi = Formula::parse("eventually[0, 1](x > 0)").unwrap();
+        assert!(phi
+            .smooth_gradient(&model, &[1.0, 2.0], SmoothConfig::default())
+            .is_err());
+    }
+}
