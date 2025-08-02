@@ -128,11 +128,66 @@ fn soft_eval(
         Formula::Implies(l, r) => {
             soft_combine(l, r, times, signals, beta, |x, y| soft_max(&[-x, y], beta))
         }
+        Formula::Always(interval, f) => Ok(soft_window(
+            &soft_eval(f, times, signals, beta)?,
+            times,
+            interval.lower,
+            interval.upper_or_infinity(),
+            beta,
+            soft_min,
+        )),
+        Formula::Eventually(interval, f) => Ok(soft_window(
+            &soft_eval(f, times, signals, beta)?,
+            times,
+            interval.lower,
+            interval.upper_or_infinity(),
+            beta,
+            soft_max,
+        )),
+        Formula::Historically(interval, f) => Ok(soft_window(
+            &soft_eval(f, times, signals, beta)?,
+            times,
+            -interval.upper_or_infinity(),
+            -interval.lower,
+            beta,
+            soft_min,
+        )),
+        Formula::Once(interval, f) => Ok(soft_window(
+            &soft_eval(f, times, signals, beta)?,
+            times,
+            -interval.upper_or_infinity(),
+            -interval.lower,
+            beta,
+            soft_max,
+        )),
         Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
         _ => Err(Error::Unsupported {
-            feature: "temporal operators in smooth robustness",
+            feature: "until, since, and next in smooth robustness",
         }),
     }
+}
+
+fn soft_window(
+    child: &[f64],
+    times: &[f64],
+    off_a: f64,
+    off_b: f64,
+    beta: f64,
+    reduce: fn(&[f64], f64) -> f64,
+) -> Vec<f64> {
+    times
+        .iter()
+        .map(|&t| {
+            let (lo, hi) = (t + off_a, t + off_b);
+            let window: Vec<f64> = child
+                .iter()
+                .zip(times)
+                .filter(|(_, &tj)| tj >= lo && tj <= hi)
+                .map(|(&v, _)| v)
+                .collect();
+            reduce(&window, beta)
+        })
+        .collect()
 }
 
 fn soft_combine(
@@ -196,6 +251,19 @@ mod tests {
             .smooth_robustness(&trace, SmoothConfig::new(200.0).unwrap())
             .unwrap();
         assert!((smooth - exact).abs() < 0.05);
+        assert!(smooth <= exact + 1e-9);
+    }
+
+    #[test]
+    fn smooth_temporal_approaches_the_exact_value() {
+        let phi = Formula::parse("always[0, 2](x > 0)").unwrap();
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", [3.0, 1.0, 2.0]).unwrap();
+        let exact = phi.robustness(&trace).unwrap();
+        let smooth = phi
+            .smooth_robustness(&trace, SmoothConfig::new(200.0).unwrap())
+            .unwrap();
+        assert!((smooth - exact).abs() < 0.1);
         assert!(smooth <= exact + 1e-9);
     }
 }
