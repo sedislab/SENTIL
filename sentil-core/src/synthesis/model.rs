@@ -52,6 +52,15 @@ impl Bounds {
         }
     }
 
+    /// Bounds that constrain nothing, over `dimension` coordinates.
+    #[must_use]
+    pub fn unbounded(dimension: usize) -> Self {
+        Self {
+            lower: vec![f64::NEG_INFINITY; dimension],
+            upper: vec![f64::INFINITY; dimension],
+        }
+    }
+
     /// The number of coordinates the bounds constrain.
     #[must_use]
     pub fn dimension(&self) -> usize {
