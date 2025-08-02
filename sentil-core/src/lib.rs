@@ -44,4 +44,4 @@ pub use stats::{
     RareEventResult, SmcConfig, SmcResult, SprtConfig, SprtResult, StochasticSystem,
 };
 #[cfg(feature = "synthesis")]
-pub use synthesis::{Bounds, SmoothConfig, SystemModel};
+pub use synthesis::{Bounds, LinearModel, SmoothConfig, SystemModel};

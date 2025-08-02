@@ -9,5 +9,5 @@
 mod model;
 mod smooth;
 
-pub use model::{Bounds, SystemModel};
+pub use model::{Bounds, LinearModel, SystemModel};
 pub use smooth::{soft_max, soft_min, SmoothConfig};
