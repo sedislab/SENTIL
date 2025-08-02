@@ -88,3 +88,45 @@ impl Synthesizer {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::synthesis::LinearModel;
+
+    fn integrator(horizon: usize) -> LinearModel {
+        LinearModel::new(
+            vec![vec![1.0]],
+            vec![vec![1.0]],
+            [0.0],
+            ["pos"],
+            1.0,
+            horizon,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn synthesizes_an_input_that_satisfies_a_reachable_spec() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
+            .with_budget(400);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert!(result.satisfies, "robustness {}", result.robustness);
+        assert!(result.robustness >= 0.0);
+    }
+
+    #[test]
+    fn an_infeasible_spec_returns_a_minimally_violating_input() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 10)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
+            .with_budget(400);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert!(!result.satisfies);
+        assert!(result.robustness < 0.0 && result.robustness > -6.0);
+    }
+}
