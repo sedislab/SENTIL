@@ -8,7 +8,9 @@
 
 mod gradient;
 mod model;
+mod pgrad;
 mod smooth;
 
 pub use model::{Bounds, LinearModel, SystemModel};
+pub use pgrad::maximize;
 pub use smooth::{soft_max, soft_min, SmoothConfig};
