@@ -49,3 +49,31 @@ where
     }
     Ok((best, best_value))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovers_an_interior_optimum() {
+        let objective = |u: &[f64]| {
+            let d = u[0] - 3.0;
+            Ok((-d * d, vec![-2.0 * d]))
+        };
+        let (best, value) =
+            maximize(objective, &[0.0], &Bounds::new([0.0], [10.0]).unwrap(), 200).unwrap();
+        assert!((best[0] - 3.0).abs() < 1e-3);
+        assert!(value > -1e-4);
+    }
+
+    #[test]
+    fn projects_an_exterior_optimum_to_the_boundary() {
+        let objective = |u: &[f64]| {
+            let d = u[0] - 20.0;
+            Ok((-d * d, vec![-2.0 * d]))
+        };
+        let (best, _) =
+            maximize(objective, &[0.0], &Bounds::new([0.0], [10.0]).unwrap(), 200).unwrap();
+        assert!((best[0] - 10.0).abs() < 1e-3);
+    }
+}
