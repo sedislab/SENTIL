@@ -84,3 +84,53 @@ fn rotate(a: &mut [Vec<f64>], v: &mut [Vec<f64>], p: usize, q: usize, c: f64, s:
         row[q] = s * kp + c * kq;
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagonalizes_a_symmetric_matrix() {
+        let a = vec![vec![2.0, 1.0], vec![1.0, 2.0]];
+        let (values, vectors) = symmetric_eigen(&a).unwrap();
+
+        let mut reconstructed = vec![vec![0.0; 2]; 2];
+        for (lambda, vector) in values.iter().zip(&vectors) {
+            for i in 0..2 {
+                for k in 0..2 {
+                    reconstructed[i][k] += lambda * vector[i] * vector[k];
+                }
+            }
+        }
+        for i in 0..2 {
+            for k in 0..2 {
+                assert!((reconstructed[i][k] - a[i][k]).abs() < 1e-12);
+            }
+        }
+
+        let mut sorted = values.clone();
+        sorted.sort_by(f64::total_cmp);
+        assert!((sorted[0] - 1.0).abs() < 1e-12 && (sorted[1] - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn eigenvectors_are_orthonormal() {
+        let a = vec![
+            vec![4.0, 1.0, 2.0],
+            vec![1.0, 3.0, 0.0],
+            vec![2.0, 0.0, 5.0],
+        ];
+        let (_, vectors) = symmetric_eigen(&a).unwrap();
+        for i in 0..3 {
+            for j in 0..3 {
+                let dot: f64 = vectors[i].iter().zip(&vectors[j]).map(|(x, y)| x * y).sum();
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!((dot - expected).abs() < 1e-10);
+            }
+        }
+    }
+
+    #[test]
+    fn a_non_square_matrix_is_rejected() {
+        assert!(symmetric_eigen(&[vec![1.0, 2.0]]).is_err());
+    }
+}
