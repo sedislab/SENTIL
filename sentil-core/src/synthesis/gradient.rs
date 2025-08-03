@@ -9,7 +9,7 @@ const STEP: f64 = 1e-6;
 
 impl Formula {
     /// The smooth robustness of the formula on the trace `model` rolls from
-    /// `input`, with its gradient against each input coordinate.
+    /// `initial` under `input`, with its gradient against each input coordinate.
     ///
     /// # Errors
     ///
@@ -17,10 +17,11 @@ impl Formula {
     pub fn smooth_gradient(
         &self,
         model: &impl SystemModel,
+        initial: &[f64],
         input: &[f64],
         config: SmoothConfig,
     ) -> Result<(f64, Vec<f64>)> {
-        let score = |u: &[f64]| self.smooth_robustness(&model.rollout(u)?, config);
+        let score = |u: &[f64]| self.smooth_robustness(&model.rollout_from(initial, u)?, config);
         let value = score(input)?;
         let mut gradient = vec![0.0; input.len()];
         let mut perturbed = input.to_vec();
@@ -49,7 +50,7 @@ mod tests {
         let phi = Formula::parse("eventually[0, 1](x > 0)").unwrap();
         let (beta, u) = (10.0, 0.5);
         let (_, gradient) = phi
-            .smooth_gradient(&model, &[u], SmoothConfig::new(beta).unwrap())
+            .smooth_gradient(&model, &[0.0], &[u], SmoothConfig::new(beta).unwrap())
             .unwrap();
         let analytic = 1.0 / (1.0 + (-beta * u).exp());
         assert!((gradient[0] - analytic).abs() < 1e-4);
@@ -61,7 +62,7 @@ mod tests {
             LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["x"], 1.0, 1).unwrap();
         let phi = Formula::parse("eventually[0, 1](x > 0)").unwrap();
         assert!(phi
-            .smooth_gradient(&model, &[1.0, 2.0], SmoothConfig::default())
+            .smooth_gradient(&model, &[0.0], &[1.0, 2.0], SmoothConfig::default())
             .is_err());
     }
 }

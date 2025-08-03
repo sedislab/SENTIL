@@ -101,9 +101,12 @@ impl Synthesizer {
     pub fn solve<M: SystemModel>(problem: &SynthesisProblem<'_, M>) -> Result<SynthesisResult> {
         let model = problem.model;
         let spec = problem.spec;
+        let initial = model.initial_state();
         let start = vec![0.0; model.input_dimension()];
         let (input, backend) = if problem.backend == Backend::CmaEs {
-            let objective = |u: &[f64]| spec.smooth_robustness(&model.rollout(u)?, problem.smooth);
+            let objective = |u: &[f64]| {
+                spec.smooth_robustness(&model.rollout_from(initial, u)?, problem.smooth)
+            };
             let config = CmaConfig {
                 max_generations: problem.max_iters,
                 ..CmaConfig::default()
@@ -113,13 +116,13 @@ impl Synthesizer {
                 Backend::CmaEs,
             )
         } else {
-            let objective = |u: &[f64]| spec.smooth_gradient(model, u, problem.smooth);
+            let objective = |u: &[f64]| spec.smooth_gradient(model, initial, u, problem.smooth);
             (
                 maximize(objective, &start, &problem.bounds, problem.max_iters)?.0,
                 Backend::Gradient,
             )
         };
-        let robustness = spec.robustness(&model.rollout(&input)?)?;
+        let robustness = spec.robustness(&model.rollout_from(initial, &input)?)?;
         Ok(SynthesisResult {
             satisfies: robustness >= 0.0,
             robustness,

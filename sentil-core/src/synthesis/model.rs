@@ -8,13 +8,17 @@ pub trait SystemModel {
     /// The length of the packed input vector the model expects.
     fn input_dimension(&self) -> usize;
 
-    /// Rolls the packed `input` into the trace its signals are read from.
+    /// The model's default initial state.
+    fn initial_state(&self) -> &[f64];
+
+    /// Rolls the packed `input` forward from `initial` into the trace its signals
+    /// are read from.
     ///
     /// # Errors
     ///
     /// Returns an error if `input` is not [`input_dimension`](Self::input_dimension)
     /// long, or if the trace cannot be built.
-    fn rollout(&self, input: &[f64]) -> Result<Trace>;
+    fn rollout_from(&self, initial: &[f64], input: &[f64]) -> Result<Trace>;
 }
 
 /// Box bounds on a packed input vector: a lower and upper limit per coordinate.
@@ -181,7 +185,11 @@ impl SystemModel for LinearModel {
         self.horizon * self.b.first().map_or(0, Vec::len)
     }
 
-    fn rollout(&self, input: &[f64]) -> Result<Trace> {
+    fn initial_state(&self) -> &[f64] {
+        &self.x0
+    }
+
+    fn rollout_from(&self, initial: &[f64], input: &[f64]) -> Result<Trace> {
         if input.len() != self.input_dimension() {
             return Err(Error::PackedLength {
                 expected: self.input_dimension(),
@@ -189,7 +197,7 @@ impl SystemModel for LinearModel {
             });
         }
         let width = self.b.first().map_or(0, Vec::len);
-        let mut state = self.x0.clone();
+        let mut state = initial.to_vec();
         let mut columns: Vec<Vec<f64>> = (0..state.len())
             .map(|_| Vec::with_capacity(self.horizon + 1))
             .collect();
@@ -246,10 +254,11 @@ mod tests {
         let model =
             LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 3).unwrap();
         assert_eq!(model.input_dimension(), 3);
-        let trace = model.rollout(&[1.0, 1.0, 1.0]).unwrap();
+        assert_eq!(model.initial_state(), &[0.0]);
+        let trace = model.rollout_from(&[0.0], &[1.0, 1.0, 1.0]).unwrap();
         assert_eq!(trace.times(), &[0.0, 1.0, 2.0, 3.0]);
         assert_eq!(trace.signals()["pos"], vec![0.0, 1.0, 2.0, 3.0]);
-        assert!(model.rollout(&[1.0]).is_err());
+        assert!(model.rollout_from(&[0.0], &[1.0]).is_err());
     }
 
     #[test]
