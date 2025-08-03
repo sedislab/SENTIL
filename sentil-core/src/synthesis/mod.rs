@@ -8,6 +8,7 @@
 
 mod cbf;
 mod cmaes;
+mod controller;
 mod gradient;
 mod model;
 mod numerics;
@@ -18,6 +19,7 @@ mod smooth;
 
 pub use cbf::SafetyFilter;
 pub use cmaes::{cma_es, CmaConfig};
+pub use controller::Controller;
 pub use model::{Bounds, LinearModel, SystemModel};
 pub use numerics::{solve_spd, symmetric_eigen};
 pub use pgrad::maximize;
