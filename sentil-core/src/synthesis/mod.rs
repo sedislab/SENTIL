@@ -6,6 +6,7 @@
 //! the monitor uses, so an optimizer can push a candidate uphill toward
 //! satisfaction. The open-loop and receding-horizon layers build on it.
 
+mod cbf;
 mod cmaes;
 mod gradient;
 mod model;
@@ -15,6 +16,7 @@ mod problem;
 mod qp;
 mod smooth;
 
+pub use cbf::SafetyFilter;
 pub use cmaes::{cma_es, CmaConfig};
 pub use model::{Bounds, LinearModel, SystemModel};
 pub use numerics::{solve_spd, symmetric_eigen};

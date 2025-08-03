@@ -66,6 +66,40 @@ impl Bounds {
     pub fn dimension(&self) -> usize {
         self.lower.len()
     }
+
+    /// The per-coordinate lower limits.
+    #[must_use]
+    pub fn lower(&self) -> &[f64] {
+        &self.lower
+    }
+
+    /// The per-coordinate upper limits.
+    #[must_use]
+    pub fn upper(&self) -> &[f64] {
+        &self.upper
+    }
+
+    /// The box as `G u <= h` rows for a quadratic program, one row per finite side.
+    pub(super) fn constraint_rows(&self) -> (Vec<Vec<f64>>, Vec<f64>) {
+        let n = self.dimension();
+        let mut g = Vec::new();
+        let mut h = Vec::new();
+        for (i, (&lo, &hi)) in self.lower.iter().zip(&self.upper).enumerate() {
+            if hi.is_finite() {
+                let mut row = vec![0.0; n];
+                row[i] = 1.0;
+                g.push(row);
+                h.push(hi);
+            }
+            if lo.is_finite() {
+                let mut row = vec![0.0; n];
+                row[i] = -1.0;
+                g.push(row);
+                h.push(-lo);
+            }
+        }
+        (g, h)
+    }
 }
 
 /// A discrete linear time-invariant model `x_{t+1} = A x_t + B u_t`, emitting each
