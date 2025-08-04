@@ -18,6 +18,7 @@ mod pgrad;
 mod problem;
 mod qp;
 mod smooth;
+mod witness;
 
 pub use cbf::SafetyFilter;
 #[cfg(feature = "statistical")]
@@ -30,3 +31,4 @@ pub use pgrad::maximize;
 pub use problem::{Backend, SynthesisProblem, SynthesisResult, Synthesizer};
 pub use qp::solve_qp;
 pub use smooth::{soft_max, soft_min, SmoothConfig};
+pub use witness::Witness;

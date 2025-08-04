@@ -47,7 +47,7 @@ pub use stats::{
 pub use synthesis::{
     cma_es, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Backend, Bounds,
     CmaConfig, Controller, LinearModel, SafetyFilter, SmoothConfig, SynthesisProblem,
-    SynthesisResult, Synthesizer, SystemModel,
+    SynthesisResult, Synthesizer, SystemModel, Witness,
 };
 #[cfg(all(feature = "synthesis", feature = "statistical"))]
 pub use synthesis::{ChanceConstraint, ChanceReport};
