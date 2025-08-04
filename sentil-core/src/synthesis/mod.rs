@@ -30,5 +30,5 @@ pub use numerics::{solve_spd, symmetric_eigen};
 pub use pgrad::maximize;
 pub use problem::{Backend, SynthesisProblem, SynthesisResult, Synthesizer};
 pub use qp::solve_qp;
-pub use smooth::{soft_max, soft_min, SmoothConfig};
+pub use smooth::{soft_max, soft_min, SmoothConfig, SoftKind};
 pub use witness::Witness;

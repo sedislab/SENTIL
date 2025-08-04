@@ -2,10 +2,17 @@
 //!
 //! Monitoring uses exact min and max, which are not differentiable at ties.
 //! Synthesis instead needs a robustness that varies smoothly with the trace so an
-//! optimizer can follow its gradient. The replacements here are a log-sum-exp soft
-//! minimum and maximum controlled by a temperature: as the temperature rises they
-//! approach the exact operators, and at every temperature the soft minimum stays
-//! at or below the true minimum and the soft maximum at or above the true maximum.
+//! optimizer can follow its gradient. Two smoothings are offered. The default is a
+//! log-sum-exp soft minimum and maximum controlled by a temperature: as the
+//! temperature rises they approach the exact operators, and at every temperature
+//! the soft minimum stays at or below the true minimum and the soft maximum at or
+//! above the true maximum. The alternative is an arithmetic-geometric mean
+//! robustness, which is parameter-free and shares its sign with the exact value.
+
+#![allow(
+    clippy::cast_precision_loss,
+    reason = "operand and window sizes stay far below 2^53, so the length cast is exact"
+)]
 
 use std::collections::BTreeMap;
 
@@ -16,17 +23,27 @@ use crate::signal::Trace;
 
 const EPS: f64 = 1e-12;
 
-/// The temperature for smooth robustness.
-///
-/// A higher temperature tracks the exact min and max more closely; a lower one is
-/// smoother and easier for an optimizer to climb.
+/// Which smoothing the soft robustness uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SoftKind {
+    /// Log-sum-exp soft min and max at the configuration's temperature.
+    #[default]
+    LogSumExp,
+    /// Arithmetic-geometric mean robustness: the geometric mean of the satisfied
+    /// margins, or the arithmetic mean of the violated ones. Parameter-free, so it
+    /// ignores the temperature.
+    ArithmeticGeometricMean,
+}
+
+/// The temperature and smoothing kind the smooth robustness uses.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SmoothConfig {
     temperature: f64,
+    kind: SoftKind,
 }
 
 impl SmoothConfig {
-    /// Builds a configuration.
+    /// Builds a log-sum-exp configuration at the given temperature.
     ///
     /// # Errors
     ///
@@ -34,7 +51,10 @@ impl SmoothConfig {
     /// positive.
     pub fn new(temperature: f64) -> Result<Self> {
         if temperature.is_finite() && temperature > 0.0 {
-            Ok(Self { temperature })
+            Ok(Self {
+                temperature,
+                kind: SoftKind::LogSumExp,
+            })
         } else {
             Err(Error::InvalidConfig {
                 context: "smooth robustness",
@@ -43,16 +63,32 @@ impl SmoothConfig {
         }
     }
 
+    /// Selects the smoothing kind.
+    #[must_use]
+    pub fn with_kind(mut self, kind: SoftKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
     /// The temperature.
     #[must_use]
     pub fn temperature(&self) -> f64 {
         self.temperature
     }
+
+    /// The smoothing kind.
+    #[must_use]
+    pub fn kind(&self) -> SoftKind {
+        self.kind
+    }
 }
 
 impl Default for SmoothConfig {
     fn default() -> Self {
-        Self { temperature: 10.0 }
+        Self {
+            temperature: 10.0,
+            kind: SoftKind::LogSumExp,
+        }
     }
 }
 
@@ -80,13 +116,58 @@ pub fn soft_max(values: &[f64], beta: f64) -> f64 {
     shift + sum.ln() / beta
 }
 
+/// Arithmetic-geometric mean soft minimum. When every margin is positive it is the
+/// geometric mean of the margins shifted by one, which recovers the exact value
+/// when the margins are equal; otherwise it averages the violations, so it shares
+/// its sign with the true minimum. An empty slice has minimum positive infinity.
+fn agm_min(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return f64::INFINITY;
+    }
+    let count = values.len() as f64;
+    if values.iter().all(|&r| r > 0.0) {
+        let log_mean = values.iter().map(|&r| (1.0 + r).ln()).sum::<f64>() / count;
+        log_mean.exp() - 1.0
+    } else {
+        values.iter().filter(|&&r| r <= 0.0).sum::<f64>() / count
+    }
+}
+
+/// Arithmetic-geometric mean soft maximum, the dual of [`agm_min`]. An empty slice
+/// has maximum negative infinity.
+fn agm_max(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    let count = values.len() as f64;
+    if values.iter().all(|&r| r < 0.0) {
+        let log_mean = values.iter().map(|&r| (1.0 - r).ln()).sum::<f64>() / count;
+        1.0 - log_mean.exp()
+    } else {
+        values.iter().filter(|&&r| r >= 0.0).sum::<f64>() / count
+    }
+}
+
+fn reduce_min(values: &[f64], config: SmoothConfig) -> f64 {
+    match config.kind {
+        SoftKind::LogSumExp => soft_min(values, config.temperature),
+        SoftKind::ArithmeticGeometricMean => agm_min(values),
+    }
+}
+
+fn reduce_max(values: &[f64], config: SmoothConfig) -> f64 {
+    match config.kind {
+        SoftKind::LogSumExp => soft_max(values, config.temperature),
+        SoftKind::ArithmeticGeometricMean => agm_max(values),
+    }
+}
+
 impl Formula {
     /// The smooth robustness of the formula over a trace: a differentiable
     /// surrogate for [`robustness`](Self::robustness) that synthesis can climb.
     ///
-    /// It mirrors the exact robustness but with the soft minimum and maximum at
-    /// the configured temperature, so the result varies smoothly with the trace.
-    /// As the temperature rises it approaches the exact value.
+    /// It mirrors the exact robustness but with the soft minimum and maximum from
+    /// `config`, so the result varies smoothly with the trace.
     ///
     /// # Errors
     ///
@@ -97,18 +178,16 @@ impl Formula {
         if trace.is_empty() {
             return Err(Error::EmptyTrace);
         }
-        let signal = soft_eval(self, trace.times(), trace.signals(), config.temperature())?;
+        let signal = soft_eval(self, trace.times(), trace.signals(), config)?;
         Ok(signal[0])
     }
 }
 
-/// The smooth robustness signal, mirroring `semantics::discrete::eval` with the
-/// soft minimum and maximum in place of the exact ones.
 fn soft_eval(
     formula: &Formula,
     times: &[f64],
     signals: &BTreeMap<String, Vec<f64>>,
-    beta: f64,
+    config: SmoothConfig,
 ) -> Result<Vec<f64>> {
     match formula {
         Formula::Predicate(p) => (0..times.len())
@@ -117,73 +196,80 @@ fn soft_eval(
                 eval_predicate(p, &lookup)
             })
             .collect(),
-        Formula::Not(f) => Ok(soft_eval(f, times, signals, beta)?
+        Formula::Not(f) => Ok(soft_eval(f, times, signals, config)?
             .into_iter()
             .map(|x| -x)
             .collect()),
-        Formula::And(l, r) => {
-            soft_combine(l, r, times, signals, beta, |x, y| soft_min(&[x, y], beta))
-        }
-        Formula::Or(l, r) => {
-            soft_combine(l, r, times, signals, beta, |x, y| soft_max(&[x, y], beta))
-        }
-        Formula::Implies(l, r) => {
-            soft_combine(l, r, times, signals, beta, |x, y| soft_max(&[-x, y], beta))
-        }
+        Formula::And(l, r) => soft_combine(l, r, times, signals, config, |x, y| {
+            reduce_min(&[x, y], config)
+        }),
+        Formula::Or(l, r) => soft_combine(l, r, times, signals, config, |x, y| {
+            reduce_max(&[x, y], config)
+        }),
+        Formula::Implies(l, r) => soft_combine(l, r, times, signals, config, |x, y| {
+            reduce_max(&[-x, y], config)
+        }),
         Formula::Always(interval, f) => Ok(soft_window(
-            &soft_eval(f, times, signals, beta)?,
+            &soft_eval(f, times, signals, config)?,
             times,
             interval.lower,
             interval.upper_or_infinity(),
-            beta,
-            soft_min,
+            config,
+            reduce_min,
         )),
         Formula::Eventually(interval, f) => Ok(soft_window(
-            &soft_eval(f, times, signals, beta)?,
+            &soft_eval(f, times, signals, config)?,
             times,
             interval.lower,
             interval.upper_or_infinity(),
-            beta,
-            soft_max,
+            config,
+            reduce_max,
         )),
         Formula::Historically(interval, f) => Ok(soft_window(
-            &soft_eval(f, times, signals, beta)?,
+            &soft_eval(f, times, signals, config)?,
             times,
             -interval.upper_or_infinity(),
             -interval.lower,
-            beta,
-            soft_min,
+            config,
+            reduce_min,
         )),
         Formula::Once(interval, f) => Ok(soft_window(
-            &soft_eval(f, times, signals, beta)?,
+            &soft_eval(f, times, signals, config)?,
             times,
             -interval.upper_or_infinity(),
             -interval.lower,
-            beta,
-            soft_max,
+            config,
+            reduce_max,
         )),
         Formula::Until(interval, l, r) => Ok(soft_until(
-            &soft_eval(l, times, signals, beta)?,
-            &soft_eval(r, times, signals, beta)?,
+            &soft_eval(l, times, signals, config)?,
+            &soft_eval(r, times, signals, config)?,
             times,
             interval.lower,
             interval.upper_or_infinity(),
-            beta,
+            config,
         )),
         Formula::Since(interval, l, r) => Ok(soft_since(
-            &soft_eval(l, times, signals, beta)?,
-            &soft_eval(r, times, signals, beta)?,
+            &soft_eval(l, times, signals, config)?,
+            &soft_eval(r, times, signals, config)?,
             times,
             interval.lower,
             interval.upper_or_infinity(),
-            beta,
+            config,
         )),
-        Formula::Next(f) => Ok(soft_next(&soft_eval(f, times, signals, beta)?)),
+        Formula::Next(f) => Ok(soft_next(&soft_eval(f, times, signals, config)?)),
         Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
     }
 }
 
-fn soft_until(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64, beta: f64) -> Vec<f64> {
+fn soft_until(
+    phi: &[f64],
+    psi: &[f64],
+    times: &[f64],
+    a: f64,
+    b: f64,
+    config: SmoothConfig,
+) -> Vec<f64> {
     let n = phi.len();
     let mut result = vec![f64::NEG_INFINITY; n];
     for i in 0..n {
@@ -207,15 +293,22 @@ fn soft_until(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64, beta: f64
                 break;
             }
             if j >= first {
-                candidates.push(soft_min(&[psi[j], soft_min(&prefix, beta)], beta));
+                candidates.push(reduce_min(&[psi[j], reduce_min(&prefix, config)], config));
             }
         }
-        result[i] = soft_max(&candidates, beta);
+        result[i] = reduce_max(&candidates, config);
     }
     result
 }
 
-fn soft_since(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64, beta: f64) -> Vec<f64> {
+fn soft_since(
+    phi: &[f64],
+    psi: &[f64],
+    times: &[f64],
+    a: f64,
+    b: f64,
+    config: SmoothConfig,
+) -> Vec<f64> {
     let n = phi.len();
     let mut result = vec![f64::NEG_INFINITY; n];
     for i in 0..n {
@@ -236,10 +329,10 @@ fn soft_since(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64, beta: f64
                 break;
             }
             if j < last {
-                candidates.push(soft_min(&[psi[j], soft_min(&prefix, beta)], beta));
+                candidates.push(reduce_min(&[psi[j], reduce_min(&prefix, config)], config));
             }
         }
-        result[i] = soft_max(&candidates, beta);
+        result[i] = reduce_max(&candidates, config);
     }
     result
 }
@@ -258,8 +351,8 @@ fn soft_window(
     times: &[f64],
     off_a: f64,
     off_b: f64,
-    beta: f64,
-    reduce: fn(&[f64], f64) -> f64,
+    config: SmoothConfig,
+    reduce: fn(&[f64], SmoothConfig) -> f64,
 ) -> Vec<f64> {
     times
         .iter()
@@ -271,7 +364,7 @@ fn soft_window(
                 .filter(|(_, &tj)| tj >= lo && tj <= hi)
                 .map(|(&v, _)| v)
                 .collect();
-            reduce(&window, beta)
+            reduce(&window, config)
         })
         .collect()
 }
@@ -281,11 +374,11 @@ fn soft_combine(
     right: &Formula,
     times: &[f64],
     signals: &BTreeMap<String, Vec<f64>>,
-    beta: f64,
+    config: SmoothConfig,
     op: impl Fn(f64, f64) -> f64,
 ) -> Result<Vec<f64>> {
-    let left = soft_eval(left, times, signals, beta)?;
-    let right = soft_eval(right, times, signals, beta)?;
+    let left = soft_eval(left, times, signals, config)?;
+    let right = soft_eval(right, times, signals, config)?;
     Ok(left.iter().zip(&right).map(|(&x, &y)| op(x, y)).collect())
 }
 
@@ -316,6 +409,16 @@ mod tests {
     fn an_empty_slice_matches_the_exact_conventions() {
         assert_eq!(soft_min(&[], 1.0), f64::INFINITY);
         assert_eq!(soft_max(&[], 1.0), f64::NEG_INFINITY);
+        assert_eq!(agm_min(&[]), f64::INFINITY);
+        assert_eq!(agm_max(&[]), f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn the_agm_recovers_equal_margins_and_keeps_the_sign() {
+        assert!((agm_min(&[3.0, 3.0]) - 3.0).abs() < 1e-12);
+        assert!((agm_max(&[-3.0, -3.0]) + 3.0).abs() < 1e-12);
+        assert!(agm_min(&[5.0, -1.0]) < 0.0);
+        assert!(agm_max(&[-5.0, 1.0]) > 0.0);
     }
 
     #[test]
@@ -338,6 +441,22 @@ mod tests {
             .unwrap();
         assert!((smooth - exact).abs() < 0.05);
         assert!(smooth <= exact + 1e-9);
+    }
+
+    #[test]
+    fn the_agm_smoothing_keeps_the_verdict_sign() {
+        let phi = Formula::parse("(x > 0) and (y > 0)").unwrap();
+        let agm = SmoothConfig::default().with_kind(SoftKind::ArithmeticGeometricMean);
+
+        let mut holds = Trace::new([0.0]).unwrap();
+        holds.add_signal("x", [4.0]).unwrap();
+        holds.add_signal("y", [4.0]).unwrap();
+        assert!((phi.smooth_robustness(&holds, agm).unwrap() - 4.0).abs() < 1e-9);
+
+        let mut fails = Trace::new([0.0]).unwrap();
+        fails.add_signal("x", [4.0]).unwrap();
+        fails.add_signal("y", [-2.0]).unwrap();
+        assert!(phi.smooth_robustness(&fails, agm).unwrap() < 0.0);
     }
 
     #[test]
