@@ -45,6 +45,7 @@ pub use stats::{
 };
 #[cfg(feature = "synthesis")]
 pub use synthesis::{
-    cma_es, maximize, symmetric_eigen, Bounds, CmaConfig, LinearModel, SmoothConfig,
-    SynthesisProblem, SynthesisResult, Synthesizer, SystemModel,
+    cma_es, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Backend, Bounds,
+    CmaConfig, Controller, LinearModel, SafetyFilter, SmoothConfig, SynthesisProblem,
+    SynthesisResult, Synthesizer, SystemModel,
 };
