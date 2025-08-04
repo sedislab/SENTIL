@@ -86,6 +86,42 @@ impl StochasticSystem {
     pub fn advance(&self, previous: &[f64], time: f64, rng: &mut dyn RngCore) -> Vec<f64> {
         (self.step)(previous, time, rng)
     }
+
+    /// Simulates one full-horizon trajectory into a trace.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the initial draw does not emit one value per variable, or if the samples cannot form a trace.
+    pub fn simulate(&self, rng: &mut dyn RngCore) -> Result<Trace> {
+        let mut state = self.initial(rng);
+        if state.len() != self.variables.len() {
+            return Err(config_error(format!(
+                "the system emitted {} values but has {} variables",
+                state.len(),
+                self.variables.len()
+            )));
+        }
+        let mut columns: Vec<Vec<f64>> = (0..self.variables.len())
+            .map(|_| Vec::with_capacity(self.horizon + 1))
+            .collect();
+        let mut times = Vec::with_capacity(self.horizon + 1);
+        let mut time = 0.0;
+        for step in 0..=self.horizon {
+            for (col, value) in columns.iter_mut().zip(&state) {
+                col.push(*value);
+            }
+            times.push(time);
+            if step < self.horizon {
+                state = self.advance(&state, time, rng);
+                time += self.dt;
+            }
+        }
+        let mut trace = Trace::new(times)?;
+        for (name, column) in self.variables.iter().zip(columns) {
+            trace.add_signal(name, column)?;
+        }
+        Ok(trace)
+    }
 }
 
 /// Tuning for a rare-event run.
@@ -295,6 +331,18 @@ mod tests {
         let result = phi.check_rare_event(&random_walk(6), &config).unwrap();
         assert!(result.violation_probability > 0.0);
         assert!(result.probability < 1.0);
+    }
+
+    #[test]
+    fn simulate_builds_a_full_horizon_trace() {
+        use rand::SeedableRng;
+        let system =
+            StochasticSystem::new(["x"], 1.0, 3, |_| vec![0.0], |p, _, _| vec![p[0] + 1.0])
+                .unwrap();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+        let trace = system.simulate(&mut rng).unwrap();
+        assert_eq!(trace.times(), &[0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(trace.signals()["x"], vec![0.0, 1.0, 2.0, 3.0]);
     }
 
     #[test]
