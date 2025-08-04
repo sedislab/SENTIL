@@ -7,6 +7,8 @@
 //! satisfaction. The open-loop and receding-horizon layers build on it.
 
 mod cbf;
+#[cfg(feature = "statistical")]
+mod chance;
 mod cmaes;
 mod controller;
 mod gradient;
@@ -18,6 +20,8 @@ mod qp;
 mod smooth;
 
 pub use cbf::SafetyFilter;
+#[cfg(feature = "statistical")]
+pub use chance::{ChanceConstraint, ChanceReport};
 pub use cmaes::{cma_es, CmaConfig};
 pub use controller::Controller;
 pub use model::{Bounds, LinearModel, SystemModel};

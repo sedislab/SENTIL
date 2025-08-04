@@ -49,3 +49,5 @@ pub use synthesis::{
     CmaConfig, Controller, LinearModel, SafetyFilter, SmoothConfig, SynthesisProblem,
     SynthesisResult, Synthesizer, SystemModel,
 };
+#[cfg(all(feature = "synthesis", feature = "statistical"))]
+pub use synthesis::{ChanceConstraint, ChanceReport};
