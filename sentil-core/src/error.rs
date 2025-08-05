@@ -1,9 +1,4 @@
 //! The library's error type.
-//!
-//! Every fallible operation returns [`Result<T>`], an alias for
-//! `Result<T, Error>`. [`Error`] is a single enum: each value says what went
-//! wrong, where in the formula or signal it happened, and what a correct input
-//! would look like, so a caller never has to guess.
 
 use core::fmt;
 
@@ -158,9 +153,6 @@ pub enum Error {
 }
 
 /// A formula failed to parse.
-///
-/// SENTIL formulas are usually one line, so the column points at the token where
-/// parsing stopped. Both coordinates are 1-based.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseError {
     /// What went wrong.
