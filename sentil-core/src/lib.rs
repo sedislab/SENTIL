@@ -30,6 +30,8 @@ pub mod formula;
 pub mod monitor;
 pub mod semantics;
 pub mod signal;
+#[cfg(feature = "specs")]
+pub mod spec_builder;
 #[cfg(feature = "statistical")]
 pub mod stats;
 #[cfg(feature = "synthesis")]

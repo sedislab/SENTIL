@@ -44,6 +44,10 @@ parallel = ["statistical", "dep:rayon"]
 # database formats add their own features on top.
 ingest = ["dep:csv"]
 
+# The premade PrSTL specs: parameterized templates in embedded TOML/YAML/JSON.
+# Needs the statistical layer to build their lifting registries.
+specs = ["statistical", "dep:serde", "dep:serde_json", "dep:toml", "dep:serde_yaml"]
+
 [dependencies]
 thiserror = { workspace = true }
 rand = { workspace = true, optional = true }
@@ -51,6 +55,10 @@ rand_distr = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { version = "1.0.149", optional = true }
+toml = { version = "1.1.2", optional = true }
+serde_yaml = { version = "0.9.34", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
