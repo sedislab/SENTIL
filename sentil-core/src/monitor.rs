@@ -126,12 +126,11 @@ impl Monitor {
     }
 
     /// The zero-allocation streaming update, taking values packed in the order
-    /// [`symbol_index`] reports. For high-rate loops.
+    /// [`symbol_index`](Self::symbol_index) reports.
     ///
     /// # Errors
     ///
-    /// As [`update`], plus an error if `values` is not as wide as the
-    /// formula's variable count.
+    /// As [`update`](Self::update), plus an error if `values` is too short.
     pub fn update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
         self.stream_mut()?.update_packed(time, values)
     }
@@ -140,7 +139,7 @@ impl Monitor {
     ///
     /// # Errors
     ///
-    /// As [`update`] when the streaming monitor is built here.
+    /// As [`update`](Self::update) when the streaming monitor is built here.
     pub fn symbol_index(&mut self, name: &str) -> Result<Option<usize>> {
         Ok(self.stream_mut()?.symbol_index(name))
     }
