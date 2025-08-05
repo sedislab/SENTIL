@@ -8,6 +8,7 @@
 
 use crate::error::Result;
 use crate::formula::Formula;
+use crate::semantics::{Robustness, StreamMonitor};
 use crate::signal::Trace;
 
 /// How offline robustness reads between samples.
@@ -56,6 +57,7 @@ impl MonitorConfig {
 pub struct Monitor {
     formula: Formula,
     config: MonitorConfig,
+    stream: Option<StreamMonitor>,
 }
 
 impl Monitor {
@@ -71,7 +73,11 @@ impl Monitor {
     /// Holds an already-parsed `formula` under `config`.
     #[must_use]
     pub fn from_formula(formula: Formula, config: MonitorConfig) -> Self {
-        Self { formula, config }
+        Self {
+            formula,
+            config,
+            stream: None,
+        }
     }
 
     /// The robustness of `trace`, read discretely or densely per the config.
@@ -85,6 +91,57 @@ impl Monitor {
             TimeMode::Discrete => self.formula.robustness(trace),
             TimeMode::Dense => self.formula.robustness_dense(trace),
         }
+    }
+
+    /// Folds one timestamped sample into the running monitor and returns the
+    /// robustness so far.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Unsupported`](crate::Error::Unsupported) the first time it is
+    /// called if the formula uses an operator the streaming monitor cannot handle
+    /// (an unbounded future operator, say), and
+    /// [`Error::UnknownVariable`](crate::Error::UnknownVariable) if `values` omits a
+    /// variable the formula needs.
+    pub fn update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Robustness> {
+        self.stream_mut()?.update(time, values)
+    }
+
+    /// The zero-allocation streaming update, taking values packed in the order
+    /// [`symbol_index`](Self::symbol_index) reports. For high-rate loops.
+    ///
+    /// # Errors
+    ///
+    /// As [`update`](Self::update), plus an error if `values` is not as wide as the
+    /// formula's variable count.
+    pub fn update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
+        self.stream_mut()?.update_packed(time, values)
+    }
+
+    /// The packed-vector index of `name`, or `None` if the formula does not use it.
+    ///
+    /// # Errors
+    ///
+    /// As [`update`](Self::update) when the streaming monitor is built here.
+    pub fn symbol_index(&mut self, name: &str) -> Result<Option<usize>> {
+        Ok(self.stream_mut()?.symbol_index(name))
+    }
+
+    /// Clears the streaming state so the same monitor can run a fresh trace.
+    pub fn reset(&mut self) {
+        if let Some(stream) = &mut self.stream {
+            stream.reset();
+        }
+    }
+
+    fn stream_mut(&mut self) -> Result<&mut StreamMonitor> {
+        if self.stream.is_none() {
+            self.stream = Some(StreamMonitor::from_formula(&self.formula)?);
+        }
+        Ok(self
+            .stream
+            .as_mut()
+            .expect("the streaming monitor was just built"))
     }
 
     /// The formula being monitored.
@@ -144,5 +201,37 @@ mod tests {
     #[test]
     fn a_malformed_formula_is_rejected_at_construction() {
         assert!(Monitor::new("always(", MonitorConfig::new()).is_err());
+    }
+
+    #[test]
+    fn update_delegates_to_the_streaming_engine() {
+        let mut monitor = Monitor::new("(x > 3) and (y < 5)", MonitorConfig::new()).unwrap();
+        assert_eq!(
+            monitor
+                .update(0.0, &[("x", 5.0), ("y", 2.0)])
+                .unwrap()
+                .value(),
+            2.0
+        );
+    }
+
+    #[test]
+    fn packed_updates_use_the_symbol_index() {
+        let mut monitor = Monitor::new("(x > 0) and (y > 0)", MonitorConfig::new()).unwrap();
+        let xi = monitor.symbol_index("x").unwrap().unwrap();
+        let yi = monitor.symbol_index("y").unwrap().unwrap();
+        let mut packed = [0.0; 2];
+        packed[xi] = 3.0;
+        packed[yi] = 1.0;
+        assert_eq!(monitor.update_packed(0.0, &packed).unwrap().value(), 1.0);
+    }
+
+    #[test]
+    fn reset_clears_the_streaming_state() {
+        let mut monitor = Monitor::new("historically[0, 2](x > 0)", MonitorConfig::new()).unwrap();
+        monitor.update(0.0, &[("x", 5.0)]).unwrap();
+        monitor.update(1.0, &[("x", -3.0)]).unwrap();
+        monitor.reset();
+        assert_eq!(monitor.update(0.0, &[("x", 4.0)]).unwrap().value(), 4.0);
     }
 }
