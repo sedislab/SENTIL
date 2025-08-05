@@ -1,10 +1,4 @@
-//! A monitor: one handle that pairs a formula with how to check it.
-//!
-//! The engine exposes robustness, statistical checking, and streaming as separate
-//! entry points on [`Formula`] and [`StreamMonitor`](crate::StreamMonitor). A
-//! [`Monitor`] bundles a formula with a [`MonitorConfig`] so a caller chooses the
-//! time mode and statistical settings once, then calls one obvious method per task.
-//! It adds no semantics of its own: every method delegates to the engine.
+//! One handle that pairs a formula with how to check it.
 
 use crate::error::Result;
 use crate::formula::Formula;
@@ -132,11 +126,11 @@ impl Monitor {
     }
 
     /// The zero-allocation streaming update, taking values packed in the order
-    /// [`symbol_index`](Self::symbol_index) reports. For high-rate loops.
+    /// [`symbol_index`] reports. For high-rate loops.
     ///
     /// # Errors
     ///
-    /// As [`update`](Self::update), plus an error if `values` is not as wide as the
+    /// As [`update`], plus an error if `values` is not as wide as the
     /// formula's variable count.
     pub fn update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
         self.stream_mut()?.update_packed(time, values)
@@ -146,7 +140,7 @@ impl Monitor {
     ///
     /// # Errors
     ///
-    /// As [`update`](Self::update) when the streaming monitor is built here.
+    /// As [`update`] when the streaming monitor is built here.
     pub fn symbol_index(&mut self, name: &str) -> Result<Option<usize>> {
         Ok(self.stream_mut()?.symbol_index(name))
     }
