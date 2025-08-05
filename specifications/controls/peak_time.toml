@@ -1,0 +1,54 @@
+# The output must reach its first peak within a bounded time window. This
+# is only meaningful for underdamped systems; overdamped responses have no
+# peak. For a second-order system: t_p = pi / omega_d, where omega_d is
+# the damped natural frequency.
+ 
+[metadata]
+name = "Peak Time"
+domain = "controls"
+description = """
+The output reaches its first peak within a bounded time. Defined only for \
+underdamped (oscillatory) responses. For a standard second-order system, \
+peak time is pi / omega_d. Reads the output rate as well as the output, \
+since the peak is where the rate crosses zero."""
+references = [
+    "Ogata, Modern Control Engineering, 5th ed., Ch. 5",
+    "Nise, Control Systems Engineering, 8th ed., Ch. 4",
+]
+ 
+[variables]
+output      = { description = "Measured plant output" }
+output_rate = { description = "Time derivative of the output" }
+reference = { description = "Step setpoint" }
+ 
+[parameters]
+t_p       = { type = "float", default = 3.0, unit = "seconds", description = "Maximum allowable peak time" }
+reference = { type = "float", default = 1.0, description = "Final value" }
+p         = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+ 
+[formulas]
+deterministic = "eventually[0, {t_p}](output >= {reference} and output_rate <= 0.0)"
+probabilistic = "P >= {p}(eventually[0, {t_p}](output >= {reference} and output_rate <= 0.0))"
+ 
+[noise]
+output      = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+output_rate = { model = "Gaussian", mean = 0.0, std_dev = 0.05, interaction = "additive" }
+ 
+[noise_fit]
+output      = { algorithm = "fit_gaussian", interaction = "additive" }
+output_rate = { algorithm = "fit_gaussian", interaction = "additive" }
+ 
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+ 
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+ 
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

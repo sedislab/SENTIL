@@ -1,0 +1,68 @@
+# After a step input, the output must enter and remain within a tolerance
+# band around the final value within a specified time. The formula uses
+# eventually-always nesting: the output eventually reaches the band
+# (within t_s seconds) and then stays there for the remainder of the
+# observation window. This is structurally different from a flat "always"
+# because it tolerates the initial transient.
+#
+# For a second-order system with damping ratio zeta and natural frequency
+# omega_n, the 2% settling time is approximately 4 / (zeta * omega_n).
+ 
+[metadata]
+name = "Settling Time"
+domain = "controls"
+description = """
+The output enters and remains within a tolerance band of the steady-state \
+value within a bounded time after a step input. The 2% band is standard; \
+5% is common in less demanding applications."""
+references = [
+    "Franklin, Powell & Emami-Naeini, Feedback Control of Dynamic Systems, 8th ed., Ch. 3",
+    "Ogata, Modern Control Engineering, 5th ed., Ch. 5",
+]
+ 
+[variables]
+output    = { description = "Measured plant output" }
+reference = { description = "Steady-state setpoint" }
+ 
+[parameters]
+t_s       = { type = "float", default = 5.0,   unit = "seconds", description = "Maximum allowable settling time" }
+T_hold    = { type = "float", default = 25.0,  unit = "seconds", description = "How long the output must stay in the band after settling" }
+epsilon   = { type = "float", default = 0.02,  description = "Tolerance band half-width (0.02 = 2%)" }
+reference = { type = "float", default = 1.0,   description = "Final value" }
+p         = { type = "float", default = 0.95,  range = [0.0, 1.0], description = "PrSTL probability threshold" }
+ 
+[formulas]
+deterministic = "eventually[0, {t_s}](always[0, {T_hold}](abs(output - reference) < {epsilon}))"
+probabilistic = "P >= {p}(eventually[0, {t_s}](always[0, {T_hold}](abs(output - reference) < {epsilon})))"
+ 
+[noise]
+output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+ 
+[noise_fit]
+output = { algorithm = "fit_gaussian", interaction = "additive" }
+ 
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+ 
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+ 
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
+ 
+[variants.two_percent]
+description = "Standard 2% band (default)."
+ 
+[variants.five_percent]
+description = "Relaxed 5% band for less demanding applications."
+parameters.epsilon.default = 0.05
+ 
+[variants.one_percent]
+description = "Tight 1% band for precision control (e.g., optical tracking)."
+parameters.epsilon.default = 0.01
