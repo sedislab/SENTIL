@@ -1,0 +1,57 @@
+# The magnitude of the tracking error decreases monotonically over time.
+# This characterizes overdamped or critically damped responses, where the
+# output approaches the setpoint without oscillating. Violation of this
+# property means the system rings, which may be unacceptable in some
+# applications (e.g., positioning stages, chemical dosing).
+#
+# The formula compares the error at each sample to its predecessor. In
+# continuous-time monitoring, SENTIL evaluates this at the trace's sample
+# rate. The property is inherently fragile under noise: even a small
+# sensor perturbation can make abs(error) non-monotonic. The probabilistic
+# version with a well-calibrated noise model (pass a JSON file from your
+# sensor characterization) gives a much more informative result.
+ 
+[metadata]
+name = "Monotonic Convergence"
+domain = "controls"
+description = """
+The tracking error magnitude decreases monotonically. Characterizes \
+overdamped or critically damped responses without oscillation. Fragile \
+under measurement noise; the probabilistic version is strongly recommended."""
+references = [
+    "Khalil, Nonlinear Systems, 3rd ed., Ch. 4 (Lyapunov stability)",
+]
+ 
+[variables]
+error      = { description = "Tracking error at current sample (output - reference)" }
+error_prev = { description = "Tracking error at previous sample" }
+ 
+[parameters]
+T = { type = "float", default = 20.0, unit = "seconds", description = "Observation horizon" }
+p = { type = "float", default = 0.90, range = [0.0, 1.0], description = "PrSTL probability threshold (lower default; this property is hard to satisfy under noise)" }
+ 
+[formulas]
+deterministic = "always[0, {T}](abs(error) <= abs(error_prev))"
+probabilistic = "P >= {p}(always[0, {T}](abs(error) <= abs(error_prev)))"
+ 
+[noise]
+error      = { model = "Gaussian", mean = 0.0, std_dev = 0.005, interaction = "additive" }
+error_prev = { model = "Gaussian", mean = 0.0, std_dev = 0.005, interaction = "additive" }
+ 
+[noise_fit]
+error = { algorithm = "fit_gaussian", interaction = "additive" }
+ 
+[verification.smc]
+confidence = 0.90
+sample_budget = 2000
+ 
+[verification.sprt]
+p0 = 0.85
+p1 = 0.90
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+ 
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

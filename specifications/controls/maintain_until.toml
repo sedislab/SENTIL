@@ -1,0 +1,58 @@
+# A condition must hold continuously until a termination event occurs.
+# This uses the "until" operator, which is structurally different from
+# "always": the obligation has a finite, event-driven lifetime. Once the
+# event fires, the constraint is released.
+#
+# Examples: maintain safe torque until handoff is complete; hold heading
+# until glideslope capture; keep the valve closed until pressure drops
+# below threshold.
+#
+# The bounded until [0, T] also requires that the event does occur within
+# T seconds. If the event never happens, the property is violated.
+ 
+[metadata]
+name = "Maintain Until Event"
+domain = "controls"
+description = """
+A condition holds continuously until a termination event occurs. The \
+bounded until operator requires that the event does fire within the \
+deadline; failure to trigger the event is itself a violation."""
+references = [
+    "Maler & Nickovic, Monitoring Temporal Properties of Continuous Signals, 2004",
+    "Donze, Signal Temporal Logic Monitoring (Breach), 2010",
+]
+ 
+[variables]
+output  = { description = "Signal that must be maintained" }
+event   = { description = "Termination event signal (> 0.5 = triggered)" }
+ 
+[parameters]
+T        = { type = "float", default = 30.0, unit = "seconds", description = "Deadline for the event to occur" }
+epsilon  = { type = "float", default = 0.1,  description = "Tolerance around the setpoint" }
+setpoint = { type = "float", default = 0.0,  description = "Value to maintain" }
+p        = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+ 
+[formulas]
+deterministic = "(abs(output - setpoint) < {epsilon}) until[0, {T}] (event > 0.5)"
+probabilistic = "P >= {p}((abs(output - setpoint) < {epsilon}) until[0, {T}] (event > 0.5))"
+ 
+[noise]
+output = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }
+ 
+[noise_fit]
+output = { algorithm = "fit_gaussian", interaction = "additive" }
+ 
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+ 
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+ 
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
