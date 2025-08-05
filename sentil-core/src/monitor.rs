@@ -10,6 +10,11 @@ use crate::error::Result;
 use crate::formula::Formula;
 use crate::semantics::{Robustness, StreamMonitor};
 use crate::signal::Trace;
+#[cfg(feature = "statistical")]
+use crate::stats::{
+    LiftingRegistry, RareEventConfig, RareEventResult, SmcConfig, SmcResult, SprtConfig,
+    SprtResult, StochasticSystem,
+};
 
 /// How offline robustness reads between samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -21,11 +26,14 @@ pub enum TimeMode {
     Dense,
 }
 
-/// How a [`Monitor`] checks its formula. For now this is the time mode; the
-/// statistical settings join it with the `statistical` feature.
+/// How a [`Monitor`] checks its formula.
 #[derive(Debug, Clone, Default)]
 pub struct MonitorConfig {
     time: TimeMode,
+    #[cfg(feature = "statistical")]
+    smc: SmcConfig,
+    #[cfg(feature = "statistical")]
+    rare: RareEventConfig,
 }
 
 impl MonitorConfig {
@@ -39,6 +47,22 @@ impl MonitorConfig {
     #[must_use]
     pub fn time(mut self, mode: TimeMode) -> Self {
         self.time = mode;
+        self
+    }
+
+    /// Sets the Monte Carlo settings used by [`Monitor::check`].
+    #[cfg(feature = "statistical")]
+    #[must_use]
+    pub fn smc(mut self, smc: SmcConfig) -> Self {
+        self.smc = smc;
+        self
+    }
+
+    /// Sets the rare-event settings used by [`Monitor::check_rare`].
+    #[cfg(feature = "statistical")]
+    #[must_use]
+    pub fn rare(mut self, rare: RareEventConfig) -> Self {
+        self.rare = rare;
         self
     }
 }
@@ -157,6 +181,46 @@ impl Monitor {
     }
 }
 
+#[cfg(feature = "statistical")]
+impl Monitor {
+    /// Estimates the satisfaction probability of a `P~p(...)` formula over the
+    /// trace's lifted ensemble.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotProbabilistic`](crate::Error::NotProbabilistic) for a
+    /// deterministic formula, and propagates any scoring error.
+    pub fn check(&self, trace: &Trace, lifting: &LiftingRegistry) -> Result<SmcResult> {
+        self.formula.check(trace, lifting, &self.config.smc)
+    }
+
+    /// Decides a `P~p(...)` formula sequentially under `sprt`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotProbabilistic`](crate::Error::NotProbabilistic) for a
+    /// deterministic formula, and propagates any scoring error.
+    pub fn check_sequential(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        sprt: &SprtConfig,
+    ) -> Result<SprtResult> {
+        self.formula.check_sequential(trace, lifting, sprt)
+    }
+
+    /// Estimates a rare-event probability of a `P~p(...)` formula over a stochastic
+    /// `system` by adaptive multilevel splitting.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotProbabilistic`](crate::Error::NotProbabilistic) for a
+    /// deterministic formula, and propagates any splitting error.
+    pub fn check_rare(&self, system: &StochasticSystem) -> Result<RareEventResult> {
+        self.formula.check_rare_event(system, &self.config.rare)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -233,5 +297,25 @@ mod tests {
         monitor.update(1.0, &[("x", -3.0)]).unwrap();
         monitor.reset();
         assert_eq!(monitor.update(0.0, &[("x", 4.0)]).unwrap().value(), 4.0);
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn check_delegates_with_the_configured_smc() {
+        use crate::stats::{LiftingRegistry, SmcConfig};
+
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let mut trace = Trace::new([0.0]).unwrap();
+        trace.add_signal("x", [1.0]).unwrap();
+        let lifting = LiftingRegistry::new();
+        let smc = SmcConfig {
+            samples: 200,
+            confidence: 0.95,
+            seed: 9,
+        };
+        let monitor = Monitor::from_formula(phi.clone(), MonitorConfig::new().smc(smc));
+        let via_monitor = monitor.check(&trace, &lifting).unwrap();
+        assert_eq!(via_monitor, phi.check(&trace, &lifting, &smc).unwrap());
+        assert!(via_monitor.holds && (via_monitor.probability - 1.0).abs() < 1e-12);
     }
 }
