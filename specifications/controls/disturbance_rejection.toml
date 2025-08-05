@@ -1,0 +1,55 @@
+# Under a bounded external disturbance, the output deviation from its
+# nominal value must stay below a threshold. This captures the
+# sensitivity function's peak: a well-designed controller attenuates
+# disturbances so the output barely moves even when the input is
+# perturbed. The disturbance itself is modeled as noise on a separate
+# input channel.
+ 
+[metadata]
+name = "Disturbance Rejection"
+domain = "controls"
+description = """
+Under bounded disturbance, the output deviation from nominal stays \
+below a threshold. Quantifies the controller's ability to attenuate \
+external perturbations. Related to the sensitivity function S(s)."""
+references = [
+    "Skogestad & Postlethwaite, Multivariable Feedback Control, 2nd ed., Ch. 6",
+    "Astrom & Murray, Feedback Systems, 2nd ed., Ch. 12",
+]
+ 
+[variables]
+output      = { description = "Measured plant output" }
+disturbance = { description = "External disturbance signal" }
+ 
+[parameters]
+T       = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+y_max   = { type = "float", default = 0.5,  description = "Maximum allowable output deviation" }
+nominal = { type = "float", default = 0.0,  description = "Nominal (undisturbed) output value" }
+p       = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(output - nominal) < {y_max})"
+probabilistic = "P >= {p}(always[0, {T}](abs(output - nominal) < {y_max}))"
+
+[noise]
+output      = { model = "Gaussian", mean = 0.0, std_dev = 0.05, interaction = "additive" }
+disturbance = { model = "Uniform", low = -1.0, high = 1.0, interaction = "additive" }
+
+[noise_fit]
+output      = { algorithm = "fit_gmm", k = 2, max_iters = 100, interaction = "additive" }
+disturbance = { algorithm = "fit_bootstrap", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
