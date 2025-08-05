@@ -27,6 +27,7 @@
 pub mod error;
 mod expr;
 pub mod formula;
+pub mod monitor;
 pub mod semantics;
 pub mod signal;
 #[cfg(feature = "statistical")]
@@ -36,6 +37,7 @@ pub mod synthesis;
 
 pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
+pub use monitor::{Monitor, MonitorConfig, TimeMode};
 pub use semantics::{MultiFormulaMonitor, Robustness, StreamMonitor};
 pub use signal::Trace;
 #[cfg(feature = "statistical")]
