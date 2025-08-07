@@ -1,0 +1,41 @@
+[metadata]
+name = "Velocity Limit"
+domain = "robotics"
+description = "The signed velocity stays within a magnitude limit for the whole run."
+references = [
+    "Lynch & Park, Modern Robotics: Mechanics, Planning, and Control, Ch. 9 (Trajectory Generation)",
+    "Lynch & Park, Modern Robotics: Mechanics, Planning, and Control, Ch. 5 (Velocity Kinematics and Statics)",
+]
+
+[variables]
+velocity = { description = "Signed velocity of the joint or end-effector" }
+
+[parameters]
+T     = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+v_max = { type = "float", default = 1.0,  description = "Velocity magnitude limit" }
+p     = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(velocity) < {v_max})"
+probabilistic = "P >= {p}(always[0, {T}](abs(velocity) < {v_max}))"
+
+[noise]
+velocity = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }
+
+[noise_fit]
+velocity = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

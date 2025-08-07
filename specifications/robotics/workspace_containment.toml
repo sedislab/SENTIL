@@ -1,0 +1,47 @@
+[metadata]
+name = "Workspace Containment"
+domain = "robotics"
+description = "The end-effector position stays inside a task-space box for the whole run."
+references = [
+    "Lynch & Park, Modern Robotics: Mechanics, Planning, and Control, Ch. 4 (Forward Kinematics)",
+    "Sun, Chen, Mitra & Fan, Multi-Agent Motion Planning from Signal Temporal Logic Specifications, IEEE RA-L, 2022",
+]
+
+[variables]
+x = { description = "End-effector position along the x axis" }
+y = { description = "End-effector position along the y axis" }
+
+[parameters]
+T     = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+x_min = { type = "float", default = -1.0, description = "Lower workspace bound on x" }
+x_max = { type = "float", default = 1.0,  description = "Upper workspace bound on x" }
+y_min = { type = "float", default = -1.0, description = "Lower workspace bound on y" }
+y_max = { type = "float", default = 1.0,  description = "Upper workspace bound on y" }
+p     = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}]((x > {x_min} and x < {x_max}) and (y > {y_min} and y < {y_max}))"
+probabilistic = "P >= {p}(always[0, {T}]((x > {x_min} and x < {x_max}) and (y > {y_min} and y < {y_max})))"
+
+[noise]
+x = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+y = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+x = { algorithm = "fit_gaussian", interaction = "additive" }
+y = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

@@ -1,0 +1,41 @@
+[metadata]
+name = "Goal Reaching"
+domain = "robotics"
+description = "The robot comes within a tolerance of its goal before a deadline."
+references = [
+    "Lynch & Park, Modern Robotics: Mechanics, Planning, and Control, Ch. 11 (Robot Control)",
+    "Sun, Chen, Mitra & Fan, Multi-Agent Motion Planning from Signal Temporal Logic Specifications, IEEE RA-L, 2022",
+]
+
+[variables]
+distance = { description = "Distance from the robot to the goal" }
+
+[parameters]
+t_goal    = { type = "float", default = 10.0, unit = "seconds", description = "Deadline to reach the goal" }
+tolerance = { type = "float", default = 0.05, description = "Goal proximity tolerance" }
+p         = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "eventually[0, {t_goal}](distance < {tolerance})"
+probabilistic = "P >= {p}(eventually[0, {t_goal}](distance < {tolerance}))"
+
+[noise]
+distance = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+distance = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

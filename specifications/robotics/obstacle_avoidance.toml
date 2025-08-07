@@ -1,0 +1,41 @@
+[metadata]
+name = "Obstacle Avoidance"
+domain = "robotics"
+description = "The clearance to the nearest obstacle stays above a safe distance for the whole run."
+references = [
+    "Lynch & Park, Modern Robotics: Mechanics, Planning, and Control, Ch. 10 (Motion Planning)",
+    "Sun, Chen, Mitra & Fan, Multi-Agent Motion Planning from Signal Temporal Logic Specifications, IEEE RA-L, 2022",
+]
+
+[variables]
+clearance = { description = "Distance to the nearest obstacle" }
+
+[parameters]
+T             = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+safe_distance = { type = "float", default = 0.2,  description = "Minimum allowed clearance" }
+p             = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](clearance > {safe_distance})"
+probabilistic = "P >= {p}(always[0, {T}](clearance > {safe_distance}))"
+
+[noise]
+clearance = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }
+
+[noise_fit]
+clearance = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

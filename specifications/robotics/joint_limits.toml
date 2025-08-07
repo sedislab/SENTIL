@@ -1,0 +1,42 @@
+[metadata]
+name = "Joint Limits"
+domain = "robotics"
+description = "A joint angle stays within its lower and upper mechanical limits for the whole run."
+references = [
+    "Lynch & Park, Modern Robotics: Mechanics, Planning, and Control, Ch. 2 (Configuration Space)",
+    "Sun, Chen, Mitra & Fan, Multi-Agent Motion Planning from Signal Temporal Logic Specifications, IEEE RA-L, 2022",
+]
+
+[variables]
+joint = { unit = "radians", description = "Measured joint angle" }
+
+[parameters]
+T         = { type = "float", default = 30.0,     unit = "seconds", description = "Observation horizon" }
+joint_min = { type = "float", default = -3.14159, unit = "radians", description = "Lower joint limit" }
+joint_max = { type = "float", default = 3.14159,  unit = "radians", description = "Upper joint limit" }
+p         = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](joint > {joint_min} and joint < {joint_max})"
+probabilistic = "P >= {p}(always[0, {T}](joint > {joint_min} and joint < {joint_max}))"
+
+[noise]
+joint = { model = "Gaussian", mean = 0.0, std_dev = 0.005, interaction = "additive" }
+
+[noise_fit]
+joint = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
