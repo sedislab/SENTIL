@@ -46,7 +46,7 @@ ingest = ["dep:csv"]
 
 # The premade PrSTL specs: parameterized templates in embedded TOML/YAML/JSON.
 # Needs the statistical layer to build their lifting registries.
-specs = ["statistical", "dep:serde", "dep:serde_json", "dep:toml", "dep:serde_yaml"]
+specs = ["statistical", "dep:serde", "dep:serde_json", "dep:toml", "dep:serde_yaml", "dep:rust-embed"]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -59,6 +59,7 @@ serde = { workspace = true, optional = true }
 serde_json = { version = "1.0.149", optional = true }
 toml = { version = "1.1.2", optional = true }
 serde_yaml = { version = "0.9.34", optional = true }
+rust-embed = { version = "8.0", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

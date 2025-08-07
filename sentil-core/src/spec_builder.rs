@@ -1,8 +1,13 @@
 //! The premade library of parameterized PrSTL specification templates.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, OnceLock, RwLock};
 
+use rust_embed::RustEmbed;
 use serde::Deserialize;
+
+use crate::error::{Error, Result};
 
 /// A complete specification template, deserialized from TOML, YAML, or JSON.
 #[derive(Debug, Clone, Deserialize)]
@@ -194,6 +199,192 @@ pub struct VariantParamOverride {
     pub default: f64,
 }
 
+#[derive(RustEmbed)]
+#[folder = "../specifications/"]
+struct EmbeddedSpecs;
+
+/// Loads and caches specification templates by name.
+#[derive(Debug, Clone, Default)]
+pub struct SpecRegistry {
+    cache: Arc<RwLock<HashMap<String, SpecTemplate>>>,
+}
+
+impl SpecRegistry {
+    /// The process-wide registry.
+    #[must_use]
+    pub fn global() -> &'static Self {
+        static REGISTRY: OnceLock<SpecRegistry> = OnceLock::new();
+        REGISTRY.get_or_init(SpecRegistry::default)
+    }
+
+    /// Resolves `name` to a template, caching the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the name is empty or cannot be resolved,
+    /// read, or parsed.
+    pub fn get(&self, name: &str) -> Result<SpecTemplate> {
+        if name.is_empty() {
+            return Err(spec_error(
+                "specification name cannot be empty; use a library key like \
+                 'controls/overshoot' or a path like './my_spec.toml'"
+                    .to_owned(),
+            ));
+        }
+        if let Some(template) = self.cached(name)? {
+            return Ok(template);
+        }
+        let template = if is_filesystem_path(name) {
+            load_from_filesystem(name)?
+        } else {
+            load_from_env_or_embedded(name)?
+        };
+        self.store(name, template.clone())?;
+        Ok(template)
+    }
+
+    /// Loads a template straight from a file path, bypassing the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the file cannot be read or parsed.
+    pub fn load_file<P: AsRef<Path>>(&self, path: P) -> Result<SpecTemplate> {
+        let path = path.as_ref();
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            spec_error(format!(
+                "failed to read specification file '{}': {e}",
+                path.display()
+            ))
+        })?;
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        parse_template(&content, extension, &path.display().to_string())
+    }
+
+    /// The names of the embedded library specifications, sorted.
+    #[must_use]
+    pub fn available(&self) -> Vec<String> {
+        let mut names: Vec<String> = EmbeddedSpecs::iter()
+            .filter(|key| {
+                matches!(
+                    Path::new(key.as_ref()).extension().and_then(|e| e.to_str()),
+                    Some("toml" | "yaml" | "json")
+                )
+            })
+            .map(|key| strip_extension(&key).to_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn cached(&self, name: &str) -> Result<Option<SpecTemplate>> {
+        let cache = self.cache.read().map_err(|_| lock_poisoned())?;
+        Ok(cache.get(name).cloned())
+    }
+
+    fn store(&self, name: &str, template: SpecTemplate) -> Result<()> {
+        let mut cache = self.cache.write().map_err(|_| lock_poisoned())?;
+        cache.insert(name.to_owned(), template);
+        Ok(())
+    }
+}
+
+/// Parses a template from `content`, choosing the format by `extension`.
+pub(crate) fn parse_template(content: &str, extension: &str, source: &str) -> Result<SpecTemplate> {
+    match extension {
+        "toml" => toml::from_str(content)
+            .map_err(|e| spec_error(format!("failed to parse TOML from '{source}': {e}"))),
+        "json" => serde_json::from_str(content)
+            .map_err(|e| spec_error(format!("failed to parse JSON from '{source}': {e}"))),
+        "yaml" | "yml" => serde_yaml::from_str(content)
+            .map_err(|e| spec_error(format!("failed to parse YAML from '{source}': {e}"))),
+        _ => toml::from_str(content)
+            .or_else(|_| serde_json::from_str(content))
+            .or_else(|_| serde_yaml::from_str(content))
+            .map_err(|_: serde_yaml::Error| {
+                spec_error(format!(
+                    "could not parse '{source}' as TOML, JSON, or YAML; use a recognized file \
+                     extension (.toml, .yaml, .json) for a clearer error"
+                ))
+            }),
+    }
+}
+
+pub(crate) fn spec_error(message: String) -> Error {
+    Error::InvalidConfig {
+        context: "specification",
+        message,
+    }
+}
+
+fn lock_poisoned() -> Error {
+    spec_error("the specification registry lock is poisoned".to_owned())
+}
+
+fn is_filesystem_path(name: &str) -> bool {
+    if name.starts_with("./") || name.starts_with('/') {
+        return true;
+    }
+    matches!(
+        Path::new(name).extension().and_then(|e| e.to_str()),
+        Some("toml" | "yaml" | "yml" | "json")
+    )
+}
+
+fn extension_of(name: &str) -> &str {
+    name.rsplit('.').next().unwrap_or("")
+}
+
+fn strip_extension(key: &str) -> &str {
+    key.rsplit_once('.').map_or(key, |(stem, _)| stem)
+}
+
+fn load_from_filesystem(name: &str) -> Result<SpecTemplate> {
+    let content = std::fs::read_to_string(name)
+        .map_err(|e| spec_error(format!("failed to read specification file '{name}': {e}")))?;
+    parse_template(&content, extension_of(name), name)
+}
+
+fn load_from_env_or_embedded(name: &str) -> Result<SpecTemplate> {
+    if let Ok(dir) = std::env::var("SENTIL_SPECS_DIR") {
+        let base = Path::new(&dir);
+        for candidate in [
+            base.join(format!("{name}.toml")),
+            base.join(format!("{name}.yaml")),
+            base.join(format!("{name}.json")),
+            base.join(name),
+        ] {
+            if candidate.is_file() {
+                let content = std::fs::read_to_string(&candidate).map_err(|e| {
+                    spec_error(format!(
+                        "found '{}' via SENTIL_SPECS_DIR but could not read it: {e}",
+                        candidate.display()
+                    ))
+                })?;
+                let extension = candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
+                return parse_template(&content, extension, &candidate.display().to_string());
+            }
+        }
+    }
+    for key in [
+        name.to_owned(),
+        format!("{name}.toml"),
+        format!("{name}.yaml"),
+        format!("{name}.json"),
+    ] {
+        if let Some(file) = EmbeddedSpecs::get(&key) {
+            let content = std::str::from_utf8(&file.data).map_err(|e| {
+                spec_error(format!(
+                    "embedded specification '{key}' is not valid UTF-8: {e}"
+                ))
+            })?;
+            return parse_template(content, extension_of(&key), &key);
+        }
+    }
+    Err(spec_error(format!(
+        "specification '{name}' not found in the embedded library or SENTIL_SPECS_DIR"
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the parsed parameter values are exact")]
@@ -239,5 +430,44 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
         assert_eq!(noise.model, "Gaussian");
         assert_eq!(noise.interaction, "additive");
         assert_eq!(noise.params["std_dev"].as_f64().unwrap(), 0.01);
+    }
+
+    #[test]
+    fn every_embedded_spec_parses() {
+        let registry = SpecRegistry::default();
+        let names = registry.available();
+        assert!(names.len() >= 14, "found only {} specs", names.len());
+        for name in &names {
+            registry
+                .get(name)
+                .unwrap_or_else(|e| panic!("embedded spec '{name}' failed to parse: {e}"));
+        }
+    }
+
+    #[test]
+    fn resolves_a_known_control_spec() {
+        let template = SpecRegistry::default().get("controls/overshoot").unwrap();
+        assert_eq!(template.metadata.domain, "controls");
+        assert!(template.formulas.probabilistic.is_some());
+    }
+
+    #[test]
+    fn the_cache_returns_the_same_template_twice() {
+        let registry = SpecRegistry::default();
+        let first = registry.get("controls/settling_time").unwrap();
+        let second = registry.get("controls/settling_time").unwrap();
+        assert_eq!(first.metadata.name, second.metadata.name);
+    }
+
+    #[test]
+    fn an_empty_name_is_rejected() {
+        assert!(SpecRegistry::default().get("").is_err());
+    }
+
+    #[test]
+    fn an_unknown_name_is_rejected() {
+        assert!(SpecRegistry::default()
+            .get("controls/does_not_exist")
+            .is_err());
     }
 }
