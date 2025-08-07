@@ -1013,4 +1013,55 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
         assert_eq!(smc.confidence, 0.95);
         assert_eq!(smc.sample_budget, 1000);
     }
+
+    #[test]
+    fn every_spec_evaluates_on_a_trace() {
+        use crate::{Formula, Trace};
+
+        let registry = SpecRegistry::default();
+        for name in registry.available() {
+            let template = registry.get(&name).unwrap();
+            let text = registry
+                .builder(&name)
+                .unwrap()
+                .build_deterministic()
+                .unwrap();
+            let formula = Formula::parse(&text).unwrap();
+
+            let times: Vec<f64> = (0..=80).map(f64::from).collect();
+            let mut trace = Trace::new(times.clone()).unwrap();
+            if let Some(variables) = &template.variables {
+                for variable in variables.keys() {
+                    trace.add_signal(variable, vec![0.5; times.len()]).unwrap();
+                }
+            }
+            let robustness = formula
+                .robustness(&trace)
+                .unwrap_or_else(|e| panic!("{name} did not evaluate: {e}"));
+            assert!(
+                robustness.is_finite(),
+                "{name} robustness {robustness} is not finite"
+            );
+        }
+    }
+
+    #[test]
+    fn overshoot_scores_an_excess_overshoot_negative() {
+        use crate::{Formula, Trace};
+
+        let text = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .build_deterministic()
+            .unwrap();
+        let formula = Formula::parse(&text).unwrap();
+        let times = vec![0.0, 10.0, 20.0, 30.0];
+        let mut trace = Trace::new(times.clone()).unwrap();
+        trace.add_signal("output", vec![0.5; times.len()]).unwrap();
+        trace
+            .add_signal("reference", vec![0.4; times.len()])
+            .unwrap();
+        let robustness = formula.robustness(&trace).unwrap();
+        assert!((robustness + 0.05).abs() < 1e-9, "robustness {robustness}");
+    }
 }
