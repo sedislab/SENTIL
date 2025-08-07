@@ -276,6 +276,15 @@ impl SpecRegistry {
         names
     }
 
+    /// Resolves `name` and wraps it in a [`SpecBuilder`] ready for parameters.
+    ///
+    /// # Errors
+    ///
+    /// As [`get`](Self::get).
+    pub fn builder(&self, name: &str) -> Result<SpecBuilder> {
+        Ok(SpecBuilder::new(self.get(name)?))
+    }
+
     fn cached(&self, name: &str) -> Result<Option<SpecTemplate>> {
         let cache = self.cache.read().map_err(|_| lock_poisoned())?;
         Ok(cache.get(name).cloned())
@@ -385,6 +394,229 @@ fn load_from_env_or_embedded(name: &str) -> Result<SpecTemplate> {
     )))
 }
 
+/// Instantiates a [`SpecTemplate`] into a concrete formula by filling its parameters.
+///
+/// ```
+/// use sentil::spec_builder::SpecRegistry;
+///
+/// let formula = SpecRegistry::global()
+///     .builder("controls/overshoot")?
+///     .with_param("max_overshoot", 0.1)?
+///     .build_deterministic()?;
+/// assert!(formula.contains("0.1"));
+/// # Ok::<(), sentil::Error>(())
+/// ```
+pub struct SpecBuilder {
+    template: SpecTemplate,
+    active_variant: Option<String>,
+    param_overrides: HashMap<String, f64>,
+}
+
+impl SpecBuilder {
+    /// Wraps a template for instantiation.
+    #[must_use]
+    pub fn new(template: SpecTemplate) -> Self {
+        Self {
+            template,
+            active_variant: None,
+            param_overrides: HashMap::new(),
+        }
+    }
+
+    /// The underlying template.
+    #[must_use]
+    pub fn template(&self) -> &SpecTemplate {
+        &self.template
+    }
+
+    /// Selects a named variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the variant is unknown or the template
+    /// defines no variants.
+    pub fn with_variant(mut self, variant: &str) -> Result<Self> {
+        match &self.template.variants {
+            Some(variants) if variants.contains_key(variant) => {
+                self.active_variant = Some(variant.to_owned());
+                Ok(self)
+            }
+            Some(variants) => {
+                let mut available: Vec<&str> = variants.keys().map(String::as_str).collect();
+                available.sort_unstable();
+                Err(spec_error(format!(
+                    "variant '{variant}' not found in '{}'; available: [{}]",
+                    self.template.metadata.name,
+                    available.join(", ")
+                )))
+            }
+            None => Err(spec_error(format!(
+                "'{}' defines no variants",
+                self.template.metadata.name
+            ))),
+        }
+    }
+
+    /// Overrides a parameter's value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if `value` is not finite, the parameter is
+    /// unknown, or the value falls outside the parameter's declared range.
+    pub fn with_param(mut self, name: &str, value: f64) -> Result<Self> {
+        if !value.is_finite() {
+            return Err(spec_error(format!(
+                "parameter '{name}' must be finite, got {value}"
+            )));
+        }
+        let Some(def) = self.template.parameters.get(name) else {
+            let mut available: Vec<&str> = self
+                .template
+                .parameters
+                .keys()
+                .map(String::as_str)
+                .collect();
+            available.sort_unstable();
+            return Err(spec_error(format!(
+                "parameter '{name}' is not defined in '{}'; available: [{}]",
+                self.template.metadata.name,
+                available.join(", ")
+            )));
+        };
+        if let Some([min, max]) = def.range {
+            if value < min || value > max {
+                return Err(spec_error(format!(
+                    "parameter '{name}' value {value} is outside the allowed range [{min}, {max}]"
+                )));
+            }
+        }
+        self.param_overrides.insert(name.to_owned(), value);
+        Ok(self)
+    }
+
+    /// The deterministic STL formula with the chosen parameters substituted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the formula leaves a placeholder
+    /// unresolved.
+    pub fn build_deterministic(&self) -> Result<String> {
+        self.resolve_formula(true)
+    }
+
+    /// The probabilistic PrSTL formula with the chosen parameters substituted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the template has no probabilistic formula
+    /// or the formula leaves a placeholder unresolved.
+    pub fn build_probabilistic(&self) -> Result<String> {
+        self.resolve_formula(false)
+    }
+
+    /// The available variant names, sorted.
+    #[must_use]
+    pub fn available_variants(&self) -> Vec<&str> {
+        self.template
+            .variants
+            .as_ref()
+            .map_or_else(Vec::new, |variants| {
+                let mut names: Vec<&str> = variants.keys().map(String::as_str).collect();
+                names.sort_unstable();
+                names
+            })
+    }
+
+    /// The parameters and their currently resolved values.
+    #[must_use]
+    pub fn parameters(&self) -> HashMap<String, f64> {
+        self.resolve_parameters()
+    }
+
+    fn resolve_parameters(&self) -> HashMap<String, f64> {
+        let mut resolved: HashMap<String, f64> = self
+            .template
+            .parameters
+            .iter()
+            .map(|(name, def)| (name.clone(), def.default))
+            .collect();
+        if let Some(overrides) = self.variant().and_then(|v| v.parameters.as_ref()) {
+            for (name, over) in overrides {
+                resolved.insert(name.clone(), over.default);
+            }
+        }
+        for (name, value) in &self.param_overrides {
+            resolved.insert(name.clone(), *value);
+        }
+        resolved
+    }
+
+    fn resolve_formula(&self, deterministic: bool) -> Result<String> {
+        if let Some(formulas) = self.variant().and_then(|v| v.formulas.as_ref()) {
+            let overridden = if deterministic {
+                &formulas.deterministic
+            } else {
+                &formulas.probabilistic
+            };
+            if let Some(formula) = overridden {
+                return self.interpolate(formula, &self.resolve_parameters());
+            }
+        }
+        let base = if deterministic {
+            self.template.formulas.deterministic.clone()
+        } else {
+            self.template
+                .formulas
+                .probabilistic
+                .clone()
+                .ok_or_else(|| {
+                    spec_error(format!(
+                        "'{}' does not define a probabilistic formula",
+                        self.template.metadata.name
+                    ))
+                })?
+        };
+        self.interpolate(&base, &self.resolve_parameters())
+    }
+
+    fn interpolate(&self, template: &str, params: &HashMap<String, f64>) -> Result<String> {
+        let mut formula = template.to_owned();
+        for (key, value) in params {
+            formula = formula.replace(&format!("{{{key}}}"), &format_param(*value));
+        }
+        if let Some(start) = formula.find('{') {
+            if let Some(end) = formula[start..].find('}') {
+                let unresolved = &formula[start + 1..start + end];
+                return Err(spec_error(format!(
+                    "unresolved parameter '{{{unresolved}}}' in the formula for '{}'; it appears \
+                     in the formula but is not defined in [parameters]",
+                    self.template.metadata.name
+                )));
+            }
+        }
+        Ok(formula)
+    }
+}
+
+/// Formats a parameter value as a float literal the STL parser accepts.
+#[allow(
+    clippy::float_cmp,
+    reason = "testing whether a float is integer-valued is an exact comparison by design"
+)]
+fn format_param(value: f64) -> String {
+    if value == value.floor() && value.abs() < 1e15 {
+        format!("{value:.1}")
+    } else {
+        let formatted = format!("{value:.10}");
+        let trimmed = formatted.trim_end_matches('0');
+        if trimmed.ends_with('.') {
+            format!("{trimmed}0")
+        } else {
+            trimmed.to_owned()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the parsed parameter values are exact")]
@@ -469,5 +701,84 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
         assert!(SpecRegistry::default()
             .get("controls/does_not_exist")
             .is_err());
+    }
+
+    #[test]
+    fn builds_a_deterministic_formula_with_defaults() {
+        let formula = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .build_deterministic()
+            .unwrap();
+        assert_eq!(formula, "always[0, 30.0](output - reference < 0.05 * 1.0)");
+    }
+
+    #[test]
+    fn an_overridden_parameter_appears_in_the_formula() {
+        let formula = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .with_param("max_overshoot", 0.1)
+            .unwrap()
+            .build_deterministic()
+            .unwrap();
+        assert!(formula.contains("0.1 * 1.0"), "{formula}");
+    }
+
+    #[test]
+    fn an_out_of_range_parameter_is_rejected() {
+        let result = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .with_param("p", 1.5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn an_unknown_parameter_is_rejected() {
+        let result = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .with_param("nonexistent", 1.0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn a_variant_overrides_the_formula() {
+        let formula = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .with_variant("step_down")
+            .unwrap()
+            .build_deterministic()
+            .unwrap();
+        assert_eq!(formula, "always[0, 30.0](reference - output < 0.05 * 1.0)");
+    }
+
+    #[test]
+    fn an_unknown_variant_is_rejected() {
+        let result = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .with_variant("sideways");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn every_instantiated_formula_parses() {
+        use crate::Formula;
+
+        let registry = SpecRegistry::default();
+        for name in registry.available() {
+            let builder = registry.builder(&name).unwrap();
+            let deterministic = builder.build_deterministic().unwrap();
+            Formula::parse(&deterministic).unwrap_or_else(|e| {
+                panic!("{name} deterministic '{deterministic}' did not parse: {e}")
+            });
+            let probabilistic = builder.build_probabilistic().unwrap();
+            Formula::parse(&probabilistic).unwrap_or_else(|e| {
+                panic!("{name} probabilistic '{probabilistic}' did not parse: {e}")
+            });
+        }
     }
 }
