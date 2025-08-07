@@ -32,8 +32,8 @@ epsilon = { type = "float", default = 0.05, description = "Radius of the invaria
 p       = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
  
 [formulas]
-deterministic = "eventually[0, {t_reach}](always[0, {T_hold}](abs(output - target) < {epsilon}))"
-probabilistic = "P >= {p}(eventually[0, {t_reach}](always[0, {T_hold}](abs(output - target) < {epsilon})))"
+deterministic = "eventually[0, {t_reach}](always[0, {T_hold}](abs(output - {target}) < {epsilon}))"
+probabilistic = "P >= {p}(eventually[0, {t_reach}](always[0, {T_hold}](abs(output - {target}) < {epsilon})))"
  
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }

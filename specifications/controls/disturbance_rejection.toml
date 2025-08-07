@@ -28,8 +28,8 @@ nominal = { type = "float", default = 0.0,  description = "Nominal (undisturbed)
 p       = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
 
 [formulas]
-deterministic = "always[0, {T}](abs(output - nominal) < {y_max})"
-probabilistic = "P >= {p}(always[0, {T}](abs(output - nominal) < {y_max}))"
+deterministic = "always[0, {T}](abs(output - {nominal}) < {y_max})"
+probabilistic = "P >= {p}(always[0, {T}](abs(output - {nominal}) < {y_max}))"
 
 [noise]
 output      = { model = "Gaussian", mean = 0.0, std_dev = 0.05, interaction = "additive" }

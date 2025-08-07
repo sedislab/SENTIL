@@ -33,8 +33,8 @@ setpoint = { type = "float", default = 0.0,  description = "Value to maintain" }
 p        = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
  
 [formulas]
-deterministic = "(abs(output - setpoint) < {epsilon}) until[0, {T}] (event > 0.5)"
-probabilistic = "P >= {p}((abs(output - setpoint) < {epsilon}) until[0, {T}] (event > 0.5))"
+deterministic = "(abs(output - {setpoint}) < {epsilon}) until[0, {T}] (event > 0.5)"
+probabilistic = "P >= {p}((abs(output - {setpoint}) < {epsilon}) until[0, {T}] (event > 0.5))"
  
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }

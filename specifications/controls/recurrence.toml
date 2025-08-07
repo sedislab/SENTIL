@@ -30,8 +30,8 @@ epsilon = { type = "float", default = 0.5,  description = "Proximity radius arou
 p       = { type = "float", default = 0.90, range = [0.0, 1.0], description = "PrSTL probability threshold" }
  
 [formulas]
-deterministic = "always[0, {T}](eventually[0, {t_visit}](abs(output - target) < {epsilon}))"
-probabilistic = "P >= {p}(always[0, {T}](eventually[0, {t_visit}](abs(output - target) < {epsilon})))"
+deterministic = "always[0, {T}](eventually[0, {t_visit}](abs(output - {target}) < {epsilon}))"
+probabilistic = "P >= {p}(always[0, {T}](eventually[0, {t_visit}](abs(output - {target}) < {epsilon})))"
  
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
