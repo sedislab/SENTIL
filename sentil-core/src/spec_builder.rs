@@ -8,6 +8,7 @@ use rust_embed::RustEmbed;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel};
 
 /// A complete specification template, deserialized from TOML, YAML, or JSON.
 #[derive(Debug, Clone, Deserialize)]
@@ -533,6 +534,64 @@ impl SpecBuilder {
         self.resolve_parameters()
     }
 
+    /// The noise models in force, or `None` if the template defines none.
+    #[must_use]
+    pub fn resolved_noise(&self) -> Option<HashMap<String, NoiseDef>> {
+        let mut noise = self.template.noise.clone()?;
+        if let Some(overrides) = self.variant().and_then(|v| v.noise.as_ref()) {
+            for (variable, def) in overrides {
+                noise.insert(variable.clone(), def.clone());
+            }
+        }
+        Some(noise)
+    }
+
+    /// Builds a lifting registry from the resolved noise models.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if a noise model or interaction is malformed.
+    pub fn build_lifting_registry(&self) -> Result<LiftingRegistry> {
+        let mut registry = LiftingRegistry::new();
+        if let Some(noise) = self.resolved_noise() {
+            for (variable, def) in &noise {
+                let model = noise_model_from_def(def)?;
+                let interaction = parse_interaction(&def.interaction)?;
+                registry.register(variable, model, interaction);
+            }
+        }
+        Ok(registry)
+    }
+
+    /// The recommended Monte Carlo settings, if the template carries any.
+    #[must_use]
+    pub fn smc_settings(&self) -> Option<&SmcSettings> {
+        self.template.verification.as_ref()?.smc.as_ref()
+    }
+
+    /// The recommended sequential-test settings, if the template carries any.
+    #[must_use]
+    pub fn sprt_settings(&self) -> Option<&SprtSettings> {
+        self.template.verification.as_ref()?.sprt.as_ref()
+    }
+
+    /// The recommended rare-event settings, if the template carries any.
+    #[must_use]
+    pub fn ams_settings(&self) -> Option<&AmsSettings> {
+        self.template.verification.as_ref()?.ams.as_ref()
+    }
+
+    /// The per-signal noise-fitting recipes, if the template carries any.
+    #[must_use]
+    pub fn noise_fit(&self) -> Option<&HashMap<String, NoiseFitDef>> {
+        self.template.noise_fit.as_ref()
+    }
+
+    fn variant(&self) -> Option<&VariantDef> {
+        let key = self.active_variant.as_ref()?;
+        self.template.variants.as_ref()?.get(key)
+    }
+
     fn resolve_parameters(&self) -> HashMap<String, f64> {
         let mut resolved: HashMap<String, f64> = self
             .template
@@ -615,6 +674,113 @@ fn format_param(value: f64) -> String {
             trimmed.to_owned()
         }
     }
+}
+
+/// Builds a [`NoiseModel`] from a template's noise definition.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidConfig`] if the model is unknown, a required parameter
+/// is missing or non-numeric, or the constructed model is invalid.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the binomial count is validated as a non-negative integer before the cast"
+)]
+pub fn noise_model_from_def(def: &NoiseDef) -> Result<NoiseModel> {
+    let params = &def.params;
+    match def.model.to_lowercase().as_str() {
+        "dirac" => NoiseModel::dirac(require_f64(params, "value", "Dirac")?),
+        "gaussian" | "normal" => NoiseModel::gaussian(
+            optional_f64(params, "mean").unwrap_or(0.0),
+            require_f64(params, "std_dev", "Gaussian")?,
+        ),
+        "uniform" => NoiseModel::uniform(
+            require_f64(params, "low", "Uniform")?,
+            require_f64(params, "high", "Uniform")?,
+        ),
+        "lognormal" | "log_normal" => NoiseModel::log_normal(
+            require_f64(params, "mu", "LogNormal")?,
+            require_f64(params, "sigma", "LogNormal")?,
+        ),
+        "exponential" => NoiseModel::exponential(require_f64(params, "lambda", "Exponential")?),
+        "gamma" => NoiseModel::gamma(
+            require_f64(params, "shape", "Gamma")?,
+            require_f64(params, "scale", "Gamma")?,
+        ),
+        "beta" => NoiseModel::beta(
+            require_f64(params, "alpha", "Beta")?,
+            require_f64(params, "beta", "Beta")?,
+        ),
+        "weibull" => NoiseModel::weibull(
+            require_f64(params, "shape", "Weibull")?,
+            require_f64(params, "scale", "Weibull")?,
+        ),
+        "rayleigh" => NoiseModel::rayleigh(require_f64(params, "scale", "Rayleigh")?),
+        "gumbel" => NoiseModel::gumbel(
+            require_f64(params, "location", "Gumbel")?,
+            require_f64(params, "scale", "Gumbel")?,
+        ),
+        "cauchy" => NoiseModel::cauchy(
+            require_f64(params, "location", "Cauchy")?,
+            require_f64(params, "scale", "Cauchy")?,
+        ),
+        "studentt" | "student_t" => NoiseModel::student_t(
+            require_f64(params, "df", "StudentT")?,
+            optional_f64(params, "location").unwrap_or(0.0),
+            optional_f64(params, "scale").unwrap_or(1.0),
+        ),
+        "truncatednormal" | "truncated_normal" => NoiseModel::truncated_normal(
+            optional_f64(params, "mean").unwrap_or(0.0),
+            require_f64(params, "std_dev", "TruncatedNormal")?,
+            require_f64(params, "lower", "TruncatedNormal")?,
+            require_f64(params, "upper", "TruncatedNormal")?,
+        ),
+        "poisson" => NoiseModel::poisson(require_f64(params, "lambda", "Poisson")?),
+        "binomial" => {
+            let n = require_f64(params, "n", "Binomial")?;
+            if n < 0.0 || n.fract() != 0.0 {
+                return Err(spec_error(format!(
+                    "binomial 'n' must be a non-negative integer, got {n}"
+                )));
+            }
+            NoiseModel::binomial(n as u64, require_f64(params, "p", "Binomial")?)
+        }
+        other => Err(spec_error(format!(
+            "unknown noise model '{other}'; supported: dirac, gaussian, uniform, lognormal, \
+             exponential, gamma, beta, weibull, rayleigh, gumbel, cauchy, studentt, \
+             truncatednormal, poisson, binomial. For bootstrap or mixture models, register them \
+             on a lifting registry directly"
+        ))),
+    }
+}
+
+fn parse_interaction(interaction: &str) -> Result<NoiseInteraction> {
+    match interaction.to_lowercase().as_str() {
+        "additive" => Ok(NoiseInteraction::Additive),
+        "multiplicative" => Ok(NoiseInteraction::Multiplicative),
+        other => Err(spec_error(format!(
+            "unknown noise interaction '{other}'; use 'additive' or 'multiplicative'"
+        ))),
+    }
+}
+
+fn require_f64(params: &HashMap<String, serde_json::Value>, key: &str, model: &str) -> Result<f64> {
+    params
+        .get(key)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| {
+            let mut keys: Vec<&str> = params.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            spec_error(format!(
+                "noise model '{model}' needs a numeric parameter '{key}'; given [{}]",
+                keys.join(", ")
+            ))
+        })
+}
+
+fn optional_f64(params: &HashMap<String, serde_json::Value>, key: &str) -> Option<f64> {
+    params.get(key).and_then(serde_json::Value::as_f64)
 }
 
 #[cfg(test)]
@@ -780,5 +946,71 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
                 panic!("{name} probabilistic '{probabilistic}' did not parse: {e}")
             });
         }
+    }
+
+    #[test]
+    fn builds_a_lifting_registry_from_the_spec_noise() {
+        let registry = SpecRegistry::default()
+            .builder("controls/disturbance_rejection")
+            .unwrap()
+            .build_lifting_registry()
+            .unwrap();
+        let mut variables = registry.variables();
+        variables.sort_unstable();
+        assert_eq!(variables, vec!["disturbance", "output"]);
+    }
+
+    #[test]
+    fn a_spec_without_noise_yields_an_empty_registry() {
+        let template: SpecTemplate = toml::from_str(
+            "[metadata]\nname = \"N\"\ndomain = \"d\"\n[parameters]\n\
+             [formulas]\ndeterministic = \"x > 0\"",
+        )
+        .unwrap();
+        assert!(SpecBuilder::new(template)
+            .build_lifting_registry()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn maps_a_gaussian_noise_definition() {
+        let def = NoiseDef {
+            model: "Gaussian".to_owned(),
+            interaction: "additive".to_owned(),
+            params: HashMap::from([("std_dev".to_owned(), serde_json::Value::from(0.5))]),
+        };
+        let model = noise_model_from_def(&def).unwrap();
+        let debug = format!("{model:?}");
+        assert!(
+            debug.contains("Gaussian") && debug.contains("std_dev: 0.5"),
+            "{debug}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_noise_model_is_rejected() {
+        let def = NoiseDef {
+            model: "wibble".to_owned(),
+            interaction: "additive".to_owned(),
+            params: HashMap::new(),
+        };
+        assert!(noise_model_from_def(&def).is_err());
+    }
+
+    #[test]
+    fn noise_interaction_parses_case_insensitively() {
+        assert!(parse_interaction("Multiplicative").is_ok());
+        assert!(parse_interaction("sideways").is_err());
+    }
+
+    #[test]
+    fn reads_the_recommended_verification_settings() {
+        let builder = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap();
+        let smc = builder.smc_settings().unwrap();
+        assert_eq!(smc.confidence, 0.95);
+        assert_eq!(smc.sample_budget, 1000);
     }
 }
