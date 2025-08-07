@@ -28,7 +28,7 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["statistical", "ingest", "parallel", "synthesis"]
+default = ["statistical", "ingest", "parallel", "synthesis", "specs"]
 
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.

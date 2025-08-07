@@ -42,6 +42,8 @@ pub use formula::Formula;
 pub use monitor::{Monitor, MonitorConfig, TimeMode};
 pub use semantics::{MultiFormulaMonitor, Robustness, StreamMonitor};
 pub use signal::Trace;
+#[cfg(feature = "specs")]
+pub use spec_builder::{SpecBuilder, SpecRegistry, SpecTemplate};
 #[cfg(feature = "statistical")]
 pub use stats::{
     ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, RareEventConfig,
