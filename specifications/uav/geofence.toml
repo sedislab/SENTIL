@@ -1,0 +1,47 @@
+[metadata]
+name = "Geofence"
+domain = "uav"
+description = "The horizontal position stays inside the authorized operating box for the whole flight."
+references = [
+    "Co-design of Control and Planning for Multi-rotor UAVs with Signal Temporal Logic Specifications, 2020",
+    "Trajectory Optimization for UAV-Based Medical Delivery with Temporal Logic Constraints, 2025",
+]
+
+[variables]
+x = { unit = "meters", description = "East position" }
+y = { unit = "meters", description = "North position" }
+
+[parameters]
+T     = { type = "float", default = 30.0,   unit = "seconds", description = "Observation horizon" }
+x_min = { type = "float", default = -500.0, unit = "meters", description = "West edge of the geofence" }
+x_max = { type = "float", default = 500.0,  unit = "meters", description = "East edge of the geofence" }
+y_min = { type = "float", default = -500.0, unit = "meters", description = "South edge of the geofence" }
+y_max = { type = "float", default = 500.0,  unit = "meters", description = "North edge of the geofence" }
+p     = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, an operational limit)" }
+
+[formulas]
+deterministic = "always[0, {T}]((x > {x_min} and x < {x_max}) and (y > {y_min} and y < {y_max}))"
+probabilistic = "P >= {p}(always[0, {T}]((x > {x_min} and x < {x_max}) and (y > {y_min} and y < {y_max})))"
+
+[noise]
+x = { model = "Gaussian", mean = 0.0, std_dev = 0.5, interaction = "additive" }
+y = { model = "Gaussian", mean = 0.0, std_dev = 0.5, interaction = "additive" }
+
+[noise_fit]
+x = { algorithm = "fit_gaussian", interaction = "additive" }
+y = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

@@ -1,0 +1,40 @@
+[metadata]
+name = "Battery Reserve"
+domain = "uav"
+description = "The battery state of charge stays above the return-and-land reserve for the whole flight."
+references = [
+    "Trajectory Optimization for UAV-Based Medical Delivery with Temporal Logic Constraints, 2025",
+]
+
+[variables]
+battery = { description = "Battery state of charge as a fraction" }
+
+[parameters]
+T       = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+reserve = { type = "float", default = 0.2, description = "Reserve fraction for return and landing" }
+p       = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](battery > {reserve})"
+probabilistic = "P >= {p}(always[0, {T}](battery > {reserve}))"
+
+[noise]
+battery = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+battery = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

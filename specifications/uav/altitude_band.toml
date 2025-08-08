@@ -1,0 +1,43 @@
+[metadata]
+name = "Altitude Band"
+domain = "uav"
+description = "Altitude stays between a floor and a ceiling for the whole flight."
+references = [
+    "Co-design of Control and Planning for Multi-rotor UAVs with Signal Temporal Logic Specifications, 2020",
+    "Trajectory Optimization for UAV-Based Medical Delivery with Temporal Logic Constraints, 2025",
+    "FAA 14 CFR Part 107 (small uncrewed aircraft; 400 ft AGL ceiling)",
+]
+
+[variables]
+altitude = { unit = "meters", description = "Height above ground level" }
+
+[parameters]
+T       = { type = "float", default = 30.0,  unit = "seconds", description = "Observation horizon" }
+floor   = { type = "float", default = 2.0,   unit = "meters", description = "Minimum safe altitude" }
+ceiling = { type = "float", default = 120.0, unit = "meters", description = "Operational ceiling (about 400 ft)" }
+p       = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, an operational limit)" }
+
+[formulas]
+deterministic = "always[0, {T}](altitude > {floor} and altitude < {ceiling})"
+probabilistic = "P >= {p}(always[0, {T}](altitude > {floor} and altitude < {ceiling}))"
+
+[noise]
+altitude = { model = "Gaussian", mean = 0.0, std_dev = 0.2, interaction = "additive" }
+
+[noise_fit]
+altitude = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

@@ -1,0 +1,41 @@
+[metadata]
+name = "Waypoint Arrival"
+domain = "uav"
+description = "The aircraft comes within a tolerance of the next waypoint before the deadline."
+references = [
+    "Co-design of Control and Planning for Multi-rotor UAVs with Signal Temporal Logic Specifications, 2020",
+    "Trajectory Optimization for UAV-Based Medical Delivery with Temporal Logic Constraints, 2025",
+]
+
+[variables]
+waypoint_distance = { unit = "meters", description = "Distance to the next waypoint" }
+
+[parameters]
+deadline  = { type = "float", default = 20.0, unit = "seconds", description = "Deadline to reach the waypoint" }
+tolerance = { type = "float", default = 1.0,  unit = "meters", description = "Arrival tolerance" }
+p         = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "eventually[0, {deadline}](waypoint_distance < {tolerance})"
+probabilistic = "P >= {p}(eventually[0, {deadline}](waypoint_distance < {tolerance}))"
+
+[noise]
+waypoint_distance = { model = "Gaussian", mean = 0.0, std_dev = 0.2, interaction = "additive" }
+
+[noise_fit]
+waypoint_distance = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
