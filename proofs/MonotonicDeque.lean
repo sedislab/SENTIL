@@ -1,13 +1,10 @@
 /-
-  SENTIL: MONOTONIC DEQUE SLIDING-WINDOW CORRECTNESS (Theorem 1)
-
-  Machine-checked proof that the monotonic deque computes the exact
-  minimum over a sliding temporal window. Targets Lean 4, no Mathlib.
+The streaming monitor evaluates a bounded `always` with a monotonic deque: the
+front always holds the minimum over the current window. This proves that against
+the obvious specification, the minimum of a naive filter over the same window, so
+the O(1) deque and the O(window) filter agree on every stream. Lean 4, no Mathlib;
+the maximum case for `eventually` is the dual, with the value order reversed.
 -/
-
--- ============================================================
--- SECTION 1: TYPES AND DEFINITIONS
--- ============================================================
 
 structure Sample where
   time : Nat
@@ -29,10 +26,6 @@ def popBack : Deque → Nat → Deque
 def processStep (d : Deque) (s : Sample) (w : Nat) : Deque :=
   popBack (popFront d (s.time - w)) s.value ++ [s]
 
--- ============================================================
--- SECTION 2: ORDERING PREDICATES
--- ============================================================
-
 inductive ValueNonDecr : Deque → Prop
   | nil  : ValueNonDecr []
   | one  (x) : ValueNonDecr [x]
@@ -44,10 +37,6 @@ inductive TimeIncr : Deque → Prop
   | one  (x) : TimeIncr [x]
   | cons (x y rest) (hlt : x.time < y.time)
          (htail : TimeIncr (y :: rest)) : TimeIncr (x :: y :: rest)
-
--- ============================================================
--- SECTION 3: STRUCTURAL LEMMAS
--- ============================================================
 
 theorem vnd_tail (x : Sample) (xs : Deque) (h : ValueNonDecr (x :: xs)) :
     ValueNonDecr xs := by
@@ -87,10 +76,6 @@ theorem ti_head_le_time (x : Sample) (xs : Deque) (h : TimeIncr (x :: xs)) :
   cases hs with
   | head => exact Nat.le_refl _
   | tail _ hs' => exact Nat.le_of_lt (ti_head_lt x xs h s hs')
-
--- ============================================================
--- SECTION 4: POPBACK PROPERTIES
--- ============================================================
 
 theorem popBack_subset (xs : Deque) (v : Nat) (s : Sample) :
     s ∈ popBack xs v → s ∈ xs := by
@@ -171,10 +156,6 @@ theorem popBack_ti (xs : Deque) (v : Nat) (h : TimeIncr xs) :
         exact TimeIncr.cons x y ys hlt_t (hpb ▸ ih htail)
     next _ => exact ih htail
 
--- ============================================================
--- SECTION 5: POPFRONT PROPERTIES
--- ============================================================
-
 theorem popFront_subset (xs : Deque) (c : Nat) (s : Sample) :
     s ∈ popFront xs c → s ∈ xs := by
   induction xs with
@@ -232,10 +213,6 @@ theorem popFront_ti (xs : Deque) (c : Nat) (h : TimeIncr xs) :
     next _ => exact ih (ti_tail x xs h)
     next _ => exact h
 
--- ============================================================
--- SECTION 6: APPEND PRESERVATION
--- ============================================================
-
 theorem append_vnd (xs : Deque) (s : Sample)
     (h : ValueNonDecr xs) (hge : ∀ x ∈ xs, x.value ≤ s.value) :
     ValueNonDecr (xs ++ [s]) := by
@@ -268,10 +245,6 @@ theorem append_ti (xs : Deque) (s : Sample)
       | cons _ _ _ hlt htail' =>
         exact TimeIncr.cons x y (ys ++ [s]) hlt (ih htail' hgt_tail)
 
--- ============================================================
--- SECTION 7: THE INVARIANT
--- ============================================================
-
 structure DequeInv (deque stream : Deque) (t w : Nat) : Prop where
   vnd   : ValueNonDecr deque
   ti    : TimeIncr deque
@@ -281,10 +254,6 @@ structure DequeInv (deque stream : Deque) (t w : Nat) : Prop where
             ∃ s' ∈ deque, s'.time > s.time ∧ s'.value ≤ s.value
   bound : ∀ s ∈ stream, s.time ≤ t
 
--- ============================================================
--- SECTION 8: BASE CASE
--- ============================================================
-
 theorem inv_empty (w : Nat) : DequeInv [] [] 0 w := {
   vnd   := ValueNonDecr.nil
   ti    := TimeIncr.nil
@@ -293,10 +262,6 @@ theorem inv_empty (w : Nat) : DequeInv [] [] 0 w := {
   cov   := fun _ h => nomatch h
   bound := fun _ h => nomatch h
 }
-
--- ============================================================
--- SECTION 9: STEP PRESERVATION
--- ============================================================
 
 theorem step_vnd (D : Deque) (s : Sample) (w : Nat) (h : ValueNonDecr D) :
     ValueNonDecr (processStep D s w) := by
@@ -311,38 +276,35 @@ theorem step_cov (D S : Deque) (s_new : Sample) (t_old w : Nat)
       s ∉ processStep D s_new w →
       ∃ s' ∈ processStep D s_new w, s'.time > s.time ∧ s'.value ≤ s.value := by
   intro s hs h_lo h_hi h_notin
-  -- s_new is always in the result (it is appended)
   have h_snew_in : s_new ∈ processStep D s_new w :=
     List.mem_append.mpr (Or.inr (List.Mem.head _))
-  -- s ∈ S ∨ s ∈ [s_new]
   rcases List.mem_append.mp hs with hs_old | hs_new
-  · -- Case B: s ∈ S (old stream element).
+  ·
     have h_not_D'' : s ∉ popBack (popFront D (s_new.time - w)) s_new.value :=
       fun hmem => h_notin (List.mem_append.mpr (Or.inl hmem))
     have h_s_le_old : s.time ≤ t_old := h_inv.bound s hs_old
     have h_s_ge_old : t_old - w ≤ s.time := by omega
     by_cases h_in_D : s ∈ D
-    · -- B1: s was in D, survived popFront, removed by popBack.
+    ·
       have h_in_pf : s ∈ popFront D (s_new.time - w) :=
         popFront_complete D _ h_inv.ti s h_in_D (by omega)
-      -- s ∉ D'' means s.value ≥ s_new.value (popBack removes values ≥ v)
       have h_val_ge : s_new.value ≤ s.value := by
         have h_not_lt : ¬ s.value < s_new.value :=
           fun h_lt => h_not_D'' (popBack_complete _ _ s h_in_pf h_lt)
         omega
       exact ⟨s_new, h_snew_in, by omega, h_val_ge⟩
-    · -- B2: s was never in D.
+    ·
       obtain ⟨s', h_s'_D, h_s'_time, h_s'_val⟩ :=
         h_inv.cov s hs_old h_s_ge_old h_s_le_old h_in_D
       have h_s'_pf : s' ∈ popFront D (s_new.time - w) :=
         popFront_complete D _ h_inv.ti s' h_s'_D (by omega)
       by_cases h_s'_lt : s'.value < s_new.value
-      · -- s' survived popBack
+      ·
         exact ⟨s', List.mem_append.mpr (Or.inl (popBack_complete _ _ s' h_s'_pf h_s'_lt)),
                h_s'_time, h_s'_val⟩
-      · -- s' removed by popBack; s_new dominates transitively.
+      ·
         exact ⟨s_new, h_snew_in, by omega, by omega⟩
-  · -- Case A: s = s_new. But s_new ∈ result. Contradiction.
+  ·
     cases hs_new with
     | head => exact absurd h_snew_in h_notin
     | tail _ h => nomatch h
@@ -386,10 +348,6 @@ theorem step_inv (D S : Deque) (s_new : Sample) (t_old w : Nat)
       | head => exact Nat.le_refl _
       | tail _ h' => nomatch h'
 }
-
--- ============================================================
--- SECTION 10: FRONT EQUALS NAIVE MINIMUM
--- ============================================================
 
 def sampleMin : Deque → Option Nat
   | [] => none
@@ -465,13 +423,10 @@ theorem front_eq_naiveMin (D S : Deque) (t w : Nat) (h : DequeInv D S t w) :
     (D.head?.map (·.value)) = naiveWindowMin S t w := by
   cases hD : D with
   | nil =>
-    -- D empty ⟹ window filter must also be empty.
     simp only [List.head?, Option.map]
     show none = naiveWindowMin S t w
     unfold naiveWindowMin
     suffices hw : S.filter (windowPred t w) = [] by rw [hw]; rfl
-    -- A nonempty filter would force a covering deque entry, but D is empty; so the
-    -- filter is empty.
     match hf : S.filter (windowPred t w) with
     | [] => rfl
     | s :: _ =>
@@ -487,7 +442,6 @@ theorem front_eq_naiveMin (D S : Deque) (t w : Nat) (h : DequeInv D S t w) :
     have h_x_S : x ∈ S := h.sub x (hD ▸ List.Mem.head _)
     have ⟨hlo, hhi⟩ := h.inw x (hD ▸ List.Mem.head _)
     have h_x_W : x ∈ S.filter (windowPred t w) := mem_filter_of_window h_x_S hlo hhi
-    -- Every window element has value ≥ x.value.
     have h_all_ge : ∀ s ∈ S.filter (windowPred t w), x.value ≤ s.value := by
       intro s hs
       have hin := filter_mem_stream hs
@@ -502,7 +456,6 @@ theorem front_eq_naiveMin (D S : Deque) (t w : Nat) (h : DequeInv D S t w) :
         cases hs'D with
         | head => omega
         | tail _ h' => exact Nat.le_trans (vnd_head_le x rest h_vnd s' h') hs'val
-    -- sampleMin(window) = some x.value
     show some x.value = naiveWindowMin S t w
     unfold naiveWindowMin
     cases hW : S.filter (windowPred t w) with
@@ -511,19 +464,15 @@ theorem front_eq_naiveMin (D S : Deque) (t w : Nat) (h : DequeInv D S t w) :
       unfold sampleMin
       congr 1
       apply Nat.le_antisymm
-      · -- x.value ≤ foldl: every filtered element is at least x.value
+      ·
         apply foldl_min_ge
         · exact h_all_ge w0 (hW ▸ List.Mem.head _)
         · intro s hs; exact h_all_ge s (hW ▸ List.Mem.tail _ hs)
-      · -- foldl ≤ x.value: x itself is in the filtered list
+      ·
         rw [hW] at h_x_W
         cases h_x_W with
         | head => exact foldl_min_le_init wrest x.value
         | tail _ h' => exact foldl_min_le_elem wrest w0.value x h'
-
--- ============================================================
--- SECTION 11: MAIN THEOREM
--- ============================================================
 
 def processN (stream : Deque) (w : Nat) : Deque :=
   stream.foldl (fun d s => processStep d s w) []
@@ -551,11 +500,11 @@ theorem foldl_inv (stream D S : Deque) (t w : Nat)
     obtain ⟨t_f, h_inv_f, h_nil, h_last⟩ :=
       ih (processStep D s w) (S ++ [s]) s.time h_new h_ti_rest h_rest_above
     refine ⟨t_f, ?_, ?_, ?_⟩
-    · -- Rewrite (S ++ [s]) ++ rest to S ++ (s :: rest)
+    ·
       rwa [List.append_assoc, List.singleton_append] at h_inv_f
-    · -- s :: rest is never empty
+    ·
       intro h; simp at h
-    · -- getLast? (s :: rest)
+    ·
       intro slast h_last_eq
       cases rest with
       | nil =>
@@ -595,7 +544,6 @@ theorem deque_sliding_window_correct (stream : Deque) (w : Nat)
     obtain ⟨t_f, h_inv_f, h_nil_f, h_last_f⟩ :=
       foldl_inv rest [s0] [s0] s0.time w h_inv0 h_ti_rest h_rest_above
     rw [List.singleton_append] at h_inv_f
-    -- Show t_f equals the last sample's time.
     have h_tf_eq : t_f = ((s0 :: rest).getLast hne).time := by
       cases rest with
       | nil =>
@@ -608,10 +556,6 @@ theorem deque_sliding_window_correct (stream : Deque) (w : Nat)
         exact h_last_f _ (List.getLast?_eq_some_getLast (by simp))
     rw [← h_tf_eq]
     exact front_eq_naiveMin _ (s0 :: rest) t_f w h_inv_f
-
--- ============================================================
--- SECTION 12: EXECUTABLE TESTS
--- ============================================================
 
 namespace Exec
 
