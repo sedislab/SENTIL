@@ -1,0 +1,40 @@
+[metadata]
+name = "Availability"
+domain = "networking"
+description = "The link stays up for the whole window, with no outage."
+references = [
+    "RFC 2330, Framework for IP Performance Metrics (IPPM)",
+    "ITU-T Y.1541, Network performance objectives for IP-based services",
+]
+
+[variables]
+link_up = { description = "Link state indicator; above 0.5 means carrying traffic" }
+
+[parameters]
+T = { type = "float", default = 60.0, unit = "seconds", description = "Observation window" }
+p = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, an availability target)" }
+
+[formulas]
+deterministic = "always[0, {T}](link_up > 0.5)"
+probabilistic = "P >= {p}(always[0, {T}](link_up > 0.5))"
+
+[noise]
+link_up = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+link_up = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

@@ -1,0 +1,41 @@
+[metadata]
+name = "Loss Bound"
+domain = "networking"
+description = "The packet loss rate stays below the agreed bound for the whole window."
+references = [
+    "RFC 7680, A One-Way Loss Metric for IP Performance Metrics (IPPM)",
+    "ITU-T Y.1541, Network performance objectives for IP-based services (for the numeric bound)",
+]
+
+[variables]
+loss_rate = { description = "Measured packet loss rate as a fraction" }
+
+[parameters]
+T        = { type = "float", default = 60.0, unit = "seconds", description = "Observation window" }
+max_loss = { type = "float", default = 0.01, description = "Maximum allowed loss fraction" }
+p        = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](loss_rate < {max_loss})"
+probabilistic = "P >= {p}(always[0, {T}](loss_rate < {max_loss}))"
+
+[noise]
+loss_rate = { model = "Gaussian", mean = 0.0, std_dev = 0.001, interaction = "additive" }
+
+[noise_fit]
+loss_rate = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

@@ -1,0 +1,41 @@
+[metadata]
+name = "Jitter Bound"
+domain = "networking"
+description = "The packet delay variation stays below the agreed bound for the whole window."
+references = [
+    "RFC 3393, IP Packet Delay Variation Metric for IP Performance Metrics (IPPM)",
+    "ITU-T Y.1541, Network performance objectives for IP-based services (for the numeric bound)",
+]
+
+[variables]
+delay_variation = { unit = "seconds", description = "Measured packet delay variation" }
+
+[parameters]
+T          = { type = "float", default = 60.0, unit = "seconds", description = "Observation window" }
+max_jitter = { type = "float", default = 0.03, unit = "seconds", description = "Maximum allowed delay variation" }
+p          = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](delay_variation < {max_jitter})"
+probabilistic = "P >= {p}(always[0, {T}](delay_variation < {max_jitter}))"
+
+[noise]
+delay_variation = { model = "Gaussian", mean = 0.0, std_dev = 0.001, interaction = "additive" }
+
+[noise_fit]
+delay_variation = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
