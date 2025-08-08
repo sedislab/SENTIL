@@ -1,0 +1,41 @@
+[metadata]
+name = "Low-Voltage Ride-Through"
+domain = "power"
+description = "Voltage stays above the ride-through floor through a fault window, so the resource stays connected."
+references = [
+    "Detection of Smart Grid Integrity Attacks Using Signal Temporal Logic, arXiv:2209.06722, 2022",
+    "IEEE 1547-2018, Interconnection and Interoperability of Distributed Energy Resources (ride-through)",
+]
+
+[variables]
+voltage = { unit = "per-unit", description = "Measured bus voltage in per-unit" }
+
+[parameters]
+T       = { type = "float", default = 10.0, unit = "seconds", description = "Ride-through window" }
+v_floor = { type = "float", default = 0.5,  unit = "per-unit", description = "Voltage floor below which the resource may trip" }
+p       = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](voltage > {v_floor})"
+probabilistic = "P >= {p}(always[0, {T}](voltage > {v_floor}))"
+
+[noise]
+voltage = { model = "Gaussian", mean = 0.0, std_dev = 0.005, interaction = "additive" }
+
+[noise_fit]
+voltage = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

@@ -1,0 +1,46 @@
+# Grid frequency stays inside the normal operating band. In a 60 Hz interconnection
+# the balancing authority holds frequency near nominal; sustained excursions signal
+# a generation-load imbalance or a disturbance.
+
+[metadata]
+name = "Frequency Band"
+domain = "power"
+description = "The grid frequency stays inside its normal operating band for the whole run."
+references = [
+    "Detection of Smart Grid Integrity Attacks Using Signal Temporal Logic, arXiv:2209.06722, 2022",
+    "IEEE 1547-2018, Interconnection and Interoperability of Distributed Energy Resources (frequency ride-through)",
+]
+
+[variables]
+frequency = { unit = "Hz", description = "Measured grid frequency" }
+
+[parameters]
+T     = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+f_min = { type = "float", default = 59.5, unit = "Hz", description = "Lower frequency limit" }
+f_max = { type = "float", default = 60.5, unit = "Hz", description = "Upper frequency limit" }
+p     = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a stability property)" }
+
+[formulas]
+deterministic = "always[0, {T}](frequency > {f_min} and frequency < {f_max})"
+probabilistic = "P >= {p}(always[0, {T}](frequency > {f_min} and frequency < {f_max}))"
+
+[noise]
+frequency = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+frequency = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

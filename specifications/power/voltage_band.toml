@@ -1,0 +1,45 @@
+# Bus voltage stays within a tolerance of nominal, expressed per unit. Voltage
+# outside the band stresses equipment and trips protection.
+
+[metadata]
+name = "Voltage Band"
+domain = "power"
+description = "The per-unit bus voltage stays within tolerance of nominal for the whole run."
+references = [
+    "Detection of Smart Grid Integrity Attacks Using Signal Temporal Logic, arXiv:2209.06722, 2022",
+    "IEEE 1547-2018, Interconnection and Interoperability of Distributed Energy Resources (voltage limits)",
+]
+
+[variables]
+voltage = { unit = "per-unit", description = "Measured bus voltage in per-unit" }
+
+[parameters]
+T     = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+v_min = { type = "float", default = 0.95, unit = "per-unit", description = "Lower voltage limit" }
+v_max = { type = "float", default = 1.05, unit = "per-unit", description = "Upper voltage limit" }
+p     = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a stability property)" }
+
+[formulas]
+deterministic = "always[0, {T}](voltage > {v_min} and voltage < {v_max})"
+probabilistic = "P >= {p}(always[0, {T}](voltage > {v_min} and voltage < {v_max}))"
+
+[noise]
+voltage = { model = "Gaussian", mean = 0.0, std_dev = 0.005, interaction = "additive" }
+
+[noise_fit]
+voltage = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

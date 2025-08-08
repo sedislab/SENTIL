@@ -1,0 +1,43 @@
+[metadata]
+name = "Frequency Recovery"
+domain = "power"
+description = "After a disturbance the frequency returns to a tight band within the settle time and holds it."
+references = [
+    "Detection of Smart Grid Integrity Attacks Using Signal Temporal Logic, arXiv:2209.06722, 2022",
+    "IEEE 1547-2018, Interconnection and Interoperability of Distributed Energy Resources (frequency response)",
+]
+
+[variables]
+frequency = { unit = "Hz", description = "Measured grid frequency" }
+
+[parameters]
+t_settle  = { type = "float", default = 5.0,  unit = "seconds", description = "Time allowed to return to band" }
+T_hold    = { type = "float", default = 30.0, unit = "seconds", description = "How long the frequency must hold the band" }
+f_nominal = { type = "float", default = 60.0, unit = "Hz", description = "Nominal frequency" }
+tolerance = { type = "float", default = 0.1,  unit = "Hz", description = "Half-width of the recovery band" }
+p         = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "eventually[0, {t_settle}](always[0, {T_hold}](abs(frequency - {f_nominal}) < {tolerance}))"
+probabilistic = "P >= {p}(eventually[0, {t_settle}](always[0, {T_hold}](abs(frequency - {f_nominal}) < {tolerance})))"
+
+[noise]
+frequency = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+frequency = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
