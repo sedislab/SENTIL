@@ -1,0 +1,42 @@
+[metadata]
+name = "Flow Rate Band"
+domain = "industrial"
+description = "The process flow rate stays within its control band for the whole run."
+references = [
+    "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
+    "IEC 61511 / ISA-18.2 (process control bands)",
+]
+
+[variables]
+flow = { description = "Measured flow rate" }
+
+[parameters]
+T        = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+flow_min = { type = "float", default = 0.5, description = "Lower flow bound" }
+flow_max = { type = "float", default = 5.0, description = "Upper flow bound" }
+p        = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](flow > {flow_min} and flow < {flow_max})"
+probabilistic = "P >= {p}(always[0, {T}](flow > {flow_min} and flow < {flow_max}))"
+
+[noise]
+flow = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }
+
+[noise_fit]
+flow = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

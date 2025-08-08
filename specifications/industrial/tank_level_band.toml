@@ -1,0 +1,42 @@
+[metadata]
+name = "Tank Level Band"
+domain = "industrial"
+description = "The tank level stays between its low and high marks for the whole run."
+references = [
+    "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
+    "IEC 61511 / ISA-18.2 (level alarms; for the low and high marks)",
+]
+
+[variables]
+level = { description = "Measured tank level as a fraction of capacity" }
+
+[parameters]
+T         = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+level_min = { type = "float", default = 0.2, description = "Low mark" }
+level_max = { type = "float", default = 0.9, description = "High mark" }
+p         = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](level > {level_min} and level < {level_max})"
+probabilistic = "P >= {p}(always[0, {T}](level > {level_min} and level < {level_max}))"
+
+[noise]
+level = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+level = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000

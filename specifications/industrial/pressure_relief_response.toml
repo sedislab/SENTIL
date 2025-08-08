@@ -1,0 +1,43 @@
+[metadata]
+name = "Pressure Relief Response"
+domain = "industrial"
+description = "Whenever pressure exceeds the trip point, the relief valve opens within the reaction time."
+references = [
+    "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
+    "IEC 61511 / ISA-18.2 (safety instrumented functions; for the trip point and reaction time)",
+]
+
+[variables]
+pressure    = { unit = "bar", description = "Measured vessel pressure" }
+relief_open = { description = "Relief valve position; above 0.5 means open" }
+
+[parameters]
+T       = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+p_trip  = { type = "float", default = 20.0, unit = "bar", description = "Pressure trip point" }
+t_react = { type = "float", default = 10.0, unit = "seconds", description = "Deadline for the valve to open" }
+p       = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}]((pressure > {p_trip}) implies eventually[0, {t_react}](relief_open > 0.5))"
+probabilistic = "P >= {p}(always[0, {T}]((pressure > {p_trip}) implies eventually[0, {t_react}](relief_open > 0.5)))"
+
+[noise]
+pressure = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
+
+[noise_fit]
+pressure = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
