@@ -3,6 +3,9 @@ target/
 *.rs.bk
 *.pdb
 
+# Lean proof build output (lake-manifest.json is committed)
+.lake/
+
 # Editor and OS noise
 .idea/
 .vscode/

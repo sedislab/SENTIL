@@ -1,0 +1,5 @@
+name = "sentil_proofs"
+defaultTargets = ["MonotonicDeque"]
+
+[[lean_lib]]
+name = "MonotonicDeque"
