@@ -92,10 +92,7 @@ pub(crate) fn combine(a: &Pwl, b: &Pwl, op: fn(f64, f64) -> f64) -> Pwl {
     )
 }
 
-/// The sliding-window extremum of `child`, where the window at query time `t`
-/// is `[t + off_a, t + off_b]`. Future operators pass `(a, b)`; past operators
-/// pass `(-b, -a)`. An infinite offset opens that side of the window.
-pub(crate) fn window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl {
+fn window_queries(child: &Pwl, off_a: f64, off_b: f64) -> Vec<f64> {
     let (lo_t, hi_t) = child.domain();
     let mut queries = vec![lo_t, hi_t];
     for s in child.times() {
@@ -110,7 +107,13 @@ pub(crate) fn window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl
     }
     queries.sort_by(f64::total_cmp);
     queries.dedup();
+    queries
+}
 
+/// The sliding-window extremum of `child`, where the window at query time `t`
+/// is `[t + off_a, t + off_b]`.
+pub(crate) fn window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl {
+    let queries = window_queries(child, off_a, off_b);
     Pwl::new(
         queries
             .into_iter()
