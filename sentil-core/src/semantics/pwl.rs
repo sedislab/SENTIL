@@ -1,5 +1,7 @@
 //! Piecewise-linear signals, the carrier for dense-time robustness.
 
+use std::collections::VecDeque;
+
 /// A continuous piecewise-linear function of time.
 #[derive(Debug, Clone)]
 pub(crate) struct Pwl {
@@ -44,20 +46,6 @@ impl Pwl {
 
     pub(crate) fn times(&self) -> impl Iterator<Item = f64> + '_ {
         self.points.iter().map(|&(t, _)| t)
-    }
-
-    /// The extremum of the signal over the closed interval `[lo, hi]`, where
-    /// either bound may be infinite. Because the signal is linear between
-    /// breakpoints, the extremum sits at an interior breakpoint or at an edge.
-    fn extremum_over(&self, lo: f64, hi: f64, take_min: bool) -> f64 {
-        let pick = |a: f64, b: f64| if take_min { a.min(b) } else { a.max(b) };
-        let mut acc = pick(self.at(lo), self.at(hi));
-        for &(t, v) in &self.points {
-            if t > lo && t < hi {
-                acc = pick(acc, v);
-            }
-        }
-        acc
     }
 }
 
@@ -110,16 +98,86 @@ fn window_queries(child: &Pwl, off_a: f64, off_b: f64) -> Vec<f64> {
     queries
 }
 
+/// The windowed extremum at every query, in one pass. The window
+/// `[t + off_a, t + off_b]` slides monotonically as the queries advance, so the
+/// interior breakpoints are tracked incrementally: a monotonic deque when the
+/// window is bounded, a running fold when its past side is open, and a precomputed
+/// suffix when its future side is open. The two edge values are read directly.
+/// Every query picks over the same candidates an exhaustive scan would, so the
+/// linear sweep and the naive scan return the same value at each query.
+fn sweep(child: &Pwl, queries: &[f64], off_a: f64, off_b: f64, take_min: bool) -> Vec<f64> {
+    let pick = |a: f64, b: f64| if take_min { a.min(b) } else { a.max(b) };
+    let pts = &child.points;
+    let n = pts.len();
+    let mut out = Vec::with_capacity(queries.len());
+    match (off_a.is_finite(), off_b.is_finite()) {
+        (true, true) => {
+            let mut deque: VecDeque<(f64, f64)> = VecDeque::new();
+            let mut right = 0;
+            for &t in queries {
+                let (lo, hi) = (t + off_a, t + off_b);
+                while right < n && pts[right].0 < hi {
+                    let v = pts[right].1;
+                    while let Some(&(_, bv)) = deque.back() {
+                        let dominated = if take_min { bv >= v } else { bv <= v };
+                        if dominated {
+                            deque.pop_back();
+                        } else {
+                            break;
+                        }
+                    }
+                    deque.push_back((pts[right].0, v));
+                    right += 1;
+                }
+                while deque.front().is_some_and(|&(tb, _)| tb <= lo) {
+                    deque.pop_front();
+                }
+                let edge = pick(child.at(lo), child.at(hi));
+                out.push(deque.front().map_or(edge, |&(_, v)| pick(edge, v)));
+            }
+        }
+        (false, true) => {
+            let mut right = 0;
+            let mut acc: Option<f64> = None;
+            for &t in queries {
+                let hi = t + off_b;
+                while right < n && pts[right].0 < hi {
+                    acc = Some(acc.map_or(pts[right].1, |a| pick(a, pts[right].1)));
+                    right += 1;
+                }
+                let edge = pick(pts[0].1, child.at(hi));
+                out.push(acc.map_or(edge, |a| pick(edge, a)));
+            }
+        }
+        (true, false) => {
+            let mut suffix = vec![pts[n - 1].1; n];
+            for i in (0..n - 1).rev() {
+                suffix[i] = pick(pts[i].1, suffix[i + 1]);
+            }
+            let mut j = 0;
+            for &t in queries {
+                let lo = t + off_a;
+                while j < n && pts[j].0 <= lo {
+                    j += 1;
+                }
+                let edge = pick(child.at(lo), pts[n - 1].1);
+                out.push(if j < n { pick(edge, suffix[j]) } else { edge });
+            }
+        }
+        (false, false) => {
+            let g = pts.iter().fold(pts[0].1, |a, &(_, v)| pick(a, v));
+            out.resize(queries.len(), g);
+        }
+    }
+    out
+}
+
 /// The sliding-window extremum of `child`, where the window at query time `t`
 /// is `[t + off_a, t + off_b]`.
 pub(crate) fn window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl {
     let queries = window_queries(child, off_a, off_b);
-    Pwl::new(
-        queries
-            .into_iter()
-            .map(|t| (t, child.extremum_over(t + off_a, t + off_b, take_min)))
-            .collect(),
-    )
+    let values = sweep(child, &queries, off_a, off_b, take_min);
+    Pwl::new(queries.into_iter().zip(values).collect())
 }
 
 #[cfg(test)]
