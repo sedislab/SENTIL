@@ -699,10 +699,47 @@ def verify (stream : Array (Sample Nat)) (w : Nat) : IO Unit := do
       ok := false
   IO.println (if ok then "PASS" else "FAIL")
 
+structure MaxDeque where
+  data : Array (Sample Nat)
+  deriving Repr
+
+def MaxDeque.empty : MaxDeque := ⟨#[]⟩
+def MaxDeque.front (d : MaxDeque) : Option Nat := d.data[0]?.map (·.value)
+
+partial def popBackMaxImpl (arr : Array (Sample Nat)) (v : Nat) : Array (Sample Nat) :=
+  if arr.size > 0 then
+    if arr.back!.value ≤ v then popBackMaxImpl arr.pop v else arr
+  else arr
+
+def MaxDeque.step (d : MaxDeque) (s : Sample Nat) (w : Nat) : MaxDeque :=
+  ⟨(popBackMaxImpl (popFrontImpl d.data (s.time - w)) s.value).push s⟩
+
+def naiveMaxAt (stream : Array (Sample Nat)) (t w : Nat) : Option Nat :=
+  let active := stream.filter (fun s => decide (t - w ≤ s.time) && decide (s.time ≤ t))
+  if h : active.size > 0
+  then some (active.foldl (fun acc s => max acc s.value) (active[0]'(by omega)).value)
+  else none
+
+def verifyMax (stream : Array (Sample Nat)) (w : Nat) : IO Unit := do
+  let mut d := MaxDeque.empty
+  let mut ok := true
+  for s in stream do
+    d := d.step s w
+    let dv := d.front
+    let nv := naiveMaxAt stream s.time w
+    if dv != nv then
+      IO.println s!"FAIL t={s.time}: deque={dv} naive={nv}"
+      ok := false
+  IO.println (if ok then "PASS" else "FAIL")
+
 end Exec
 
 #eval Exec.verify #[⟨1,5⟩, ⟨2,2⟩, ⟨3,7⟩, ⟨4,1⟩, ⟨5,3⟩, ⟨6,8⟩, ⟨7,4⟩] 3
 #eval Exec.verify #[⟨1,10⟩, ⟨2,8⟩, ⟨3,6⟩, ⟨4,4⟩, ⟨5,2⟩] 2
 #eval Exec.verify #[⟨1,2⟩, ⟨2,4⟩, ⟨3,6⟩, ⟨4,8⟩, ⟨5,10⟩] 2
 #eval Exec.verify #[⟨1,5⟩, ⟨2,3⟩, ⟨3,1⟩, ⟨4,2⟩, ⟨5,4⟩] 100
+#eval Exec.verifyMax #[⟨1,5⟩, ⟨2,2⟩, ⟨3,7⟩, ⟨4,1⟩, ⟨5,3⟩, ⟨6,8⟩, ⟨7,4⟩] 3
+#eval Exec.verifyMax #[⟨1,10⟩, ⟨2,8⟩, ⟨3,6⟩, ⟨4,4⟩, ⟨5,2⟩] 2
+#eval Exec.verifyMax #[⟨1,2⟩, ⟨2,4⟩, ⟨3,6⟩, ⟨4,8⟩, ⟨5,10⟩] 2
+#eval Exec.verifyMax #[⟨1,5⟩, ⟨2,3⟩, ⟨3,1⟩, ⟨4,2⟩, ⟨5,4⟩] 100
 #eval Exec.verify #[⟨10,42⟩] 1
