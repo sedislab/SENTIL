@@ -642,6 +642,21 @@ theorem deque_sliding_window_min_correct (stream : Deque Nat) (w : Nat)
       = naiveWindowMin stream ((stream.getLast hne).time) w :=
   deque_window_correct stream w h_ti hne
 
+@[reducible] def NatOrdDual : VOrd Nat where
+  le a b := Nat.le b a
+  decLe a b := Nat.decLe b a
+  le_refl a := Nat.le_refl a
+  le_trans hab hbc := Nat.le_trans hbc hab
+  le_antisymm hab hba := Nat.le_antisymm hba hab
+  le_total a b := Nat.le_total b a
+
+/-- Windowed maximum (the `eventually` monitor) -/
+theorem deque_sliding_window_max_correct (stream : Deque Nat) (w : Nat)
+    (h_ti : TimeIncr stream) (hne : stream ≠ []) :
+    ((@processN Nat NatOrdDual stream w).head?.map (·.value))
+      = @naiveWindowMin Nat NatOrdDual stream ((stream.getLast hne).time) w :=
+  @deque_window_correct Nat NatOrdDual stream w h_ti hne
+
 namespace Exec
 
 structure MinDeque where
