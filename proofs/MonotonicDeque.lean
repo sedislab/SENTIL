@@ -2,8 +2,9 @@
 The streaming monitor evaluates a bounded `always` with a monotonic deque: the
 front always holds the minimum over the current window. This proves that against
 the obvious specification, the minimum of a naive filter over the same window, so
-the O(1) deque and the O(window) filter agree on every stream. Lean 4, no Mathlib;
-the maximum case for `eventually` is the dual, with the value order reversed.
+the O(1) deque and the O(window) filter agree on every stream. Lean 4, no Mathlib.
+Only the minimum case (for `always`) is mechanized here; the maximum case (for
+`eventually`) is its order-dual, argued by symmetry rather than separately checked.
 -/
 
 structure Sample where
