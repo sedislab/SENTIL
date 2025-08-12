@@ -1,0 +1,44 @@
+[metadata]
+name = "Climb Rate Limit"
+domain = "aerospace"
+description = """
+The rate of climb or descent stays within a magnitude bound. Part 25 fixes no \
+vertical-speed ceiling, so the 3000 ft/min default is an operational/comfort value \
+for normal flight; emergency descents legitimately exceed it, so apply this to \
+nominal modes."""
+references = [
+    "Stevens, Lewis & Johnson, Aircraft Control and Simulation, 3rd ed., Wiley 2016, Sec. 3.6 (rate-of-climb trim constraint)",
+]
+
+[variables]
+vertical_speed = { unit = "ft/min", description = "Rate of climb (positive) or descent (negative)" }
+
+[parameters]
+T         = { type = "float", default = 60.0,   unit = "seconds", description = "Observation horizon" }
+climb_max = { type = "float", default = 3000.0, unit = "ft/min", description = "Vertical-speed magnitude bound (operational/comfort)" }
+p         = { type = "float", default = 0.95,   range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(vertical_speed) < {climb_max})"
+probabilistic = "P >= {p}(always[0, {T}](abs(vertical_speed) < {climb_max}))"
+
+[noise]
+vertical_speed = { model = "Gaussian", mean = 0.0, std_dev = 20.0, interaction = "additive" }
+
+[noise_fit]
+vertical_speed = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
