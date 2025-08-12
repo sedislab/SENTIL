@@ -40,6 +40,23 @@ impl Trace {
     pub fn from_csv_str(text: &str) -> Result<Self> {
         read_delimited(text, b',')
     }
+
+    /// Reads a trace from tab-separated text with a header row.
+    ///
+    /// ```
+    /// use sentil::Trace;
+    ///
+    /// let trace = Trace::from_tsv_str("time\tx\n0\t10\n1\t5")?;
+    /// assert_eq!(trace.variables(), vec!["x"]);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Ingest`] on the same conditions as [`Trace::from_csv_str`].
+    pub fn from_tsv_str(text: &str) -> Result<Self> {
+        read_delimited(text, b'\t')
+    }
 }
 
 fn read_delimited(text: &str, delimiter: u8) -> Result<Trace> {
