@@ -1,0 +1,50 @@
+[metadata]
+name = "Load Factor Limit"
+domain = "aerospace"
+description = """
+The normal load factor n = L/W stays at or below the positive limit and at or \
+above the negative limit of the maneuvering envelope. The +2.5 g and -1.0 g \
+defaults are the conventional transport-category bounds; the positive limit is \
+weight dependent and the negative limit holds up to VC, so set both per airframe."""
+references = [
+    "14 CFR Part 25 (Airworthiness Standards: Transport Category Airplanes), Sec. 25.337 (Limit maneuvering load factors), paragraphs (b) positive and (c) negative",
+]
+
+[variables]
+load_factor = { unit = "g", description = "Normal/vertical load factor n = lift L over weight W" }
+
+[parameters]
+T              = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+n_max_positive = { type = "float", default = 2.5,  unit = "g", description = "Positive limit maneuvering load factor (25.337(b), not less than 2.5 g)" }
+n_min_negative = { type = "float", default = -1.0, unit = "g", description = "Negative limit maneuvering load factor (25.337(c), not less than -1.0 g up to VC)" }
+p              = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a structural-safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](load_factor < {n_max_positive} and load_factor > {n_min_negative})"
+probabilistic = "P >= {p}(always[0, {T}](load_factor < {n_max_positive} and load_factor > {n_min_negative}))"
+
+[noise]
+load_factor = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }
+
+[noise_fit]
+load_factor = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
+
+[variants.symmetric]
+description = "Bounds the load factor magnitude by the positive limit, ignoring the asymmetric negative bound."
+formulas.deterministic = "always[0, {T}](abs(load_factor) < {n_max_positive})"
+formulas.probabilistic = "P >= {p}(always[0, {T}](abs(load_factor) < {n_max_positive}))"
