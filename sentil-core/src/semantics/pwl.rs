@@ -184,7 +184,30 @@ pub(crate) fn window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl
 mod tests {
     #![allow(clippy::float_cmp, reason = "these piecewise-linear values are exact")]
 
+    use proptest::prelude::*;
+
     use super::*;
+
+    /// Exhaustive reference: the windowed extremum scanned point by point.
+    fn naive_window(child: &Pwl, off_a: f64, off_b: f64, take_min: bool) -> Pwl {
+        let pick = |a: f64, b: f64| if take_min { a.min(b) } else { a.max(b) };
+        let queries = window_queries(child, off_a, off_b);
+        Pwl::new(
+            queries
+                .into_iter()
+                .map(|t| {
+                    let (lo, hi) = (t + off_a, t + off_b);
+                    let mut acc = pick(child.at(lo), child.at(hi));
+                    for &(tb, v) in &child.points {
+                        if tb > lo && tb < hi {
+                            acc = pick(acc, v);
+                        }
+                    }
+                    (t, acc)
+                })
+                .collect(),
+        )
+    }
 
     #[test]
     fn interpolates_between_breakpoints_and_holds_outside() {
@@ -218,5 +241,24 @@ mod tests {
         let eventually = window(&x, 0.0, f64::INFINITY, false);
         assert_eq!(eventually.at(0.0), 5.0);
         assert_eq!(eventually.at(1.5), 5.0);
+    }
+
+    proptest! {
+        #[test]
+        fn sweep_matches_the_naive_scan(
+            raw in prop::collection::vec((-40.0f64..40.0, -40.0f64..40.0), 1..24),
+            a in -8.0f64..8.0,
+            span in 0.0f64..8.0,
+            open_past in any::<bool>(),
+            open_future in any::<bool>(),
+            take_min in any::<bool>(),
+        ) {
+            let child = Pwl::new(raw);
+            let off_a = if open_past { f64::NEG_INFINITY } else { a };
+            let off_b = if open_future { f64::INFINITY } else { a + span };
+            let fast = window(&child, off_a, off_b, take_min);
+            let slow = naive_window(&child, off_a, off_b, take_min);
+            prop_assert_eq!(fast.points, slow.points);
+        }
     }
 }
