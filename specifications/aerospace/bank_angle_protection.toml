@@ -1,0 +1,48 @@
+[metadata]
+name = "Bank Angle Protection"
+domain = "aerospace"
+description = """
+The bank (roll) angle magnitude stays within a hard limit. Through the coordinated- \
+turn relation n = 1/cos(phi) this restates the load-factor limit in a turn. The 67 \
+degree default is a typical fly-by-wire envelope-protection value, not a regulatory \
+number; set it for the airframe and its protection law."""
+references = [
+    "Stevens, Lewis & Johnson, Aircraft Control and Simulation, 3rd ed., Wiley 2016, Sec. 3.6 (turn-coordination constraint, coordinated-turn load factor n = 1/cos(phi))",
+]
+
+[variables]
+bank_angle = { unit = "degrees", description = "Roll/bank angle magnitude about the body x-axis" }
+
+[parameters]
+T        = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+bank_max = { type = "float", default = 67.0, unit = "degrees", description = "Hard bank limit (typical fly-by-wire protection)" }
+p        = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(bank_angle) < {bank_max})"
+probabilistic = "P >= {p}(always[0, {T}](abs(bank_angle) < {bank_max}))"
+
+[noise]
+bank_angle = { model = "Gaussian", mean = 0.0, std_dev = 0.5, interaction = "additive" }
+
+[noise_fit]
+bank_angle = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
+
+[variants.nominal]
+description = "Holds bank to the autopilot nominal target (about 33 degrees) before protection engages."
+parameters.bank_max.default = 33.0
