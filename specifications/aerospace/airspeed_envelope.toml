@@ -1,0 +1,45 @@
+[metadata]
+name = "Airspeed Envelope"
+domain = "aerospace"
+description = """
+Calibrated airspeed stays above the stall speed V_stall and below the never-exceed \
+speed V_ne (the transport-category VMO/MMO). The 120 and 350 knot defaults are \
+illustrative; both bounds are airframe specific and must be set per aircraft."""
+references = [
+    "14 CFR Part 25, Sec. 25.103 (reference stall speed VSR), Sec. 25.1505 (maximum operating limit speed VMO/MMO), Sec. 25.335 (design airspeeds)",
+    "Stevens, Lewis & Johnson, Aircraft Control and Simulation, 3rd ed., Wiley 2016, Sec. 4.1 (altitude-Mach flight envelope, Fig. 4.1-1: low-speed limit from maximum lift, high-speed limit from dynamic pressure)",
+]
+
+[variables]
+airspeed = { unit = "knots", description = "Calibrated/equivalent airspeed" }
+
+[parameters]
+T       = { type = "float", default = 60.0,  unit = "seconds", description = "Observation horizon" }
+V_stall = { type = "float", default = 120.0, unit = "knots", description = "Reference stall speed VSR (airframe specific)" }
+V_ne    = { type = "float", default = 350.0, unit = "knots", description = "Never-exceed speed, the transport VMO (airframe specific)" }
+p       = { type = "float", default = 0.99,  range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](airspeed > {V_stall} and airspeed < {V_ne})"
+probabilistic = "P >= {p}(always[0, {T}](airspeed > {V_stall} and airspeed < {V_ne}))"
+
+[noise]
+airspeed = { model = "Gaussian", mean = 0.0, std_dev = 1.0, interaction = "additive" }
+
+[noise_fit]
+airspeed = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
