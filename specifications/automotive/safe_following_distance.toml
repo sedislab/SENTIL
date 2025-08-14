@@ -1,0 +1,53 @@
+[metadata]
+name = "Safe Following Distance"
+domain = "automotive"
+description = """
+The bumper-to-bumper gap stays at or above the RSS safe longitudinal distance \
+d_min = [ v_r*rho + 0.5*a_accel*rho^2 + (v_r + rho*a_accel)^2/(2*b_min) - \
+v_f^2/(2*b_max) ]+, clamped to be non-negative. v_r and v_f are the follower and \
+lead speeds. The reaction time and the acceleration/braking bounds are regulatory \
+parameters; the defaults follow common reference implementations."""
+references = [
+    "Shalev-Shwartz, Shammah, Shashua, On a Formal Model of Safe and Scalable Self-driving Cars (Responsibility-Sensitive Safety), Mobileye 2017, arXiv:1708.06374, Lemma 2 (safe longitudinal distance, same direction)",
+    "ISO 26262-4:2018, Road vehicles - Functional safety - Part 4, Clause 6.4 (technical safety requirements and safety mechanisms)",
+]
+
+[variables]
+gap = { unit = "m", description = "Bumper-to-bumper longitudinal distance, front of follower to rear of lead" }
+v_r = { unit = "m/s", description = "Longitudinal speed of the rear (following/ego) vehicle" }
+v_f = { unit = "m/s", description = "Longitudinal speed of the front (lead) vehicle" }
+
+[parameters]
+T            = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+rho          = { type = "float", default = 0.8,  unit = "seconds", description = "Follower response (reaction) time" }
+a_max_accel  = { type = "float", default = 3.5,  unit = "m/s^2", description = "Maximum acceleration the follower may apply during the reaction window" }
+a_min_brake  = { type = "float", default = 4.0,  unit = "m/s^2", description = "Minimum deceleration the follower guarantees after reacting" }
+a_max_brake  = { type = "float", default = 8.0,  unit = "m/s^2", description = "Maximum deceleration assumed of the lead vehicle" }
+p            = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](gap >= max(0.0, v_r*{rho} + 0.5*{a_max_accel}*{rho}*{rho} + (v_r + {rho}*{a_max_accel})*(v_r + {rho}*{a_max_accel})/(2.0*{a_min_brake}) - v_f*v_f/(2.0*{a_max_brake})))"
+probabilistic = "P >= {p}(always[0, {T}](gap >= max(0.0, v_r*{rho} + 0.5*{a_max_accel}*{rho}*{rho} + (v_r + {rho}*{a_max_accel})*(v_r + {rho}*{a_max_accel})/(2.0*{a_min_brake}) - v_f*v_f/(2.0*{a_max_brake}))))"
+
+[noise]
+gap = { model = "Gaussian", mean = 0.0, std_dev = 0.2, interaction = "additive" }
+v_r = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
+v_f = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
+
+[noise_fit]
+gap = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 3000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 12000
+
+[verification.ams]
+num_particles = 2000
+max_steps = 10000
