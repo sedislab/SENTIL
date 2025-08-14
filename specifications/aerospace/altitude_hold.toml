@@ -1,0 +1,45 @@
+[metadata]
+name = "Altitude Hold"
+domain = "aerospace"
+description = """
+The altitude stays within a tolerance band of the assigned target. The +/-65 ft \
+default is the RVSM altitude-keeping budget, an operational ICAO/FAA standard rather \
+than a Part 25 number; tighten to +/-50 ft for the height-keeping component alone."""
+references = [
+    "Stevens, Lewis & Johnson, Aircraft Control and Simulation, 3rd ed., Wiley 2016, Sec. 4.1 (altitude hold as a standard autopilot mode), Secs. 4.4-4.7 (altitude-hold design)",
+    "ICAO RVSM altitude-keeping performance (total vertical error budget), for the +/-65 ft band",
+]
+
+[variables]
+altitude        = { unit = "ft", description = "Aircraft pressure/geometric altitude" }
+altitude_target = { unit = "ft", description = "Assigned/commanded altitude for the hold mode" }
+
+[parameters]
+T         = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
+tolerance = { type = "float", default = 65.0, unit = "ft", description = "Allowed deviation from the assigned altitude (RVSM budget)" }
+p         = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(altitude - altitude_target) < {tolerance})"
+probabilistic = "P >= {p}(always[0, {T}](abs(altitude - altitude_target) < {tolerance}))"
+
+[noise]
+altitude = { model = "Gaussian", mean = 0.0, std_dev = 5.0, interaction = "additive" }
+
+[noise_fit]
+altitude = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
