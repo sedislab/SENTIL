@@ -1,0 +1,45 @@
+[metadata]
+name = "Sustained Euglycemia"
+domain = "medical"
+description = """
+Within the settling time, glucose reaches a point from which it stays in the 70 to \
+180 mg/dL band for the whole hold window. The band is ADA sourced; the settling and \
+hold durations are scenario parameters, so set them for the case under test."""
+references = [
+    "American Diabetes Association, 6. Glycemic Goals, Hypoglycemia, and Hyperglycemic Crises: Standards of Care in Diabetes 2026. Diabetes Care 2026;49(Suppl. 1):S132-S149, Table 6.2 (time in range 70-180 mg/dL)",
+]
+
+[variables]
+glucose = { unit = "mg/dL", description = "Blood or sensor glucose concentration" }
+
+[parameters]
+glucose_low   = { type = "float", default = 70.0,  unit = "mg/dL", description = "Lower edge of the target range" }
+glucose_high  = { type = "float", default = 180.0, unit = "mg/dL", description = "Upper edge of the target range" }
+settling_time = { type = "float", default = 60.0,  unit = "minutes", description = "Time allowed to settle before the hold window" }
+hold_window   = { type = "float", default = 120.0, unit = "minutes", description = "Window the band must hold over once settled" }
+p             = { type = "float", default = 0.90,  range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "eventually[0, {settling_time}](always[0, {hold_window}](glucose >= {glucose_low} and glucose <= {glucose_high}))"
+probabilistic = "P >= {p}(eventually[0, {settling_time}](always[0, {hold_window}](glucose >= {glucose_low} and glucose <= {glucose_high})))"
+
+[noise]
+glucose = { model = "Gaussian", mean = 0.0, std_dev = 3.0, interaction = "additive" }
+
+[noise_fit]
+glucose = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.85
+p1 = 0.90
+alpha = 0.05
+beta = 0.05
+max_samples = 8000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
