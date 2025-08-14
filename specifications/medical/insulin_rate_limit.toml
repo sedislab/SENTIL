@@ -1,0 +1,45 @@
+[metadata]
+name = "Insulin Rate Limit"
+domain = "medical"
+description = """
+The commanded insulin infusion rate stays at or below a hard maximum, an actuator \
+safety limit. The standards require the limit and its treatment as a software risk \
+control; the numeric ceiling is the specific pump's documented maximum, so set it \
+from the device. The 25 U/h default is an illustrative upper bound."""
+references = [
+    "IEC 62304:2006+AMD1:2015, Medical device software - Software life cycle processes, Clause 7.2 (risk control measures) and Clause 4.3 (software safety classification)",
+    "IEC 60601-1:2005, Medical electrical equipment - General requirements for basic safety and essential performance, Clause 14.8 (PEMS architecture, defensive design limiting actuator output), as reproduced in IEC 62304 Annex C",
+]
+
+[variables]
+insulin_rate = { unit = "U/h", description = "Commanded insulin infusion rate to the pump actuator" }
+
+[parameters]
+T        = { type = "float", default = 60.0, unit = "minutes", description = "Observation horizon" }
+max_rate = { type = "float", default = 25.0, unit = "U/h", description = "Hard maximum infusion rate (device specific)" }
+p        = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, an actuator safety limit)" }
+
+[formulas]
+deterministic = "always[0, {T}](insulin_rate <= {max_rate})"
+probabilistic = "P >= {p}(always[0, {T}](insulin_rate <= {max_rate}))"
+
+[noise]
+insulin_rate = { model = "Gaussian", mean = 0.0, std_dev = 0.05, interaction = "additive" }
+
+[noise_fit]
+insulin_rate = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 3000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 12000
+
+[verification.ams]
+num_particles = 2000
+max_steps = 10000
