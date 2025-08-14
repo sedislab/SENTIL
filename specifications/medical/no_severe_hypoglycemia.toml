@@ -1,0 +1,42 @@
+[metadata]
+name = "No Severe Hypoglycemia"
+domain = "medical"
+description = """
+Glucose stays at or above 54 mg/dL, the ADA level-2 hypoglycemia threshold, for the \
+whole run. This is a safety floor, so the probability threshold is high."""
+references = [
+    "American Diabetes Association, 6. Glycemic Goals, Hypoglycemia, and Hyperglycemic Crises: Standards of Care in Diabetes 2026. Diabetes Care 2026;49(Suppl. 1):S132-S149, Table 6.4 (Level 2 hypoglycemia <54 mg/dL) and Table 6.2 (time below 54 mg/dL goal <1%)",
+]
+
+[variables]
+glucose = { unit = "mg/dL", description = "Blood or sensor glucose concentration" }
+
+[parameters]
+T               = { type = "float", default = 60.0, unit = "minutes", description = "Observation horizon" }
+severe_hypo     = { type = "float", default = 54.0, unit = "mg/dL", description = "Level-2 (severe) hypoglycemia threshold" }
+p               = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
+
+[formulas]
+deterministic = "always[0, {T}](glucose >= {severe_hypo})"
+probabilistic = "P >= {p}(always[0, {T}](glucose >= {severe_hypo}))"
+
+[noise]
+glucose = { model = "Gaussian", mean = 0.0, std_dev = 3.0, interaction = "additive" }
+
+[noise_fit]
+glucose = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 3000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 12000
+
+[verification.ams]
+num_particles = 2000
+max_steps = 10000
