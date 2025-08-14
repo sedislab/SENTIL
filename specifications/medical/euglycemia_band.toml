@@ -1,0 +1,44 @@
+[metadata]
+name = "Euglycemia Band"
+domain = "medical"
+description = """
+Glucose stays within the target range, at or above 70 mg/dL and at or below 180 \
+mg/dL. The bounds are the ADA time-in-range band; the >70% time-in-range figure is \
+a population goal, so a per-trajectory check uses a probability threshold below 1."""
+references = [
+    "American Diabetes Association, 6. Glycemic Goals, Hypoglycemia, and Hyperglycemic Crises: Standards of Care in Diabetes 2026. Diabetes Care 2026;49(Suppl. 1):S132-S149, Table 6.2 (time in range 70-180 mg/dL) and Recommendation 6.3b",
+]
+
+[variables]
+glucose = { unit = "mg/dL", description = "Blood or sensor glucose concentration" }
+
+[parameters]
+T            = { type = "float", default = 60.0,  unit = "minutes", description = "Observation horizon" }
+glucose_low  = { type = "float", default = 70.0,  unit = "mg/dL", description = "Lower edge of the target range" }
+glucose_high = { type = "float", default = 180.0, unit = "mg/dL", description = "Upper edge of the target range" }
+p            = { type = "float", default = 0.90,  range = [0.0, 1.0], description = "PrSTL probability threshold (the ADA time-in-range goal is >70%)" }
+
+[formulas]
+deterministic = "always[0, {T}](glucose >= {glucose_low} and glucose <= {glucose_high})"
+probabilistic = "P >= {p}(always[0, {T}](glucose >= {glucose_low} and glucose <= {glucose_high}))"
+
+[noise]
+glucose = { model = "Gaussian", mean = 0.0, std_dev = 3.0, interaction = "additive" }
+
+[noise_fit]
+glucose = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.85
+p1 = 0.90
+alpha = 0.05
+beta = 0.05
+max_samples = 8000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
