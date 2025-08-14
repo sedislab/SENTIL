@@ -1,0 +1,44 @@
+[metadata]
+name = "Lane Keeping"
+domain = "automotive"
+description = """
+The lateral offset from the lane centerline stays within a margin. The 0.5 m default \
+suits a standard lane and vehicle width; derive it as (lane_width - vehicle_width)/2 \
+minus a buffer when the geometry is known."""
+references = [
+    "Shalev-Shwartz, Shammah, Shashua, On a Formal Model of Safe and Scalable Self-driving Cars (RSS), Mobileye 2017, arXiv:1708.06374, Definitions 5-6 (safe lateral distance)",
+    "ISO 26262-4:2018, Road vehicles - Functional safety - Part 4, Clause 6.4.2.1 (safety mechanisms)",
+]
+
+[variables]
+lateral_offset = { unit = "m", description = "Signed lateral distance of the vehicle reference point from the lane centerline" }
+
+[parameters]
+T              = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+lateral_margin = { type = "float", default = 0.5,  unit = "m", description = "Allowed lateral deviation from center (geometry dependent)" }
+p              = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(lateral_offset) < {lateral_margin})"
+probabilistic = "P >= {p}(always[0, {T}](abs(lateral_offset) < {lateral_margin}))"
+
+[noise]
+lateral_offset = { model = "Gaussian", mean = 0.0, std_dev = 0.05, interaction = "additive" }
+
+[noise_fit]
+lateral_offset = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 8000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
