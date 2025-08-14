@@ -1,0 +1,45 @@
+[metadata]
+name = "Hypoglycemia Recovery"
+domain = "medical"
+description = """
+If glucose falls below 70 mg/dL it returns to at least 70 mg/dL within the reaction \
+time. The 70 mg/dL trigger is the ADA level-1 action threshold; the recovery \
+deadline is a device parameter with no clinical mandate, so set it for the loop."""
+references = [
+    "American Diabetes Association, 6. Glycemic Goals, Hypoglycemia, and Hyperglycemic Crises: Standards of Care in Diabetes 2026. Diabetes Care 2026;49(Suppl. 1):S132-S149, Table 6.4 (Level 1 hypoglycemia <70 mg/dL, the action threshold)",
+    "Dalla Man et al., The UVA/PADOVA Type 1 Diabetes Simulator: New Features. J Diabetes Sci Technol 2014;8(1):26-34 (counterregulation toward normal glycemia)",
+]
+
+[variables]
+glucose = { unit = "mg/dL", description = "Blood or sensor glucose concentration" }
+
+[parameters]
+T             = { type = "float", default = 120.0, unit = "minutes", description = "Observation horizon" }
+hypo          = { type = "float", default = 70.0,  unit = "mg/dL", description = "Level-1 hypoglycemia action threshold and recovery target" }
+reaction_time = { type = "float", default = 30.0,  unit = "minutes", description = "Deadline to climb back above the threshold (device parameter)" }
+p             = { type = "float", default = 0.95,  range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}]((glucose < {hypo}) implies eventually[0, {reaction_time}](glucose >= {hypo}))"
+probabilistic = "P >= {p}(always[0, {T}]((glucose < {hypo}) implies eventually[0, {reaction_time}](glucose >= {hypo})))"
+
+[noise]
+glucose = { model = "Gaussian", mean = 0.0, std_dev = 3.0, interaction = "additive" }
+
+[noise_fit]
+glucose = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 8000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
