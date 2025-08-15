@@ -1,14 +1,13 @@
-# Grid frequency stays inside the normal operating band. In a 60 Hz interconnection
-# the balancing authority holds frequency near nominal; sustained excursions signal
-# a generation-load imbalance or a disturbance.
-
 [metadata]
 name = "Frequency Band"
 domain = "power"
-description = "The grid frequency stays inside its normal operating band for the whole run."
+description = """
+The grid frequency stays inside the IEEE 1547 continuous-operation ride-through region, \
+58.8 to 61.2 Hz, for the whole run. Use the normal_band variant for the tighter \
+steady-state band."""
 references = [
+    "IEEE Std 1547-2018, Interconnection and Interoperability of Distributed Energy Resources, Clause 6.5.2.2 and Table 19 (continuous-operation frequency ride-through region 58.8-61.2 Hz); Table 4 (enter-service frequency range)",
     "Detection of Smart Grid Integrity Attacks Using Signal Temporal Logic, arXiv:2209.06722, 2022",
-    "IEEE 1547-2018, Interconnection and Interoperability of Distributed Energy Resources (frequency ride-through)",
 ]
 
 [variables]
@@ -16,8 +15,8 @@ frequency = { unit = "Hz", description = "Measured grid frequency" }
 
 [parameters]
 T     = { type = "float", default = 60.0, unit = "seconds", description = "Observation horizon" }
-f_min = { type = "float", default = 59.5, unit = "Hz", description = "Lower frequency limit" }
-f_max = { type = "float", default = 60.5, unit = "Hz", description = "Upper frequency limit" }
+f_min = { type = "float", default = 58.8, unit = "Hz", description = "Lower edge of the continuous-operation ride-through region" }
+f_max = { type = "float", default = 61.2, unit = "Hz", description = "Upper edge of the continuous-operation ride-through region" }
 p     = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a stability property)" }
 
 [formulas]
@@ -44,3 +43,8 @@ max_samples = 10000
 [verification.ams]
 num_particles = 1000
 max_steps = 10000
+
+[variants.normal_band]
+description = "The tighter 59.5 to 60.5 Hz normal/steady-state band rather than the 1547 ride-through region."
+parameters.f_min.default = 59.5
+parameters.f_max.default = 60.5
