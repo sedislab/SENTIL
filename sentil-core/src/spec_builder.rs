@@ -949,6 +949,37 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
     }
 
     #[test]
+    fn every_variant_formula_parses() {
+        use crate::Formula;
+
+        let registry = SpecRegistry::default();
+        for name in registry.available() {
+            let variants: Vec<String> = registry
+                .builder(&name)
+                .unwrap()
+                .available_variants()
+                .iter()
+                .map(|v| (*v).to_owned())
+                .collect();
+            for variant in variants {
+                let builder = registry
+                    .builder(&name)
+                    .unwrap()
+                    .with_variant(&variant)
+                    .unwrap();
+                let deterministic = builder.build_deterministic().unwrap();
+                Formula::parse(&deterministic).unwrap_or_else(|e| {
+                    panic!("{name}/{variant} deterministic '{deterministic}' did not parse: {e}")
+                });
+                let probabilistic = builder.build_probabilistic().unwrap();
+                Formula::parse(&probabilistic).unwrap_or_else(|e| {
+                    panic!("{name}/{variant} probabilistic '{probabilistic}' did not parse: {e}")
+                });
+            }
+        }
+    }
+
+    #[test]
     fn builds_a_lifting_registry_from_the_spec_noise() {
         let registry = SpecRegistry::default()
             .builder("controls/disturbance_rejection")
