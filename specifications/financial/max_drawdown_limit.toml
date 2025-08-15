@@ -1,0 +1,43 @@
+[metadata]
+name = "Maximum Drawdown Limit"
+domain = "financial"
+description = """
+The drawdown stays below the cap for the whole horizon. Drawdown is the normalized \
+decline from the running peak, (peak - value)/peak; the consumer computes it from \
+the value path. The 0.20 cap is a common risk limit, not a paper value, so set it."""
+references = [
+    "Ola Mahmoud, The Temporal Dimension of Risk, Journal of Risk (forthcoming), arXiv:1501.01573, Definition 3.1 (drawdown process) and Definition 3.4 (maximum drawdown)",
+]
+
+[variables]
+drawdown = { unit = "fraction of peak", description = "Decline from the running peak, (peak - value)/peak, in [0, 1]" }
+
+[parameters]
+T       = { type = "float", default = 120.0, unit = "trading days", description = "Observation horizon" }
+dd_max  = { type = "float", default = 0.20,  range = [0.0, 1.0], description = "Maximum allowed drawdown as a fraction of peak" }
+p       = { type = "float", default = 0.95,  range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](drawdown < {dd_max})"
+probabilistic = "P >= {p}(always[0, {T}](drawdown < {dd_max}))"
+
+[noise]
+drawdown = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+drawdown = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 8000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
