@@ -1,0 +1,44 @@
+[metadata]
+name = "Jerk Comfort Bound"
+domain = "automotive"
+description = """
+The longitudinal jerk magnitude stays within a comfort bound during normal driving. \
+Ride-comfort literature places the comfortable threshold near 0.9 m/s^3 and the \
+acceptable bound near 2 m/s^3; emergency maneuvers exceed it, so scope this to \
+nominal modes."""
+references = [
+    "ISO 26262-4:2018, Road vehicles - Functional safety - Part 4, Clause 6.4.1.4 (safety and non-safety requirements shall not contradict)",
+]
+
+[variables]
+jerk = { unit = "m/s^3", description = "Longitudinal jerk, the time derivative of longitudinal acceleration" }
+
+[parameters]
+T        = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
+jerk_max = { type = "float", default = 2.0,  unit = "m/s^3", description = "Comfort bound on jerk magnitude (normal driving)" }
+p        = { type = "float", default = 0.90, range = [0.0, 1.0], description = "PrSTL probability threshold (a comfort property)" }
+
+[formulas]
+deterministic = "always[0, {T}](abs(jerk) < {jerk_max})"
+probabilistic = "P >= {p}(always[0, {T}](abs(jerk) < {jerk_max}))"
+
+[noise]
+jerk = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
+
+[noise_fit]
+jerk = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.85
+p1 = 0.90
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
