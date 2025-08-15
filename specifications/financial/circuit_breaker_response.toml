@@ -1,0 +1,54 @@
+[metadata]
+name = "Circuit Breaker Response"
+domain = "financial"
+description = """
+Once the index decline from the prior close crosses the halt threshold, the trading- \
+halt state asserts within the confirmation window. The 7%/13%/20% level structure is \
+the public SEC and exchange rule; the confirmation window is a system response budget, \
+so set it for the venue."""
+references = [
+    "SEC and exchange market-wide circuit breaker rules (NYSE Rule 7.12, Nasdaq Rule 4121, Regulation NMS Rule 80B): S&P 500 Level 1 = 7%, Level 2 = 13%, Level 3 = 20% decline from the prior session close",
+]
+
+[variables]
+index_decline  = { unit = "fraction", description = "Decline of the index from the prior session closing level, in [0, 1]" }
+trading_halted = { unit = "boolean", description = "Trading-halt state, above 0.5 when halted" }
+
+[parameters]
+T              = { type = "float", default = 60.0,  unit = "seconds", description = "Observation horizon" }
+halt_threshold = { type = "float", default = 0.07,  range = [0.0, 1.0], description = "Decline that triggers the halt (Level 1 = 0.07)" }
+halt_window    = { type = "float", default = 1.0,   unit = "seconds", description = "Confirmation window for the halt to assert" }
+p              = { type = "float", default = 0.99,  range = [0.0, 1.0], description = "PrSTL probability threshold (high, a regulatory rule)" }
+
+[formulas]
+deterministic = "always[0, {T}]((index_decline >= {halt_threshold}) implies eventually[0, {halt_window}](trading_halted > 0.5))"
+probabilistic = "P >= {p}(always[0, {T}]((index_decline >= {halt_threshold}) implies eventually[0, {halt_window}](trading_halted > 0.5)))"
+
+[noise]
+index_decline = { model = "Gaussian", mean = 0.0, std_dev = 0.001, interaction = "additive" }
+
+[noise_fit]
+index_decline = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.99
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.95
+p1 = 0.99
+alpha = 0.01
+beta = 0.01
+max_samples = 10000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
+
+[variants.level_2]
+description = "Level 2 market-wide breaker: a 13% decline triggers a 15-minute halt before 3:25 pm ET."
+parameters.halt_threshold.default = 0.13
+
+[variants.level_3]
+description = "Level 3 market-wide breaker: a 20% decline halts trading for the remainder of the day."
+parameters.halt_threshold.default = 0.20
