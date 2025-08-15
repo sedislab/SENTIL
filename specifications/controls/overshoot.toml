@@ -12,8 +12,8 @@ The system output does not exceed the reference by more than a specified \
 fraction of the step amplitude. A 5% overshoot limit corresponds roughly \
 to a damping ratio of 0.69 for a second-order system."""
 references = [
+    "Dorf & Bishop, Modern Control Systems, 13th ed., Sec. 5.3 (performance of second-order systems; percent overshoot vs damping ratio)",
     "Ogata, Modern Control Engineering, 5th ed., Ch. 5",
-    "Dorf & Bishop, Modern Control Systems, 13th ed., Ch. 5",
 ]
  
 [variables]
