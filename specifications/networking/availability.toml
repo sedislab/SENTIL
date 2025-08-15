@@ -4,7 +4,7 @@ domain = "networking"
 description = "The link stays up for the whole window, with no outage."
 references = [
     "RFC 2330, Framework for IP Performance Metrics (IPPM)",
-    "ITU-T Y.1541, Network performance objectives for IP-based services",
+    "ITU-T Y.1540, IP packet transfer and availability performance parameters (the availability parameter; Y.1541 clause 6 defers the numeric availability objective to further study)",
 ]
 
 [variables]

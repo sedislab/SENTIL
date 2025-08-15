@@ -4,7 +4,7 @@ domain = "networking"
 description = "The one-way packet delay stays below the agreed bound for the whole window."
 references = [
     "RFC 7679, A One-Way Delay Metric for IP Performance Metrics (IPPM)",
-    "ITU-T Y.1541, Network performance objectives for IP-based services (for the numeric bound)",
+    "ITU-T Y.1541 (02/2006), Network performance objectives for IP-based services, clause 5.3, Table 1/Y.1541, IPTD row (Class 0 mean delay = 100 ms)",
 ]
 
 [variables]

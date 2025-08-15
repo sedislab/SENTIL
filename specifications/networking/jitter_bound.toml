@@ -4,7 +4,7 @@ domain = "networking"
 description = "The packet delay variation stays below the agreed bound for the whole window."
 references = [
     "RFC 3393, IP Packet Delay Variation Metric for IP Performance Metrics (IPPM)",
-    "ITU-T Y.1541, Network performance objectives for IP-based services (for the numeric bound)",
+    "ITU-T Y.1541 (02/2006), Network performance objectives for IP-based services, clause 5.3, Table 1/Y.1541, IPDV row (Class 0 and Class 1 = 50 ms)",
 ]
 
 [variables]
@@ -12,7 +12,7 @@ delay_variation = { unit = "seconds", description = "Measured packet delay varia
 
 [parameters]
 T          = { type = "float", default = 60.0, unit = "seconds", description = "Observation window" }
-max_jitter = { type = "float", default = 0.03, unit = "seconds", description = "Maximum allowed delay variation" }
+max_jitter = { type = "float", default = 0.05, unit = "seconds", description = "Maximum allowed delay variation (Y.1541 Class 0/1 IPDV is 50 ms)" }
 p          = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
 
 [formulas]
