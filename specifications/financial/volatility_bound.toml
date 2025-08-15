@@ -1,0 +1,44 @@
+[metadata]
+name = "Volatility Bound"
+domain = "financial"
+description = """
+The realized volatility of returns stays below a cap. The realized_volatility signal \
+is the rolling standard deviation of returns, optionally annualized; the consumer \
+computes it. The 0.20 cap is an equity-style ceiling, not a paper value, so set it \
+with the window and annualization convention."""
+references = [
+    "Ola Mahmoud, The Temporal Dimension of Risk, Journal of Risk (forthcoming), arXiv:1501.01573, Section 4 (volatility as a standard-deviation comparison measure)",
+]
+
+[variables]
+realized_volatility = { unit = "annualized fraction", description = "Rolling standard deviation of returns, optionally annualized" }
+
+[parameters]
+T       = { type = "float", default = 120.0, unit = "trading days", description = "Observation horizon" }
+vol_max = { type = "float", default = 0.20,  range = [0.0, 5.0], description = "Maximum allowed realized volatility" }
+p       = { type = "float", default = 0.90,  range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}](realized_volatility < {vol_max})"
+probabilistic = "P >= {p}(always[0, {T}](realized_volatility < {vol_max}))"
+
+[noise]
+realized_volatility = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+realized_volatility = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 1000
+
+[verification.sprt]
+p0 = 0.85
+p1 = 0.90
+alpha = 0.05
+beta = 0.05
+max_samples = 5000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
