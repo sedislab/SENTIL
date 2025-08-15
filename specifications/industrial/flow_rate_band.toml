@@ -3,8 +3,8 @@ name = "Flow Rate Band"
 domain = "industrial"
 description = "The process flow rate stays within its control band for the whole run."
 references = [
+    "ANSI/ISA-18.2-2016 (IEC 62682), Management of Alarm Systems for the Process Industries, Clause 10.5.3 (alarm setpoints), Clause 3.1.47 (deviation alarms) and Clause 10.5.5 (deadbands). The band limits are plant specific",
     "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
-    "IEC 61511 / ISA-18.2 (process control bands)",
 ]
 
 [variables]
