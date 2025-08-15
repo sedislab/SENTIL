@@ -1,0 +1,43 @@
+[metadata]
+name = "Drawdown Duration Limit"
+domain = "financial"
+description = """
+While in drawdown the portfolio returns to a new peak within the recovery bound. The \
+drawdown signal is (peak - value)/peak; the property fires only when it is positive. \
+The 60-trading-day bound is a chosen recovery deadline, not a paper value."""
+references = [
+    "Ola Mahmoud, The Temporal Dimension of Risk, Journal of Risk (forthcoming), arXiv:1501.01573, Definition 3.9 (duration process) and the liquidation stopping time tau_L = inf{t : duration >= l}, Section 3.3",
+]
+
+[variables]
+drawdown = { unit = "fraction of peak", description = "Decline from the running peak, (peak - value)/peak; positive while underwater" }
+
+[parameters]
+T             = { type = "float", default = 180.0, unit = "trading days", description = "Observation horizon" }
+recovery_time = { type = "float", default = 60.0,  unit = "trading days", description = "Deadline to return to a new peak once underwater" }
+p             = { type = "float", default = 0.95,  range = [0.0, 1.0], description = "PrSTL probability threshold" }
+
+[formulas]
+deterministic = "always[0, {T}]((drawdown > 0.0) implies eventually[0, {recovery_time}](drawdown <= 0.0))"
+probabilistic = "P >= {p}(always[0, {T}]((drawdown > 0.0) implies eventually[0, {recovery_time}](drawdown <= 0.0)))"
+
+[noise]
+drawdown = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
+
+[noise_fit]
+drawdown = { algorithm = "fit_gaussian", interaction = "additive" }
+
+[verification.smc]
+confidence = 0.95
+sample_budget = 2000
+
+[verification.sprt]
+p0 = 0.90
+p1 = 0.95
+alpha = 0.05
+beta = 0.05
+max_samples = 8000
+
+[verification.ams]
+num_particles = 1000
+max_steps = 10000
