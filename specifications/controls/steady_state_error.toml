@@ -16,8 +16,8 @@ After transients decay, the persistent error between output and reference \
 remains below a tolerance. Complements settling time: settling time is about \
 entering the band, steady-state error is about never leaving it."""
 references = [
+    "Dorf & Bishop, Modern Control Systems, 13th ed., Sec. 5.6 (steady-state error, system type number, error constants Kp/Kv/Ka)",
     "Ogata, Modern Control Engineering, 5th ed., Ch. 5",
-    "Dorf & Bishop, Modern Control Systems, 13th ed., Ch. 5",
 ]
  
 [variables]

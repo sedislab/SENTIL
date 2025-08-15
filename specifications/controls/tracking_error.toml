@@ -14,8 +14,8 @@ The output follows a time-varying reference within a bounded error at \
 every instant. Unlike steady-state error, this applies during transients \
 too. Typical use: robotic path following, CNC contour tracking."""
 references = [
+    "Siciliano, Sciavicco, Villani & Oriolo, Robotics: Modelling, Planning and Control, Ch. 8 (Motion Control; trajectory-tracking error e = q_d - q)",
     "Astrom & Murray, Feedback Systems, 2nd ed., Ch. 7",
-    "Siciliano et al., Robotics: Modelling, Planning and Control, Ch. 8",
 ]
  
 [variables]

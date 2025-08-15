@@ -25,8 +25,8 @@ Under multiplicative gain perturbation, the output remains bounded. A \
 time-domain proxy for classical gain margin. Uses multiplicative noise \
 to model plant gain uncertainty across Monte Carlo traces."""
 references = [
-    "Doyle, Francis & Tannenbaum, Feedback Control Theory, Ch. 4",
-    "Zhou, Doyle & Glover, Robust and Optimal Control, Ch. 3",
+    "Zhou, Doyle & Glover, Robust and Optimal Control, Sec. 9.5 (gain margin and phase margin, and why they are not sufficient robustness indicators)",
+    "Doyle, Francis & Tannenbaum, Feedback Control Theory, Ch. 11 (stability margin optimization)",
 ]
  
 [variables]
