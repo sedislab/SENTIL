@@ -3,8 +3,8 @@ name = "Low-Voltage Ride-Through"
 domain = "power"
 description = "Voltage stays above the ride-through floor through a fault window, so the resource stays connected."
 references = [
+    "IEEE Std 1547-2018, Interconnection and Interoperability of Distributed Energy Resources, Clause 6.4.2.3 with Table 16 (Category III) and Table 14 (Category I): below 0.50 pu the resource may cease to energize; Category II (Table 15) rides through to 0.30 pu",
     "Detection of Smart Grid Integrity Attacks Using Signal Temporal Logic, arXiv:2209.06722, 2022",
-    "IEEE 1547-2018, Interconnection and Interoperability of Distributed Energy Resources (ride-through)",
 ]
 
 [variables]
@@ -12,7 +12,7 @@ voltage = { unit = "per-unit", description = "Measured bus voltage in per-unit" 
 
 [parameters]
 T       = { type = "float", default = 10.0, unit = "seconds", description = "Ride-through window" }
-v_floor = { type = "float", default = 0.5,  unit = "per-unit", description = "Voltage floor below which the resource may trip" }
+v_floor = { type = "float", default = 0.5,  unit = "per-unit", description = "Ride-through floor (the 0.50 pu Category I/III boundary; Category II rides to 0.30)" }
 p       = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
 
 [formulas]
@@ -39,3 +39,7 @@ max_samples = 10000
 [verification.ams]
 num_particles = 1000
 max_steps = 10000
+
+[variants.category_II]
+description = "Category II resources ride through deeper sags, down to the 0.30 pu floor (Table 15)."
+parameters.v_floor.default = 0.30
