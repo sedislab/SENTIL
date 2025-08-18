@@ -71,6 +71,7 @@ impl Trace {
         match extension(path).as_str() {
             "csv" | "txt" => from_delimited_file(path, b','),
             "tsv" => from_delimited_file(path, b'\t'),
+            "parquet" | "pq" => load_parquet(path),
             other => Err(ingest_at(
                 path,
                 format!("unrecognized file extension '{other}'"),
@@ -162,6 +163,86 @@ fn with_path(err: Error, path: &Path) -> Error {
     }
 }
 
+/// Picks the time column from named f64 columns and assembles the trace, the
+/// shared tail of the columnar and database readers.
+#[cfg(any(
+    feature = "parquet",
+    feature = "arrow",
+    feature = "sqlite",
+    feature = "hdf5"
+))]
+fn from_columns(columns: Vec<(String, Vec<f64>)>, path: &Path) -> Result<Trace> {
+    if columns.is_empty() {
+        return Err(ingest_at(path, "the file has no numeric columns"));
+    }
+    let names: Vec<String> = columns.iter().map(|(n, _)| n.clone()).collect();
+    let mut signals = columns;
+    let time = signals.remove(detect_time_column(&names).unwrap_or(0)).1;
+    assemble(time, signals).map_err(|e| with_path(e, path))
+}
+
+/// Reads each Arrow column as f64 through Arrow's cast kernels, dropping any
+/// column that is not numeric. A null cell becomes NaN.
+#[cfg(any(feature = "parquet", feature = "arrow"))]
+fn arrow_columns(batches: &[arrow::array::RecordBatch]) -> Vec<(String, Vec<f64>)> {
+    use arrow::array::Float64Array;
+    use arrow::datatypes::DataType;
+
+    let Some(first) = batches.first() else {
+        return Vec::new();
+    };
+    let schema = first.schema();
+    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); schema.fields().len()];
+    let mut numeric = vec![true; columns.len()];
+    for batch in batches {
+        for (i, column) in batch.columns().iter().enumerate() {
+            match arrow::compute::cast(column, &DataType::Float64) {
+                Ok(cast) => {
+                    let values = cast
+                        .as_any()
+                        .downcast_ref::<Float64Array>()
+                        .expect("a cast to Float64 yields a Float64Array");
+                    columns[i].extend(values.iter().map(|v| v.unwrap_or(f64::NAN)));
+                }
+                Err(_) => numeric[i] = false,
+            }
+        }
+    }
+    schema
+        .fields()
+        .iter()
+        .zip(columns)
+        .zip(numeric)
+        .filter(|(_, keep)| *keep)
+        .map(|((field, column), _)| (field.name().clone(), column))
+        .collect()
+}
+
+#[cfg(feature = "parquet")]
+fn load_parquet(path: &Path) -> Result<Trace> {
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    let file = std::fs::File::open(path)
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| ingest_at(path, format!("not a valid Parquet file: {e}")))?
+        .build()
+        .map_err(|e| ingest_at(path, e.to_string()))?;
+    let mut batches = Vec::new();
+    for batch in reader {
+        batches.push(batch.map_err(|e| ingest_at(path, e.to_string()))?);
+    }
+    from_columns(arrow_columns(&batches), path)
+}
+
+#[cfg(not(feature = "parquet"))]
+fn load_parquet(path: &Path) -> Result<Trace> {
+    Err(ingest_at(
+        path,
+        "Parquet files need the `parquet` feature enabled",
+    ))
+}
+
 fn detect_time_column(headers: &[String]) -> Option<usize> {
     let normalized: Vec<String> = headers.iter().map(|h| h.trim().to_lowercase()).collect();
     TIME_FIELD_CANDIDATES
@@ -213,5 +294,33 @@ mod tests {
     #[test]
     fn an_unrecognized_extension_is_rejected() {
         assert!(Trace::from_path("/tmp/whatever.xyz").is_err());
+    }
+
+    #[cfg(feature = "parquet")]
+    #[test]
+    fn reads_a_parquet_file_by_path() {
+        use arrow::array::{Float64Array, RecordBatch};
+        use parquet::arrow::ArrowWriter;
+        use std::sync::Arc;
+
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "time",
+                Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0])) as _,
+            ),
+            ("x", Arc::new(Float64Array::from(vec![10.0, 5.0, 1.0])) as _),
+        ])
+        .unwrap();
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_ingest_{}.parquet", std::process::id()));
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+        let trace = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        let trace = trace.unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
     }
 }
