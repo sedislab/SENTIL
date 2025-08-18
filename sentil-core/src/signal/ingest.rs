@@ -5,6 +5,8 @@
 //! to the first column, and every other column becomes a signal. File loading
 //! and the columnar and database formats build on this foundation.
 
+use std::path::Path;
+
 use crate::error::{Error, Result};
 use crate::signal::Trace;
 
@@ -57,6 +59,24 @@ impl Trace {
     pub fn from_tsv_str(text: &str) -> Result<Self> {
         read_delimited(text, b'\t')
     }
+
+    /// Reads a trace from a file, choosing the reader from the extension.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Ingest`] if the file cannot be read, the extension is
+    /// unrecognized, or the matching feature is off.
+    pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        match extension(path).as_str() {
+            "csv" | "txt" => from_delimited_file(path, b','),
+            "tsv" => from_delimited_file(path, b'\t'),
+            other => Err(ingest_at(
+                path,
+                format!("unrecognized file extension '{other}'"),
+            )),
+        }
+    }
 }
 
 fn read_delimited(text: &str, delimiter: u8) -> Result<Trace> {
@@ -92,13 +112,54 @@ fn read_delimited(text: &str, delimiter: u8) -> Result<Trace> {
         }
     }
 
-    let mut trace = Trace::new(times).map_err(|e| ingest(None, e.to_string()))?;
-    for ((name, _), column) in signals.iter().zip(columns) {
+    let named = signals
+        .into_iter()
+        .zip(columns)
+        .map(|((name, _), column)| (name, column))
+        .collect();
+    assemble(times, named)
+}
+
+fn assemble(time: Vec<f64>, signals: Vec<(String, Vec<f64>)>) -> Result<Trace> {
+    let mut trace = Trace::new(time).map_err(|e| ingest(None, e.to_string()))?;
+    for (name, column) in signals {
         trace
-            .add_signal(name, column)
+            .add_signal(&name, column)
             .map_err(|e| ingest(None, e.to_string()))?;
     }
     Ok(trace)
+}
+
+fn extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+fn from_delimited_file(path: &Path, delimiter: u8) -> Result<Trace> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    read_delimited(&text, delimiter).map_err(|e| with_path(e, path))
+}
+
+fn ingest_at(path: &Path, message: impl Into<String>) -> Error {
+    Error::Ingest {
+        path: Some(path.display().to_string()),
+        row: None,
+        message: message.into(),
+    }
+}
+
+fn with_path(err: Error, path: &Path) -> Error {
+    match err {
+        Error::Ingest { row, message, .. } => Error::Ingest {
+            path: Some(path.display().to_string()),
+            row,
+            message,
+        },
+        other => other,
+    }
 }
 
 fn detect_time_column(headers: &[String]) -> Option<usize> {
@@ -130,5 +191,27 @@ fn ingest(row: Option<usize>, message: impl Into<String>) -> Error {
         path: None,
         row,
         message: located,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_a_csv_file_by_path() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_ingest_{}.csv", std::process::id()));
+        std::fs::write(&path, "time,x\n0,10\n1,5\n2,1").unwrap();
+        let trace = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        let trace = trace.unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
+    }
+
+    #[test]
+    fn an_unrecognized_extension_is_rejected() {
+        assert!(Trace::from_path("/tmp/whatever.xyz").is_err());
     }
 }
