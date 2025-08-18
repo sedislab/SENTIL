@@ -48,6 +48,21 @@ ingest = ["dep:csv"]
 # Needs the statistical layer to build their lifting registries.
 specs = ["statistical", "dep:serde", "dep:serde_json", "dep:toml", "dep:serde_yaml", "dep:rust-embed"]
 
+# Apache Parquet traces (pulls in the Arrow columnar stack).
+parquet = ["ingest", "dep:parquet", "dep:arrow"]
+
+# Arrow IPC / Feather traces.
+arrow = ["ingest", "dep:arrow"]
+
+# Traces from a SQLite table. SQLite is bundled, so no system library.
+sqlite = ["ingest", "dep:rusqlite"]
+
+# HDF5 / MATLAB v7.3 traces. Needs a system or bundled HDF5 library.
+hdf5 = ["ingest", "dep:hdf5"]
+
+# MCAP recordings, the robotics log format.
+mcap = ["ingest", "dep:mcap", "dep:serde_json"]
+
 [dependencies]
 thiserror = { workspace = true }
 rand = { workspace = true, optional = true }
@@ -60,6 +75,11 @@ serde_json = { version = "1.0.149", optional = true }
 toml = { version = "1.1.2", optional = true }
 serde_yaml = { version = "0.9.34", optional = true }
 rust-embed = { version = "8.0", optional = true }
+parquet = { version = "58.1", optional = true, default-features = false, features = ["arrow", "snap"] }
+arrow = { version = "58.1", optional = true, default-features = false, features = ["ipc"] }
+rusqlite = { version = "0.39", optional = true, features = ["bundled"] }
+hdf5 = { version = "0.8.1", optional = true }
+mcap = { version = "0.24", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
