@@ -72,6 +72,7 @@ impl Trace {
             "csv" | "txt" => from_delimited_file(path, b','),
             "tsv" => from_delimited_file(path, b'\t'),
             "parquet" | "pq" => load_parquet(path),
+            "arrow" | "feather" | "ipc" => load_arrow(path),
             other => Err(ingest_at(
                 path,
                 format!("unrecognized file extension '{other}'"),
@@ -243,6 +244,29 @@ fn load_parquet(path: &Path) -> Result<Trace> {
     ))
 }
 
+#[cfg(feature = "arrow")]
+fn load_arrow(path: &Path) -> Result<Trace> {
+    use arrow::ipc::reader::FileReader;
+
+    let file = std::fs::File::open(path)
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    let reader = FileReader::try_new(file, None)
+        .map_err(|e| ingest_at(path, format!("not a valid Arrow IPC file: {e}")))?;
+    let mut batches = Vec::new();
+    for batch in reader {
+        batches.push(batch.map_err(|e| ingest_at(path, e.to_string()))?);
+    }
+    from_columns(arrow_columns(&batches), path)
+}
+
+#[cfg(not(feature = "arrow"))]
+fn load_arrow(path: &Path) -> Result<Trace> {
+    Err(ingest_at(
+        path,
+        "Arrow IPC files need the `arrow` feature enabled",
+    ))
+}
+
 fn detect_time_column(headers: &[String]) -> Option<usize> {
     let normalized: Vec<String> = headers.iter().map(|h| h.trim().to_lowercase()).collect();
     TIME_FIELD_CANDIDATES
@@ -317,6 +341,35 @@ mod tests {
         let mut writer = ArrowWriter::try_new(file, batch.schema(), None).unwrap();
         writer.write(&batch).unwrap();
         writer.close().unwrap();
+        let trace = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        let trace = trace.unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
+    }
+
+    #[cfg(feature = "arrow")]
+    #[test]
+    fn reads_an_arrow_ipc_file_by_path() {
+        use arrow::array::{Float64Array, RecordBatch};
+        use arrow::ipc::writer::FileWriter;
+        use std::sync::Arc;
+
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "time",
+                Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0])) as _,
+            ),
+            ("x", Arc::new(Float64Array::from(vec![10.0, 5.0, 1.0])) as _),
+        ])
+        .unwrap();
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_ingest_{}.arrow", std::process::id()));
+        let schema = batch.schema();
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = FileWriter::try_new(file, &schema).unwrap();
+        writer.write(&batch).unwrap();
+        writer.finish().unwrap();
         let trace = Trace::from_path(&path);
         std::fs::remove_file(&path).ok();
         let trace = trace.unwrap();
