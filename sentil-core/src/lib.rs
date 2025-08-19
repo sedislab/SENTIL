@@ -24,6 +24,9 @@
     reason = "the temporal logic uses conventional short names like phi, psi, and rho that are intentionally close"
 )]
 
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
 pub mod error;
 mod expr;
 pub mod formula;
