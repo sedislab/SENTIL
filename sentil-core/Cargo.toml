@@ -28,7 +28,7 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["statistical", "ingest", "parallel", "synthesis", "specs"]
+default = ["statistical", "ingest", "parallel", "synthesis", "specs", "parquet", "arrow", "sqlite"]
 
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.
@@ -40,8 +40,8 @@ synthesis = []
 # Spread Monte Carlo across cores with Rayon. Same answer as one thread; each
 # sample is seeded independently.
 parallel = ["statistical", "dep:rayon"]
-# Reading traces from files. CSV and TSV need only this; the columnar and
-# database formats add their own features on top.
+# Reading traces from files: CSV, TSV, and file-path loading. Parquet, Arrow, and
+# SQLite ship in the default build; HDF5 (needs a system library) and MCAP stay opt-in.
 ingest = ["dep:csv"]
 
 # The premade PrSTL specs: parameterized templates in embedded TOML/YAML/JSON.
