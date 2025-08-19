@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use thiserror::Error;
 
 /// The result of any fallible SENTIL operation.
@@ -185,4 +187,4 @@ impl fmt::Display for ParseError {
     }
 }
 
-impl std::error::Error for ParseError {}
+impl core::error::Error for ParseError {}

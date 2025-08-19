@@ -2,6 +2,8 @@
 
 use crate::error::{Error, Result};
 use crate::formula::{BinaryOp, ComparisonOp, Expr, Formula};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::semantics::predicate_margin;
 
 #[derive(Debug, Clone, Copy)]

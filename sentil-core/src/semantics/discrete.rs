@@ -1,5 +1,8 @@
 //! Discrete-time offline robustness over a sampled trace.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
 use super::eval::eval_predicate;

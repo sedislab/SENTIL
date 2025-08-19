@@ -1,5 +1,8 @@
 //! The signal samples a formula is checked against.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
 use crate::error::{Error, Result};

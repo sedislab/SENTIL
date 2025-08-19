@@ -9,6 +9,7 @@
 //! The library grows from a fast deterministic STL monitor into probabilistic
 //! verification over noisy or stochastic systems. This module tree is being
 //! built up from that core outward.
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
 #![allow(
@@ -26,6 +27,18 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+pub(crate) mod prelude {
+    pub(crate) use alloc::borrow::ToOwned;
+    pub(crate) use alloc::boxed::Box;
+    pub(crate) use alloc::collections::{BTreeMap, VecDeque};
+    pub(crate) use alloc::string::String;
+    pub(crate) use alloc::sync::Arc;
+    pub(crate) use alloc::vec::Vec;
+    pub(crate) use alloc::{format, vec};
+    pub(crate) use num_traits::Float;
+}
 
 pub mod error;
 mod expr;

@@ -1,5 +1,7 @@
 //! The syntax tree of a temporal-logic formula.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use core::fmt;
 
 /// A Signal Temporal Logic formula, optionally wrapped in a probabilistic operator to form PrSTL.

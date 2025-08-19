@@ -3,6 +3,8 @@
 use super::ast::{BinaryOp, ComparisonOp, Expr, Formula, Interval, Predicate, ProbabilityOp};
 use super::lexer::{tokenize, Token, TokenKind};
 use crate::error::ParseError;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 pub(crate) fn parse(input: &str) -> Result<Formula, ParseError> {
     let mut parser = Parser {

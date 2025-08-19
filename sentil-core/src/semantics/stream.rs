@@ -7,7 +7,11 @@
 //! state so the per-sample cost stays flat. Signal values are addressed by a
 //! small symbol table, so the hot path reads them from a packed slice.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::collections::VecDeque;
+#[cfg(feature = "std")]
 use std::sync::Arc;
 
 use super::robustness::Robustness;
@@ -544,9 +548,9 @@ impl StreamMonitor {
             }
         }
         // Detach the buffer borrow from `self` so the node can borrow it shared.
-        let mut buffer = std::mem::take(&mut self.buffer);
+        let mut buffer = core::mem::take(&mut self.buffer);
         let result = self.root.update(time, &buffer);
-        std::mem::swap(&mut self.buffer, &mut buffer);
+        core::mem::swap(&mut self.buffer, &mut buffer);
         result
     }
 

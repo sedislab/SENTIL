@@ -2,6 +2,8 @@
 
 use crate::error::{Error, Result};
 use crate::formula::{BinaryOp, ComparisonOp, Expr, Predicate};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 /// The robustness margin of an atomic comparison `lhs op rhs`.
 pub(crate) fn predicate_margin(op: ComparisonOp, lhs: f64, rhs: f64) -> f64 {

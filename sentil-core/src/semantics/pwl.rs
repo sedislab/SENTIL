@@ -1,5 +1,8 @@
 //! Piecewise-linear signals, the carrier for dense-time robustness.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::collections::VecDeque;
 
 /// A continuous piecewise-linear function of time.

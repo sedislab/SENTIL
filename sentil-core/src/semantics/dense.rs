@@ -11,6 +11,9 @@
 //! nonlinear term would curve between samples, so it is rejected rather than
 //! silently approximated.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
 use super::eval::eval_expr;

@@ -1,6 +1,8 @@
 //! Tokenizer for formula strings.
 
 use crate::error::ParseError;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Token {

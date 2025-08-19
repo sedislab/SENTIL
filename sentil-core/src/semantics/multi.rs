@@ -6,6 +6,8 @@
 
 use crate::error::{Error, Result};
 use crate::formula::Formula;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 use super::{Robustness, StreamMonitor};
 

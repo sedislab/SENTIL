@@ -2,6 +2,9 @@
 //!
 //! The deque invariant is proved in `proofs/`.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::collections::VecDeque;
 
 /// For each index `i`, the minimum of `values` over the inclusive window
@@ -86,7 +89,7 @@ fn sweep(values: &[f64], times: &[f64], off_a: f64, off_b: f64, extremum: Extrem
 /// The online counterpart of [`sliding_window_min`].
 #[derive(Debug, Default)]
 pub(crate) struct MonotonicDeque {
-    window: std::collections::VecDeque<(f64, f64)>,
+    window: VecDeque<(f64, f64)>,
 }
 
 impl MonotonicDeque {
