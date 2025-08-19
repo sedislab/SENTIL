@@ -75,6 +75,7 @@ impl Trace {
             "arrow" | "feather" | "ipc" => load_arrow(path),
             "db" | "sqlite" | "sqlite3" => load_sqlite(path),
             "h5" | "hdf5" | "mat" => load_hdf5(path),
+            "mcap" => load_mcap(path),
             other => Err(ingest_at(
                 path,
                 format!("unrecognized file extension '{other}'"),
@@ -355,6 +356,64 @@ fn load_hdf5(path: &Path) -> Result<Trace> {
     ))
 }
 
+/// Reads a trace from the JSON-encoded messages of an MCAP recording. Each
+/// message's log time is the sample time; its numeric fields become signals,
+/// aligned across messages with a missing field read as NaN.
+#[cfg(feature = "mcap")]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "nanosecond log times fit f64 over any realistic recording horizon"
+)]
+fn load_mcap(path: &Path) -> Result<Trace> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    let stream = mcap::MessageStream::new(&bytes)
+        .map_err(|e| ingest_at(path, format!("not a valid MCAP file: {e}")))?;
+    let mut records: Vec<(f64, serde_json::Map<String, serde_json::Value>)> = Vec::new();
+    for message in stream {
+        let message = message.map_err(|e| ingest_at(path, e.to_string()))?;
+        if let Ok(serde_json::Value::Object(obj)) = serde_json::from_slice(&message.data) {
+            records.push((message.log_time as f64 / 1e9, obj));
+        }
+    }
+    if records.is_empty() {
+        return Err(ingest_at(path, "no JSON-encoded messages to read"));
+    }
+    records.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut fields: Vec<String> = Vec::new();
+    for (_, obj) in &records {
+        for (key, value) in obj {
+            if value.is_number() && !fields.contains(key) {
+                fields.push(key.clone());
+            }
+        }
+    }
+    let times: Vec<f64> = records.iter().map(|(t, _)| *t).collect();
+    let signals = fields
+        .into_iter()
+        .map(|name| {
+            let column = records
+                .iter()
+                .map(|(_, obj)| {
+                    obj.get(&name)
+                        .and_then(serde_json::Value::as_f64)
+                        .unwrap_or(f64::NAN)
+                })
+                .collect();
+            (name, column)
+        })
+        .collect();
+    assemble(times, signals).map_err(|e| with_path(e, path))
+}
+
+#[cfg(not(feature = "mcap"))]
+fn load_mcap(path: &Path) -> Result<Trace> {
+    Err(ingest_at(
+        path,
+        "MCAP files need the `mcap` feature enabled",
+    ))
+}
+
 fn detect_time_column(headers: &[String]) -> Option<usize> {
     let normalized: Vec<String> = headers.iter().map(|h| h.trim().to_lowercase()).collect();
     TIME_FIELD_CANDIDATES
@@ -500,6 +559,47 @@ mod tests {
                 .create("x")
                 .unwrap();
         }
+        let trace = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        let trace = trace.unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
+    }
+
+    #[cfg(feature = "mcap")]
+    #[test]
+    fn reads_an_mcap_file_by_path() {
+        use std::borrow::Cow;
+        use std::sync::Arc;
+
+        let mut buf = Vec::new();
+        {
+            let mut writer = mcap::Writer::new(std::io::Cursor::new(&mut buf)).unwrap();
+            let channel = Arc::new(mcap::Channel {
+                id: 0,
+                topic: "/x".to_owned(),
+                schema: None,
+                message_encoding: "json".to_owned(),
+                metadata: std::collections::BTreeMap::new(),
+            });
+            for (sequence, x) in (0u32..).zip([10.0_f64, 5.0, 1.0]) {
+                let log_time = u64::from(sequence) * 1_000_000_000;
+                let data = format!("{{\"x\":{x}}}");
+                writer
+                    .write(&mcap::Message {
+                        channel: channel.clone(),
+                        sequence,
+                        log_time,
+                        publish_time: log_time,
+                        data: Cow::Owned(data.into_bytes()),
+                    })
+                    .unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_ingest_{}.mcap", std::process::id()));
+        std::fs::write(&path, &buf).unwrap();
         let trace = Trace::from_path(&path);
         std::fs::remove_file(&path).ok();
         let trace = trace.unwrap();
