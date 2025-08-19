@@ -73,6 +73,7 @@ impl Trace {
             "tsv" => from_delimited_file(path, b'\t'),
             "parquet" | "pq" => load_parquet(path),
             "arrow" | "feather" | "ipc" => load_arrow(path),
+            "db" | "sqlite" | "sqlite3" => load_sqlite(path),
             other => Err(ingest_at(
                 path,
                 format!("unrecognized file extension '{other}'"),
@@ -267,6 +268,66 @@ fn load_arrow(path: &Path) -> Result<Trace> {
     ))
 }
 
+/// Reads a trace from the first table of a SQLite database.
+#[cfg(feature = "sqlite")]
+fn load_sqlite(path: &Path) -> Result<Trace> {
+    use rusqlite::{Connection, OpenFlags};
+
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| ingest_at(path, format!("could not open the database: {e}")))?;
+    let table: String = conn
+        .query_row(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| ingest_at(path, format!("no table to read: {e}")))?;
+    let columns = read_sqlite_table(&conn, &table).map_err(|e| with_path(e, path))?;
+    from_columns(columns, path)
+}
+
+/// Reads every numeric column of a SQLite table as f64; text and blob columns are
+/// dropped, a null cell becomes NaN.
+#[cfg(feature = "sqlite")]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "integer columns are counts or timestamps that fit f64 exactly to 2^53"
+)]
+fn read_sqlite_table(conn: &rusqlite::Connection, table: &str) -> Result<Vec<(String, Vec<f64>)>> {
+    use rusqlite::types::ValueRef;
+
+    let mut stmt = conn
+        .prepare(&format!("SELECT * FROM \"{table}\""))
+        .map_err(|e| ingest(None, format!("could not read table '{table}': {e}")))?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); names.len()];
+    let mut numeric = vec![true; names.len()];
+    let mut rows = stmt.query([]).map_err(|e| ingest(None, e.to_string()))?;
+    while let Some(row) = rows.next().map_err(|e| ingest(None, e.to_string()))? {
+        for (i, column) in columns.iter_mut().enumerate() {
+            match row.get_ref(i).map_err(|e| ingest(None, e.to_string()))? {
+                ValueRef::Integer(v) => column.push(v as f64),
+                ValueRef::Real(v) => column.push(v),
+                ValueRef::Null => column.push(f64::NAN),
+                ValueRef::Text(_) | ValueRef::Blob(_) => numeric[i] = false,
+            }
+        }
+    }
+    Ok(keep_numeric(names, columns, &numeric))
+}
+
+#[cfg(not(feature = "sqlite"))]
+fn load_sqlite(path: &Path) -> Result<Trace> {
+    Err(ingest_at(
+        path,
+        "SQLite databases need the `sqlite` feature enabled",
+    ))
+}
+
 fn detect_time_column(headers: &[String]) -> Option<usize> {
     let normalized: Vec<String> = headers.iter().map(|h| h.trim().to_lowercase()).collect();
     TIME_FIELD_CANDIDATES
@@ -370,6 +431,25 @@ mod tests {
         let mut writer = FileWriter::try_new(file, &schema).unwrap();
         writer.write(&batch).unwrap();
         writer.finish().unwrap();
+        let trace = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        let trace = trace.unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn reads_a_sqlite_table_by_path() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_ingest_{}.sqlite", std::process::id()));
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute("CREATE TABLE trace (time REAL, x REAL)", [])
+                .unwrap();
+            conn.execute("INSERT INTO trace VALUES (0, 10), (1, 5), (2, 1)", [])
+                .unwrap();
+        }
         let trace = Trace::from_path(&path);
         std::fs::remove_file(&path).ok();
         let trace = trace.unwrap();
