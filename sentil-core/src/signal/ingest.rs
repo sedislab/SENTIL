@@ -74,6 +74,7 @@ impl Trace {
             "parquet" | "pq" => load_parquet(path),
             "arrow" | "feather" | "ipc" => load_arrow(path),
             "db" | "sqlite" | "sqlite3" => load_sqlite(path),
+            "h5" | "hdf5" | "mat" => load_hdf5(path),
             other => Err(ingest_at(
                 path,
                 format!("unrecognized file extension '{other}'"),
@@ -328,6 +329,32 @@ fn load_sqlite(path: &Path) -> Result<Trace> {
     ))
 }
 
+#[cfg(feature = "hdf5")]
+fn load_hdf5(path: &Path) -> Result<Trace> {
+    let file = hdf5::File::open(path)
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    let names = file
+        .member_names()
+        .map_err(|e| ingest_at(path, e.to_string()))?;
+    let mut columns = Vec::new();
+    for name in names {
+        if let Ok(dataset) = file.dataset(&name) {
+            if let Ok(values) = dataset.read_raw::<f64>() {
+                columns.push((name, values));
+            }
+        }
+    }
+    from_columns(columns, path)
+}
+
+#[cfg(not(feature = "hdf5"))]
+fn load_hdf5(path: &Path) -> Result<Trace> {
+    Err(ingest_at(
+        path,
+        "HDF5 files need the `hdf5` feature enabled",
+    ))
+}
+
 fn detect_time_column(headers: &[String]) -> Option<usize> {
     let normalized: Vec<String> = headers.iter().map(|h| h.trim().to_lowercase()).collect();
     TIME_FIELD_CANDIDATES
@@ -448,6 +475,29 @@ mod tests {
             conn.execute("CREATE TABLE trace (time REAL, x REAL)", [])
                 .unwrap();
             conn.execute("INSERT INTO trace VALUES (0, 10), (1, 5), (2, 1)", [])
+                .unwrap();
+        }
+        let trace = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        let trace = trace.unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
+    }
+
+    #[cfg(feature = "hdf5")]
+    #[test]
+    fn reads_an_hdf5_file_by_path() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_ingest_{}.h5", std::process::id()));
+        {
+            let file = hdf5::File::create(&path).unwrap();
+            file.new_dataset_builder()
+                .with_data(&[0.0_f64, 1.0, 2.0])
+                .create("time")
+                .unwrap();
+            file.new_dataset_builder()
+                .with_data(&[10.0_f64, 5.0, 1.0])
+                .create("x")
                 .unwrap();
         }
         let trace = Trace::from_path(&path);
