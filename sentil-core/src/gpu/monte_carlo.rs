@@ -174,6 +174,32 @@ fn rand_normal(state: ptr<function, u32>) -> f32 {
     let u2 = rand_f32(state);
     return sqrt(-2.0 * log(u1)) * cos(6.283185307179586 * u2);
 }
+
+// Marsaglia and Tsang's gamma variate.
+fn sample_gamma(shape: f32, scale: f32, rng: ptr<function, u32>) -> f32 {
+    var s = shape;
+    var boost = 1.0;
+    if (s < 1.0) {
+        boost = pow(max(rand_f32(rng), 1e-38), 1.0 / s);
+        s = s + 1.0;
+    }
+    let d = s - 1.0 / 3.0;
+    let c = 1.0 / sqrt(9.0 * d);
+    for (var i = 0u; i < 256u; i = i + 1u) {
+        let z = rand_normal(rng);
+        let base = 1.0 + c * z;
+        let v = base * base * base;
+        if (v <= 0.0) {
+            continue;
+        }
+        let u = rand_f32(rng);
+        let z2 = z * z;
+        if (u < 1.0 - 0.0331 * z2 * z2 || log(max(u, 1e-38)) < 0.5 * z2 + d * (1.0 - v + log(v))) {
+            return d * v * scale * boost;
+        }
+    }
+    return s * scale * boost;
+}
 ";
 
 /// One partial count per workgroup, summed on the host.
@@ -265,7 +291,7 @@ fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
         return p0 - p1 * log(-log(max(rand_f32(rng), 1e-38)));
     }} else if (family < 9.5) {{
         return p0 + p1 * tan(3.141592653589793 * (rand_f32(rng) - 0.5));
-    }} else {{
+    }} else if (family < 10.5) {{
         let lo = noise_params[b + 4u];
         let hi = noise_params[b + 5u];
         var out = clamp(p0, lo, hi);
@@ -277,6 +303,20 @@ fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
             }}
         }}
         return out;
+    }} else if (family < 11.5) {{
+        return sample_gamma(p0, p1, rng);
+    }} else if (family < 12.5) {{
+        let gx = sample_gamma(p0, 1.0, rng);
+        let gy = sample_gamma(p1, 1.0, rng);
+        if (gx + gy > 0.0) {{
+            return gx / (gx + gy);
+        }}
+        return 0.5;
+    }} else {{
+        let z = rand_normal(rng);
+        let chi2 = sample_gamma(p0 * 0.5, 2.0, rng);
+        let denom = max(sqrt(chi2 / p0), 1e-38);
+        return p1 + noise_params[b + 4u] * z / denom;
     }}
 }}
 

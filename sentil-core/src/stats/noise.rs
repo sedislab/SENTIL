@@ -146,7 +146,8 @@ pub(crate) enum GpuSampler {
     /// A family the GPU samples directly.
     Device {
         /// The GPU family tag: 1 Gaussian, 2 log-normal, 3 exponential, 4 uniform,
-        /// 5 Dirac, 6 Weibull, 7 Rayleigh, 8 Gumbel, 9 Cauchy, 10 truncated normal.
+        /// 5 Dirac, 6 Weibull, 7 Rayleigh, 8 Gumbel, 9 Cauchy, 10 truncated normal,
+        /// 11 gamma, 12 beta, 13 Student-t.
         family: u32,
         /// Up to four distribution parameters; trailing unused slots are zero.
         params: [f64; 4],
@@ -160,12 +161,12 @@ pub(crate) enum GpuSampler {
 
 #[cfg(feature = "gpu")]
 impl NoiseModel {
-    /// How this model is drawn on the GPU: a closed-form family with parameters,
-    /// or a marker that it has no GPU sampler and falls back to the CPU.
-    ///
-    /// The families with a draw whose count depends on the value drawn (gamma and
-    /// beta by rejection, the mixture by a component choice) cannot run branch
-    /// free across a warp, so they decline here.
+    /// How this model is drawn on the GPU: a family the device samples with its
+    /// parameters, or a marker that it has no GPU sampler and falls back to the
+    /// CPU. The closed-form families use an inverse transform; gamma, beta,
+    /// Student-t, and the truncated normal use a bounded rejection loop. The
+    /// discrete and data-backed families (Poisson, binomial, bootstrap, mixture)
+    /// decline for now.
     pub(crate) fn gpu_sampler(&self) -> GpuSampler {
         match &self.kind {
             Kind::Gaussian { mean, std_dev } => GpuSampler::Device {
@@ -213,10 +214,21 @@ impl NoiseModel {
                 family: 10,
                 params: [*mean, *std_dev, *lower, *upper],
             },
-            Kind::Gamma { .. } => GpuSampler::Cpu { family: "Gamma" },
-            Kind::Beta { .. } => GpuSampler::Cpu { family: "Beta" },
-            Kind::StudentT { .. } => GpuSampler::Cpu {
-                family: "Student-t",
+            Kind::Gamma { shape, scale } => GpuSampler::Device {
+                family: 11,
+                params: [*shape, *scale, 0.0, 0.0],
+            },
+            Kind::Beta { alpha, beta } => GpuSampler::Device {
+                family: 12,
+                params: [*alpha, *beta, 0.0, 0.0],
+            },
+            Kind::StudentT {
+                df,
+                location,
+                scale,
+            } => GpuSampler::Device {
+                family: 13,
+                params: [*df, *location, *scale, 0.0],
             },
             Kind::Poisson { .. } => GpuSampler::Cpu { family: "Poisson" },
             Kind::Binomial { .. } => GpuSampler::Cpu { family: "binomial" },

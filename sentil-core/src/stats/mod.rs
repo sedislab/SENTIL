@@ -274,4 +274,39 @@ mod tests {
         let q = bounded.check(&trace(&[0.0]), &lifting, &config).unwrap();
         assert!(q.probability > 0.999, "bound: got {}", q.probability);
     }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn gpu_gamma_based_families_match() {
+        assert!(
+            crate::gpu::is_available(),
+            "this test must run on a GPU node so the check uses the device"
+        );
+        let config = SmcConfig {
+            samples: 2_000_000,
+            confidence: 0.95,
+            seed: 17,
+        };
+        let cases: [(NoiseModel, f64, f64); 3] = [
+            (
+                NoiseModel::gamma(2.0, 1.0).unwrap(),
+                2.0,
+                1.0 - 3.0 * (-2.0f64).exp(),
+            ),
+            (NoiseModel::beta(2.0, 2.0).unwrap(), 0.5, 0.5),
+            (NoiseModel::student_t(10.0, 0.0, 1.0).unwrap(), 0.0, 0.5),
+        ];
+        for (model, c, expected) in cases {
+            let mut lifting = LiftingRegistry::new();
+            lifting.register("x", model, NoiseInteraction::Additive);
+            let phi = Formula::parse(&format!("P>=0.5(x <= {c})")).unwrap();
+            let result = phi.check(&trace(&[0.0]), &lifting, &config).unwrap();
+            assert!(
+                (result.probability - expected).abs() < 4e-3,
+                "P(x <= {c}): got {}, expected {expected}",
+                result.probability
+            );
+        }
+    }
 }
