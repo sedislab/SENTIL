@@ -243,4 +243,35 @@ mod tests {
             );
         }
     }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn gpu_truncated_normal_matches_its_distribution() {
+        assert!(
+            crate::gpu::is_available(),
+            "this test must run on a GPU node so the check uses the device"
+        );
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::truncated_normal(0.0, 1.0, -1.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 2_000_000,
+            confidence: 0.95,
+            seed: 13,
+        };
+        let median = Formula::parse("P>=0.5(x <= 0)").unwrap();
+        let p = median.check(&trace(&[0.0]), &lifting, &config).unwrap();
+        assert!(
+            (p.probability - 0.5).abs() < 3e-3,
+            "median: got {}",
+            p.probability
+        );
+        let bounded = Formula::parse("P>=0.5(x <= 1.001)").unwrap();
+        let q = bounded.check(&trace(&[0.0]), &lifting, &config).unwrap();
+        assert!(q.probability > 0.999, "bound: got {}", q.probability);
+    }
 }

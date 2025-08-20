@@ -143,18 +143,15 @@ impl TryFrom<RawNoiseModel> for NoiseModel {
 /// How a noise model is drawn on the GPU.
 #[cfg(feature = "gpu")]
 pub(crate) enum GpuSampler {
-    /// A closed-form family the GPU samples by an inverse transform: a family tag
-    /// and up to two parameters.
-    Closed {
+    /// A family the GPU samples directly.
+    Device {
         /// The GPU family tag: 1 Gaussian, 2 log-normal, 3 exponential, 4 uniform,
-        /// 5 Dirac, 6 Weibull, 7 Rayleigh, 8 Gumbel, 9 Cauchy.
+        /// 5 Dirac, 6 Weibull, 7 Rayleigh, 8 Gumbel, 9 Cauchy, 10 truncated normal.
         family: u32,
-        /// The first distribution parameter.
-        p0: f64,
-        /// The second parameter, or zero for a one-parameter family.
-        p1: f64,
+        /// Up to four distribution parameters; trailing unused slots are zero.
+        params: [f64; 4],
     },
-    /// A family with no closed-form GPU sampler; it runs on the CPU instead.
+    /// A family with no GPU sampler; it runs on the CPU instead.
     Cpu {
         /// The family name, for the fallback message.
         family: &'static str,
@@ -171,58 +168,55 @@ impl NoiseModel {
     /// free across a warp, so they decline here.
     pub(crate) fn gpu_sampler(&self) -> GpuSampler {
         match &self.kind {
-            Kind::Gaussian { mean, std_dev } => GpuSampler::Closed {
+            Kind::Gaussian { mean, std_dev } => GpuSampler::Device {
                 family: 1,
-                p0: *mean,
-                p1: *std_dev,
+                params: [*mean, *std_dev, 0.0, 0.0],
             },
-            Kind::LogNormal { mu, sigma } => GpuSampler::Closed {
+            Kind::LogNormal { mu, sigma } => GpuSampler::Device {
                 family: 2,
-                p0: *mu,
-                p1: *sigma,
+                params: [*mu, *sigma, 0.0, 0.0],
             },
-            Kind::Exponential { lambda } => GpuSampler::Closed {
+            Kind::Exponential { lambda } => GpuSampler::Device {
                 family: 3,
-                p0: *lambda,
-                p1: 0.0,
+                params: [*lambda, 0.0, 0.0, 0.0],
             },
-            Kind::Uniform { low, high } => GpuSampler::Closed {
+            Kind::Uniform { low, high } => GpuSampler::Device {
                 family: 4,
-                p0: *low,
-                p1: *high,
+                params: [*low, *high, 0.0, 0.0],
             },
-            Kind::Dirac { value } => GpuSampler::Closed {
+            Kind::Dirac { value } => GpuSampler::Device {
                 family: 5,
-                p0: *value,
-                p1: 0.0,
+                params: [*value, 0.0, 0.0, 0.0],
+            },
+            Kind::Weibull { shape, scale } => GpuSampler::Device {
+                family: 6,
+                params: [*shape, *scale, 0.0, 0.0],
+            },
+            Kind::Rayleigh { scale } => GpuSampler::Device {
+                family: 7,
+                params: [*scale, 0.0, 0.0, 0.0],
+            },
+            Kind::Gumbel { location, scale } => GpuSampler::Device {
+                family: 8,
+                params: [*location, *scale, 0.0, 0.0],
+            },
+            Kind::Cauchy { location, scale } => GpuSampler::Device {
+                family: 9,
+                params: [*location, *scale, 0.0, 0.0],
+            },
+            Kind::TruncatedNormal {
+                mean,
+                std_dev,
+                lower,
+                upper,
+            } => GpuSampler::Device {
+                family: 10,
+                params: [*mean, *std_dev, *lower, *upper],
             },
             Kind::Gamma { .. } => GpuSampler::Cpu { family: "Gamma" },
             Kind::Beta { .. } => GpuSampler::Cpu { family: "Beta" },
-            Kind::Weibull { shape, scale } => GpuSampler::Closed {
-                family: 6,
-                p0: *shape,
-                p1: *scale,
-            },
-            Kind::Rayleigh { scale } => GpuSampler::Closed {
-                family: 7,
-                p0: *scale,
-                p1: 0.0,
-            },
-            Kind::Gumbel { location, scale } => GpuSampler::Closed {
-                family: 8,
-                p0: *location,
-                p1: *scale,
-            },
-            Kind::Cauchy { location, scale } => GpuSampler::Closed {
-                family: 9,
-                p0: *location,
-                p1: *scale,
-            },
             Kind::StudentT { .. } => GpuSampler::Cpu {
                 family: "Student-t",
-            },
-            Kind::TruncatedNormal { .. } => GpuSampler::Cpu {
-                family: "truncated normal",
             },
             Kind::Poisson { .. } => GpuSampler::Cpu { family: "Poisson" },
             Kind::Binomial { .. } => GpuSampler::Cpu { family: "binomial" },

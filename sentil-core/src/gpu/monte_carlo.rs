@@ -94,8 +94,8 @@ pub(crate) fn pack_noise_params(
         let Some((model, interaction)) = lifting.model_for(name) else {
             continue;
         };
-        let (family, p0, p1) = match model.gpu_sampler() {
-            GpuSampler::Closed { family, p0, p1 } => (family, p0, p1),
+        let (family, params) = match model.gpu_sampler() {
+            GpuSampler::Device { family, params } => (family, params),
             GpuSampler::Cpu { family } => {
                 return Err(GpuMcError::UnsupportedNoiseFamily { family })
             }
@@ -106,8 +106,9 @@ pub(crate) fn pack_noise_params(
             NoiseInteraction::Additive => 0.0,
             NoiseInteraction::Multiplicative => 1.0,
         };
-        packed[base + 2] = p0 as f32;
-        packed[base + 3] = p1 as f32;
+        for (i, &p) in params.iter().enumerate() {
+            packed[base + 2 + i] = p as f32;
+        }
     }
     Ok(packed)
 }
@@ -262,8 +263,20 @@ fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
         return p0 * sqrt(-2.0 * log(max(1.0 - rand_f32(rng), 1e-38)));
     }} else if (family < 8.5) {{
         return p0 - p1 * log(-log(max(rand_f32(rng), 1e-38)));
-    }} else {{
+    }} else if (family < 9.5) {{
         return p0 + p1 * tan(3.141592653589793 * (rand_f32(rng) - 0.5));
+    }} else {{
+        let lo = noise_params[b + 4u];
+        let hi = noise_params[b + 5u];
+        var out = clamp(p0, lo, hi);
+        for (var k = 0u; k < 256u; k = k + 1u) {{
+            let x = p0 + p1 * rand_normal(rng);
+            if (x >= lo && x <= hi) {{
+                out = x;
+                break;
+            }}
+        }}
+        return out;
     }}
 }}
 
