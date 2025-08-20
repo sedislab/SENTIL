@@ -12,6 +12,8 @@ pub use confidence::{
     chernoff_hoeffding_samples, clopper_pearson, wilson_interval, z_score, ConfidenceInterval,
 };
 pub use lifting::LiftingRegistry;
+#[cfg(feature = "gpu")]
+pub(crate) use noise::GpuSampler;
 pub use noise::{NoiseInteraction, NoiseModel};
 pub use prstl_rare::{RareEventConfig, RareEventResult, StochasticSystem};
 pub use rare_events::{adaptive_multilevel_splitting, RareEventEstimate, RareEventSimulator};

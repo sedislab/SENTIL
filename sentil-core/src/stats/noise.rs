@@ -140,6 +140,83 @@ impl TryFrom<RawNoiseModel> for NoiseModel {
     }
 }
 
+/// How a noise model is drawn on the GPU.
+#[cfg(feature = "gpu")]
+pub(crate) enum GpuSampler {
+    /// A closed-form family the GPU samples by an inverse transform: a family tag
+    /// and up to two parameters.
+    Closed {
+        /// The GPU family tag: 1 Gaussian, 2 log-normal, 3 exponential, 4 uniform, 5 Dirac.
+        family: u32,
+        /// The first distribution parameter.
+        p0: f64,
+        /// The second parameter, or zero for a one-parameter family.
+        p1: f64,
+    },
+    /// A family with no closed-form GPU sampler; it runs on the CPU instead.
+    Cpu {
+        /// The family name, for the fallback message.
+        family: &'static str,
+    },
+}
+
+#[cfg(feature = "gpu")]
+impl NoiseModel {
+    /// How this model is drawn on the GPU: a closed-form family with parameters,
+    /// or a marker that it has no GPU sampler and falls back to the CPU.
+    ///
+    /// The families with a draw whose count depends on the value drawn (gamma and
+    /// beta by rejection, the mixture by a component choice) cannot run branch
+    /// free across a warp, so they decline here.
+    pub(crate) fn gpu_sampler(&self) -> GpuSampler {
+        match &self.kind {
+            Kind::Gaussian { mean, std_dev } => GpuSampler::Closed {
+                family: 1,
+                p0: *mean,
+                p1: *std_dev,
+            },
+            Kind::LogNormal { mu, sigma } => GpuSampler::Closed {
+                family: 2,
+                p0: *mu,
+                p1: *sigma,
+            },
+            Kind::Exponential { lambda } => GpuSampler::Closed {
+                family: 3,
+                p0: *lambda,
+                p1: 0.0,
+            },
+            Kind::Uniform { low, high } => GpuSampler::Closed {
+                family: 4,
+                p0: *low,
+                p1: *high,
+            },
+            Kind::Dirac { value } => GpuSampler::Closed {
+                family: 5,
+                p0: *value,
+                p1: 0.0,
+            },
+            Kind::Gamma { .. } => GpuSampler::Cpu { family: "Gamma" },
+            Kind::Beta { .. } => GpuSampler::Cpu { family: "Beta" },
+            Kind::Weibull { .. } => GpuSampler::Cpu { family: "Weibull" },
+            Kind::Rayleigh { .. } => GpuSampler::Cpu { family: "Rayleigh" },
+            Kind::Gumbel { .. } => GpuSampler::Cpu { family: "Gumbel" },
+            Kind::Cauchy { .. } => GpuSampler::Cpu { family: "Cauchy" },
+            Kind::StudentT { .. } => GpuSampler::Cpu {
+                family: "Student-t",
+            },
+            Kind::TruncatedNormal { .. } => GpuSampler::Cpu {
+                family: "truncated normal",
+            },
+            Kind::Poisson { .. } => GpuSampler::Cpu { family: "Poisson" },
+            Kind::Binomial { .. } => GpuSampler::Cpu { family: "binomial" },
+            Kind::Bootstrap { .. } => GpuSampler::Cpu {
+                family: "bootstrap",
+            },
+            Kind::Mixture { .. } => GpuSampler::Cpu { family: "mixture" },
+        }
+    }
+}
+
 impl NoiseModel {
     /// A point mass at `value`.
     ///

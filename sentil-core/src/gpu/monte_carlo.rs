@@ -18,6 +18,10 @@
 #![allow(dead_code)]
 
 use crate::error::Error;
+use crate::stats::{GpuSampler, LiftingRegistry, NoiseInteraction};
+
+/// The width, in f32 slots, of one variable's noise record in the device buffer.
+pub(crate) const NOISE_RECORD: usize = 8;
 
 /// A failure on the GPU Monte Carlo path.
 ///
@@ -69,5 +73,84 @@ impl From<GpuMcError> for Error {
         Error::Gpu {
             message: error.to_string(),
         }
+    }
+}
+
+/// Packs each variable's noise parameters into the device buffer, in `symbols` order.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "the device runs in f32; the small family tag and the parameters fit it"
+)]
+pub(crate) fn pack_noise_params(
+    symbols: &[String],
+    lifting: &LiftingRegistry,
+) -> Result<Vec<f32>, GpuMcError> {
+    let mut packed = vec![0.0f32; symbols.len() * NOISE_RECORD];
+    for (slot, name) in symbols.iter().enumerate() {
+        let Some((model, interaction)) = lifting.model_for(name) else {
+            continue;
+        };
+        let (family, p0, p1) = match model.gpu_sampler() {
+            GpuSampler::Closed { family, p0, p1 } => (family, p0, p1),
+            GpuSampler::Cpu { family } => {
+                return Err(GpuMcError::UnsupportedNoiseFamily { family })
+            }
+        };
+        let base = slot * NOISE_RECORD;
+        packed[base] = family as f32;
+        packed[base + 1] = match interaction {
+            NoiseInteraction::Additive => 0.0,
+            NoiseInteraction::Multiplicative => 1.0,
+        };
+        packed[base + 2] = p0 as f32;
+        packed[base + 3] = p1 as f32;
+    }
+    Ok(packed)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
+
+    use super::*;
+    use crate::stats::NoiseModel;
+
+    #[test]
+    fn packs_supported_families_by_slot() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 2.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        lifting.register(
+            "y",
+            NoiseModel::uniform(1.0, 3.0).unwrap(),
+            NoiseInteraction::Multiplicative,
+        );
+        let symbols = vec!["x".to_string(), "y".to_string(), "z".to_string()];
+        let packed = pack_noise_params(&symbols, &lifting).unwrap();
+        assert_eq!(packed.len(), 3 * NOISE_RECORD);
+        // x: Gaussian (1), additive (0), mean 0, std 2.
+        assert_eq!(&packed[0..4], &[1.0f32, 0.0, 0.0, 2.0]);
+        // y: Uniform (4), multiplicative (1), low 1, high 3.
+        assert_eq!(&packed[8..12], &[4.0f32, 1.0, 1.0, 3.0]);
+        assert_eq!(&packed[16..24], &[0.0f32; 8]);
+    }
+
+    #[test]
+    fn an_unsupported_family_declines_for_cpu_fallback() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gamma(2.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let err = pack_noise_params(&["x".to_string()], &lifting).unwrap_err();
+        assert!(matches!(
+            err,
+            GpuMcError::UnsupportedNoiseFamily { family: "Gamma" }
+        ));
     }
 }
