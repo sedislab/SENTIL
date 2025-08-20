@@ -180,6 +180,24 @@ impl Formula {
         }
     }
 
+    /// Whether the formula contains any temporal operator.
+    pub fn has_temporal(&self) -> bool {
+        match self {
+            Formula::Predicate(_) => false,
+            Formula::Not(f) | Formula::Probabilistic(_, _, f) => f.has_temporal(),
+            Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
+                l.has_temporal() || r.has_temporal()
+            }
+            Formula::Always(..)
+            | Formula::Eventually(..)
+            | Formula::Until(..)
+            | Formula::Since(..)
+            | Formula::Historically(..)
+            | Formula::Once(..)
+            | Formula::Next(_) => true,
+        }
+    }
+
     fn collect_variables(&self, vars: &mut Vec<String>) {
         match self {
             Formula::Predicate(p) => {
@@ -377,6 +395,23 @@ mod tests {
             Box::new(inner),
         );
         assert_eq!(f.depth(), 3);
+    }
+
+    #[test]
+    fn has_temporal_distinguishes_boolean_from_temporal() {
+        let p = pred("x", ComparisonOp::Greater, 0.0);
+        assert!(!p.has_temporal());
+        assert!(!Formula::Not(Box::new(p.clone())).has_temporal());
+        assert!(!Formula::And(Box::new(p.clone()), Box::new(p.clone())).has_temporal());
+        let always = Formula::Always(Interval::bounded(0.0, 5.0), Box::new(p.clone()));
+        assert!(always.has_temporal());
+        assert!(
+            Formula::Probabilistic(ProbabilityOp::GreaterEqual, 0.9, Box::new(always))
+                .has_temporal()
+        );
+        assert!(
+            !Formula::Probabilistic(ProbabilityOp::GreaterEqual, 0.9, Box::new(p)).has_temporal()
+        );
     }
 
     #[test]
