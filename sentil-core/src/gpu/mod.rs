@@ -5,6 +5,7 @@
 //! cleanly: when no compatible device is present, [`is_available`] returns
 //! `false` and callers stay on the CPU path.
 
+mod monte_carlo;
 mod transpiler;
 
 use pollster::FutureExt;

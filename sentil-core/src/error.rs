@@ -160,6 +160,14 @@ pub enum Error {
         /// Why the formula cannot run on the GPU.
         message: String,
     },
+
+    /// A GPU run failed after a device was acquired.
+    #[cfg(feature = "gpu")]
+    #[error("GPU run failed: {message}")]
+    Gpu {
+        /// What went wrong on the device.
+        message: String,
+    },
 }
 
 /// A formula failed to parse.
