@@ -61,4 +61,13 @@ mod tests {
     fn capability_check_never_panics() {
         let _ = is_available();
     }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn reports_a_present_device() {
+        assert!(
+            is_available(),
+            "expected a usable GPU adapter on this node, but none was found"
+        );
+    }
 }
