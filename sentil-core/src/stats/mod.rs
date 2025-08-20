@@ -309,4 +309,34 @@ mod tests {
             );
         }
     }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn gpu_discrete_families_match() {
+        assert!(
+            crate::gpu::is_available(),
+            "this test must run on a GPU node so the check uses the device"
+        );
+        let config = SmcConfig {
+            samples: 2_000_000,
+            confidence: 0.95,
+            seed: 19,
+        };
+        let cases: [(NoiseModel, f64, f64); 2] = [
+            (NoiseModel::poisson(4.0).unwrap(), 4.0, 0.628_837),
+            (NoiseModel::binomial(10, 0.5).unwrap(), 5.0, 638.0 / 1024.0),
+        ];
+        for (model, c, expected) in cases {
+            let mut lifting = LiftingRegistry::new();
+            lifting.register("x", model, NoiseInteraction::Additive);
+            let phi = Formula::parse(&format!("P>=0.5(x <= {c})")).unwrap();
+            let result = phi.check(&trace(&[0.0]), &lifting, &config).unwrap();
+            assert!(
+                (result.probability - expected).abs() < 4e-3,
+                "P(x <= {c}): got {}, expected {expected}",
+                result.probability
+            );
+        }
+    }
 }

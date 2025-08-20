@@ -147,7 +147,7 @@ pub(crate) enum GpuSampler {
     Device {
         /// The GPU family tag: 1 Gaussian, 2 log-normal, 3 exponential, 4 uniform,
         /// 5 Dirac, 6 Weibull, 7 Rayleigh, 8 Gumbel, 9 Cauchy, 10 truncated normal,
-        /// 11 gamma, 12 beta, 13 Student-t.
+        /// 11 gamma, 12 beta, 13 Student-t, 14 Poisson, 15 binomial.
         family: u32,
         /// Up to four distribution parameters; trailing unused slots are zero.
         params: [f64; 4],
@@ -161,12 +161,11 @@ pub(crate) enum GpuSampler {
 
 #[cfg(feature = "gpu")]
 impl NoiseModel {
-    /// How this model is drawn on the GPU: a family the device samples with its
-    /// parameters, or a marker that it has no GPU sampler and falls back to the
-    /// CPU. The closed-form families use an inverse transform; gamma, beta,
-    /// Student-t, and the truncated normal use a bounded rejection loop. The
-    /// discrete and data-backed families (Poisson, binomial, bootstrap, mixture)
-    /// decline for now.
+    /// How this model is drawn on the GPU.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a binomial trial count is small and fits f64 exactly"
+    )]
     pub(crate) fn gpu_sampler(&self) -> GpuSampler {
         match &self.kind {
             Kind::Gaussian { mean, std_dev } => GpuSampler::Device {
@@ -230,8 +229,14 @@ impl NoiseModel {
                 family: 13,
                 params: [*df, *location, *scale, 0.0],
             },
-            Kind::Poisson { .. } => GpuSampler::Cpu { family: "Poisson" },
-            Kind::Binomial { .. } => GpuSampler::Cpu { family: "binomial" },
+            Kind::Poisson { lambda } => GpuSampler::Device {
+                family: 14,
+                params: [*lambda, 0.0, 0.0, 0.0],
+            },
+            Kind::Binomial { n, p } => GpuSampler::Device {
+                family: 15,
+                params: [*n as f64, *p, 0.0, 0.0],
+            },
             Kind::Bootstrap { .. } => GpuSampler::Cpu {
                 family: "bootstrap",
             },

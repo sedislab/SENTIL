@@ -260,10 +260,14 @@ pub(crate) fn build_count_shader(
     Ok((source, transpiled.state_size))
 }
 
-/// Writes the per-sample kernel: draw a residual for each modeled slot, fold it
-/// into the base reading by the slot's interaction, and score the formula. The
-/// family arms cover the closed-form samplers only; an unmodeled slot is read
+/// Writes the per-sample kernel: `draw_residual`, a switch with one sampler per
+/// noise family, then the kernel that folds a residual into each base reading by
+/// the slot's interaction and scores the formula. An unmodeled slot is read
 /// straight through without a draw, so there is no identity arm in `draw_residual`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the body is one shader arm per noise family, not branching logic"
+)]
 fn write_simulation_kernel(source: &mut String, array_size: usize, state_size: usize) {
     let _ = write!(
         source,
@@ -312,11 +316,35 @@ fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
             return gx / (gx + gy);
         }}
         return 0.5;
-    }} else {{
+    }} else if (family < 13.5) {{
         let z = rand_normal(rng);
         let chi2 = sample_gamma(p0 * 0.5, 2.0, rng);
         let denom = max(sqrt(chi2 / p0), 1e-38);
         return p1 + noise_params[b + 4u] * z / denom;
+    }} else if (family < 14.5) {{
+        if (p0 < 30.0) {{
+            let threshold = exp(-p0);
+            var k = 0.0;
+            var product = 1.0;
+            for (var i = 0u; i < 1024u; i = i + 1u) {{
+                k = k + 1.0;
+                product = product * rand_f32(rng);
+                if (product <= threshold) {{
+                    break;
+                }}
+            }}
+            return k - 1.0;
+        }}
+        return max(round(p0 + sqrt(p0) * rand_normal(rng)), 0.0);
+    }} else {{
+        let trials = u32(p0);
+        var count = 0.0;
+        for (var i = 0u; i < trials; i = i + 1u) {{
+            if (rand_f32(rng) < p1) {{
+                count = count + 1.0;
+            }}
+        }}
+        return count;
     }}
 }}
 
