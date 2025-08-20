@@ -152,6 +152,14 @@ pub enum Error {
         /// What went wrong.
         message: String,
     },
+
+    /// A formula could not be lowered to a GPU shader.
+    #[cfg(feature = "gpu")]
+    #[error("could not transpile to a GPU shader: {message}")]
+    Transpilation {
+        /// Why the formula cannot run on the GPU.
+        message: String,
+    },
 }
 
 /// A formula failed to parse.

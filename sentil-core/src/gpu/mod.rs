@@ -3,8 +3,9 @@
 //! Large Monte Carlo and rare-event runs can be offloaded to a GPU through this
 //! module. Everything here is gated behind the `gpu` feature and degrades
 //! cleanly: when no compatible device is present, [`is_available`] returns
-//! `false` and callers stay on the CPU path. Kernel execution needs real GPU
-//! hardware, so it is exercised in a GPU session rather than on a headless host.
+//! `false` and callers stay on the CPU path.
+
+mod transpiler;
 
 use pollster::FutureExt;
 
@@ -58,8 +59,6 @@ mod tests {
 
     #[test]
     fn capability_check_never_panics() {
-        // With no GPU this is false; with one, true. Either way it must not panic,
-        // so the CPU fallback path stays reachable on any machine.
         let _ = is_available();
     }
 }

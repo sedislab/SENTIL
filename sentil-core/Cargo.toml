@@ -69,7 +69,7 @@ mcap = ["ingest", "dep:mcap", "dep:serde_json"]
 
 # WebGPU for large statistical runs and rare events. Falls back to the CPU when
 # no device is present.
-gpu = ["statistical", "dep:wgpu", "dep:pollster", "dep:bytemuck"]
+gpu = ["statistical", "dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:futures", "dep:naga"]
 
 [dependencies]
 thiserror = { version = "2.0", default-features = false }
@@ -95,6 +95,11 @@ mcap = { version = "0.24", optional = true }
 wgpu = { version = "27.0", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1.24", optional = true, features = ["derive"] }
+futures = { version = "0.3.31", optional = true }
+
+# Validates transpiled WGSL on the CPU, so a malformed shader is a typed error
+# before it reaches the GPU. naga rides along in the wgpu tree.
+naga = { version = "27.0", optional = true, features = ["wgsl-in"] }
 
 [dev-dependencies]
 proptest = { workspace = true }
