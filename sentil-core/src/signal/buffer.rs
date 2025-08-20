@@ -148,6 +148,134 @@ impl RingBuffer {
         Ok(evicted)
     }
 
+    /// The earliest and latest sample times.
+    #[must_use]
+    pub fn time_range(&self) -> Option<(f64, f64)> {
+        match (self.front(), self.back()) {
+            (Some((first, _)), Some((last, _))) => Some((first, last)),
+            _ => None,
+        }
+    }
+
+    /// The running mean of the held values.
+    #[must_use]
+    pub fn mean(&self) -> Option<f64> {
+        (self.len > 0).then_some(self.mean)
+    }
+
+    /// The Bessel-corrected sample variance, or `None` with fewer than two samples.
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the sample count is bounded by the capacity and fits f64 exactly"
+    )]
+    pub fn variance(&self) -> Option<f64> {
+        (self.len >= 2).then(|| (self.m2 / (self.len as f64 - 1.0)).max(0.0))
+    }
+
+    /// The sample standard deviation.
+    #[must_use]
+    pub fn std_dev(&self) -> Option<f64> {
+        self.variance().map(f64::sqrt)
+    }
+
+    /// The smallest value held.
+    #[must_use]
+    pub fn min(&self) -> Option<f64> {
+        self.values().reduce(f64::min)
+    }
+
+    /// The largest value held.
+    #[must_use]
+    pub fn max(&self) -> Option<f64> {
+        self.values().reduce(f64::max)
+    }
+
+    /// The samples in time order.
+    pub fn iter(&self) -> impl Iterator<Item = (f64, f64)> + '_ {
+        (0..self.len).map(|i| self.data[self.slot(i)])
+    }
+
+    /// The values in time order.
+    pub fn values(&self) -> impl Iterator<Item = f64> + '_ {
+        self.iter().map(|(_, v)| v)
+    }
+
+    /// The sample times in time order.
+    pub fn times(&self) -> impl Iterator<Item = f64> + '_ {
+        self.iter().map(|(t, _)| t)
+    }
+
+    fn lower_bound(&self, time: f64) -> usize {
+        let mut lo = 0;
+        let mut hi = self.len;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.data[self.slot(mid)].0 < time - TIME_EPSILON {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    }
+
+    /// The value sampled at `time`, within a small tolerance.
+    #[must_use]
+    pub fn get_by_time(&self, time: f64) -> Option<f64> {
+        let idx = self.lower_bound(time);
+        for candidate in [idx, idx.wrapping_sub(1)] {
+            if candidate < self.len {
+                let (t, v) = self.data[self.slot(candidate)];
+                if (t - time).abs() < TIME_EPSILON {
+                    return Some(v);
+                }
+            }
+        }
+        None
+    }
+
+    /// The sample whose time is closest to `time`. Runs in O(log n).
+    #[must_use]
+    pub fn get_closest_by_time(&self, time: f64) -> Option<(f64, f64)> {
+        if self.is_empty() {
+            return None;
+        }
+        let idx = self.lower_bound(time);
+        if idx == 0 {
+            return self.front();
+        }
+        if idx >= self.len {
+            return self.back();
+        }
+        let prev = self.data[self.slot(idx - 1)];
+        let curr = self.data[self.slot(idx)];
+        if (time - prev.0).abs() <= (curr.0 - time).abs() {
+            Some(prev)
+        } else {
+            Some(curr)
+        }
+    }
+
+    /// Every sample whose time lies in `[start, end]`, oldest first.
+    #[must_use]
+    pub fn get_range(&self, start: f64, end: f64) -> Vec<(f64, f64)> {
+        if self.is_empty() || start > end {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut i = self.lower_bound(start);
+        while i < self.len {
+            let sample = self.data[self.slot(i)];
+            if sample.0 > end + TIME_EPSILON {
+                break;
+            }
+            out.push(sample);
+            i += 1;
+        }
+        out
+    }
+
     #[allow(
         clippy::cast_precision_loss,
         reason = "the sample count is bounded by the capacity and fits f64 exactly"
@@ -207,5 +335,33 @@ mod tests {
         buffer.push(1.0, 1.0).unwrap();
         assert!(buffer.push(0.5, 1.0).is_err());
         assert!(buffer.push(2.0, f64::NAN).is_err());
+    }
+
+    #[test]
+    fn time_lookups_and_stats() {
+        let mut buffer = RingBuffer::new(4).unwrap();
+        for (t, v) in [(0.0, 2.0), (1.0, 4.0), (2.0, 6.0), (3.0, 8.0)] {
+            buffer.push(t, v).unwrap();
+        }
+        assert_eq!(buffer.get_by_time(2.0), Some(6.0));
+        assert_eq!(buffer.get_by_time(2.5), None);
+        assert_eq!(buffer.get_closest_by_time(2.4), Some((2.0, 6.0)));
+        assert_eq!(buffer.get_range(1.0, 2.0), vec![(1.0, 4.0), (2.0, 6.0)]);
+        assert_eq!(buffer.time_range(), Some((0.0, 3.0)));
+        assert_eq!(buffer.mean(), Some(5.0));
+        assert_eq!(buffer.min(), Some(2.0));
+        assert_eq!(buffer.max(), Some(8.0));
+        assert!((buffer.variance().unwrap() - 20.0 / 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn statistics_track_eviction() {
+        let mut buffer = RingBuffer::new(2).unwrap();
+        buffer.push(0.0, 10.0).unwrap();
+        buffer.push(1.0, 20.0).unwrap();
+        buffer.push(2.0, 30.0).unwrap();
+        assert_eq!(buffer.mean(), Some(25.0));
+        assert!((buffer.variance().unwrap() - 50.0).abs() < 1e-9);
+        assert_eq!(buffer.get_range(1.0, 2.0), vec![(1.0, 20.0), (2.0, 30.0)]);
     }
 }
