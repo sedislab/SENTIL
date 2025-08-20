@@ -1,9 +1,5 @@
 //! Lowering a formula to a WGSL compute shader.
 
-// The atemporal codegen lands first and is consumed by the Monte Carlo path in
-// the following change, which is where these become reachable from the lib.
-#![allow(dead_code)]
-
 use crate::error::{Error, Result};
 use crate::formula::{BinaryOp, ComparisonOp, Expr, Formula};
 #[cfg(not(feature = "std"))]
@@ -61,9 +57,8 @@ pub(crate) fn transpile_atemporal(
     })
 }
 
-/// Parses and validates a WGSL fragment on the CPU, so malformed codegen surfaces
-/// as a typed error here rather than as a shader-compile failure on the device.
-fn validate(source: &str) -> Result<()> {
+/// Parses and validates WGSL on the CPU.
+pub(super) fn validate(source: &str) -> Result<()> {
     let module = naga::front::wgsl::parse_str(source).map_err(|e| Error::Transpilation {
         message: format!("generated shader did not parse: {e}"),
     })?;

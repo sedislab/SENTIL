@@ -17,7 +17,11 @@
 // once the SMC entry wires in the fallback path.
 #![allow(dead_code)]
 
+use core::fmt::Write as _;
+
+use super::transpiler::{transpile_atemporal, validate};
 use crate::error::Error;
+use crate::formula::Formula;
 use crate::stats::{GpuSampler, LiftingRegistry, NoiseInteraction};
 
 /// The width, in f32 slots, of one variable's noise record in the device buffer.
@@ -109,6 +113,180 @@ pub(crate) fn pack_noise_params(
     Ok(packed)
 }
 
+const SHADER_PRELUDE: &str = r"struct Params {
+    n_samples: u32,
+    seed: u32,
+    threshold: f32,
+    num_workgroups: u32,
+}
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read_write> results: array<f32>;
+@group(0) @binding(2) var<storage, read_write> reduction_buffer: array<f32>;
+@group(0) @binding(3) var<storage, read> base_state: array<f32>;
+@group(0) @binding(4) var<storage, read> noise_params: array<f32>;
+
+fn mul_hi(a: u32, b: u32) -> u32 {
+    let a_lo = a & 0xFFFFu;
+    let a_hi = a >> 16u;
+    let b_lo = b & 0xFFFFu;
+    let b_hi = b >> 16u;
+    let cross = (a_lo * b_lo >> 16u) + (a_hi * b_lo & 0xFFFFu) + a_lo * b_hi;
+    return a_hi * b_hi + (a_hi * b_lo >> 16u) + (cross >> 16u);
+}
+
+fn philox2x32_round(ctr: vec2<u32>, key: u32) -> vec2<u32> {
+    let hi = mul_hi(ctr.x, 0xD256D193u);
+    let lo = ctr.x * 0xD256D193u;
+    return vec2<u32>(hi ^ key ^ ctr.y, lo);
+}
+
+fn philox2x32(ctr: vec2<u32>, key: u32) -> vec2<u32> {
+    var c = ctr;
+    var k = key;
+    for (var i = 0u; i < 10u; i = i + 1u) {
+        c = philox2x32_round(c, k);
+        k = k + 0x9E3779B9u;
+    }
+    return c;
+}
+
+fn init_rng(global_id: u32, seed: u32) -> u32 {
+    let result = philox2x32(vec2<u32>(global_id, seed), seed ^ 0xDEADBEEFu);
+    return result.x ^ result.y;
+}
+
+fn xorshift32(state: ptr<function, u32>) -> u32 {
+    var x = *state;
+    x = x ^ (x << 13u);
+    x = x ^ (x >> 17u);
+    x = x ^ (x << 5u);
+    *state = x;
+    return x;
+}
+
+fn rand_f32(state: ptr<function, u32>) -> f32 {
+    return f32(xorshift32(state)) * (1.0 / 4294967296.0);
+}
+
+fn rand_normal(state: ptr<function, u32>) -> f32 {
+    let u1 = max(rand_f32(state), 1e-10);
+    let u2 = rand_f32(state);
+    return sqrt(-2.0 * log(u1)) * cos(6.283185307179586 * u2);
+}
+";
+
+/// One partial count per workgroup, summed on the host.
+const SHADER_REDUCE: &str = r"
+var<workgroup> shared_count: array<u32, 256>;
+
+@compute @workgroup_size(256)
+fn reduce_count_kernel(
+    @builtin(global_invocation_id) global_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+    @builtin(workgroup_id) group_id: vec3<u32>
+) {
+    let tid = local_id.x;
+    let gid = global_id.x;
+
+    var local_count = 0u;
+    if (gid < params.n_samples) {
+        if (results[gid] >= params.threshold) {
+            local_count = 1u;
+        }
+    }
+
+    shared_count[tid] = local_count;
+    workgroupBarrier();
+
+    for (var s = 128u; s > 0u; s = s >> 1u) {
+        if (tid < s) {
+            shared_count[tid] = shared_count[tid] + shared_count[tid + s];
+        }
+        workgroupBarrier();
+    }
+
+    if (tid == 0u) {
+        reduction_buffer[group_id.x] = f32(shared_count[0]);
+    }
+}";
+
+/// Assembles the full count shader for `formula`: the prelude, the transpiled
+/// `evaluate_formula`, the per-sample kernel, and the reduction.
+///
+/// Returns the shader source and the number of variable slots the kernel reads.
+///
+/// # Errors
+///
+/// Returns [`Error::Transpilation`] when the inner formula is not atemporal or the shader does not validate.
+pub(crate) fn build_count_shader(
+    formula: &Formula,
+    symbols: &[String],
+) -> Result<(String, usize), Error> {
+    let transpiled = transpile_atemporal(formula, symbols)?;
+    let array_size = transpiled.state_size.max(1);
+    let mut source = String::from(SHADER_PRELUDE);
+    source.push('\n');
+    source.push_str(&transpiled.evaluate_formula);
+    write_simulation_kernel(&mut source, array_size, transpiled.state_size);
+    source.push_str(SHADER_REDUCE);
+    validate(&source)?;
+    Ok((source, transpiled.state_size))
+}
+
+/// Writes the per-sample kernel: draw a residual for each modeled slot, fold it
+/// into the base reading by the slot's interaction, and score the formula. The
+/// family arms cover the closed-form samplers only; an unmodeled slot is read
+/// straight through without a draw, so there is no identity arm in `draw_residual`.
+fn write_simulation_kernel(source: &mut String, array_size: usize, state_size: usize) {
+    let _ = write!(
+        source,
+        r"
+fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
+    let b = 8u * slot;
+    let p0 = noise_params[b + 2u];
+    let p1 = noise_params[b + 3u];
+    let family = noise_params[b];
+    if (family < 1.5) {{
+        return p0 + p1 * rand_normal(rng);
+    }} else if (family < 2.5) {{
+        return exp(p0 + p1 * rand_normal(rng));
+    }} else if (family < 3.5) {{
+        return -log(max(1.0 - rand_f32(rng), 1e-38)) / p0;
+    }} else if (family < 4.5) {{
+        return p0 + (p1 - p0) * rand_f32(rng);
+    }} else {{
+        return p0;
+    }}
+}}
+
+@compute @workgroup_size(256)
+fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
+    let i = global_id.x;
+    if (i >= params.n_samples) {{
+        return;
+    }}
+    var rng = init_rng(i, params.seed);
+    var state: array<f32, {array_size}>;
+    for (var s = 0u; s < {state_size}u; s = s + 1u) {{
+        let base = base_state[s];
+        if (noise_params[8u * s] < 0.5) {{
+            state[s] = base;
+        }} else {{
+            let r = draw_residual(s, &rng);
+            if (noise_params[8u * s + 1u] < 0.5) {{
+                state[s] = base + r;
+            }} else {{
+                state[s] = base * r;
+            }}
+        }}
+    }}
+    results[i] = evaluate_formula(state);
+}}
+"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
@@ -152,5 +330,24 @@ mod tests {
             err,
             GpuMcError::UnsupportedNoiseFamily { family: "Gamma" }
         ));
+    }
+
+    #[test]
+    fn count_shader_assembles_and_validates() {
+        let formula = Formula::parse("x > 5 and y < 3").unwrap();
+        let symbols = formula.variables();
+        let (source, state_size) = build_count_shader(&formula, &symbols).unwrap();
+        assert_eq!(state_size, 2);
+        assert!(source.contains("fn simulation_kernel"));
+        assert!(source.contains("fn evaluate_formula"));
+        assert!(source.contains("fn reduce_count_kernel"));
+        assert!(source.contains("fn draw_residual"));
+    }
+
+    #[test]
+    fn a_temporal_formula_has_no_count_shader() {
+        let formula = Formula::parse("always[0, 3](x > 0)").unwrap();
+        let symbols = formula.variables();
+        assert!(build_count_shader(&formula, &symbols).is_err());
     }
 }
