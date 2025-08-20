@@ -203,4 +203,44 @@ mod tests {
             );
         }
     }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn gpu_closed_form_families_match_their_cdf() {
+        assert!(
+            crate::gpu::is_available(),
+            "this test must run on a GPU node so the check uses the device"
+        );
+        let config = SmcConfig {
+            samples: 2_000_000,
+            confidence: 0.95,
+            seed: 11,
+        };
+        let cases: [(NoiseModel, f64, f64); 4] = [
+            (
+                NoiseModel::weibull(1.0, 1.0).unwrap(),
+                1.0,
+                1.0 - (-1.0f64).exp(),
+            ),
+            (
+                NoiseModel::rayleigh(1.0).unwrap(),
+                1.0,
+                1.0 - (-0.5f64).exp(),
+            ),
+            (NoiseModel::gumbel(0.0, 1.0).unwrap(), 0.0, (-1.0f64).exp()),
+            (NoiseModel::cauchy(0.0, 1.0).unwrap(), 0.0, 0.5),
+        ];
+        for (model, c, expected) in cases {
+            let mut lifting = LiftingRegistry::new();
+            lifting.register("x", model, NoiseInteraction::Additive);
+            let phi = Formula::parse(&format!("P>=0.5(x <= {c})")).unwrap();
+            let result = phi.check(&trace(&[0.0]), &lifting, &config).unwrap();
+            assert!(
+                (result.probability - expected).abs() < 4e-3,
+                "CDF({c}): got {}, expected {expected}",
+                result.probability
+            );
+        }
+    }
 }

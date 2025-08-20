@@ -146,7 +146,8 @@ pub(crate) enum GpuSampler {
     /// A closed-form family the GPU samples by an inverse transform: a family tag
     /// and up to two parameters.
     Closed {
-        /// The GPU family tag: 1 Gaussian, 2 log-normal, 3 exponential, 4 uniform, 5 Dirac.
+        /// The GPU family tag: 1 Gaussian, 2 log-normal, 3 exponential, 4 uniform,
+        /// 5 Dirac, 6 Weibull, 7 Rayleigh, 8 Gumbel, 9 Cauchy.
         family: u32,
         /// The first distribution parameter.
         p0: f64,
@@ -197,10 +198,26 @@ impl NoiseModel {
             },
             Kind::Gamma { .. } => GpuSampler::Cpu { family: "Gamma" },
             Kind::Beta { .. } => GpuSampler::Cpu { family: "Beta" },
-            Kind::Weibull { .. } => GpuSampler::Cpu { family: "Weibull" },
-            Kind::Rayleigh { .. } => GpuSampler::Cpu { family: "Rayleigh" },
-            Kind::Gumbel { .. } => GpuSampler::Cpu { family: "Gumbel" },
-            Kind::Cauchy { .. } => GpuSampler::Cpu { family: "Cauchy" },
+            Kind::Weibull { shape, scale } => GpuSampler::Closed {
+                family: 6,
+                p0: *shape,
+                p1: *scale,
+            },
+            Kind::Rayleigh { scale } => GpuSampler::Closed {
+                family: 7,
+                p0: *scale,
+                p1: 0.0,
+            },
+            Kind::Gumbel { location, scale } => GpuSampler::Closed {
+                family: 8,
+                p0: *location,
+                p1: *scale,
+            },
+            Kind::Cauchy { location, scale } => GpuSampler::Closed {
+                family: 9,
+                p0: *location,
+                p1: *scale,
+            },
             Kind::StudentT { .. } => GpuSampler::Cpu {
                 family: "Student-t",
             },

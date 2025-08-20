@@ -254,8 +254,16 @@ fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
         return -log(max(1.0 - rand_f32(rng), 1e-38)) / p0;
     }} else if (family < 4.5) {{
         return p0 + (p1 - p0) * rand_f32(rng);
-    }} else {{
+    }} else if (family < 5.5) {{
         return p0;
+    }} else if (family < 6.5) {{
+        return p1 * pow(-log(max(1.0 - rand_f32(rng), 1e-38)), 1.0 / p0);
+    }} else if (family < 7.5) {{
+        return p0 * sqrt(-2.0 * log(max(1.0 - rand_f32(rng), 1e-38)));
+    }} else if (family < 8.5) {{
+        return p0 - p1 * log(-log(max(rand_f32(rng), 1e-38)));
+    }} else {{
+        return p0 + p1 * tan(3.141592653589793 * (rand_f32(rng) - 0.5));
     }}
 }}
 
@@ -654,6 +662,24 @@ mod tests {
             err,
             GpuMcError::UnsupportedNoiseFamily { family: "Gamma" }
         ));
+    }
+
+    #[test]
+    fn packs_the_inverse_transform_families() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "w",
+            NoiseModel::weibull(2.0, 3.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        lifting.register(
+            "c",
+            NoiseModel::cauchy(1.0, 0.5).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let packed = pack_noise_params(&["c".to_string(), "w".to_string()], &lifting).unwrap();
+        assert_eq!(&packed[0..4], &[9.0f32, 0.0, 1.0, 0.5]); // Cauchy: location 1, scale 0.5
+        assert_eq!(&packed[8..12], &[6.0f32, 0.0, 2.0, 3.0]); // Weibull: shape 2, scale 3
     }
 
     #[test]
