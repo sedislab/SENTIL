@@ -8,6 +8,8 @@
 mod monte_carlo;
 mod transpiler;
 
+pub(crate) use monte_carlo::{build_count_shader, pack_noise_params, GpuMcContext};
+
 use pollster::FutureExt;
 
 /// A GPU device and its command queue, acquired once and reused across runs.

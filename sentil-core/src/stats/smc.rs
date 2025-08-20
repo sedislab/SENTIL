@@ -58,6 +58,11 @@ pub(crate) fn check(
     lifting: &LiftingRegistry,
     config: &SmcConfig,
 ) -> Result<SmcResult> {
+    #[cfg(feature = "gpu")]
+    if let Some(result) = try_gpu_check(op, threshold, inner, trace, lifting, config) {
+        return Ok(result);
+    }
+
     // Sample `i` is seeded independently, so the count is the same however the
     // samples are scheduled, and a robustness of exactly zero counts as
     // satisfied, matching `Robustness::is_satisfied`.
@@ -94,4 +99,73 @@ pub(crate) fn check(
         samples,
         holds: super::decides(op, probability, threshold),
     })
+}
+
+/// The smallest sample count that repays the per-call device and shader setup.
+#[cfg(feature = "gpu")]
+const GPU_MIN_SAMPLES: u64 = 100_000;
+
+/// Tries to run the check on the GPU, returning `None` to fall back to the CPU.
+///
+/// The GPU runs only when it gives the same answer faster: the formula is
+/// atemporal and transpilable, mentions at least one variable, every noise family
+/// has a GPU sampler, the base reading projects onto the variables, the run is
+/// large enough to amortize setup, and a device is present. Any miss, and any
+/// device error, falls back silently.
+#[cfg(feature = "gpu")]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "samples and counts stay below 2^24, and the seed narrowing is intentional"
+)]
+fn try_gpu_check(
+    op: ProbabilityOp,
+    threshold: f64,
+    inner: &Formula,
+    trace: &Trace,
+    lifting: &LiftingRegistry,
+    config: &SmcConfig,
+) -> Option<SmcResult> {
+    if config.samples < GPU_MIN_SAMPLES {
+        return None;
+    }
+    let symbols = inner.variables();
+    let (shader, state_size) = crate::gpu::build_count_shader(inner, &symbols).ok()?;
+    if state_size == 0 {
+        return None;
+    }
+    let noise = crate::gpu::pack_noise_params(&symbols, lifting).ok()?;
+    let base = base_state_f32(trace, &symbols)?;
+    let context = crate::gpu::GpuMcContext::new(&shader).ok()?;
+    let satisfactions = context
+        .gpu_satisfaction_count(&base, &noise, config.samples, config.seed as u32)
+        .ok()?;
+    let samples = config.samples;
+    let probability = satisfactions as f64 / samples as f64;
+    Some(SmcResult {
+        probability,
+        interval: wilson_interval(satisfactions, samples, config.confidence),
+        satisfactions,
+        samples,
+        holds: super::decides(op, probability, threshold),
+    })
+}
+
+/// The first reading of each variable, in `symbols` order.
+#[cfg(feature = "gpu")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the GPU evaluates in f32 by contract"
+)]
+fn base_state_f32(trace: &Trace, symbols: &[String]) -> Option<Vec<f32>> {
+    symbols
+        .iter()
+        .map(|name| {
+            trace
+                .signals()
+                .get(name)
+                .and_then(|values| values.first())
+                .map(|&v| v as f32)
+        })
+        .collect()
 }

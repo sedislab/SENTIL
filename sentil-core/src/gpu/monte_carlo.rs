@@ -13,10 +13,6 @@
 //! noise families and falls back to the CPU for everything else, so a result is
 //! always available.
 
-// The pieces are built bottom-up and become reachable from the statistical layer
-// once the SMC entry wires in the fallback path.
-#![allow(dead_code)]
-
 use core::fmt::Write as _;
 
 use pollster::FutureExt as _;
@@ -471,11 +467,21 @@ impl GpuMcContext {
             num_workgroups,
         };
 
+        let (submission, readback) = self.dispatch_count(&params, base_state, noise_params);
+        self.read_partial_counts(&readback, submission, num_workgroups as usize)
+    }
+
+    fn dispatch_count(
+        &self,
+        params: &Params,
+        base_state: &[f32],
+        noise_params: &[f32],
+    ) -> (wgpu::SubmissionIndex, wgpu::Buffer) {
         let params_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("params"),
-                contents: bytemuck::bytes_of(&params),
+                contents: bytemuck::bytes_of(params),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
         let base_buffer = self
@@ -494,11 +500,11 @@ impl GpuMcContext {
             });
         let results_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("results"),
-            size: u64::from(n32) * 4,
+            size: u64::from(params.n_samples) * 4,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
-        let reduction_bytes = u64::from(num_workgroups) * 4;
+        let reduction_bytes = u64::from(params.num_workgroups) * 4;
         let reduction_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("reduction"),
             size: reduction_bytes,
@@ -554,11 +560,11 @@ impl GpuMcContext {
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(num_workgroups, 1, 1);
+            pass.dispatch_workgroups(params.num_workgroups, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&reduction_buffer, 0, &readback_buffer, 0, reduction_bytes);
         let submission = self.queue.submit(Some(encoder.finish()));
-        self.read_partial_counts(&readback_buffer, submission, num_workgroups as usize)
+        (submission, readback_buffer)
     }
 
     /// Sums the per-workgroup f32 partial counts.
