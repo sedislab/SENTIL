@@ -57,7 +57,7 @@ pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
 pub use monitor::{Monitor, MonitorConfig, TimeMode};
 pub use semantics::{MultiFormulaMonitor, Robustness, StreamMonitor};
-pub use signal::Trace;
+pub use signal::{RingBuffer, Trace};
 #[cfg(feature = "specs")]
 pub use spec_builder::{SpecBuilder, SpecRegistry, SpecTemplate};
 #[cfg(feature = "statistical")]
