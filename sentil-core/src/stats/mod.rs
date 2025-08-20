@@ -168,4 +168,39 @@ mod tests {
             Err(Error::NotProbabilistic)
         ));
     }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn gpu_probability_matches_the_normal_cdf() {
+        assert!(
+            crate::gpu::is_available(),
+            "this test must run on a GPU node so the check uses the device"
+        );
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 2_000_000,
+            confidence: 0.95,
+            seed: 7,
+        };
+        for (c, expected) in [
+            (0.0, 0.5),
+            (0.674_490, 0.75),
+            (1.281_552, 0.90),
+            (-1.0, 0.158_655),
+        ] {
+            let phi = Formula::parse(&format!("P>=0.5(x <= {c})")).unwrap();
+            let result = phi.check(&trace(&[0.0]), &lifting, &config).unwrap();
+            assert!(
+                (result.probability - expected).abs() < 3e-3,
+                "c={c}: got {}, expected {expected}",
+                result.probability
+            );
+        }
+    }
 }
