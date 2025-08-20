@@ -11,22 +11,21 @@ pub(crate) struct TranspiledShader {
     pub evaluate_formula: String,
 }
 
-/// Emits one SSA register per value, so the GPU keeps intermediate robustness
-/// values in registers rather than a runtime stack.
-struct Ssa {
-    body: String,
+/// Emits one SSA register per value.
+pub(super) struct Ssa {
+    pub body: String,
     next: usize,
 }
 
 impl Ssa {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             body: String::new(),
             next: 0,
         }
     }
 
-    fn bind(&mut self, value: &str) -> String {
+    pub(super) fn bind(&mut self, value: &str) -> String {
         let name = format!("v{}", self.next);
         self.next += 1;
         let _ = writeln!(self.body, "    let {name} = {value};");
@@ -45,7 +44,9 @@ pub(crate) fn transpile_atemporal(
     symbols: &[String],
 ) -> Result<TranspiledShader> {
     let mut ssa = Ssa::new();
-    let result = emit_formula(&mut ssa, formula, symbols)?;
+    let result = emit_formula(&mut ssa, formula, symbols, &|slot| {
+        format!("state[{slot}u]")
+    })?;
     let size = symbols.len().max(1);
     let mut source = format!("fn evaluate_formula(state: array<f32, {size}>) -> f32 {{\n");
     source.push_str(&ssa.body);
@@ -73,11 +74,17 @@ pub(super) fn validate(source: &str) -> Result<()> {
     Ok(())
 }
 
-fn emit_formula(ssa: &mut Ssa, formula: &Formula, symbols: &[String]) -> Result<String> {
+/// Emits the boolean core of a formula into `ssa` and returns the result register.
+pub(super) fn emit_formula(
+    ssa: &mut Ssa,
+    formula: &Formula,
+    symbols: &[String],
+    access: &dyn Fn(usize) -> String,
+) -> Result<String> {
     match formula {
         Formula::Predicate(p) => {
-            let lhs = emit_expr(ssa, &p.lhs, symbols)?;
-            let rhs = emit_expr(ssa, &p.rhs, symbols)?;
+            let lhs = emit_expr(ssa, &p.lhs, symbols, access)?;
+            let rhs = emit_expr(ssa, &p.rhs, symbols, access)?;
             let margin = match p.op {
                 ComparisonOp::Less | ComparisonOp::LessEqual => format!("{rhs} - {lhs}"),
                 ComparisonOp::Greater | ComparisonOp::GreaterEqual => format!("{lhs} - {rhs}"),
@@ -87,22 +94,22 @@ fn emit_formula(ssa: &mut Ssa, formula: &Formula, symbols: &[String]) -> Result<
             Ok(ssa.bind(&margin))
         }
         Formula::Not(f) => {
-            let v = emit_formula(ssa, f, symbols)?;
+            let v = emit_formula(ssa, f, symbols, access)?;
             Ok(ssa.bind(&format!("-{v}")))
         }
         Formula::And(l, r) => {
-            let lv = emit_formula(ssa, l, symbols)?;
-            let rv = emit_formula(ssa, r, symbols)?;
+            let lv = emit_formula(ssa, l, symbols, access)?;
+            let rv = emit_formula(ssa, r, symbols, access)?;
             Ok(ssa.bind(&format!("min({lv}, {rv})")))
         }
         Formula::Or(l, r) => {
-            let lv = emit_formula(ssa, l, symbols)?;
-            let rv = emit_formula(ssa, r, symbols)?;
+            let lv = emit_formula(ssa, l, symbols, access)?;
+            let rv = emit_formula(ssa, r, symbols, access)?;
             Ok(ssa.bind(&format!("max({lv}, {rv})")))
         }
         Formula::Implies(l, r) => {
-            let lv = emit_formula(ssa, l, symbols)?;
-            let rv = emit_formula(ssa, r, symbols)?;
+            let lv = emit_formula(ssa, l, symbols, access)?;
+            let rv = emit_formula(ssa, r, symbols, access)?;
             Ok(ssa.bind(&format!("max(-{lv}, {rv})")))
         }
         other => Err(Error::Transpilation {
@@ -114,7 +121,12 @@ fn emit_formula(ssa: &mut Ssa, formula: &Formula, symbols: &[String]) -> Result<
     }
 }
 
-fn emit_expr(ssa: &mut Ssa, expr: &Expr, symbols: &[String]) -> Result<String> {
+fn emit_expr(
+    ssa: &mut Ssa,
+    expr: &Expr,
+    symbols: &[String],
+    access: &dyn Fn(usize) -> String,
+) -> Result<String> {
     match expr {
         Expr::Literal(v) => Ok(ssa.bind(&format!("f32({v:?})"))),
         Expr::Variable(name) => {
@@ -122,11 +134,11 @@ fn emit_expr(ssa: &mut Ssa, expr: &Expr, symbols: &[String]) -> Result<String> {
                 .iter()
                 .position(|n| n == name)
                 .ok_or_else(|| Error::UnknownVariable { name: name.clone() })?;
-            Ok(ssa.bind(&format!("state[{slot}u]")))
+            Ok(ssa.bind(&access(slot)))
         }
         Expr::Binary(op, lhs, rhs) => {
-            let l = emit_expr(ssa, lhs, symbols)?;
-            let r = emit_expr(ssa, rhs, symbols)?;
+            let l = emit_expr(ssa, lhs, symbols, access)?;
+            let r = emit_expr(ssa, rhs, symbols, access)?;
             let value = match op {
                 BinaryOp::Add => format!("{l} + {r}"),
                 BinaryOp::Sub => format!("{l} - {r}"),
@@ -137,11 +149,17 @@ fn emit_expr(ssa: &mut Ssa, expr: &Expr, symbols: &[String]) -> Result<String> {
             };
             Ok(ssa.bind(&value))
         }
-        Expr::Call(name, args) => emit_call(ssa, name, args, symbols),
+        Expr::Call(name, args) => emit_call(ssa, name, args, symbols, access),
     }
 }
 
-fn emit_call(ssa: &mut Ssa, name: &str, args: &[Expr], symbols: &[String]) -> Result<String> {
+fn emit_call(
+    ssa: &mut Ssa,
+    name: &str,
+    args: &[Expr],
+    symbols: &[String],
+    access: &dyn Fn(usize) -> String,
+) -> Result<String> {
     let unary = |ssa: &mut Ssa, wrap: &dyn Fn(&str) -> String| -> Result<String> {
         let [arg] = args else {
             return Err(Error::UnknownFunction {
@@ -149,7 +167,7 @@ fn emit_call(ssa: &mut Ssa, name: &str, args: &[Expr], symbols: &[String]) -> Re
                 arity: args.len(),
             });
         };
-        let a = emit_expr(ssa, arg, symbols)?;
+        let a = emit_expr(ssa, arg, symbols, access)?;
         Ok(ssa.bind(&wrap(&a)))
     };
     match name {
@@ -172,8 +190,8 @@ fn emit_call(ssa: &mut Ssa, name: &str, args: &[Expr], symbols: &[String]) -> Re
                     arity: args.len(),
                 });
             };
-            let l = emit_expr(ssa, lhs, symbols)?;
-            let r = emit_expr(ssa, rhs, symbols)?;
+            let l = emit_expr(ssa, lhs, symbols, access)?;
+            let r = emit_expr(ssa, rhs, symbols, access)?;
             Ok(ssa.bind(&format!("{name}({l}, {r})")))
         }
         _ => Err(Error::UnknownFunction {
