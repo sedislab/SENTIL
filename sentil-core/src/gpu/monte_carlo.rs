@@ -19,6 +19,8 @@
 
 use core::fmt::Write as _;
 
+use pollster::FutureExt as _;
+
 use super::transpiler::{transpile_atemporal, validate};
 use crate::error::Error;
 use crate::formula::Formula;
@@ -287,6 +289,123 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     );
 }
 
+/// The uniform block the kernels read, matching the WGSL `Params`: four 4-byte
+/// fields, 16 bytes. `threshold` is always `0.0`, since the count is of
+/// realizations whose robustness is at or above zero.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Params {
+    n_samples: u32,
+    seed: u32,
+    threshold: f32,
+    num_workgroups: u32,
+}
+
+/// A device and the two count pipelines.
+pub(crate) struct GpuMcContext {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    simulation_pipeline: wgpu::ComputePipeline,
+    reduce_count_pipeline: wgpu::ComputePipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl GpuMcContext {
+    /// Builds a context from the assembled count shader; `temporal` adds the time-grid binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuMcError::AdapterNotFound`] when no adapter is present,
+    /// [`GpuMcError::DeviceRequest`] when the device cannot be created, and
+    /// [`GpuMcError::InvalidWgsl`] when the shader does not compile.
+    pub(crate) fn new(shader_source: &str) -> Result<Self, GpuMcError> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .block_on()
+            .map_err(|_| GpuMcError::AdapterNotFound)?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("sentil gpu monte carlo"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                trace: wgpu::Trace::default(),
+            })
+            .block_on()
+            .map_err(|e| GpuMcError::DeviceRequest(e.to_string()))?;
+
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sentil count shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+        let storage = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sentil count layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                storage(1, false),
+                storage(2, false),
+                storage(3, true),
+                storage(4, true),
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sentil count pipeline layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = |label: &str, entry: &str| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some(entry),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            })
+        };
+        let simulation_pipeline = pipeline("sentil simulation", "simulation_kernel");
+        let reduce_count_pipeline = pipeline("sentil reduce count", "reduce_count_kernel");
+
+        if let Some(err) = device.pop_error_scope().block_on() {
+            return Err(GpuMcError::InvalidWgsl(err.to_string()));
+        }
+        Ok(Self {
+            device,
+            queue,
+            simulation_pipeline,
+            reduce_count_pipeline,
+            bind_group_layout,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
@@ -349,5 +468,14 @@ mod tests {
         let formula = Formula::parse("always[0, 3](x > 0)").unwrap();
         let symbols = formula.variables();
         assert!(build_count_shader(&formula, &symbols).is_err());
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn context_builds_on_a_device() {
+        let formula = Formula::parse("x > 0").unwrap();
+        let symbols = formula.variables();
+        let (shader, _) = build_count_shader(&formula, &symbols).unwrap();
+        assert!(GpuMcContext::new(&shader).is_ok());
     }
 }
