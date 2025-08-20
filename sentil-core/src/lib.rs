@@ -42,6 +42,8 @@ pub(crate) mod prelude {
 
 pub mod error;
 mod expr;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 pub mod formula;
 pub mod monitor;
 pub mod semantics;
