@@ -20,6 +20,7 @@
 use core::fmt::Write as _;
 
 use pollster::FutureExt as _;
+use wgpu::util::DeviceExt as _;
 
 use super::transpiler::{transpile_atemporal, validate};
 use crate::error::Error;
@@ -289,6 +290,28 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     );
 }
 
+/// Threads per workgroup for both kernels.
+const WORKGROUP_SIZE: u32 = 256;
+
+/// WebGPU caps one dispatch dimension at 65535 workgroups.
+const MAX_DISPATCH_PER_DIM: u32 = 65535;
+
+/// The most samples one dispatch covers, one thread per sample.
+const MAX_GPU_SAMPLES: u64 = MAX_DISPATCH_PER_DIM as u64 * WORKGROUP_SIZE as u64;
+
+/// The largest integer f32 represents exactly. The partial counts return as f32,
+/// so a larger total would not round-trip; the CPU path, counting in u64, takes
+/// over past here.
+const MAX_F32_EXACT_INT: u64 = 1 << 24;
+
+/// The count-path sample cap: the smaller of the dispatch limit and the f32-exact
+/// limit, so both the dispatch and the partial-sum readback stay exact.
+const MAX_COUNT_SAMPLES: u64 = if MAX_GPU_SAMPLES < MAX_F32_EXACT_INT {
+    MAX_GPU_SAMPLES
+} else {
+    MAX_F32_EXACT_INT
+};
+
 /// The uniform block the kernels read, matching the WGSL `Params`: four 4-byte
 /// fields, 16 bytes. `threshold` is always `0.0`, since the count is of
 /// realizations whose robustness is at or above zero.
@@ -404,6 +427,182 @@ impl GpuMcContext {
             bind_group_layout,
         })
     }
+
+    /// Counts how many of `n` noisy realizations satisfy the formula.
+    ///
+    /// Each thread reads the deterministic reading from `base_state`, draws a
+    /// residual per modeled variable from `noise_params`, scores the formula, and
+    /// the reduction tallies the realizations with robustness `>= 0`. The
+    /// per-workgroup partials come back as f32 and are summed on the host.
+    ///
+    /// `base_state` and `noise_params` must be non-empty; the caller routes the
+    /// no-variable case to the CPU before reaching here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuMcError::SampleCountOverflow`] when `n` is past the cap, and
+    /// [`GpuMcError::Readback`] when mapping or polling the result fails.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "n is capped below 2^24, so it fits u32"
+    )]
+    pub(crate) fn gpu_satisfaction_count(
+        &self,
+        base_state: &[f32],
+        noise_params: &[f32],
+        n: u64,
+        seed: u32,
+    ) -> Result<u64, GpuMcError> {
+        if n == 0 {
+            return Ok(0);
+        }
+        if n > MAX_COUNT_SAMPLES {
+            return Err(GpuMcError::SampleCountOverflow {
+                requested: n,
+                max: MAX_COUNT_SAMPLES,
+            });
+        }
+        let n32 = n as u32;
+        let num_workgroups = n32.div_ceil(WORKGROUP_SIZE);
+        let params = Params {
+            n_samples: n32,
+            seed,
+            threshold: 0.0,
+            num_workgroups,
+        };
+
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: bytemuck::bytes_of(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let base_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("base state"),
+                contents: bytemuck::cast_slice(base_state),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let noise_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("noise params"),
+                contents: bytemuck::cast_slice(noise_params),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let results_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("results"),
+            size: u64::from(n32) * 4,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let reduction_bytes = u64::from(num_workgroups) * 4;
+        let reduction_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("reduction"),
+            size: reduction_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback"),
+            size: reduction_bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("count bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: results_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: reduction_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: base_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: noise_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("count encoder"),
+            });
+        for (label, pipeline) in [
+            ("simulation", &self.simulation_pipeline),
+            ("reduce count", &self.reduce_count_pipeline),
+        ] {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some(label),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(num_workgroups, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&reduction_buffer, 0, &readback_buffer, 0, reduction_bytes);
+        let submission = self.queue.submit(Some(encoder.finish()));
+        self.read_partial_counts(&readback_buffer, submission, num_workgroups as usize)
+    }
+
+    /// Sums the per-workgroup f32 partial counts.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "each f32 partial is an exact integer count below 2^24"
+    )]
+    fn read_partial_counts(
+        &self,
+        readback: &wgpu::Buffer,
+        submission: wgpu::SubmissionIndex,
+        num_workgroups: usize,
+    ) -> Result<u64, GpuMcError> {
+        let slice = readback.slice(..);
+        let (tx, rx) = futures::channel::oneshot::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: None,
+            })
+            .map_err(|e| GpuMcError::Readback(e.to_string()))?;
+        match rx.block_on() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(GpuMcError::Readback(e.to_string())),
+            Err(e) => return Err(GpuMcError::Readback(e.to_string())),
+        }
+
+        let data = slice.get_mapped_range();
+        let mut total = 0u64;
+        for chunk in data.chunks_exact(4).take(num_workgroups) {
+            let bytes: [u8; 4] = chunk
+                .try_into()
+                .map_err(|_| GpuMcError::Readback("a partial count was not four bytes".into()))?;
+            total += f32::from_le_bytes(bytes) as u64;
+        }
+        drop(data);
+        readback.unmap();
+        Ok(total)
+    }
 }
 
 #[cfg(test)]
@@ -477,5 +676,27 @@ mod tests {
         let symbols = formula.variables();
         let (shader, _) = build_count_shader(&formula, &symbols).unwrap();
         assert!(GpuMcContext::new(&shader).is_ok());
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the count and sample size are far below 2^24"
+    )]
+    fn satisfaction_count_matches_a_known_probability() {
+        let formula = Formula::parse("x > 0").unwrap();
+        let symbols = formula.variables();
+        let (shader, state_size) = build_count_shader(&formula, &symbols).unwrap();
+        assert_eq!(state_size, 1);
+        let ctx = GpuMcContext::new(&shader).unwrap();
+        let base = [0.0f32];
+        let mut noise = [0.0f32; NOISE_RECORD];
+        noise[0] = 1.0; // Gaussian family
+        noise[3] = 1.0; // standard deviation 1, mean stays 0
+        let n = 1_000_000;
+        let count = ctx.gpu_satisfaction_count(&base, &noise, n, 42).unwrap();
+        let p = count as f64 / n as f64;
+        assert!((p - 0.5).abs() < 0.005, "expected about 0.5, got {p}");
     }
 }
