@@ -5,6 +5,7 @@ use core::fmt::Write as _;
 use pollster::FutureExt as _;
 use wgpu::util::DeviceExt as _;
 
+use super::temporal::transpile_temporal;
 use super::transpiler::{transpile_atemporal, validate};
 use crate::error::Error;
 use crate::formula::Formula;
@@ -355,6 +356,68 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
 }}
 "
     );
+}
+
+/// Writes the temporal per-sample kernel.
+fn write_temporal_simulation_kernel(source: &mut String, state_size: usize, trace_len: usize) {
+    write_draw_residual(source);
+    let v = state_size.max(1);
+    let _ = write!(
+        source,
+        r"
+@compute @workgroup_size(256)
+fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
+    let t = global_id.x;
+    if (t >= params.n_samples) {{
+        return;
+    }}
+    var rng = init_rng(t, params.seed);
+    var trace: array<array<f32, {trace_len}>, {v}>;
+    var times: array<f32, {trace_len}>;
+    for (var i = 0u; i < {trace_len}u; i = i + 1u) {{
+        times[i] = times_buf[i];
+        for (var s = 0u; s < {v}u; s = s + 1u) {{
+            let base = base_state[s * {trace_len}u + i];
+            if (noise_params[8u * s] < 0.5) {{
+                trace[s][i] = base;
+            }} else {{
+                let r = draw_residual(s, &rng);
+                if (noise_params[8u * s + 1u] < 0.5) {{
+                    trace[s][i] = base + r;
+                }} else {{
+                    trace[s][i] = base * r;
+                }}
+            }}
+        }}
+    }}
+    results[t] = evaluate_temporal(&trace, &times);
+}}
+"
+    );
+}
+
+/// Assembles the count shader for a temporal `formula`, which adds a `times` binding.
+///
+/// # Errors
+///
+/// Returns [`Error::Transpilation`] when the formula cannot be lowered or the shader does not validate.
+#[allow(
+    dead_code,
+    reason = "reachable once the SMC dispatch routes temporal formulas here"
+)]
+pub(crate) fn build_temporal_shader(
+    formula: &Formula,
+    symbols: &[String],
+    trace_len: usize,
+) -> Result<(String, usize), Error> {
+    let shader = transpile_temporal(formula, symbols, trace_len)?;
+    let mut source = String::from(SHADER_PRELUDE);
+    source.push_str("\n@group(0) @binding(5) var<storage, read> times_buf: array<f32>;\n\n");
+    source.push_str(&shader.evaluate_temporal);
+    write_temporal_simulation_kernel(&mut source, shader.state_size, shader.trace_len);
+    source.push_str(SHADER_REDUCE);
+    validate(&source)?;
+    Ok((source, shader.state_size))
 }
 
 /// Threads per workgroup for both kernels.
@@ -762,6 +825,17 @@ mod tests {
         let formula = Formula::parse("always[0, 3](x > 0)").unwrap();
         let symbols = formula.variables();
         assert!(build_count_shader(&formula, &symbols).is_err());
+    }
+
+    #[test]
+    fn a_temporal_formula_assembles_a_temporal_shader() {
+        let formula = Formula::parse("always[0, 2](x > 0)").unwrap();
+        let symbols = formula.variables();
+        let (source, state_size) = build_temporal_shader(&formula, &symbols, 4).unwrap();
+        assert_eq!(state_size, 1);
+        assert!(source.contains("fn evaluate_temporal"));
+        assert!(source.contains("@group(0) @binding(5) var<storage, read> times_buf"));
+        assert!(source.contains("results[t] = evaluate_temporal(&trace, &times)"));
     }
 
     #[test]
