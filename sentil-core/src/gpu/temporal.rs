@@ -103,10 +103,25 @@ impl<'a> Builder<'a> {
                 let child = self.emit(inner)?;
                 Ok(self.emit_next(&child))
             }
-            _ if !formula.has_temporal() => self.emit_atemporal(formula),
-            _ => Err(Error::Transpilation {
-                message: "this temporal operator is not yet on the GPU temporal path".to_owned(),
-            }),
+            // A boolean operator with a temporal child combines the children's
+            // per-index arrays. A wholly atemporal one collapses to a single node.
+            Formula::Not(inner) if inner.has_temporal() => {
+                let child = self.emit(inner)?;
+                Ok(self.emit_combine(&[&child], "-(*c0)[i]"))
+            }
+            Formula::And(l, r) if l.has_temporal() || r.has_temporal() => {
+                let (lc, rc) = (self.emit(l)?, self.emit(r)?);
+                Ok(self.emit_combine(&[&lc, &rc], "min((*c0)[i], (*c1)[i])"))
+            }
+            Formula::Or(l, r) if l.has_temporal() || r.has_temporal() => {
+                let (lc, rc) = (self.emit(l)?, self.emit(r)?);
+                Ok(self.emit_combine(&[&lc, &rc], "max((*c0)[i], (*c1)[i])"))
+            }
+            Formula::Implies(l, r) if l.has_temporal() || r.has_temporal() => {
+                let (lc, rc) = (self.emit(l)?, self.emit(r)?);
+                Ok(self.emit_combine(&[&lc, &rc], "max(-(*c0)[i], (*c1)[i])"))
+            }
+            _ => self.emit_atemporal(formula),
         }
     }
 
@@ -203,6 +218,28 @@ impl<'a> Builder<'a> {
         let _ = write!(
             self.calls,
             "    var n{k}: array<f32, {l}>;\n    node_{k}(&{child}, &n{k});\n",
+        );
+        format!("n{k}")
+    }
+
+    /// Emits a per-index boolean combiner over child arrays, read as `(*c0)[i]`.
+    fn emit_combine(&mut self, children: &[&str], expr: &str) -> String {
+        let k = self.next;
+        self.next += 1;
+        let l = self.trace_len;
+        let mut params = String::new();
+        let mut args = String::new();
+        for (idx, child) in children.iter().enumerate() {
+            let _ = write!(params, "c{idx}: ptr<function, array<f32, {l}>>, ");
+            let _ = write!(args, "&{child}, ");
+        }
+        let _ = write!(
+            self.helpers,
+            "fn node_{k}({params}out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        (*out)[i] = {expr};\n    }}\n}}\n\n",
+        );
+        let _ = write!(
+            self.calls,
+            "    var n{k}: array<f32, {l}>;\n    node_{k}({args}&n{k});\n",
         );
         format!("n{k}")
     }
@@ -335,5 +372,15 @@ mod tests {
         let next = transpiled("next(x > 0)", 8);
         assert!(next.contains("(*out)[i] = (*child)[i + 1u]"));
         assert!(next.contains("(*out)[8u - 1u] = bitcast<f32>(0xff800000u)"));
+    }
+
+    #[test]
+    fn nesting_and_booleans_over_temporal_children_compose() {
+        let nested = transpiled("always[0, 2](eventually[0, 1](x > 0))", 8);
+        assert!(nested.contains("fn node_0") && nested.contains("fn node_2"));
+        let conj = transpiled("always[0, 2](x > 0) and eventually[0, 2](y > 0)", 8);
+        assert!(conj.contains("(*out)[i] = min((*c0)[i], (*c1)[i])"));
+        let neg = transpiled("not(always[0, 2](x > 0))", 8);
+        assert!(neg.contains("(*out)[i] = -(*c0)[i]"));
     }
 }
