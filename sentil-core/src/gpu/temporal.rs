@@ -89,6 +89,16 @@ impl<'a> Builder<'a> {
                 let child = self.emit(inner)?;
                 Ok(self.emit_window(interval, &child, "max", "0xff800000u", false))
             }
+            Formula::Until(interval, lhs, rhs) => {
+                let lphi = self.emit(lhs)?;
+                let rpsi = self.emit(rhs)?;
+                Ok(self.emit_until(interval, &lphi, &rpsi))
+            }
+            Formula::Since(interval, lhs, rhs) => {
+                let lphi = self.emit(lhs)?;
+                let rpsi = self.emit(rhs)?;
+                Ok(self.emit_since(interval, &lphi, &rpsi))
+            }
             _ if !formula.has_temporal() => self.emit_atemporal(formula),
             _ => Err(Error::Transpilation {
                 message: "this temporal operator is not yet on the GPU temporal path".to_owned(),
@@ -127,6 +137,52 @@ impl<'a> Builder<'a> {
         let _ = write!(
             self.calls,
             "    var n{k}: array<f32, {l}>;\n    node_{k}(times, &{child}, &n{k});\n",
+        );
+        format!("n{k}")
+    }
+
+    /// Emits until: for each `i`, the supremum over `s` in `[t[i]+a, t[i]+b]` of `min(psi(s), inf of phi over (t[i], s])`.
+    fn emit_until(&mut self, interval: &Interval, lphi: &str, rpsi: &str) -> String {
+        let k = self.next;
+        self.next += 1;
+        let l = self.trace_len;
+        let a = interval.lower;
+        let upper_break = match interval.upper {
+            Some(b) => {
+                format!("            if ((*times)[j] > (*times)[i] + f32({b:?})) {{ break; }}\n")
+            }
+            None => String::new(),
+        };
+        let _ = write!(
+            self.helpers,
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let ws = (*times)[i] + f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (ws <= (*times)[{l}u - 1u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var j = i; j < {l}u; j = j + 1u) {{\n                if (j > i) {{ min_phi = min(min_phi, (*lphi)[j - 1u]); }}\n{upper_break}                if ((*times)[j] >= ws) {{ best = max(best, min((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
+        );
+        let _ = write!(
+            self.calls,
+            "    var n{k}: array<f32, {l}>;\n    node_{k}(times, &{lphi}, &{rpsi}, &n{k});\n",
+        );
+        format!("n{k}")
+    }
+
+    /// Emits since, the past mirror of until.
+    fn emit_since(&mut self, interval: &Interval, lphi: &str, rpsi: &str) -> String {
+        let k = self.next;
+        self.next += 1;
+        let l = self.trace_len;
+        let a = interval.lower;
+        let lower_break = match interval.upper {
+            Some(b) => {
+                format!("            if ((*times)[j] < (*times)[i] - f32({b:?})) {{ break; }}\n")
+            }
+            None => String::new(),
+        };
+        let _ = write!(
+            self.helpers,
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let we = (*times)[i] - f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (we >= (*times)[0u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var jj = 0u; jj <= i; jj = jj + 1u) {{\n                let j = i - jj;\n                if (jj > 0u) {{ min_phi = min(min_phi, (*lphi)[j + 1u]); }}\n{lower_break}                if ((*times)[j] <= we) {{ best = max(best, min((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
+        );
+        let _ = write!(
+            self.calls,
+            "    var n{k}: array<f32, {l}>;\n    node_{k}(times, &{lphi}, &{rpsi}, &n{k});\n",
         );
         format!("n{k}")
     }
@@ -241,5 +297,16 @@ mod tests {
         let once = transpiled("once[0, inf](x > 0)", 8);
         assert!(once.contains("acc = max(acc, (*child)[j])"));
         assert!(once.contains("if (tj <= (*times)[i] - f32(0.0))"));
+    }
+
+    #[test]
+    fn until_and_since_lower_to_the_sup_min_double_loop() {
+        let until = transpiled("(x > 0) until[0, 3] (y > 0)", 8);
+        assert!(until.contains("min_phi = min(min_phi, (*lphi)[j - 1u])"));
+        assert!(until.contains("best = max(best, min((*rpsi)[j], min_phi))"));
+
+        let since = transpiled("(x > 0) since[1, 2] (y > 0)", 8);
+        assert!(since.contains("let j = i - jj"));
+        assert!(since.contains("min_phi = min(min_phi, (*lphi)[j + 1u])"));
     }
 }
