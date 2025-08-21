@@ -8,7 +8,7 @@ use core::fmt::Write as _;
 
 use super::transpiler::{emit_formula, validate, Ssa};
 use crate::error::{Error, Result};
-use crate::formula::Formula;
+use crate::formula::{Formula, Interval};
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
 
@@ -69,12 +69,52 @@ impl<'a> Builder<'a> {
     }
 
     fn emit(&mut self, formula: &Formula) -> Result<String> {
-        if formula.has_temporal() {
-            return Err(Error::Transpilation {
-                message: "a temporal operator is not yet on the GPU temporal path".to_owned(),
-            });
+        match formula {
+            // always over [t+a, t+b] is the windowed minimum; eventually the maximum.
+            Formula::Always(interval, inner) => {
+                let child = self.emit(inner)?;
+                Ok(self.emit_forward_window(interval, &child, "min", "0x7f800000u"))
+            }
+            Formula::Eventually(interval, inner) => {
+                let child = self.emit(inner)?;
+                Ok(self.emit_forward_window(interval, &child, "max", "0xff800000u"))
+            }
+            _ if !formula.has_temporal() => self.emit_atemporal(formula),
+            _ => Err(Error::Transpilation {
+                message: "this temporal operator is not yet on the GPU temporal path".to_owned(),
+            }),
         }
-        self.emit_atemporal(formula)
+    }
+
+    /// Emits a forward windowed reduction (always or eventually): for each index
+    /// `i`, reduce the child over `{ j : t[i]+a <= t[j] <= t[i]+b }`. Both interval
+    /// bounds are applied; the empty window yields the seed. `seed_bits` is the f32
+    /// bit pattern of the seed (`+inf` for min, `-inf` for max), set at runtime
+    /// since naga rejects `bitcast` in a constant.
+    fn emit_forward_window(
+        &mut self,
+        interval: &Interval,
+        child: &str,
+        reduce: &str,
+        seed_bits: &str,
+    ) -> String {
+        let k = self.next;
+        self.next += 1;
+        let l = self.trace_len;
+        let membership = match interval.upper {
+            Some(b) => format!("tj >= lo && tj <= (*times)[i] + f32({b:?})"),
+            None => "tj >= lo".to_owned(),
+        };
+        let _ = write!(
+            self.helpers,
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, child: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let lo = (*times)[i] + f32({lower:?});\n        var acc = bitcast<f32>({seed_bits});\n        for (var j = 0u; j < {l}u; j = j + 1u) {{\n            let tj = (*times)[j];\n            if ({membership}) {{ acc = {reduce}(acc, (*child)[j]); }}\n        }}\n        (*out)[i] = acc;\n    }}\n}}\n\n",
+            lower = interval.lower,
+        );
+        let _ = write!(
+            self.calls,
+            "    var n{k}: array<f32, {l}>;\n    node_{k}(times, &{child}, &n{k});\n",
+        );
+        format!("n{k}")
     }
 
     /// Emits one node for a boolean combination of predicates.
@@ -161,5 +201,20 @@ mod tests {
         let symbols = f.variables();
         assert!(transpile_temporal(&f, &symbols, 1).is_err());
         assert!(transpile_temporal(&f, &symbols, MAX_TEMPORAL_LEN + 1).is_err());
+    }
+
+    #[test]
+    fn always_and_eventually_lower_to_window_scans() {
+        let always = transpiled("always[0, 2](x > 0)", 8);
+        assert!(always.contains("acc = min(acc, (*child)[j])"));
+        assert!(always.contains("bitcast<f32>(0x7f800000u)")); // +inf seed
+        assert!(always.contains("tj >= lo && tj <= (*times)[i] + f32(2.0)"));
+
+        let eventually = transpiled("eventually[1, 3](x > 0)", 8);
+        assert!(eventually.contains("acc = max(acc, (*child)[j])"));
+        assert!(eventually.contains("bitcast<f32>(0xff800000u)")); // -inf seed
+
+        let unbounded = transpiled("always[0, inf](x > 0)", 8);
+        assert!(unbounded.contains("if (tj >= lo)"));
     }
 }
