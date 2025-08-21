@@ -70,14 +70,24 @@ impl<'a> Builder<'a> {
 
     fn emit(&mut self, formula: &Formula) -> Result<String> {
         match formula {
-            // always over [t+a, t+b] is the windowed minimum; eventually the maximum.
+            // always/historically reduce by minimum, eventually/once by maximum;
+            // always/eventually use the forward window [t+a, t+b], the past mirrors
+            // use the backward window [t-b, t-a].
             Formula::Always(interval, inner) => {
                 let child = self.emit(inner)?;
-                Ok(self.emit_forward_window(interval, &child, "min", "0x7f800000u"))
+                Ok(self.emit_window(interval, &child, "min", "0x7f800000u", true))
             }
             Formula::Eventually(interval, inner) => {
                 let child = self.emit(inner)?;
-                Ok(self.emit_forward_window(interval, &child, "max", "0xff800000u"))
+                Ok(self.emit_window(interval, &child, "max", "0xff800000u", true))
+            }
+            Formula::Historically(interval, inner) => {
+                let child = self.emit(inner)?;
+                Ok(self.emit_window(interval, &child, "min", "0x7f800000u", false))
+            }
+            Formula::Once(interval, inner) => {
+                let child = self.emit(inner)?;
+                Ok(self.emit_window(interval, &child, "max", "0xff800000u", false))
             }
             _ if !formula.has_temporal() => self.emit_atemporal(formula),
             _ => Err(Error::Transpilation {
@@ -86,29 +96,33 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Emits a forward windowed reduction (always or eventually): for each index
-    /// `i`, reduce the child over `{ j : t[i]+a <= t[j] <= t[i]+b }`. Both interval
-    /// bounds are applied; the empty window yields the seed. `seed_bits` is the f32
-    /// bit pattern of the seed (`+inf` for min, `-inf` for max), set at runtime
-    /// since naga rejects `bitcast` in a constant.
-    fn emit_forward_window(
+    /// Emits a windowed reduction over `[t[i]+a, t[i]+b]` forward or `[t[i]-b, t[i]-a]` backward.
+    /// naga rejects `bitcast` in a constant, so `seed_bits` is applied at runtime.
+    fn emit_window(
         &mut self,
         interval: &Interval,
         child: &str,
         reduce: &str,
         seed_bits: &str,
+        forward: bool,
     ) -> String {
         let k = self.next;
         self.next += 1;
         let l = self.trace_len;
-        let membership = match interval.upper {
-            Some(b) => format!("tj >= lo && tj <= (*times)[i] + f32({b:?})"),
-            None => "tj >= lo".to_owned(),
+        let a = interval.lower;
+        let membership = match (forward, interval.upper) {
+            (true, Some(b)) => {
+                format!("tj >= (*times)[i] + f32({a:?}) && tj <= (*times)[i] + f32({b:?})")
+            }
+            (true, None) => format!("tj >= (*times)[i] + f32({a:?})"),
+            (false, Some(b)) => {
+                format!("tj >= (*times)[i] - f32({b:?}) && tj <= (*times)[i] - f32({a:?})")
+            }
+            (false, None) => format!("tj <= (*times)[i] - f32({a:?})"),
         };
         let _ = write!(
             self.helpers,
-            "fn node_{k}(times: ptr<function, array<f32, {l}>>, child: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let lo = (*times)[i] + f32({lower:?});\n        var acc = bitcast<f32>({seed_bits});\n        for (var j = 0u; j < {l}u; j = j + 1u) {{\n            let tj = (*times)[j];\n            if ({membership}) {{ acc = {reduce}(acc, (*child)[j]); }}\n        }}\n        (*out)[i] = acc;\n    }}\n}}\n\n",
-            lower = interval.lower,
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, child: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        var acc = bitcast<f32>({seed_bits});\n        for (var j = 0u; j < {l}u; j = j + 1u) {{\n            let tj = (*times)[j];\n            if ({membership}) {{ acc = {reduce}(acc, (*child)[j]); }}\n        }}\n        (*out)[i] = acc;\n    }}\n}}\n\n",
         );
         let _ = write!(
             self.calls,
@@ -208,13 +222,24 @@ mod tests {
         let always = transpiled("always[0, 2](x > 0)", 8);
         assert!(always.contains("acc = min(acc, (*child)[j])"));
         assert!(always.contains("bitcast<f32>(0x7f800000u)")); // +inf seed
-        assert!(always.contains("tj >= lo && tj <= (*times)[i] + f32(2.0)"));
+        assert!(always.contains("tj >= (*times)[i] + f32(0.0) && tj <= (*times)[i] + f32(2.0)"));
 
         let eventually = transpiled("eventually[1, 3](x > 0)", 8);
         assert!(eventually.contains("acc = max(acc, (*child)[j])"));
         assert!(eventually.contains("bitcast<f32>(0xff800000u)")); // -inf seed
 
         let unbounded = transpiled("always[0, inf](x > 0)", 8);
-        assert!(unbounded.contains("if (tj >= lo)"));
+        assert!(unbounded.contains("if (tj >= (*times)[i] + f32(0.0))"));
+    }
+
+    #[test]
+    fn historically_and_once_use_the_backward_window() {
+        let hist = transpiled("historically[1, 3](x > 0)", 8);
+        assert!(hist.contains("acc = min(acc, (*child)[j])"));
+        assert!(hist.contains("tj >= (*times)[i] - f32(3.0) && tj <= (*times)[i] - f32(1.0)"));
+
+        let once = transpiled("once[0, inf](x > 0)", 8);
+        assert!(once.contains("acc = max(acc, (*child)[j])"));
+        assert!(once.contains("if (tj <= (*times)[i] - f32(0.0))"));
     }
 }
