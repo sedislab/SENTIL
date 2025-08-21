@@ -1,17 +1,4 @@
 //! GPU Monte Carlo for the atemporal statistical model checking case.
-//!
-//! For a probabilistic formula `P~p(phi)` whose inner `phi` is atemporal, the
-//! satisfaction probability is estimated by drawing many noisy realizations of
-//! the reading and counting how many satisfy `phi`. This module runs that count
-//! on a GPU: each thread draws one realization, evaluates the transpiled
-//! formula, and a tree reduction counts the satisfied ones.
-//!
-//! The GPU works in f32, so its estimate agrees with the CPU only within Monte
-//! Carlo and single-precision tolerance. The device returns only an integer
-//! count, and the confidence interval and the verdict are computed on the host
-//! in f64, identical to the CPU path. The path runs only for the closed-form
-//! noise families and falls back to the CPU for everything else, so a result is
-//! always available.
 
 use core::fmt::Write as _;
 
@@ -27,10 +14,6 @@ use crate::stats::{GpuSampler, LiftingRegistry, NoiseInteraction};
 pub(crate) const NOISE_RECORD: usize = 8;
 
 /// A failure on the GPU Monte Carlo path.
-///
-/// A capability or policy miss (no device, an unsupported family, too many
-/// samples) is handled by falling back to the CPU, not by surfacing one of
-/// these. A variant that does reach the caller becomes [`Error::Gpu`].
 #[derive(Debug)]
 pub(crate) enum GpuMcError {
     AdapterNotFound,
@@ -237,10 +220,7 @@ fn reduce_count_kernel(
     }
 }";
 
-/// Assembles the full count shader for `formula`: the prelude, the transpiled
-/// `evaluate_formula`, the per-sample kernel, and the reduction.
-///
-/// Returns the shader source and the number of variable slots the kernel reads.
+/// Assembles the count shader for `formula`.
 ///
 /// # Errors
 ///
@@ -260,15 +240,8 @@ pub(crate) fn build_count_shader(
     Ok((source, transpiled.state_size))
 }
 
-/// Writes the per-sample kernel: `draw_residual`, a switch with one sampler per
-/// noise family, then the kernel that folds a residual into each base reading by
-/// the slot's interaction and scores the formula. An unmodeled slot is read
-/// straight through without a draw, so there is no identity arm in `draw_residual`.
-#[allow(
-    clippy::too_many_lines,
-    reason = "the body is one shader arm per noise family, not branching logic"
-)]
-fn write_simulation_kernel(source: &mut String, array_size: usize, state_size: usize) {
+/// Writes `draw_residual`, the per-family sampler the kernel calls for each modeled slot.
+fn write_draw_residual(source: &mut String) {
     let _ = write!(
         source,
         r"
@@ -347,7 +320,16 @@ fn draw_residual(slot: u32, rng: ptr<function, u32>) -> f32 {{
         return count;
     }}
 }}
+"
+    );
+}
 
+/// Writes the atemporal per-sample kernel.
+fn write_simulation_kernel(source: &mut String, array_size: usize, state_size: usize) {
+    write_draw_residual(source);
+    let _ = write!(
+        source,
+        r"
 @compute @workgroup_size(256)
 fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     let i = global_id.x;
