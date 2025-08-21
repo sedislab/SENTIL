@@ -136,9 +136,9 @@ fn try_gpu_check(
     }
     let noise = crate::gpu::pack_noise_params(&symbols, lifting).ok()?;
     let base = base_state_f32(trace, &symbols)?;
-    let context = crate::gpu::GpuMcContext::new(&shader).ok()?;
+    let context = crate::gpu::GpuMcContext::new(&shader, false).ok()?;
     let satisfactions = context
-        .gpu_satisfaction_count(&base, &noise, config.samples, config.seed as u32)
+        .gpu_satisfaction_count(&base, &noise, None, config.samples, config.seed as u32)
         .ok()?;
     let samples = config.samples;
     let probability = satisfactions as f64 / samples as f64;

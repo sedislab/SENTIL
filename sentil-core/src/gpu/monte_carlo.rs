@@ -468,10 +468,8 @@ impl GpuMcContext {
     ///
     /// # Errors
     ///
-    /// Returns [`GpuMcError::AdapterNotFound`] when no adapter is present,
-    /// [`GpuMcError::DeviceRequest`] when the device cannot be created, and
-    /// [`GpuMcError::InvalidWgsl`] when the shader does not compile.
-    pub(crate) fn new(shader_source: &str) -> Result<Self, GpuMcError> {
+    /// Returns [`GpuMcError::AdapterNotFound`], [`GpuMcError::DeviceRequest`], or [`GpuMcError::InvalidWgsl`].
+    pub(crate) fn new(shader_source: &str, temporal: bool) -> Result<Self, GpuMcError> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -509,24 +507,28 @@ impl GpuMcContext {
             },
             count: None,
         };
+        let mut entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            storage(1, false),
+            storage(2, false),
+            storage(3, true),
+            storage(4, true),
+        ];
+        if temporal {
+            entries.push(storage(5, true));
+        }
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sentil count layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                storage(1, false),
-                storage(2, false),
-                storage(3, true),
-                storage(4, true),
-            ],
+            entries: &entries,
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sentil count pipeline layout"),
@@ -580,6 +582,7 @@ impl GpuMcContext {
         &self,
         base_state: &[f32],
         noise_params: &[f32],
+        times: Option<&[f32]>,
         n: u64,
         seed: u32,
     ) -> Result<u64, GpuMcError> {
@@ -601,7 +604,7 @@ impl GpuMcContext {
             num_workgroups,
         };
 
-        let (submission, readback) = self.dispatch_count(&params, base_state, noise_params);
+        let (submission, readback) = self.dispatch_count(&params, base_state, noise_params, times);
         self.read_partial_counts(&readback, submission, num_workgroups as usize)
     }
 
@@ -610,6 +613,7 @@ impl GpuMcContext {
         params: &Params,
         base_state: &[f32],
         noise_params: &[f32],
+        times: Option<&[f32]>,
     ) -> (wgpu::SubmissionIndex, wgpu::Buffer) {
         let params_buffer = self
             .device
@@ -618,20 +622,17 @@ impl GpuMcContext {
                 contents: bytemuck::bytes_of(params),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
-        let base_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("base state"),
-                contents: bytemuck::cast_slice(base_state),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
-        let noise_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("noise params"),
-                contents: bytemuck::cast_slice(noise_params),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let storage_init = |label: &str, contents: &[u8]| {
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents,
+                    usage: wgpu::BufferUsages::STORAGE,
+                })
+        };
+        let base_buffer = storage_init("base state", bytemuck::cast_slice(base_state));
+        let noise_buffer = storage_init("noise params", bytemuck::cast_slice(noise_params));
+        let times_buffer = times.map(|grid| storage_init("times", bytemuck::cast_slice(grid)));
         let results_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("results"),
             size: u64::from(params.n_samples) * 4,
@@ -652,31 +653,38 @@ impl GpuMcContext {
             mapped_at_creation: false,
         });
 
+        let mut bind_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: results_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: reduction_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: base_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: noise_buffer.as_entire_binding(),
+            },
+        ];
+        if let Some(times_buffer) = &times_buffer {
+            bind_entries.push(wgpu::BindGroupEntry {
+                binding: 5,
+                resource: times_buffer.as_entire_binding(),
+            });
+        }
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("count bind group"),
             layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: results_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: reduction_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: base_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: noise_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &bind_entries,
         });
 
         let mut encoder = self
@@ -780,13 +788,15 @@ mod tests {
         let mut lifting = LiftingRegistry::new();
         lifting.register(
             "x",
-            NoiseModel::gamma(2.0, 1.0).unwrap(),
+            NoiseModel::bootstrap(vec![0.1, -0.2, 0.3, 0.0]).unwrap(),
             NoiseInteraction::Additive,
         );
         let err = pack_noise_params(&["x".to_string()], &lifting).unwrap_err();
         assert!(matches!(
             err,
-            GpuMcError::UnsupportedNoiseFamily { family: "Gamma" }
+            GpuMcError::UnsupportedNoiseFamily {
+                family: "bootstrap"
+            }
         ));
     }
 
@@ -844,7 +854,28 @@ mod tests {
         let formula = Formula::parse("x > 0").unwrap();
         let symbols = formula.variables();
         let (shader, _) = build_count_shader(&formula, &symbols).unwrap();
-        assert!(GpuMcContext::new(&shader).is_ok());
+        assert!(GpuMcContext::new(&shader, false).is_ok());
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn temporal_count_runs_on_a_device() {
+        let formula = Formula::parse("always[0, 2](x > 0)").unwrap();
+        let symbols = formula.variables();
+        let (shader, state_size) = build_temporal_shader(&formula, &symbols, 3).unwrap();
+        assert_eq!(state_size, 1);
+        let ctx = GpuMcContext::new(&shader, true).unwrap();
+        let base_trace = [1.0f32, 1.0, 1.0];
+        let times = [0.0f32, 1.0, 2.0];
+        let noise = [0.0f32; NOISE_RECORD];
+        let n = 100_000;
+        let count = ctx
+            .gpu_satisfaction_count(&base_trace, &noise, Some(&times), n, 7)
+            .unwrap();
+        assert_eq!(
+            count, n,
+            "a deterministic always holds on every realization"
+        );
     }
 
     #[test]
@@ -858,13 +889,15 @@ mod tests {
         let symbols = formula.variables();
         let (shader, state_size) = build_count_shader(&formula, &symbols).unwrap();
         assert_eq!(state_size, 1);
-        let ctx = GpuMcContext::new(&shader).unwrap();
+        let ctx = GpuMcContext::new(&shader, false).unwrap();
         let base = [0.0f32];
         let mut noise = [0.0f32; NOISE_RECORD];
         noise[0] = 1.0; // Gaussian family
         noise[3] = 1.0; // standard deviation 1, mean stays 0
         let n = 1_000_000;
-        let count = ctx.gpu_satisfaction_count(&base, &noise, n, 42).unwrap();
+        let count = ctx
+            .gpu_satisfaction_count(&base, &noise, None, n, 42)
+            .unwrap();
         let p = count as f64 / n as f64;
         assert!((p - 0.5).abs() < 0.005, "expected about 0.5, got {p}");
     }
