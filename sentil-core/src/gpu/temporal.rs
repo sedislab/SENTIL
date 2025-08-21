@@ -99,6 +99,10 @@ impl<'a> Builder<'a> {
                 let rpsi = self.emit(rhs)?;
                 Ok(self.emit_since(interval, &lphi, &rpsi))
             }
+            Formula::Next(inner) => {
+                let child = self.emit(inner)?;
+                Ok(self.emit_next(&child))
+            }
             _ if !formula.has_temporal() => self.emit_atemporal(formula),
             _ => Err(Error::Transpilation {
                 message: "this temporal operator is not yet on the GPU temporal path".to_owned(),
@@ -183,6 +187,22 @@ impl<'a> Builder<'a> {
         let _ = write!(
             self.calls,
             "    var n{k}: array<f32, {l}>;\n    node_{k}(times, &{lphi}, &{rpsi}, &n{k});\n",
+        );
+        format!("n{k}")
+    }
+
+    /// Emits next: shift the child one index earlier, with `-inf` at the last index.
+    fn emit_next(&mut self, child: &str) -> String {
+        let k = self.next;
+        self.next += 1;
+        let l = self.trace_len;
+        let _ = write!(
+            self.helpers,
+            "fn node_{k}(child: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i + 1u < {l}u; i = i + 1u) {{\n        (*out)[i] = (*child)[i + 1u];\n    }}\n    (*out)[{l}u - 1u] = bitcast<f32>(0xff800000u);\n}}\n\n",
+        );
+        let _ = write!(
+            self.calls,
+            "    var n{k}: array<f32, {l}>;\n    node_{k}(&{child}, &n{k});\n",
         );
         format!("n{k}")
     }
@@ -308,5 +328,12 @@ mod tests {
         let since = transpiled("(x > 0) since[1, 2] (y > 0)", 8);
         assert!(since.contains("let j = i - jj"));
         assert!(since.contains("min_phi = min(min_phi, (*lphi)[j + 1u])"));
+    }
+
+    #[test]
+    fn next_shifts_the_index_with_a_minus_inf_tail() {
+        let next = transpiled("next(x > 0)", 8);
+        assert!(next.contains("(*out)[i] = (*child)[i + 1u]"));
+        assert!(next.contains("(*out)[8u - 1u] = bitcast<f32>(0xff800000u)"));
     }
 }
