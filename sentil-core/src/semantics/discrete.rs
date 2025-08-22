@@ -25,6 +25,54 @@ pub(crate) fn robustness_trace(
     eval(formula, times, signals)
 }
 
+/// The largest sample index that the robustness of `formula` at index `i` can
+/// depend on. The robustness at a single index is set by a bounded span of the
+/// trace; evaluating over `times[..=max_dep_index(formula, 0, times)]` gives the
+/// same value at index zero as evaluating over the whole trace, so the offline
+/// reading of one value need not touch a sample beyond the formula's horizon.
+///
+/// `times` must be non-empty. A future operator with an infinite bound reaches
+/// the last sample, which collapses the span to the whole trace.
+pub(crate) fn max_dep_index(formula: &Formula, i: usize, times: &[f64]) -> usize {
+    let last = times.len() - 1;
+    // The last index whose time is within `bound + slack` of `times[i]`. The
+    // sweep admits a future window up to `times[i] + upper` exactly, so always
+    // and eventually pass no slack; until and since break one step past the
+    // window edge against the rounding tolerance, so they pass `EPSILON`.
+    let horizon = |bound: f64, slack: f64| -> usize {
+        if bound.is_infinite() {
+            last
+        } else {
+            times
+                .partition_point(|&t| t <= times[i] + bound + slack)
+                .saturating_sub(1)
+                .min(last)
+        }
+    };
+    match formula {
+        Formula::Predicate(_) => i,
+        Formula::Not(f) | Formula::Historically(_, f) | Formula::Once(_, f) => {
+            max_dep_index(f, i, times)
+        }
+        Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
+            max_dep_index(l, i, times).max(max_dep_index(r, i, times))
+        }
+        Formula::Always(iv, f) | Formula::Eventually(iv, f) => i.max(max_dep_index(
+            f,
+            horizon(iv.upper_or_infinity(), 0.0),
+            times,
+        )),
+        Formula::Until(iv, l, r) => {
+            let hi = horizon(iv.upper_or_infinity(), EPSILON);
+            i.max(max_dep_index(l, hi, times))
+                .max(max_dep_index(r, hi, times))
+        }
+        Formula::Since(_, l, r) => max_dep_index(l, i, times).max(max_dep_index(r, i, times)),
+        Formula::Next(f) => max_dep_index(f, (i + 1).min(last), times),
+        Formula::Probabilistic(..) => last,
+    }
+}
+
 fn eval(
     formula: &Formula,
     times: &[f64],
@@ -191,4 +239,27 @@ fn next(inner: &[f64]) -> Vec<f64> {
         result[..n - 1].copy_from_slice(&inner[1..]);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::max_dep_index;
+    use crate::formula::Formula;
+
+    fn dep(formula: &str) -> usize {
+        let times = [0.0, 1.0, 2.0, 3.0, 4.0];
+        max_dep_index(&Formula::parse(formula).unwrap(), 0, &times)
+    }
+
+    #[test]
+    fn horizon_reaches_only_as_far_as_the_formula_needs() {
+        assert_eq!(dep("x > 0"), 0);
+        assert_eq!(dep("always[0, 2](x > 0)"), 2);
+        assert_eq!(dep("eventually[0, 2](x > 0)"), 2);
+        assert_eq!(dep("next(x > 0)"), 1);
+        assert_eq!(dep("historically[0, 2](x > 0)"), 0);
+        assert_eq!(dep("(x > 0) until[0, 2] (y > 0)"), 2);
+        assert_eq!(dep("always[0, 2](eventually[0, 1](x > 0))"), 3);
+        assert_eq!(dep("always(x > 0)"), 4);
+    }
 }

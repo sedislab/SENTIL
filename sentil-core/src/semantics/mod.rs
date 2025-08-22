@@ -48,7 +48,13 @@ impl Formula {
         if trace.is_empty() {
             return Err(Error::EmptyTrace);
         }
-        let values = discrete::robustness_trace(self, trace.times(), trace.signals())?;
+        // The value at the first sample depends only on the trace up to the
+        // formula's horizon, so evaluate over that prefix rather than the whole
+        // trace. The slice bound m is in 1..=n; signal columns keep their full
+        // length and are read only at indices below m.
+        let times = trace.times();
+        let m = discrete::max_dep_index(self, 0, times) + 1;
+        let values = discrete::robustness_trace(self, &times[..m], trace.signals())?;
         Ok(values[0])
     }
 
