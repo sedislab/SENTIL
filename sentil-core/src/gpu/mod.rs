@@ -15,6 +15,7 @@ mod transpiler;
 pub(crate) use monte_carlo::{
     build_count_shader, build_temporal_shader, pack_noise_params, GpuMcContext,
 };
+pub use splitting::GpuSplittingEstimate;
 #[cfg(feature = "synthesis-gpu")]
 pub(crate) use synth_forward::{build_soft_forward_shader, SynthForwardContext};
 

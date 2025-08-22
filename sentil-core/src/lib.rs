@@ -57,6 +57,8 @@ pub mod synthesis;
 
 pub use error::{Error, ParseError, Result};
 pub use formula::Formula;
+#[cfg(feature = "gpu")]
+pub use gpu::GpuSplittingEstimate;
 pub use monitor::{Monitor, MonitorConfig, TimeMode};
 pub use semantics::{MultiFormulaMonitor, Robustness, StreamMonitor};
 pub use signal::{RingBuffer, Trace};

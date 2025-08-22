@@ -1,12 +1,5 @@
 //! GPU adaptive multilevel splitting for rare-event probabilities.
 
-// The transpiler and packing are consumed by the splitting kernels and context as
-// they land; until then they are exercised through this module's tests.
-#![allow(
-    dead_code,
-    reason = "consumed by the splitting kernels and context as they land"
-)]
-
 use core::fmt::Write as _;
 
 use pollster::FutureExt as _;
@@ -18,7 +11,10 @@ use super::monte_carlo::{write_draw_residual, GpuMcError, NOISE_RECORD, PRNG_WGS
 use super::transpiler::{emit_formula, validate, Ssa};
 use crate::error::{Error, Result};
 use crate::formula::Formula;
-use crate::stats::{GpuSampler, NoiseModel, SimExpr, SimModel};
+use crate::stats::{GpuSampler, NoiseModel, RareEventConfig, SimExpr, SimModel};
+
+/// The fewest particles a splitting run accepts.
+const MIN_PARTICLES: usize = 16;
 
 /// The most splitting levels a run resolves before stopping.
 const MAX_LEVELS: u32 = 64;
@@ -573,6 +569,89 @@ fn gpu_split(
     context.run_splitting(&noise, n, window_len, v, margin, seed)
 }
 
+/// The window length over the model's grid, capped at the horizon.
+fn window_length(dt: f64, horizon: usize, upper: Option<f64>) -> usize {
+    let Some(b) = upper else {
+        return horizon + 1;
+    };
+    let mut t = 0.0;
+    let mut len = 1;
+    for _ in 0..horizon {
+        t += dt;
+        if t <= b {
+            len += 1;
+        } else {
+            break;
+        }
+    }
+    len
+}
+
+impl Formula {
+    /// Estimates `P~p(phi)` over a GPU-transpilable `model` by multilevel splitting,
+    /// for a violation too rare for plain Monte Carlo to resolve.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotProbabilistic`] unless the formula is `P~p(phi)`, [`Error::Transpilation`] when the inner formula is not an `always[0, b]` over an atemporal predicate, [`Error::InvalidConfig`] for too few particles, and [`Error::Gpu`] when no device is present.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the margin narrows to f32 by contract and the seed narrowing is intentional"
+    )]
+    pub fn check_rare_event_gpu(
+        &self,
+        model: &SimModel,
+        config: &RareEventConfig,
+    ) -> Result<GpuSplittingEstimate> {
+        let Formula::Probabilistic(_, _, inner) = self else {
+            return Err(Error::NotProbabilistic);
+        };
+        let Formula::Always(interval, psi) = inner.as_ref() else {
+            return Err(Error::Transpilation {
+                message: "the GPU splitter needs an always-shaped inner formula; run \
+                          check_rare_event on the CPU"
+                    .into(),
+            });
+        };
+        if interval.lower > 0.0 {
+            return Err(Error::Transpilation {
+                message: format!(
+                    "the GPU splitter needs an always window starting at 0, got lower bound {}; \
+                     run check_rare_event on the CPU",
+                    interval.lower
+                ),
+            });
+        }
+        if psi.has_temporal() {
+            return Err(Error::Transpilation {
+                message: "the GPU splitter needs an atemporal inner predicate; run \
+                          check_rare_event on the CPU"
+                    .into(),
+            });
+        }
+        if config.particles < MIN_PARTICLES {
+            return Err(Error::InvalidConfig {
+                context: "gpu splitting",
+                message: format!(
+                    "at least {MIN_PARTICLES} particles are required, got {}",
+                    config.particles
+                ),
+            });
+        }
+        let symbols = psi.variables();
+        let window = window_length(model.dt(), model.horizon(), interval.upper);
+        gpu_split(
+            model,
+            psi,
+            &symbols,
+            config.particles,
+            window,
+            config.margin as f32,
+            config.seed as u32,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
@@ -648,6 +727,64 @@ mod tests {
         );
         assert_eq!(estimate.particles, 4096);
         assert!(estimate.levels > 0, "expected several splitting levels");
+    }
+
+    #[test]
+    fn window_length_accumulates_the_grid() {
+        assert_eq!(window_length(1.0, 32, None), 33);
+        assert_eq!(window_length(1.0, 32, Some(5.0)), 6);
+        assert_eq!(window_length(0.5, 10, Some(2.0)), 5);
+        assert_eq!(window_length(1.0, 4, Some(100.0)), 5);
+    }
+
+    #[test]
+    fn the_entry_declines_unsupported_runs() {
+        let (model, ..) = walk_model();
+        let config = RareEventConfig::default();
+        let cases = [
+            "always[0, 5](x > 0)",
+            "P>=0.5(eventually[0, 5](x > 0))",
+            "P>=0.5(always[2, 5](x > 0))",
+            "P>=0.5(always[0, 5](eventually[0, 1](x > 0)))",
+        ];
+        let not_p = Formula::parse(cases[0]).unwrap();
+        assert!(matches!(
+            not_p.check_rare_event_gpu(&model, &config),
+            Err(Error::NotProbabilistic)
+        ));
+        for case in &cases[1..] {
+            let phi = Formula::parse(case).unwrap();
+            assert!(
+                matches!(
+                    phi.check_rare_event_gpu(&model, &config),
+                    Err(Error::Transpilation { .. })
+                ),
+                "expected `{case}` to decline to the CPU"
+            );
+        }
+        let supported = Formula::parse("P>=0.5(always[0, 5](x > -8))").unwrap();
+        let few = RareEventConfig {
+            particles: 4,
+            ..RareEventConfig::default()
+        };
+        assert!(matches!(
+            supported.check_rare_event_gpu(&model, &few),
+            Err(Error::InvalidConfig { .. })
+        ));
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn the_public_entry_runs_on_a_device() {
+        let (model, ..) = walk_model();
+        let phi = Formula::parse("P>=0.5(always[0, 100](x > -8))").unwrap();
+        let config = RareEventConfig {
+            particles: 4096,
+            margin: 0.0,
+            seed: 11,
+        };
+        let estimate = phi.check_rare_event_gpu(&model, &config).unwrap();
+        assert!((0.0..=1.0).contains(&estimate.probability));
     }
 
     #[test]
