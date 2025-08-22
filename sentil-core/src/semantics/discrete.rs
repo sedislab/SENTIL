@@ -243,8 +243,10 @@ fn next(inner: &[f64]) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::max_dep_index;
-    use crate::formula::Formula;
+    use super::{max_dep_index, robustness_trace};
+    use crate::formula::{ComparisonOp, Expr, Formula, Interval, Predicate};
+    use proptest::prelude::*;
+    use std::collections::BTreeMap;
 
     fn dep(formula: &str) -> usize {
         let times = [0.0, 1.0, 2.0, 3.0, 4.0];
@@ -261,5 +263,94 @@ mod tests {
         assert_eq!(dep("(x > 0) until[0, 2] (y > 0)"), 2);
         assert_eq!(dep("always[0, 2](eventually[0, 1](x > 0))"), 3);
         assert_eq!(dep("always(x > 0)"), 4);
+    }
+
+    fn arb_op() -> impl Strategy<Value = ComparisonOp> {
+        prop_oneof![
+            Just(ComparisonOp::Less),
+            Just(ComparisonOp::LessEqual),
+            Just(ComparisonOp::Greater),
+            Just(ComparisonOp::GreaterEqual),
+            Just(ComparisonOp::Equal),
+            Just(ComparisonOp::NotEqual),
+        ]
+    }
+
+    fn arb_predicate() -> impl Strategy<Value = Formula> {
+        (prop::sample::select(vec!["x", "y"]), arb_op(), -12.0f64..12.0).prop_map(|(name, op, c)| {
+            Formula::Predicate(Predicate {
+                lhs: Expr::Variable(name.to_string()),
+                op,
+                rhs: Expr::Literal(c),
+            })
+        })
+    }
+
+    fn arb_interval() -> impl Strategy<Value = Interval> {
+        (0.0f64..5.0, prop::option::of(0.0f64..8.0)).prop_map(|(lo, width)| match width {
+            Some(w) => Interval::bounded(lo, lo + w),
+            None => Interval::from_lower(lo),
+        })
+    }
+
+    fn arb_formula() -> impl Strategy<Value = Formula> {
+        arb_predicate().prop_recursive(4, 48, 2, |inner| {
+            prop_oneof![
+                inner.clone().prop_map(|f| Formula::Not(Box::new(f))),
+                (inner.clone(), inner.clone())
+                    .prop_map(|(l, r)| Formula::And(Box::new(l), Box::new(r))),
+                (inner.clone(), inner.clone())
+                    .prop_map(|(l, r)| Formula::Or(Box::new(l), Box::new(r))),
+                (inner.clone(), inner.clone())
+                    .prop_map(|(l, r)| Formula::Implies(Box::new(l), Box::new(r))),
+                (arb_interval(), inner.clone())
+                    .prop_map(|(iv, f)| Formula::Always(iv, Box::new(f))),
+                (arb_interval(), inner.clone())
+                    .prop_map(|(iv, f)| Formula::Eventually(iv, Box::new(f))),
+                (arb_interval(), inner.clone())
+                    .prop_map(|(iv, f)| Formula::Historically(iv, Box::new(f))),
+                (arb_interval(), inner.clone())
+                    .prop_map(|(iv, f)| Formula::Once(iv, Box::new(f))),
+                (arb_interval(), inner.clone(), inner.clone())
+                    .prop_map(|(iv, l, r)| Formula::Until(iv, Box::new(l), Box::new(r))),
+                (arb_interval(), inner.clone(), inner.clone())
+                    .prop_map(|(iv, l, r)| Formula::Since(iv, Box::new(l), Box::new(r))),
+                inner.prop_map(|f| Formula::Next(Box::new(f))),
+            ]
+        })
+    }
+
+    fn arb_trace() -> impl Strategy<Value = (Vec<f64>, BTreeMap<String, Vec<f64>>)> {
+        prop::collection::vec((0.1f64..5.0, -20.0f64..20.0, -20.0f64..20.0), 1..30).prop_map(
+            |rows| {
+                let mut t = 0.0;
+                let mut times = Vec::with_capacity(rows.len());
+                let mut xs = Vec::with_capacity(rows.len());
+                let mut ys = Vec::with_capacity(rows.len());
+                for (gap, x, y) in rows {
+                    t += gap;
+                    times.push(t);
+                    xs.push(x);
+                    ys.push(y);
+                }
+                let mut signals = BTreeMap::new();
+                signals.insert("x".to_string(), xs);
+                signals.insert("y".to_string(), ys);
+                (times, signals)
+            },
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn prefix_robustness_equals_full_at_index_zero(
+            phi in arb_formula(),
+            (times, signals) in arb_trace(),
+        ) {
+            let full = robustness_trace(&phi, &times, &signals).unwrap();
+            let m = max_dep_index(&phi, 0, &times) + 1;
+            let prefix = robustness_trace(&phi, &times[..m], &signals).unwrap();
+            prop_assert_eq!(full[0].to_bits(), prefix[0].to_bits());
+        }
     }
 }
