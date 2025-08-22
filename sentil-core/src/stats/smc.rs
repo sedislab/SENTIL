@@ -254,3 +254,59 @@ fn times_f32(trace: &Trace) -> Option<Vec<f32>> {
         })
         .collect()
 }
+
+#[cfg(all(test, feature = "gpu"))]
+mod tests {
+    use super::*;
+    use crate::stats::{NoiseInteraction, NoiseModel};
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn temporal_smc_matches_cpu_and_analytic() {
+        // Phi(1)^3 = 0.59557 is the analytic probability.
+        let inner = Formula::parse("always[0, 2](x > 0)").unwrap();
+        let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0]).unwrap();
+        trace.add_signal("x", vec![1.0, 1.0, 1.0, 1.0]).unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 500_000,
+            confidence: 0.95,
+            seed: 7,
+        };
+
+        let gpu = try_gpu_check(
+            ProbabilityOp::GreaterEqual,
+            0.5,
+            &inner,
+            &trace,
+            &lifting,
+            &config,
+        )
+        .expect("a GPU device should be present on this node");
+
+        let satisfies = |i: u64| -> bool {
+            let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
+            let noisy = lifting.lift_with(&trace, &mut rng).unwrap();
+            inner.robustness(&noisy).unwrap() >= 0.0
+        };
+        let cpu_count: u64 = (0..config.samples).map(|i| u64::from(satisfies(i))).sum();
+        let cpu = cpu_count as f64 / config.samples as f64;
+
+        let analytic = 0.595_57;
+        assert!(
+            (gpu.probability - cpu).abs() < 0.01,
+            "gpu {} vs cpu {cpu}",
+            gpu.probability
+        );
+        assert!(
+            (gpu.probability - analytic).abs() < 0.01,
+            "gpu {} vs analytic {analytic}",
+            gpu.probability
+        );
+    }
+}
