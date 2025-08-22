@@ -128,7 +128,7 @@ fn build_dynamics(model: &SimModel, psi: &Formula, symbols: &[String]) -> Result
     }
     let _ = writeln!(
         source,
-        "\nfn init_state(rng: ptr<function, u32>) -> array<f32, {v}> {{\n    var out: array<f32, {v}>;\n{body}{init_assigns}    return out;\n}}",
+        "\nfn init_state(rng: ptr<function, u32>) -> array<f32, {v}> {{\n    let t = 0.0;\n    var out: array<f32, {v}>;\n{body}{init_assigns}    return out;\n}}",
         body = init_ssa.body,
     );
 
@@ -287,6 +287,22 @@ mod tests {
         let source = validated_dynamics(&model, &psi, &["x".to_owned(), "y".to_owned()]);
         assert!(source.contains("array<f32, 2>"));
         assert!(source.contains("cos("));
+    }
+
+    #[test]
+    fn an_init_expression_using_time_lowers_with_time_zero() {
+        let model = SimModel::new(
+            ["x"],
+            1.0,
+            4,
+            vec![SimExpr::Call("cos".to_owned(), vec![SimExpr::Time])],
+            vec![SimExpr::Prev(0)],
+            vec![],
+        )
+        .unwrap();
+        let psi = Formula::parse("x > 0").unwrap();
+        let source = validated_dynamics(&model, &psi, &["x".to_owned()]);
+        assert!(source.contains("let t = 0.0;"));
     }
 
     #[test]

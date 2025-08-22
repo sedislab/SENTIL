@@ -141,7 +141,8 @@ fn philox2x32(ctr: vec2<u32>, key: u32) -> vec2<u32> {
 
 fn init_rng(global_id: u32, seed: u32) -> u32 {
     let result = philox2x32(vec2<u32>(global_id, seed), seed ^ 0xDEADBEEFu);
-    return result.x ^ result.y;
+    let state = result.x ^ result.y;
+    return select(state, 0x1u, state == 0u);
 }
 
 fn xorshift32(state: ptr<function, u32>) -> u32 {
