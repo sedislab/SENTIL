@@ -591,6 +591,25 @@ impl Formula {
     /// Estimates `P~p(phi)` over a GPU-transpilable `model` by multilevel splitting,
     /// for a violation too rare for plain Monte Carlo to resolve.
     ///
+    /// ```no_run
+    /// use sentil::{Formula, NoiseModel, RareEventConfig, SimExpr, SimModel};
+    ///
+    /// let advance = SimExpr::Add(Box::new(SimExpr::Prev(0)), Box::new(SimExpr::Noise(0)));
+    /// let model = SimModel::new(
+    ///     ["x"],
+    ///     1.0,
+    ///     400,
+    ///     vec![SimExpr::Const(0.0)],
+    ///     vec![advance],
+    ///     vec![NoiseModel::gaussian(0.0, 0.1)?],
+    /// )?;
+    /// let phi = Formula::parse("P>=0.5(always[0, 400](x > -6))")?;
+    /// let config = RareEventConfig { particles: 8192, margin: 0.0, seed: 1 };
+    /// let estimate = phi.check_rare_event_gpu(&model, &config)?;
+    /// println!("rare-event probability about {}", estimate.probability);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Returns [`Error::NotProbabilistic`] unless the formula is `P~p(phi)`, [`Error::Transpilation`] when the inner formula is not an `always[0, b]` over an atemporal predicate, [`Error::InvalidConfig`] for too few particles, and [`Error::Gpu`] when no device is present.
