@@ -6,6 +6,8 @@
 //! `false` and callers stay on the CPU path.
 
 mod monte_carlo;
+#[cfg(feature = "synthesis-gpu")]
+mod synth_forward;
 mod temporal;
 mod transpiler;
 
