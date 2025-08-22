@@ -3,7 +3,7 @@
 
 use super::model::Bounds;
 use super::numerics::symmetric_eigen;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// A SplitMix64 generator with standard-normal sampling.
 struct Rng {
@@ -59,14 +59,13 @@ impl Default for CmaConfig {
     }
 }
 
-/// Maximizes a black-box `objective` over the box `bounds`, starting from `start`,
-/// by CMA-ES. Returns the best point and value found; the objective is opaque, so
-/// no gradient is used.
+/// Maximizes `batch_objective` over the box `bounds`, starting from `start`, by
+/// CMA-ES, scoring a whole generation per call.
 ///
 /// # Errors
 ///
-/// Propagates any error the objective returns, and a non-square covariance from
-/// the eigensolver (which cannot arise here).
+/// Propagates any error the objective returns, and returns
+/// [`Error::InvalidConfig`] when the objective returns the wrong number of scores.
 #[allow(
     clippy::many_single_char_names,
     clippy::cast_precision_loss,
@@ -74,14 +73,14 @@ impl Default for CmaConfig {
     clippy::cast_sign_loss,
     reason = "CMA-ES uses standard short notation and small exact integer-to-float casts"
 )]
-pub fn cma_es<F>(
-    objective: F,
+pub fn cma_es_batched<F>(
+    batch_objective: F,
     start: &[f64],
     bounds: &Bounds,
     config: CmaConfig,
 ) -> Result<(Vec<f64>, f64)>
 where
-    F: Fn(&[f64]) -> Result<f64>,
+    F: Fn(&[Vec<f64>]) -> Result<Vec<f64>>,
 {
     let n = start.len();
     let nf = n as f64;
@@ -91,15 +90,7 @@ where
         config.population
     };
     let mu = (lambda / 2).max(1);
-
-    let mut weights: Vec<f64> = (1..=mu)
-        .map(|i| (mu as f64 + 0.5).ln() - (i as f64).ln())
-        .collect();
-    let weight_sum: f64 = weights.iter().sum();
-    for w in &mut weights {
-        *w /= weight_sum;
-    }
-    let mu_eff = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
+    let (weights, mu_eff) = recombination_weights(mu);
 
     let c_sigma = (mu_eff + 2.0) / (nf + mu_eff + 5.0);
     let d_sigma = 1.0 + 2.0 * (((mu_eff - 1.0) / (nf + 1.0)).sqrt() - 1.0).max(0.0) + c_sigma;
@@ -119,7 +110,11 @@ where
     let mut path_sigma = vec![0.0; n];
     let mut path_c = vec![0.0; n];
     let mut best = mean.clone();
-    let mut best_value = objective(&best)?;
+    let start_score = batch_objective(core::slice::from_ref(&best))?;
+    let mut best_value = *start_score.first().ok_or_else(|| Error::InvalidConfig {
+        context: "cma_es_batched",
+        message: "the batch objective returned no score for the start point".into(),
+    })?;
 
     for generation in 0..config.max_generations {
         let (eigenvalues, eigenvectors) = symmetric_eigen(&cov)?;
@@ -129,7 +124,8 @@ where
             .map(|&d| if d > 0.0 { 1.0 / d } else { 0.0 })
             .collect();
 
-        let mut offspring: Vec<(f64, Vec<f64>)> = Vec::with_capacity(lambda);
+        let mut points: Vec<Vec<f64>> = Vec::with_capacity(lambda);
+        let mut directions: Vec<Vec<f64>> = Vec::with_capacity(lambda);
         for _ in 0..lambda {
             let z: Vec<f64> = (0..n).map(|_| rng.standard_normal()).collect();
             let y = transform(&eigenvectors, &roots, &z);
@@ -139,10 +135,24 @@ where
                 .map(|(&m, &yi)| sigma.mul_add(yi, m))
                 .collect();
             bounds.clamp(&mut point);
-            let value = objective(&point)?;
+            points.push(point);
+            directions.push(y);
+        }
+        let scores = batch_objective(&points)?;
+        if scores.len() != lambda {
+            return Err(Error::InvalidConfig {
+                context: "cma_es_batched",
+                message: format!(
+                    "the batch objective returned {} scores for {lambda} candidates",
+                    scores.len()
+                ),
+            });
+        }
+        let mut offspring: Vec<(f64, Vec<f64>)> = Vec::with_capacity(lambda);
+        for ((value, point), y) in scores.into_iter().zip(points).zip(directions) {
             if value > best_value {
                 best_value = value;
-                best.clone_from(&point);
+                best = point;
             }
             offspring.push((value, y));
         }
@@ -175,18 +185,71 @@ where
         }
 
         let decay = 1.0 - c_1 - c_mu + c_1 * (1.0 - h_sigma) * c_c * (2.0 - c_c);
-        for i in 0..n {
-            for j in 0..n {
-                let rank_mu: f64 = weights
-                    .iter()
-                    .zip(&offspring)
-                    .map(|(&w, (_, y))| w * y[i] * y[j])
-                    .sum();
-                cov[i][j] = decay * cov[i][j] + c_1 * path_c[i] * path_c[j] + c_mu * rank_mu;
-            }
-        }
+        update_covariance(&mut cov, decay, c_1, &path_c, c_mu, &weights, &offspring);
     }
     Ok((best, best_value))
+}
+
+/// The recombination weights, normalized to sum to one, and their effective
+/// selection mass.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "mu is a small population count, exact in f64"
+)]
+fn recombination_weights(mu: usize) -> (Vec<f64>, f64) {
+    let mut weights: Vec<f64> = (1..=mu)
+        .map(|i| (mu as f64 + 0.5).ln() - (i as f64).ln())
+        .collect();
+    let weight_sum: f64 = weights.iter().sum();
+    for w in &mut weights {
+        *w /= weight_sum;
+    }
+    let mu_eff = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
+    (weights, mu_eff)
+}
+
+fn update_covariance(
+    cov: &mut [Vec<f64>],
+    decay: f64,
+    c_1: f64,
+    path_c: &[f64],
+    c_mu: f64,
+    weights: &[f64],
+    offspring: &[(f64, Vec<f64>)],
+) {
+    for i in 0..cov.len() {
+        for j in 0..cov.len() {
+            let rank_mu: f64 = weights
+                .iter()
+                .zip(offspring)
+                .map(|(&w, (_, y))| w * y[i] * y[j])
+                .sum();
+            cov[i][j] = decay * cov[i][j] + c_1 * path_c[i] * path_c[j] + c_mu * rank_mu;
+        }
+    }
+}
+
+/// Maximizes a black-box `objective` over the box `bounds`, starting from `start`,
+/// by CMA-ES, scoring one candidate at a time.
+///
+/// # Errors
+///
+/// Propagates any error the objective returns.
+pub fn cma_es<F>(
+    objective: F,
+    start: &[f64],
+    bounds: &Bounds,
+    config: CmaConfig,
+) -> Result<(Vec<f64>, f64)>
+where
+    F: Fn(&[f64]) -> Result<f64>,
+{
+    cma_es_batched(
+        |points: &[Vec<f64>]| points.iter().map(|point| objective(point)).collect(),
+        start,
+        bounds,
+        config,
+    )
 }
 
 /// `sum_j scales[j] * dot(eigenvectors[j], vector) * eigenvectors[j]`, the action
@@ -231,5 +294,33 @@ mod tests {
         let (best, value) = cma_es(objective, &[-1.0, 2.0], &bounds, config).unwrap();
         assert!(value > -1e-3, "value {value}");
         assert!((best[0] - 1.0).abs() < 0.05 && (best[1] - 1.0).abs() < 0.05);
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp, reason = "bit-identity is the property under test")]
+    fn batched_scoring_matches_the_scalar_path_exactly() {
+        let scalar = |x: &[f64]| Ok(-x.iter().map(|v| v * v).sum::<f64>());
+        let batched = |points: &[Vec<f64>]| {
+            points
+                .iter()
+                .map(|p| Ok(-p.iter().map(|v| v * v).sum::<f64>()))
+                .collect::<Result<Vec<f64>>>()
+        };
+        let bounds = Bounds::new(vec![-5.0; 4], vec![5.0; 4]).unwrap();
+        let start = [3.0, -2.0, 4.0, 1.0];
+        let config = CmaConfig::default();
+        let (best_scalar, value_scalar) = cma_es(scalar, &start, &bounds, config).unwrap();
+        let (best_batched, value_batched) =
+            cma_es_batched(batched, &start, &bounds, config).unwrap();
+        assert_eq!(value_scalar, value_batched);
+        assert_eq!(best_scalar, best_batched);
+    }
+
+    #[test]
+    fn a_wrong_length_batch_score_is_an_error() {
+        let bad = |points: &[Vec<f64>]| Ok(vec![0.0; points.len() + 1]);
+        let bounds = Bounds::new(vec![-5.0; 2], vec![5.0; 2]).unwrap();
+        let result = cma_es_batched(bad, &[1.0, 1.0], &bounds, CmaConfig::default());
+        assert!(matches!(result, Err(Error::InvalidConfig { .. })));
     }
 }
