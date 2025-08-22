@@ -401,10 +401,6 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
 /// # Errors
 ///
 /// Returns [`Error::Transpilation`] when the formula cannot be lowered or the shader does not validate.
-#[allow(
-    dead_code,
-    reason = "reachable once the SMC dispatch routes temporal formulas here"
-)]
 pub(crate) fn build_temporal_shader(
     formula: &Formula,
     symbols: &[String],

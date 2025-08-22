@@ -106,17 +106,10 @@ pub(crate) fn check(
 const GPU_MIN_SAMPLES: u64 = 100_000;
 
 /// Tries to run the check on the GPU, returning `None` to fall back to the CPU.
-///
-/// The GPU runs only when it gives the same answer faster: the formula is
-/// atemporal and transpilable, mentions at least one variable, every noise family
-/// has a GPU sampler, the base reading projects onto the variables, the run is
-/// large enough to amortize setup, and a device is present. Any miss, and any
-/// device error, falls back silently.
 #[cfg(feature = "gpu")]
 #[allow(
-    clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    reason = "samples and counts stay below 2^24, and the seed narrowing is intentional"
+    reason = "samples and counts stay below 2^24"
 )]
 fn try_gpu_check(
     op: ProbabilityOp,
@@ -130,16 +123,15 @@ fn try_gpu_check(
         return None;
     }
     let symbols = inner.variables();
-    let (shader, state_size) = crate::gpu::build_count_shader(inner, &symbols).ok()?;
-    if state_size == 0 {
+    if symbols.is_empty() {
         return None;
     }
     let noise = crate::gpu::pack_noise_params(&symbols, lifting).ok()?;
-    let base = base_state_f32(trace, &symbols)?;
-    let context = crate::gpu::GpuMcContext::new(&shader, false).ok()?;
-    let satisfactions = context
-        .gpu_satisfaction_count(&base, &noise, None, config.samples, config.seed as u32)
-        .ok()?;
+    let satisfactions = if inner.has_temporal() {
+        gpu_temporal_count(inner, &symbols, trace, &noise, config)?
+    } else {
+        gpu_atemporal_count(inner, &symbols, trace, &noise, config)?
+    };
     let samples = config.samples;
     let probability = satisfactions as f64 / samples as f64;
     Some(SmcResult {
@@ -149,6 +141,59 @@ fn try_gpu_check(
         samples,
         holds: super::decides(op, probability, threshold),
     })
+}
+
+/// Counts satisfying realizations for an atemporal inner formula.
+#[cfg(feature = "gpu")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the seed narrowing to u32 is intentional"
+)]
+fn gpu_atemporal_count(
+    inner: &Formula,
+    symbols: &[String],
+    trace: &Trace,
+    noise: &[f32],
+    config: &SmcConfig,
+) -> Option<u64> {
+    let (shader, state_size) = crate::gpu::build_count_shader(inner, symbols).ok()?;
+    if state_size == 0 {
+        return None;
+    }
+    let base = base_state_f32(trace, symbols)?;
+    let context = crate::gpu::GpuMcContext::new(&shader, false).ok()?;
+    context
+        .gpu_satisfaction_count(&base, noise, None, config.samples, config.seed as u32)
+        .ok()
+}
+
+/// Counts satisfying realizations for a temporal inner formula.
+#[cfg(feature = "gpu")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the seed narrowing to u32 is intentional"
+)]
+fn gpu_temporal_count(
+    inner: &Formula,
+    symbols: &[String],
+    trace: &Trace,
+    noise: &[f32],
+    config: &SmcConfig,
+) -> Option<u64> {
+    let trace_len = trace.times().len();
+    let (shader, _) = crate::gpu::build_temporal_shader(inner, symbols, trace_len).ok()?;
+    let base_trace = base_trace_f32(trace, symbols)?;
+    let times = times_f32(trace)?;
+    let context = crate::gpu::GpuMcContext::new(&shader, true).ok()?;
+    context
+        .gpu_satisfaction_count(
+            &base_trace,
+            noise,
+            Some(&times),
+            config.samples,
+            config.seed as u32,
+        )
+        .ok()
 }
 
 /// The first reading of each variable, in `symbols` order.
@@ -166,6 +211,46 @@ fn base_state_f32(trace: &Trace, symbols: &[String]) -> Option<Vec<f32>> {
                 .get(name)
                 .and_then(|values| values.first())
                 .map(|&v| v as f32)
+        })
+        .collect()
+}
+
+/// The base trace the temporal kernel perturbs, laid out variable major as `base[v * len + i]`.
+#[cfg(feature = "gpu")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the GPU evaluates in f32 by contract"
+)]
+fn base_trace_f32(trace: &Trace, symbols: &[String]) -> Option<Vec<f32>> {
+    let len = trace.times().len();
+    let mut out = Vec::with_capacity(symbols.len() * len);
+    for name in symbols {
+        let values = trace.signals().get(name)?;
+        if values.len() != len {
+            return None;
+        }
+        out.extend(values.iter().map(|&v| v as f32));
+    }
+    Some(out)
+}
+
+/// The time grid as f32, or `None` when a timestamp is not exactly representable in f32.
+#[cfg(feature = "gpu")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the GPU evaluates in f32 by contract"
+)]
+#[allow(
+    clippy::float_cmp,
+    reason = "the exact round-trip equality is the representability test itself"
+)]
+fn times_f32(trace: &Trace) -> Option<Vec<f32>> {
+    trace
+        .times()
+        .iter()
+        .map(|&t| {
+            let f = t as f32;
+            (f64::from(f) == t).then_some(f)
         })
         .collect()
 }

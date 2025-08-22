@@ -9,7 +9,9 @@ mod monte_carlo;
 mod temporal;
 mod transpiler;
 
-pub(crate) use monte_carlo::{build_count_shader, pack_noise_params, GpuMcContext};
+pub(crate) use monte_carlo::{
+    build_count_shader, build_temporal_shader, pack_noise_params, GpuMcContext,
+};
 
 use pollster::FutureExt;
 

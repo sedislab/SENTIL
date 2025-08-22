@@ -1,9 +1,5 @@
 //! Lowering a temporal formula to WGSL.
 
-// The emitters are built up operator by operator and become reachable from the
-// Monte Carlo path once it dispatches the temporal case.
-#![allow(dead_code)]
-
 use core::fmt::Write as _;
 
 use super::transpiler::{emit_formula, validate, Ssa};
