@@ -95,3 +95,97 @@ pub(crate) fn solve_cmaes_gpu<M: SystemModel>(
     };
     Some(cma_es_batched(objective, start, bounds, config).map(|(input, _)| input))
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        reason = "the device evaluates in f32; the test signals are small"
+    )]
+    #![allow(
+        clippy::type_complexity,
+        reason = "the device test carries a literal case table"
+    )]
+
+    use super::*;
+    use crate::synthesis::{Backend, LinearModel, SynthesisProblem, Synthesizer};
+
+    fn gpu_soft(formula: &Formula, trace: &Trace, beta: f64) -> f32 {
+        let symbols = formula.variables();
+        let l = trace.times().len();
+        let (shader, _) = build_soft_forward_shader(formula, &symbols, l, beta).unwrap();
+        let context = SynthForwardContext::new(&shader).unwrap();
+        let mut packed = Vec::new();
+        for name in &symbols {
+            let column = trace.signals().get(name).unwrap();
+            packed.extend(column.iter().map(|&x| x as f32));
+        }
+        let times: Vec<f32> = trace.times().iter().map(|&t| t as f32).collect();
+        context.score_batch(&packed, &times, 1).unwrap()[0]
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn gpu_soft_robustness_matches_the_cpu_within_f32_tolerance() {
+        let cases: &[(&str, &[f64], &[(&str, &[f64])])] = &[
+            (
+                "always[0, 3](x > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 0.5, 3.0])],
+            ),
+            (
+                "eventually[0, 3](x > 2)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 3.0, 0.0])],
+            ),
+            (
+                "always[0, 3](x > 0 and y > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 1.0, 3.0]), ("y", &[2.0, 1.0, 3.0, 1.0])],
+            ),
+            (
+                "(x > 0) until[0, 3] (y > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 1.0, 1.0, 1.0]), ("y", &[-1.0, -1.0, 2.0, 1.0])],
+            ),
+            (
+                "always[0, 3](eventually[0, 1](x > 1))",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[2.0, 0.0, 2.0, 0.0])],
+            ),
+        ];
+        for (formula_str, times, signals) in cases {
+            let formula = Formula::parse(formula_str).unwrap();
+            let mut trace = Trace::new(times.to_vec()).unwrap();
+            for (name, values) in *signals {
+                trace.add_signal(name, values.to_vec()).unwrap();
+            }
+            for &beta in &[2.0, 10.0, 50.0] {
+                let config = SmoothConfig::new(beta).unwrap();
+                let cpu = formula.smooth_robustness(&trace, config).unwrap();
+                let gpu = f64::from(gpu_soft(&formula, &trace, beta));
+                let tol = 1e-3_f64.max(1e-3 * cpu.abs());
+                assert!(
+                    (gpu - cpu).abs() < tol,
+                    "`{formula_str}` at beta {beta}: gpu {gpu} vs cpu {cpu}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn a_gpu_scored_search_satisfies_a_reachable_spec() {
+        let model =
+            LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 5).unwrap();
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
+            .with_backend(Backend::CmaEs)
+            .with_population(48)
+            .with_budget(400)
+            .on_gpu(true);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert!(result.satisfies, "robustness {}", result.robustness);
+    }
+}
