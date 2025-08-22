@@ -526,4 +526,50 @@ mod tests {
             -3.0
         );
     }
+
+    #[test]
+    fn running_lse_fold_matches_the_whole_set_soft_reduction() {
+        let soft_min2 = |acc: f64, x: f64, beta: f64| -> f64 {
+            let m = acc.min(x);
+            if !m.is_finite() {
+                return m;
+            }
+            m - ((-beta * (acc - m)).exp() + (-beta * (x - m)).exp()).ln() / beta
+        };
+        let soft_max2 = |acc: f64, x: f64, beta: f64| -> f64 {
+            let m = acc.max(x);
+            if !m.is_finite() {
+                return m;
+            }
+            m + ((beta * (acc - m)).exp() + (beta * (x - m)).exp()).ln() / beta
+        };
+        let windows: &[&[f64]] = &[
+            &[1.0],
+            &[3.0, -1.0, 2.0, 0.5],
+            &[-5.0, -5.0, -5.0],
+            &[48.0, 50.0, 49.0, 52.0],
+            &[0.0, -0.2, 0.3, -0.1, 0.05, 0.4],
+        ];
+        for &beta in &[2.0, 10.0, 50.0] {
+            for w in windows {
+                let lo = w
+                    .iter()
+                    .fold(f64::INFINITY, |acc, &x| soft_min2(acc, x, beta));
+                let hi = w
+                    .iter()
+                    .fold(f64::NEG_INFINITY, |acc, &x| soft_max2(acc, x, beta));
+                assert!(
+                    (lo - soft_min(w, beta)).abs() < 1e-9,
+                    "min fold at beta {beta} on {w:?}: {lo} vs {}",
+                    soft_min(w, beta)
+                );
+                assert!(
+                    (hi - soft_max(w, beta)).abs() < 1e-9,
+                    "max fold at beta {beta} on {w:?}: {hi} vs {}",
+                    soft_max(w, beta)
+                );
+                assert!(lo.is_finite() && hi.is_finite());
+            }
+        }
+    }
 }
