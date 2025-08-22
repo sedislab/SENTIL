@@ -3,6 +3,7 @@
 use rand::RngCore;
 
 use super::noise::NoiseModel;
+use super::prstl_rare::StochasticSystem;
 use crate::error::{Error, Result};
 use crate::signal::Trace;
 
@@ -168,6 +169,34 @@ impl SimModel {
             trace.add_signal(name, column)?;
         }
         Ok(trace)
+    }
+
+    /// Builds the closure-based [`StochasticSystem`] that interprets this model.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] on an invariant [`new`](Self::new) already rules out.
+    pub fn to_stochastic_system(&self) -> Result<StochasticSystem> {
+        let init = self.init.clone();
+        let init_noise = self.noise.clone();
+        let advance = self.advance.clone();
+        let step_noise = self.noise.clone();
+        StochasticSystem::new(
+            self.variables.clone(),
+            self.dt,
+            self.horizon,
+            move |rng| {
+                init.iter()
+                    .map(|expr| eval(expr, &[], 0.0, &init_noise, rng))
+                    .collect()
+            },
+            move |prev, t, rng| {
+                advance
+                    .iter()
+                    .map(|expr| eval(expr, prev, t, &step_noise, rng))
+                    .collect()
+            },
+        )
     }
 }
 
@@ -389,5 +418,31 @@ mod tests {
             trace.signals().get("x").unwrap(),
             &[1.0, 2.0, 4.0, 8.0, 16.0]
         );
+    }
+
+    #[test]
+    fn the_stochastic_system_bridge_reproduces_the_interpreter() {
+        let advance = SimExpr::Add(
+            boxed(SimExpr::Add(
+                boxed(SimExpr::Prev(0)),
+                boxed(SimExpr::Const(0.1)),
+            )),
+            boxed(SimExpr::Noise(0)),
+        );
+        let model = SimModel::new(
+            ["x"],
+            1.0,
+            6,
+            vec![SimExpr::Const(0.0)],
+            vec![advance],
+            vec![NoiseModel::gaussian(0.0, 1.0).unwrap()],
+        )
+        .unwrap();
+        let system = model.to_stochastic_system().unwrap();
+        let mut interp_rng = ChaCha8Rng::seed_from_u64(9);
+        let mut system_rng = ChaCha8Rng::seed_from_u64(9);
+        let interpreted = model.simulate(&mut interp_rng).unwrap();
+        let bridged = system.simulate(&mut system_rng).unwrap();
+        assert_eq!(interpreted.signals().get("x"), bridged.signals().get("x"));
     }
 }

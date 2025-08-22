@@ -826,6 +826,47 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    #[allow(clippy::cast_precision_loss, reason = "the run count is tiny")]
+    fn the_gpu_and_cpu_splitters_agree() {
+        let advance = SimExpr::Add(boxed(SimExpr::Prev(0)), boxed(SimExpr::Noise(0)));
+        let model = SimModel::new(
+            ["x"],
+            1.0,
+            100,
+            vec![SimExpr::Const(0.0)],
+            vec![advance],
+            vec![NoiseModel::gaussian(0.0, 0.1).unwrap()],
+        )
+        .unwrap();
+        let phi = Formula::parse("P>=0.5(always[0, 200](x > -3))").unwrap();
+        let system = model.to_stochastic_system().unwrap();
+        let runs = 3u64;
+        let (mut gpu_sum, mut cpu_sum) = (0.0, 0.0);
+        for seed in 0..runs {
+            let config = RareEventConfig {
+                particles: 2048,
+                margin: 0.0,
+                seed,
+            };
+            gpu_sum += phi
+                .check_rare_event_gpu(&model, &config)
+                .unwrap()
+                .probability;
+            cpu_sum += phi
+                .check_rare_event(&system, &config)
+                .unwrap()
+                .violation_probability;
+        }
+        let (gpu, cpu) = (gpu_sum / runs as f64, cpu_sum / runs as f64);
+        let ratio = gpu / cpu;
+        assert!(
+            (0.5..2.0).contains(&ratio),
+            "gpu {gpu} vs cpu {cpu}, ratio {ratio}"
+        );
+    }
+
+    #[test]
     fn a_noisy_advance_lowers_and_validates() {
         let advance = SimExpr::Add(
             boxed(SimExpr::Add(
