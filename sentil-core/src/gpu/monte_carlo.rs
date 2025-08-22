@@ -109,8 +109,12 @@ const SHADER_PRELUDE: &str = r"struct Params {
 @group(0) @binding(2) var<storage, read_write> reduction_buffer: array<f32>;
 @group(0) @binding(3) var<storage, read> base_state: array<f32>;
 @group(0) @binding(4) var<storage, read> noise_params: array<f32>;
+";
 
-fn mul_hi(a: u32, b: u32) -> u32 {
+/// The counter-based PRNG the GPU kernels share: a thread's draws depend only on
+/// the index and seed it starts from, so the Monte Carlo, temporal, and rare-event
+/// splitting shaders all draw the same way from their own bindings.
+pub(crate) const PRNG_WGSL: &str = r"fn mul_hi(a: u32, b: u32) -> u32 {
     let a_lo = a & 0xFFFFu;
     let a_hi = a >> 16u;
     let b_lo = b & 0xFFFFu;
@@ -233,6 +237,7 @@ pub(crate) fn build_count_shader(
     let transpiled = transpile_atemporal(formula, symbols)?;
     let array_size = transpiled.state_size.max(1);
     let mut source = String::from(SHADER_PRELUDE);
+    source.push_str(PRNG_WGSL);
     source.push('\n');
     source.push_str(&transpiled.evaluate_formula);
     write_simulation_kernel(&mut source, array_size, transpiled.state_size);
@@ -242,7 +247,7 @@ pub(crate) fn build_count_shader(
 }
 
 /// Writes `draw_residual`, the per-family sampler the kernel calls for each modeled slot.
-fn write_draw_residual(source: &mut String) {
+pub(crate) fn write_draw_residual(source: &mut String) {
     let _ = write!(
         source,
         r"
@@ -408,6 +413,7 @@ pub(crate) fn build_temporal_shader(
 ) -> Result<(String, usize), Error> {
     let shader = transpile_temporal(formula, symbols, trace_len)?;
     let mut source = String::from(SHADER_PRELUDE);
+    source.push_str(PRNG_WGSL);
     source.push_str("\n@group(0) @binding(5) var<storage, read> times_buf: array<f32>;\n\n");
     source.push_str(&shader.evaluate_temporal);
     write_temporal_simulation_kernel(&mut source, shader.state_size, shader.trace_len);
