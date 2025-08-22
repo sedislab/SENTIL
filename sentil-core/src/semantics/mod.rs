@@ -82,6 +82,62 @@ impl Formula {
         let signal = dense::robustness_signal(self, trace.times(), trace.signals())?;
         Ok(signal.at(trace.times()[0]))
     }
+
+    /// The robustness at every sample of the trace, read in discrete time.
+    ///
+    /// [`robustness`](Self::robustness) answers the usual monitoring question,
+    /// the value at the first sample. This returns the whole signal, one
+    /// robustness per sample, for when the trajectory of satisfaction matters
+    /// and not just its value now.
+    ///
+    /// ```
+    /// use sentil::{Formula, Trace};
+    ///
+    /// let phi = Formula::parse("x > 0")?;
+    /// let mut trace = Trace::new([0.0, 1.0, 2.0])?;
+    /// trace.add_signal("x", [1.0, -2.0, 3.0])?;
+    /// assert_eq!(phi.robustness_signal(&trace)?, vec![1.0, -2.0, 3.0]);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As for [`robustness`](Self::robustness).
+    pub fn robustness_signal(&self, trace: &Trace) -> Result<Vec<f64>> {
+        if trace.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        discrete::robustness_trace(self, trace.times(), trace.signals())
+    }
+
+    /// The dense-time robustness sampled at every time of the trace.
+    ///
+    /// The dense counterpart of [`robustness_signal`](Self::robustness_signal):
+    /// the trace is read as a piecewise-linear signal and the robustness signal
+    /// is read back at the original sample times. Like
+    /// [`robustness_dense`](Self::robustness_dense) it accounts for window edges
+    /// and predicate crossings that fall between samples.
+    ///
+    /// ```
+    /// use sentil::{Formula, Trace};
+    ///
+    /// let phi = Formula::parse("x > 0")?;
+    /// let mut trace = Trace::new([0.0, 1.0])?;
+    /// trace.add_signal("x", [2.0, -1.0])?;
+    /// assert_eq!(phi.robustness_dense_signal(&trace)?, vec![2.0, -1.0]);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As for [`robustness_dense`](Self::robustness_dense).
+    pub fn robustness_dense_signal(&self, trace: &Trace) -> Result<Vec<f64>> {
+        if trace.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        let signal = dense::robustness_signal(self, trace.times(), trace.signals())?;
+        Ok(trace.times().iter().map(|&t| signal.at(t)).collect())
+    }
 }
 
 #[cfg(test)]
