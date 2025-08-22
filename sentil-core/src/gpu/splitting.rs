@@ -788,6 +788,44 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    #[allow(clippy::cast_precision_loss, reason = "the run count is tiny")]
+    fn the_estimate_matches_an_analytic_crossing_probability() {
+        // By the reflection principle the crossing probability is 2*Phi(-3) = 0.0027.
+        let advance = SimExpr::Add(boxed(SimExpr::Prev(0)), boxed(SimExpr::Noise(0)));
+        let model = SimModel::new(
+            ["x"],
+            1.0,
+            400,
+            vec![SimExpr::Const(0.0)],
+            vec![advance],
+            vec![NoiseModel::gaussian(0.0, 0.1).unwrap()],
+        )
+        .unwrap();
+        let phi = Formula::parse("P>=0.5(always[0, 500](x > -6))").unwrap();
+        let analytic = 0.002_699_8;
+        let runs = 8u64;
+        let mut sum = 0.0;
+        for seed in 0..runs {
+            let config = RareEventConfig {
+                particles: 8192,
+                margin: 0.0,
+                seed,
+            };
+            sum += phi
+                .check_rare_event_gpu(&model, &config)
+                .unwrap()
+                .probability;
+        }
+        let mean = sum / runs as f64;
+        let relative = (mean - analytic).abs() / analytic;
+        assert!(
+            relative < 0.25,
+            "gpu mean {mean} vs analytic {analytic}, off {relative}"
+        );
+    }
+
+    #[test]
     fn a_noisy_advance_lowers_and_validates() {
         let advance = SimExpr::Add(
             boxed(SimExpr::Add(
