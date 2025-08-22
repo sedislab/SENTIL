@@ -752,9 +752,14 @@ impl GpuMcContext {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
+    #![allow(
+        clippy::type_complexity,
+        reason = "the device tests carry literal case tables"
+    )]
 
     use super::*;
     use crate::stats::NoiseModel;
+    use crate::Trace;
 
     #[test]
     fn packs_supported_families_by_slot() {
@@ -896,5 +901,106 @@ mod tests {
             .unwrap();
         let p = count as f64 / n as f64;
         assert!((p - 0.5).abs() < 0.005, "expected about 0.5, got {p}");
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the GPU evaluates in f32; the test signals are small integers"
+    )]
+    fn temporal_verdict(
+        formula_str: &str,
+        times: &[f64],
+        signals: &[(&str, &[f64])],
+    ) -> (f64, u64, u64) {
+        let formula = Formula::parse(formula_str).unwrap();
+        let symbols = formula.variables();
+        let mut trace = Trace::new(times.to_vec()).unwrap();
+        for (name, values) in signals {
+            trace.add_signal(name, values.to_vec()).unwrap();
+        }
+        let cpu = formula.robustness(&trace).unwrap();
+        let (shader, _) = build_temporal_shader(&formula, &symbols, times.len()).unwrap();
+        let ctx = GpuMcContext::new(&shader, true).unwrap();
+        let mut base = Vec::new();
+        for name in &symbols {
+            let values = signals.iter().find(|(n, _)| *n == name.as_str()).unwrap().1;
+            base.extend(values.iter().map(|&v| v as f32));
+        }
+        let grid: Vec<f32> = times.iter().map(|&t| t as f32).collect();
+        let noise = vec![0.0f32; symbols.len() * NOISE_RECORD];
+        let n = 100_000u64;
+        let count = ctx
+            .gpu_satisfaction_count(&base, &noise, Some(&grid), n, 1)
+            .unwrap();
+        (cpu, count, n)
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn temporal_robustness_sign_matches_the_cpu_monitor() {
+        let cases: &[(&str, &[f64], &[(&str, &[f64])])] = &[
+            (
+                "always[0, 2](x > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 0.5, 3.0])],
+            ),
+            (
+                "always[0, 2](x > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, -0.5, 2.0, 3.0])],
+            ),
+            (
+                "eventually[0, 2](x > 5)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 6.0, 3.0])],
+            ),
+            (
+                "eventually[0, 1](x > 5)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 6.0, 3.0])],
+            ),
+            (
+                "(x > 0) until[0, 3] (y > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 1.0, 1.0, 1.0]), ("y", &[-1.0, -1.0, 2.0, 1.0])],
+            ),
+            (
+                "(x > 0) until[0, 1] (y > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 1.0, 1.0, 1.0]), ("y", &[-1.0, -1.0, 2.0, 1.0])],
+            ),
+            (
+                "historically[0, 2](x > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 3.0, 4.0])],
+            ),
+            (
+                "once[0, 2](x > 5)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[1.0, 2.0, 3.0, 6.0])],
+            ),
+            (
+                "next(x > 0)",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[-1.0, 2.0, 3.0, 4.0])],
+            ),
+            (
+                "always[0, 3](eventually[0, 1](x > 2))",
+                &[0.0, 1.0, 2.0, 3.0],
+                &[("x", &[3.0, 1.0, 3.0, 1.0])],
+            ),
+        ];
+        for (formula, times, signals) in cases {
+            let (cpu, count, n) = temporal_verdict(formula, times, signals);
+            assert!(
+                count == 0 || count == n,
+                "zero-noise ensemble split on `{formula}`: {count}/{n}"
+            );
+            assert_eq!(
+                count == n,
+                cpu >= 0.0,
+                "verdict mismatch on `{formula}`: cpu robustness {cpu}, gpu count {count}/{n}"
+            );
+        }
     }
 }
