@@ -42,9 +42,9 @@ pub(crate) mod prelude {
 
 pub mod error;
 mod expr;
+pub mod formula;
 #[cfg(feature = "gpu")]
 pub mod gpu;
-pub mod formula;
 pub mod monitor;
 pub mod semantics;
 pub mod signal;
@@ -67,6 +67,8 @@ pub use stats::{
     ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel, RareEventConfig,
     RareEventResult, SmcConfig, SmcResult, SprtConfig, SprtResult, StochasticSystem,
 };
+#[cfg(feature = "gpu")]
+pub use stats::{SimExpr, SimModel};
 #[cfg(feature = "synthesis")]
 pub use synthesis::{
     cma_es, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Backend, Bounds,

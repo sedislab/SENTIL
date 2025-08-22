@@ -5,6 +5,8 @@ mod lifting;
 mod noise;
 mod prstl_rare;
 mod rare_events;
+#[cfg(feature = "gpu")]
+mod sim_model;
 mod smc;
 mod sprt;
 
@@ -17,6 +19,8 @@ pub(crate) use noise::GpuSampler;
 pub use noise::{NoiseInteraction, NoiseModel};
 pub use prstl_rare::{RareEventConfig, RareEventResult, StochasticSystem};
 pub use rare_events::{adaptive_multilevel_splitting, RareEventEstimate, RareEventSimulator};
+#[cfg(feature = "gpu")]
+pub use sim_model::{SimExpr, SimModel};
 pub use smc::{SmcConfig, SmcResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
