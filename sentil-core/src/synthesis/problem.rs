@@ -27,6 +27,7 @@ pub struct SynthesisProblem<'a, M: SystemModel> {
     smooth: SmoothConfig,
     max_iters: usize,
     backend: Backend,
+    population: usize,
 }
 
 impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
@@ -41,6 +42,7 @@ impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
             smooth: SmoothConfig::default(),
             max_iters: 200,
             backend: Backend::Auto,
+            population: 0,
         }
     }
 
@@ -69,6 +71,13 @@ impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
     #[must_use]
     pub fn with_backend(mut self, backend: Backend) -> Self {
         self.backend = backend;
+        self
+    }
+
+    /// Sets the CMA-ES population per generation; `0` keeps the default.
+    #[must_use]
+    pub fn with_population(mut self, population: usize) -> Self {
+        self.population = population;
         self
     }
 }
@@ -109,6 +118,7 @@ impl Synthesizer {
             };
             let config = CmaConfig {
                 max_generations: problem.max_iters,
+                population: problem.population,
                 ..CmaConfig::default()
             };
             (
@@ -171,6 +181,18 @@ mod tests {
         let result = Synthesizer::solve(&problem).unwrap();
         assert!(result.satisfies, "robustness {}", result.robustness);
         assert_eq!(result.backend, Backend::CmaEs);
+    }
+
+    #[test]
+    fn an_explicit_population_still_satisfies_the_spec() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
+            .with_backend(Backend::CmaEs)
+            .with_population(32);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert!(result.satisfies, "robustness {}", result.robustness);
     }
 
     #[test]
