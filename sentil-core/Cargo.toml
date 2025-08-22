@@ -71,6 +71,10 @@ mcap = ["ingest", "dep:mcap", "dep:serde_json"]
 # no device is present.
 gpu = ["statistical", "dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:futures", "dep:naga"]
 
+# GPU batching for synthesis: one dispatch scores a whole population of candidate
+# trajectories. Needs both synthesis and gpu.
+synthesis-gpu = ["synthesis", "gpu"]
+
 [dependencies]
 thiserror = { version = "2.0", default-features = false }
 

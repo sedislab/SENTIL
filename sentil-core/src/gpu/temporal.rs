@@ -50,6 +50,7 @@ struct Builder<'a> {
     helpers: String,
     calls: String,
     next: usize,
+    soft: Option<f64>,
 }
 
 impl<'a> Builder<'a> {
@@ -61,29 +62,56 @@ impl<'a> Builder<'a> {
             helpers: String::new(),
             calls: String::new(),
             next: 0,
+            soft: None,
         }
     }
 
+    #[cfg(feature = "synthesis-gpu")]
+    #[allow(dead_code, reason = "consumed by the synthesis forward batch context")]
+    fn new_soft(symbols: &'a [String], trace_len: usize, beta: f64) -> Self {
+        Self {
+            soft: Some(beta),
+            ..Self::new(symbols, trace_len)
+        }
+    }
+
+    /// The WGSL min and max reducers.
+    fn ops(&self) -> (&'static str, &'static str) {
+        if self.soft.is_some() {
+            ("soft_min2", "soft_max2")
+        } else {
+            ("min", "max")
+        }
+    }
+
+    /// The soft reducer definitions, emitted ahead of the node helpers when smoothing.
+    fn soft_prelude(&self) -> String {
+        let Some(beta) = self.soft else {
+            return String::new();
+        };
+        format!(
+            "const BETA: f32 = {beta:?};\n\nfn soft_min2(a: f32, b: f32) -> f32 {{\n    let m = min(a, b);\n    if (m == bitcast<f32>(0x7f800000u) || m == bitcast<f32>(0xff800000u)) {{ return m; }}\n    let ea = exp(max(-BETA * (a - m), -88.0));\n    let eb = exp(max(-BETA * (b - m), -88.0));\n    return m - log(ea + eb) / BETA;\n}}\n\nfn soft_max2(a: f32, b: f32) -> f32 {{\n    let m = max(a, b);\n    if (m == bitcast<f32>(0x7f800000u) || m == bitcast<f32>(0xff800000u)) {{ return m; }}\n    let ea = exp(max(BETA * (a - m), -88.0));\n    let eb = exp(max(BETA * (b - m), -88.0));\n    return m + log(ea + eb) / BETA;\n}}\n\n"
+        )
+    }
+
     fn emit(&mut self, formula: &Formula) -> Result<String> {
+        let (min_op, max_op) = self.ops();
         match formula {
-            // always/historically reduce by minimum, eventually/once by maximum;
-            // always/eventually use the forward window [t+a, t+b], the past mirrors
-            // use the backward window [t-b, t-a].
             Formula::Always(interval, inner) => {
                 let child = self.emit(inner)?;
-                Ok(self.emit_window(interval, &child, "min", "0x7f800000u", true))
+                Ok(self.emit_window(interval, &child, min_op, "0x7f800000u", true))
             }
             Formula::Eventually(interval, inner) => {
                 let child = self.emit(inner)?;
-                Ok(self.emit_window(interval, &child, "max", "0xff800000u", true))
+                Ok(self.emit_window(interval, &child, max_op, "0xff800000u", true))
             }
             Formula::Historically(interval, inner) => {
                 let child = self.emit(inner)?;
-                Ok(self.emit_window(interval, &child, "min", "0x7f800000u", false))
+                Ok(self.emit_window(interval, &child, min_op, "0x7f800000u", false))
             }
             Formula::Once(interval, inner) => {
                 let child = self.emit(inner)?;
-                Ok(self.emit_window(interval, &child, "max", "0xff800000u", false))
+                Ok(self.emit_window(interval, &child, max_op, "0xff800000u", false))
             }
             Formula::Until(interval, lhs, rhs) => {
                 let lphi = self.emit(lhs)?;
@@ -99,23 +127,23 @@ impl<'a> Builder<'a> {
                 let child = self.emit(inner)?;
                 Ok(self.emit_next(&child))
             }
-            // A boolean operator with a temporal child combines the children's
-            // per-index arrays. A wholly atemporal one collapses to a single node.
-            Formula::Not(inner) if inner.has_temporal() => {
+            Formula::Not(inner) if self.soft.is_some() || inner.has_temporal() => {
                 let child = self.emit(inner)?;
                 Ok(self.emit_combine(&[&child], "-(*c0)[i]"))
             }
-            Formula::And(l, r) if l.has_temporal() || r.has_temporal() => {
+            Formula::And(l, r) if self.soft.is_some() || l.has_temporal() || r.has_temporal() => {
                 let (lc, rc) = (self.emit(l)?, self.emit(r)?);
-                Ok(self.emit_combine(&[&lc, &rc], "min((*c0)[i], (*c1)[i])"))
+                Ok(self.emit_combine(&[&lc, &rc], &format!("{min_op}((*c0)[i], (*c1)[i])")))
             }
-            Formula::Or(l, r) if l.has_temporal() || r.has_temporal() => {
+            Formula::Or(l, r) if self.soft.is_some() || l.has_temporal() || r.has_temporal() => {
                 let (lc, rc) = (self.emit(l)?, self.emit(r)?);
-                Ok(self.emit_combine(&[&lc, &rc], "max((*c0)[i], (*c1)[i])"))
+                Ok(self.emit_combine(&[&lc, &rc], &format!("{max_op}((*c0)[i], (*c1)[i])")))
             }
-            Formula::Implies(l, r) if l.has_temporal() || r.has_temporal() => {
+            Formula::Implies(l, r)
+                if self.soft.is_some() || l.has_temporal() || r.has_temporal() =>
+            {
                 let (lc, rc) = (self.emit(l)?, self.emit(r)?);
-                Ok(self.emit_combine(&[&lc, &rc], "max(-(*c0)[i], (*c1)[i])"))
+                Ok(self.emit_combine(&[&lc, &rc], &format!("{max_op}(-(*c0)[i], (*c1)[i])")))
             }
             _ => self.emit_atemporal(formula),
         }
@@ -162,6 +190,7 @@ impl<'a> Builder<'a> {
         self.next += 1;
         let l = self.trace_len;
         let a = interval.lower;
+        let (min_op, max_op) = self.ops();
         let upper_break = match interval.upper {
             Some(b) => {
                 format!("            if ((*times)[j] > (*times)[i] + f32({b:?})) {{ break; }}\n")
@@ -170,7 +199,7 @@ impl<'a> Builder<'a> {
         };
         let _ = write!(
             self.helpers,
-            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let ws = (*times)[i] + f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (ws <= (*times)[{l}u - 1u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var j = i; j < {l}u; j = j + 1u) {{\n                if (j > i) {{ min_phi = min(min_phi, (*lphi)[j - 1u]); }}\n{upper_break}                if ((*times)[j] >= ws) {{ best = max(best, min((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let ws = (*times)[i] + f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (ws <= (*times)[{l}u - 1u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var j = i; j < {l}u; j = j + 1u) {{\n                if (j > i) {{ min_phi = {min_op}(min_phi, (*lphi)[j - 1u]); }}\n{upper_break}                if ((*times)[j] >= ws) {{ best = {max_op}(best, {min_op}((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
         );
         let _ = write!(
             self.calls,
@@ -185,6 +214,7 @@ impl<'a> Builder<'a> {
         self.next += 1;
         let l = self.trace_len;
         let a = interval.lower;
+        let (min_op, max_op) = self.ops();
         let lower_break = match interval.upper {
             Some(b) => {
                 format!("            if ((*times)[j] < (*times)[i] - f32({b:?})) {{ break; }}\n")
@@ -193,7 +223,7 @@ impl<'a> Builder<'a> {
         };
         let _ = write!(
             self.helpers,
-            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let we = (*times)[i] - f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (we >= (*times)[0u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var jj = 0u; jj <= i; jj = jj + 1u) {{\n                let j = i - jj;\n                if (jj > 0u) {{ min_phi = min(min_phi, (*lphi)[j + 1u]); }}\n{lower_break}                if ((*times)[j] <= we) {{ best = max(best, min((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let we = (*times)[i] - f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (we >= (*times)[0u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var jj = 0u; jj <= i; jj = jj + 1u) {{\n                let j = i - jj;\n                if (jj > 0u) {{ min_phi = {min_op}(min_phi, (*lphi)[j + 1u]); }}\n{lower_break}                if ((*times)[j] <= we) {{ best = {max_op}(best, {min_op}((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
         );
         let _ = write!(
             self.calls,
@@ -266,7 +296,8 @@ impl<'a> Builder<'a> {
     fn finish(self, root: &str) -> String {
         let l = self.trace_len;
         let v = self.num_vars;
-        let mut source = self.helpers;
+        let mut source = self.soft_prelude();
+        source.push_str(&self.helpers);
         let _ = write!(
             source,
             "fn evaluate_temporal(trace: ptr<function, array<array<f32, {l}>, {v}>>, times: ptr<function, array<f32, {l}>>) -> f32 {{\n{calls}    return {root}[0];\n}}",
@@ -298,6 +329,36 @@ pub(crate) fn transpile_temporal(
     })
 }
 
+/// Transpiles a temporal `formula` into a soft `evaluate_temporal` whose reductions are log-sum-exp smoothed at `beta`.
+///
+/// # Errors
+///
+/// Returns [`Error::Transpilation`] when the dimensions exceed the device limits or the formula cannot be lowered.
+#[cfg(feature = "synthesis-gpu")]
+#[allow(dead_code, reason = "consumed by the synthesis forward batch context")]
+pub(crate) fn transpile_temporal_soft(
+    formula: &Formula,
+    symbols: &[String],
+    trace_len: usize,
+    beta: f64,
+) -> Result<TemporalShader> {
+    lower(Builder::new_soft(symbols, trace_len, beta), formula)
+}
+
+fn lower(mut builder: Builder<'_>, formula: &Formula) -> Result<TemporalShader> {
+    let trace_len = builder.trace_len;
+    let state_size = builder.symbols.len();
+    validate_dims(trace_len, state_size)?;
+    let root = builder.emit(formula)?;
+    let source = builder.finish(&root);
+    validate(&source)?;
+    Ok(TemporalShader {
+        state_size,
+        trace_len,
+        evaluate_temporal: source,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +369,43 @@ mod tests {
         transpile_temporal(&f, &symbols, trace_len)
             .unwrap()
             .evaluate_temporal
+    }
+
+    #[cfg(feature = "synthesis-gpu")]
+    fn transpiled_soft(formula: &str, trace_len: usize, beta: f64) -> String {
+        let f = Formula::parse(formula).unwrap();
+        let symbols = f.variables();
+        transpile_temporal_soft(&f, &symbols, trace_len, beta)
+            .unwrap()
+            .evaluate_temporal
+    }
+
+    #[cfg(feature = "synthesis-gpu")]
+    #[test]
+    fn soft_window_and_booleans_lower_to_log_sum_exp_folds() {
+        let src = transpiled_soft("always[0, 2](x > 0 and y > 0)", 6, 10.0);
+        assert!(src.contains("fn soft_min2") && src.contains("fn soft_max2"));
+        assert!(src.contains("const BETA: f32 = 10.0"));
+        assert!(src.contains("soft_min2(acc, (*child)[j])"));
+        assert!(src.contains("soft_min2((*c0)[i], (*c1)[i])"));
+        let ev = transpiled_soft("eventually[0, 2](x > 0)", 6, 2.0);
+        assert!(ev.contains("soft_max2(acc, (*child)[j])"));
+    }
+
+    #[cfg(feature = "synthesis-gpu")]
+    #[test]
+    fn soft_until_uses_soft_folds_and_validates() {
+        let src = transpiled_soft("(x > 0) until[0, 3] (y > 0)", 6, 10.0);
+        assert!(src.contains("best = soft_max2(best, soft_min2((*rpsi)[j], min_phi))"));
+        assert!(src.contains("min_phi = soft_min2(min_phi, (*lphi)[j - 1u])"));
+    }
+
+    #[test]
+    fn the_exact_path_keeps_exact_min_max_and_no_soft_prelude() {
+        let src = transpiled("always[0, 2](x > 0)", 6);
+        assert!(src.contains("min(acc, (*child)[j])"));
+        assert!(!src.contains("soft_min2"));
+        assert!(!src.contains("BETA"));
     }
 
     #[test]
