@@ -39,12 +39,14 @@ mod pgrad;
 mod problem;
 mod qp;
 mod smooth;
+#[cfg(feature = "synthesis-gpu")]
+mod synth_gpu;
 mod witness;
 
 pub use cbf::SafetyFilter;
 #[cfg(feature = "statistical")]
 pub use chance::{ChanceConstraint, ChanceReport};
-pub use cmaes::{cma_es, CmaConfig};
+pub use cmaes::{cma_es, cma_es_batched, CmaConfig};
 pub use controller::Controller;
 pub use model::{Bounds, LinearModel, SystemModel};
 pub use numerics::{solve_spd, symmetric_eigen};

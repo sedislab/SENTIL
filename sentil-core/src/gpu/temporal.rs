@@ -67,7 +67,6 @@ impl<'a> Builder<'a> {
     }
 
     #[cfg(feature = "synthesis-gpu")]
-    #[allow(dead_code, reason = "consumed by the synthesis forward batch context")]
     fn new_soft(symbols: &'a [String], trace_len: usize, beta: f64) -> Self {
         Self {
             soft: Some(beta),
@@ -335,7 +334,6 @@ pub(crate) fn transpile_temporal(
 ///
 /// Returns [`Error::Transpilation`] when the dimensions exceed the device limits or the formula cannot be lowered.
 #[cfg(feature = "synthesis-gpu")]
-#[allow(dead_code, reason = "consumed by the synthesis forward batch context")]
 pub(crate) fn transpile_temporal_soft(
     formula: &Formula,
     symbols: &[String],

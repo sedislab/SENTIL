@@ -1,12 +1,5 @@
 //! GPU batch scoring of the smooth robustness for synthesis.
 
-// The context and shader are consumed by the optimizer's batch objective; until
-// that wiring lands they are exercised only by this module's tests.
-#![allow(
-    dead_code,
-    reason = "consumed by the synthesis batch objective in the optimizer"
-)]
-
 use core::fmt::Write as _;
 
 use pollster::FutureExt as _;
@@ -36,7 +29,7 @@ struct ForwardParams {
 /// # Errors
 ///
 /// Returns [`Error::Transpilation`] when the formula cannot be lowered or the shader does not validate.
-fn build_soft_forward_shader(
+pub(crate) fn build_soft_forward_shader(
     formula: &Formula,
     symbols: &[String],
     trace_len: usize,

@@ -28,6 +28,8 @@ pub struct SynthesisProblem<'a, M: SystemModel> {
     max_iters: usize,
     backend: Backend,
     population: usize,
+    #[cfg(feature = "synthesis-gpu")]
+    on_gpu: bool,
 }
 
 impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
@@ -43,6 +45,8 @@ impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
             max_iters: 200,
             backend: Backend::Auto,
             population: 0,
+            #[cfg(feature = "synthesis-gpu")]
+            on_gpu: false,
         }
     }
 
@@ -80,6 +84,15 @@ impl<'a, M: SystemModel> SynthesisProblem<'a, M> {
         self.population = population;
         self
     }
+
+    /// Scores the CMA-ES population's smooth robustness on the GPU, falling back to
+    /// the CPU when no device is present or the problem is ineligible.
+    #[cfg(feature = "synthesis-gpu")]
+    #[must_use]
+    pub fn on_gpu(mut self, enable: bool) -> Self {
+        self.on_gpu = enable;
+        self
+    }
 }
 
 /// The outcome of open-loop synthesis.
@@ -113,18 +126,12 @@ impl Synthesizer {
         let initial = model.initial_state();
         let start = vec![0.0; model.input_dimension()];
         let (input, backend) = if problem.backend == Backend::CmaEs {
-            let objective = |u: &[f64]| {
-                spec.smooth_robustness(&model.rollout_from(initial, u)?, problem.smooth)
-            };
             let config = CmaConfig {
                 max_generations: problem.max_iters,
                 population: problem.population,
                 ..CmaConfig::default()
             };
-            (
-                cma_es(objective, &start, &problem.bounds, config)?.0,
-                Backend::CmaEs,
-            )
+            (cma_es_input(problem, &start, config)?, Backend::CmaEs)
         } else {
             let objective = |u: &[f64]| spec.smooth_gradient(model, initial, u, problem.smooth);
             (
@@ -140,6 +147,32 @@ impl Synthesizer {
             backend,
         })
     }
+}
+
+fn cma_es_input<M: SystemModel>(
+    problem: &SynthesisProblem<'_, M>,
+    start: &[f64],
+    config: CmaConfig,
+) -> Result<Vec<f64>> {
+    let model = problem.model;
+    let spec = problem.spec;
+    #[cfg(feature = "synthesis-gpu")]
+    if problem.on_gpu {
+        if let Some(result) = super::synth_gpu::solve_cmaes_gpu(
+            model,
+            spec,
+            problem.smooth,
+            &problem.bounds,
+            start,
+            config,
+        ) {
+            return result;
+        }
+    }
+    let initial = model.initial_state();
+    let objective =
+        |u: &[f64]| spec.smooth_robustness(&model.rollout_from(initial, u)?, problem.smooth);
+    cma_es(objective, start, &problem.bounds, config).map(|(input, _)| input)
 }
 
 #[cfg(test)]
