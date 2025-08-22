@@ -130,6 +130,10 @@ impl SimModel {
         &self.advance
     }
 
+    pub(crate) fn noise(&self) -> &[NoiseModel] {
+        &self.noise
+    }
+
     /// Simulates one full-horizon trajectory into a trace.
     ///
     /// # Errors

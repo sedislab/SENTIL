@@ -9,11 +9,23 @@
 
 use core::fmt::Write as _;
 
+use pollster::FutureExt as _;
+use rand::{Rng as _, SeedableRng as _};
+use rand_chacha::ChaCha8Rng;
+use wgpu::util::DeviceExt as _;
+
 use super::monte_carlo::{write_draw_residual, GpuMcError, NOISE_RECORD, PRNG_WGSL};
 use super::transpiler::{emit_formula, validate, Ssa};
 use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::stats::{GpuSampler, NoiseModel, SimExpr, SimModel};
+
+/// The most splitting levels a run resolves before stopping.
+const MAX_LEVELS: u32 = 64;
+
+/// The fraction of the population kept at each level, the variance-optimal one half.
+const KEEP_NUMERATOR: usize = 1;
+const KEEP_DENOMINATOR: usize = 2;
 
 /// Packs the model's noise sources into the device buffer, one record per source.
 #[allow(
@@ -182,6 +194,385 @@ fn build_splitting_shader(
     Ok((source, v))
 }
 
+/// The outcome of a GPU rare-event splitting run.
+///
+/// `probability` is the fixed-effort multilevel-splitting estimate. It is
+/// consistent as `particles` grows but carries an `O(levels / particles)` bias,
+/// unlike the unbiased CPU last-particle estimate in
+/// [`RareEventResult`](crate::stats::RareEventResult); it is a distinct type so the
+/// two are never read as the same number.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GpuSplittingEstimate {
+    /// The estimated probability of the rare violation.
+    pub probability: f64,
+    /// The particle population the run used.
+    pub particles: usize,
+    /// The number of splitting levels the run resolved.
+    pub levels: u32,
+}
+
+/// The uniform block the kernels read, padded to a 16-byte uniform alignment.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SplitParams {
+    n_particles: u32,
+    window_len: u32,
+    seed: u32,
+    level_round: u32,
+    level: f32,
+    pad: [u32; 3],
+}
+
+/// Builds the per-particle survivor assignment for a resample.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the particle count stays below 2^32"
+)]
+fn build_assignment(z: &[f32], level: f32, seed: u32, round: u32) -> Vec<u32> {
+    let survivors: Vec<u32> = (0..z.len())
+        .filter(|&i| z[i] >= level)
+        .map(|i| i as u32)
+        .collect();
+    let mut rng = ChaCha8Rng::seed_from_u64(u64::from(seed) ^ (u64::from(round) << 40));
+    (0..z.len())
+        .map(|i| {
+            if z[i] >= level {
+                i as u32
+            } else {
+                survivors[rng.random_range(0..survivors.len())]
+            }
+        })
+        .collect()
+}
+
+/// A device and the two pipelines that roll and resample a particle population.
+struct GpuSplittingContext {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    roll: wgpu::ComputePipeline,
+    resample: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
+impl GpuSplittingContext {
+    /// Builds the context from the assembled splitting shader.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Gpu`] when no device is available or the shader does not compile.
+    fn new(shader_source: &str) -> Result<Self> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .block_on()
+            .map_err(|_| Error::Gpu {
+                message: "no compatible GPU adapter for the splitting path".into(),
+            })?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("sentil splitting"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                trace: wgpu::Trace::default(),
+            })
+            .block_on()
+            .map_err(|e| Error::Gpu {
+                message: format!("could not create a GPU device: {e}"),
+            })?;
+
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sentil splitting shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+        let storage = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sentil splitting layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                storage(1, false),
+                storage(2, false),
+                storage(3, true),
+                storage(4, true),
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sentil splitting pipeline layout"),
+            bind_group_layouts: &[&layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = |label: &str, entry: &str| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some(entry),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            })
+        };
+        let roll = pipeline("sentil roll", "roll_kernel");
+        let resample = pipeline("sentil resample", "resample_kernel");
+        if let Some(err) = device.pop_error_scope().block_on() {
+            return Err(Error::Gpu {
+                message: format!("the splitting shader did not compile: {err}"),
+            });
+        }
+        Ok(Self {
+            device,
+            queue,
+            roll,
+            resample,
+            layout,
+        })
+    }
+
+    /// Runs fixed-effort multilevel splitting over the population.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Gpu`] when a dispatch or readback fails.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        reason = "the particle count and window length stay far below 2^24"
+    )]
+    fn run_splitting(
+        &self,
+        noise: &[f32],
+        n: usize,
+        window_len: usize,
+        v: usize,
+        margin: f32,
+        seed: u32,
+    ) -> Result<GpuSplittingEstimate> {
+        let n_bytes = n as u64 * 4;
+        let storage = |label: &str, size: u64, extra: wgpu::BufferUsages| {
+            self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size,
+                usage: wgpu::BufferUsages::STORAGE | extra,
+                mapped_at_creation: false,
+            })
+        };
+        let trajectory = storage(
+            "trajectory",
+            (n * window_len * v) as u64 * 4,
+            wgpu::BufferUsages::empty(),
+        );
+        let z = storage("z", n_bytes, wgpu::BufferUsages::COPY_SRC);
+        let assignment = storage("assignment", n_bytes, wgpu::BufferUsages::COPY_DST);
+        let noise_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("noise"),
+                contents: bytemuck::cast_slice(noise),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let params_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("split params"),
+            size: core::mem::size_of::<SplitParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let z_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("z readback"),
+            size: n_bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("split bind group"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: trajectory.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: z.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: noise_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: assignment.as_entire_binding(),
+                },
+            ],
+        });
+
+        self.write_params(&params_buf, n, window_len, seed, 0, f32::NEG_INFINITY);
+        let mut z_host = self.dispatch_and_read(&bind_group, &self.roll, n, &z, &z_readback)?;
+
+        let keep = (n * KEEP_NUMERATOR / KEEP_DENOMINATOR).max(1);
+        let mut probability = 1.0_f64;
+        let mut round = 1_u32;
+        loop {
+            let mut sorted = z_host.clone();
+            sorted.sort_unstable_by(|a, b| b.total_cmp(a));
+            let level = sorted[keep - 1];
+            let survivors = z_host.iter().filter(|&&zi| zi >= level).count();
+            if level >= margin || survivors == n || round > MAX_LEVELS {
+                let reached = z_host.iter().filter(|&&zi| zi >= margin).count();
+                probability *= reached as f64 / n as f64;
+                return Ok(GpuSplittingEstimate {
+                    probability,
+                    particles: n,
+                    levels: round - 1,
+                });
+            }
+            probability *= survivors as f64 / n as f64;
+            let assignment_host = build_assignment(&z_host, level, seed, round);
+            self.queue
+                .write_buffer(&assignment, 0, bytemuck::cast_slice(&assignment_host));
+            self.write_params(&params_buf, n, window_len, seed, round, level);
+            z_host = self.dispatch_and_read(&bind_group, &self.resample, n, &z, &z_readback)?;
+            round += 1;
+        }
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the particle count and window length stay far below 2^32"
+    )]
+    fn write_params(
+        &self,
+        buf: &wgpu::Buffer,
+        n: usize,
+        window_len: usize,
+        seed: u32,
+        level_round: u32,
+        level: f32,
+    ) {
+        let params = SplitParams {
+            n_particles: n as u32,
+            window_len: window_len as u32,
+            seed,
+            level_round,
+            level,
+            pad: [0; 3],
+        };
+        self.queue.write_buffer(buf, 0, bytemuck::bytes_of(&params));
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the particle count stays far below 2^32"
+    )]
+    fn dispatch_and_read(
+        &self,
+        bind_group: &wgpu::BindGroup,
+        pipeline: &wgpu::ComputePipeline,
+        n: usize,
+        z: &wgpu::Buffer,
+        z_readback: &wgpu::Buffer,
+    ) -> Result<Vec<f32>> {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("split encoder"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("split pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.dispatch_workgroups((n as u32).div_ceil(256), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(z, 0, z_readback, 0, n as u64 * 4);
+        let submission = self.queue.submit(Some(encoder.finish()));
+
+        let slice = z_readback.slice(..);
+        let (tx, rx) = futures::channel::oneshot::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: None,
+            })
+            .map_err(|e| Error::Gpu {
+                message: format!("GPU poll failed: {e}"),
+            })?;
+        match rx.block_on() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(Error::Gpu {
+                    message: format!("readback map failed: {e}"),
+                })
+            }
+            Err(e) => {
+                return Err(Error::Gpu {
+                    message: format!("readback channel failed: {e}"),
+                })
+            }
+        }
+        let data = slice.get_mapped_range();
+        let scores: Vec<f32> = data
+            .chunks_exact(4)
+            .take(n)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        drop(data);
+        z_readback.unmap();
+        Ok(scores)
+    }
+}
+
+/// Estimates the rare violation probability of `psi` inside an `always` window over the `model` dynamics.
+///
+/// # Errors
+///
+/// Returns [`Error::Transpilation`] when the model or `psi` cannot be lowered, and [`Error::Gpu`] when no device is present or a dispatch fails.
+fn gpu_split(
+    model: &SimModel,
+    psi: &Formula,
+    symbols: &[String],
+    n: usize,
+    window_len: usize,
+    margin: f32,
+    seed: u32,
+) -> Result<GpuSplittingEstimate> {
+    let noise = pack_sim_noise(model.noise()).map_err(Error::from)?;
+    let (shader, v) = build_splitting_shader(model, psi, symbols)?;
+    let context = GpuSplittingContext::new(&shader)?;
+    context.run_splitting(&noise, n, window_len, v, margin, seed)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
@@ -233,6 +624,30 @@ mod tests {
         assert!(source.contains("z = max(z, -psi_margin(&state))"));
         assert!(source.contains("if (s == p) { return; }"));
         assert!(source.contains("if (running >= params.level) { crossing = k; break; }"));
+    }
+
+    #[test]
+    fn the_assignment_keeps_survivors_and_clones_from_survivors() {
+        let z = [5.0_f32, 1.0, 6.0, 0.5, 7.0];
+        let assignment = build_assignment(&z, 5.0, 42, 1);
+        assert_eq!(assignment, [0, assignment[1], 2, assignment[3], 4]);
+        let survivors = [0_u32, 2, 4];
+        assert!(survivors.contains(&assignment[1]));
+        assert!(survivors.contains(&assignment[3]));
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    fn the_splitter_runs_on_a_device_and_returns_a_probability() {
+        let (model, psi, symbols) = walk_model();
+        let estimate = gpu_split(&model, &psi, &symbols, 4096, 33, 0.0, 7).unwrap();
+        assert!(
+            (0.0..=1.0).contains(&estimate.probability),
+            "probability {}",
+            estimate.probability
+        );
+        assert_eq!(estimate.particles, 4096);
+        assert!(estimate.levels > 0, "expected several splitting levels");
     }
 
     #[test]
