@@ -22,3 +22,11 @@ rand_chacha = "0.9.0"
 csv = "1.4"
 rayon = "1"
 proptest = "1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# The C ABI catches a panic at the boundary and returns an error code, which needs
+# an unwinder, so this stays even though it restates the default.
+panic = "unwind"
+strip = true
