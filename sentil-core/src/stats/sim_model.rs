@@ -122,6 +122,14 @@ impl SimModel {
         self.horizon
     }
 
+    pub(crate) fn init_exprs(&self) -> &[SimExpr] {
+        &self.init
+    }
+
+    pub(crate) fn advance_exprs(&self) -> &[SimExpr] {
+        &self.advance
+    }
+
     /// Simulates one full-horizon trajectory into a trace.
     ///
     /// # Errors
