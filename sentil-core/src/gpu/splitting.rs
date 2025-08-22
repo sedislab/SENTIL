@@ -10,7 +10,7 @@
 use core::fmt::Write as _;
 
 use super::monte_carlo::{write_draw_residual, GpuMcError, NOISE_RECORD, PRNG_WGSL};
-use super::transpiler::{emit_formula, Ssa};
+use super::transpiler::{emit_formula, validate, Ssa};
 use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::stats::{GpuSampler, NoiseModel, SimExpr, SimModel};
@@ -144,6 +144,44 @@ fn build_dynamics(model: &SimModel, psi: &Formula, symbols: &[String]) -> Result
     Ok(source)
 }
 
+/// Emits the roll kernel: one thread per particle rolls its trajectory and tracks `z`, the running maximum violation.
+fn write_roll_kernel(source: &mut String, v: usize, dt: f64) {
+    let _ = write!(
+        source,
+        "\n@compute @workgroup_size(256)\nfn roll_kernel(@builtin(global_invocation_id) gid: vec3<u32>) {{\n    let p = gid.x;\n    if (p >= params.n_particles) {{ return; }}\n    let wl = params.window_len;\n    var rng = init_rng(p + params.level_round * params.n_particles, params.seed);\n    var state = init_state(&rng);\n    var z = bitcast<f32>(0xff800000u);\n    let base = p * wl * {v}u;\n    for (var k = 0u; k < wl; k = k + 1u) {{\n        for (var d = 0u; d < {v}u; d = d + 1u) {{ trajectory[base + k * {v}u + d] = state[d]; }}\n        z = max(z, -psi_margin(&state));\n        if (k + 1u < wl) {{\n            let t = f32(k) * f32({dt:?});\n            state = advance(&state, t, &rng);\n        }}\n    }}\n    z_buf[p] = z;\n}}\n"
+    );
+}
+
+/// Emits the resample kernel: a non-survivor clones the survivor named in `assignment` from where it first crosses the level.
+fn write_resample_kernel(source: &mut String, v: usize, dt: f64) {
+    let _ = write!(
+        source,
+        "\n@compute @workgroup_size(256)\nfn resample_kernel(@builtin(global_invocation_id) gid: vec3<u32>) {{\n    let p = gid.x;\n    if (p >= params.n_particles) {{ return; }}\n    let s = assignment[p];\n    if (s == p) {{ return; }}\n    let wl = params.window_len;\n    let s_base = s * wl * {v}u;\n    let p_base = p * wl * {v}u;\n    var running = bitcast<f32>(0xff800000u);\n    var crossing = wl - 1u;\n    for (var k = 0u; k < wl; k = k + 1u) {{\n        var st: array<f32, {v}>;\n        for (var d = 0u; d < {v}u; d = d + 1u) {{ st[d] = trajectory[s_base + k * {v}u + d]; }}\n        running = max(running, -psi_margin(&st));\n        if (running >= params.level) {{ crossing = k; break; }}\n    }}\n    for (var k = 0u; k <= crossing; k = k + 1u) {{\n        for (var d = 0u; d < {v}u; d = d + 1u) {{ trajectory[p_base + k * {v}u + d] = trajectory[s_base + k * {v}u + d]; }}\n    }}\n    var state: array<f32, {v}>;\n    for (var d = 0u; d < {v}u; d = d + 1u) {{ state[d] = trajectory[s_base + crossing * {v}u + d]; }}\n    var rng = init_rng(p + params.level_round * params.n_particles, params.seed);\n    var z = running;\n    for (var k = crossing + 1u; k < wl; k = k + 1u) {{\n        let t = f32(k - 1u) * f32({dt:?});\n        state = advance(&state, t, &rng);\n        for (var d = 0u; d < {v}u; d = d + 1u) {{ trajectory[p_base + k * {v}u + d] = state[d]; }}\n        z = max(z, -psi_margin(&state));\n    }}\n    z_buf[p] = z;\n}}\n"
+    );
+}
+
+/// Assembles the full splitting shader.
+///
+/// # Errors
+///
+/// Returns [`Error::Transpilation`] when the dynamics or `psi` cannot be lowered, or the shader does not validate.
+fn build_splitting_shader(
+    model: &SimModel,
+    psi: &Formula,
+    symbols: &[String],
+) -> Result<(String, usize)> {
+    let mut source = String::from(
+        "struct Params {\n    n_particles: u32,\n    window_len: u32,\n    seed: u32,\n    level_round: u32,\n    level: f32,\n}\n\n@group(0) @binding(0) var<uniform> params: Params;\n@group(0) @binding(1) var<storage, read_write> trajectory: array<f32>;\n@group(0) @binding(2) var<storage, read_write> z_buf: array<f32>;\n@group(0) @binding(3) var<storage, read> noise_params: array<f32>;\n@group(0) @binding(4) var<storage, read> assignment: array<u32>;\n\n",
+    );
+    source.push_str(&build_dynamics(model, psi, symbols)?);
+    let v = symbols.len().max(1);
+    let dt = model.dt();
+    write_roll_kernel(&mut source, v, dt);
+    write_resample_kernel(&mut source, v, dt);
+    validate(&source)?;
+    Ok((source, v))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the packed records are exact f32 values")]
@@ -160,8 +198,41 @@ mod tests {
         let source = format!(
             "@group(0) @binding(4) var<storage, read> noise_params: array<f32>;\n\n{dynamics}"
         );
-        super::super::transpiler::validate(&source).unwrap();
+        validate(&source).unwrap();
         source
+    }
+
+    fn walk_model() -> (SimModel, Formula, Vec<String>) {
+        let advance = SimExpr::Add(
+            boxed(SimExpr::Add(
+                boxed(SimExpr::Prev(0)),
+                boxed(SimExpr::Const(0.05)),
+            )),
+            boxed(SimExpr::Noise(0)),
+        );
+        let model = SimModel::new(
+            ["x"],
+            1.0,
+            32,
+            vec![SimExpr::Const(0.0)],
+            vec![advance],
+            vec![NoiseModel::gaussian(0.0, 1.0).unwrap()],
+        )
+        .unwrap();
+        let psi = Formula::parse("x > -8").unwrap();
+        (model, psi, vec!["x".to_owned()])
+    }
+
+    #[test]
+    fn the_splitting_shader_assembles_and_validates() {
+        let (model, psi, symbols) = walk_model();
+        let (source, v) = build_splitting_shader(&model, &psi, &symbols).unwrap();
+        assert_eq!(v, 1);
+        assert!(source.contains("fn roll_kernel"));
+        assert!(source.contains("fn resample_kernel"));
+        assert!(source.contains("z = max(z, -psi_margin(&state))"));
+        assert!(source.contains("if (s == p) { return; }"));
+        assert!(source.contains("if (running >= params.level) { crossing = k; break; }"));
     }
 
     #[test]
