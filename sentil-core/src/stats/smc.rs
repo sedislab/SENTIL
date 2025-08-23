@@ -10,7 +10,7 @@ use rand_chacha::ChaCha8Rng;
 
 use super::confidence::{wilson_interval, ConfidenceInterval};
 use super::lifting::LiftingRegistry;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::formula::{Formula, ProbabilityOp};
 use crate::signal::Trace;
 
@@ -58,6 +58,10 @@ pub(crate) fn check(
     lifting: &LiftingRegistry,
     config: &SmcConfig,
 ) -> Result<SmcResult> {
+    if trace.is_empty() {
+        return Err(Error::EmptyTrace);
+    }
+
     #[cfg(feature = "gpu")]
     if let Some(result) = try_gpu_check(op, threshold, inner, trace, lifting, config) {
         return Ok(result);
@@ -65,11 +69,12 @@ pub(crate) fn check(
 
     // Sample `i` is seeded independently, so the count is the same however the
     // samples are scheduled, and a robustness of exactly zero counts as
-    // satisfied, matching `Robustness::is_satisfied`.
-    let satisfies = |i: u64| -> Result<bool> {
+    // satisfied, matching `Robustness::is_satisfied`. Each worker lifts into one
+    // reused trace buffer rather than allocating a fresh realization per draw.
+    let satisfies = |i: u64, buf: &mut Trace| -> Result<u64> {
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
-        let noisy = lifting.lift_with(trace, &mut rng)?;
-        Ok(inner.robustness(&noisy)? >= 0.0)
+        lifting.lift_into(trace, &mut rng, buf)?;
+        Ok(u64::from(inner.robustness(buf)? >= 0.0))
     };
 
     #[cfg(feature = "parallel")]
@@ -77,14 +82,15 @@ pub(crate) fn check(
         use rayon::prelude::*;
         (0..config.samples)
             .into_par_iter()
-            .map(|i| satisfies(i).map(u64::from))
+            .map_init(|| trace.clone(), |buf, i| satisfies(i, buf))
             .try_reduce(|| 0, |a, b| Ok(a + b))?
     };
     #[cfg(not(feature = "parallel"))]
     let satisfactions = {
+        let mut buf = trace.clone();
         let mut count = 0u64;
         for i in 0..config.samples {
-            count += u64::from(satisfies(i)?);
+            count += satisfies(i, &mut buf)?;
         }
         count
     };

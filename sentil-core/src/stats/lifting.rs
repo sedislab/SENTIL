@@ -80,6 +80,30 @@ impl LiftingRegistry {
         Ok(noisy)
     }
 
+    /// Lifts `source` into `dest` in place, reusing `dest`'s columns so a trace
+    /// lifted many times allocates nothing per draw. `dest` must already hold the
+    /// signals of `source` (the Monte Carlo driver seeds it from a clone). The
+    /// registered signals are redrawn from `rng` in the same order and with the
+    /// same draws as [`lift_with`](Self::lift_with), so the realization is
+    /// identical to a fresh lift; unregistered signals are left as `dest` holds
+    /// them, which is the caller's copy of `source`.
+    pub(crate) fn lift_into<R: Rng + ?Sized>(
+        &self,
+        source: &Trace,
+        rng: &mut R,
+        dest: &mut Trace,
+    ) -> Result<()> {
+        for (name, values) in source.signals() {
+            if let Some((model, interaction)) = self.models.get(name) {
+                dest.refill_signal(
+                    name,
+                    values.iter().map(|&v| interaction.apply(v, model.sample(rng))),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// The noise model and interaction registered for `variable`, if any. The
     /// GPU path uses this to pack each variable's noise parameters for the device.
     #[cfg(feature = "gpu")]

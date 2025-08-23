@@ -119,6 +119,43 @@ impl Trace {
         Ok(())
     }
 
+    /// Overwrites an existing signal's values in place from an iterator, reusing
+    /// the column's allocation so a trace replayed many times draws no fresh
+    /// memory. The signal must already exist, the iterator must yield exactly one
+    /// value per time point, and every value must be finite, as in
+    /// [`add_signal`](Self::add_signal).
+    pub(crate) fn refill_signal(
+        &mut self,
+        name: &str,
+        values: impl IntoIterator<Item = f64>,
+    ) -> Result<()> {
+        let expected = self.times.len();
+        let column = self
+            .signals
+            .get_mut(name)
+            .ok_or_else(|| Error::UnknownVariable {
+                name: name.to_owned(),
+            })?;
+        column.clear();
+        for v in values {
+            if !v.is_finite() {
+                return Err(Error::NonFiniteSample {
+                    kind: "value",
+                    value: v,
+                });
+            }
+            column.push(v);
+        }
+        if column.len() != expected {
+            return Err(Error::SignalLengthMismatch {
+                variable: name.to_owned(),
+                expected,
+                found: column.len(),
+            });
+        }
+        Ok(())
+    }
+
     /// The sample times, in increasing order.
     pub fn times(&self) -> &[f64] {
         &self.times
