@@ -615,6 +615,45 @@ fn offsets(interval: crate::formula::Interval) -> (f64, f64, bool) {
     }
 }
 
+/// Samples-per-unit-time assumed when pre-sizing a streaming window. Real rates
+/// vary, so this only sizes the initial allocation; the buffers grow if the true
+/// rate is higher. Covers the common control-loop range without overcommitting.
+const ASSUMED_RATE: f64 = 256.0;
+/// Cap on pre-sized window slots, so an unbounded or very wide interval does not
+/// request a huge allocation up front.
+const MAX_PREALLOC: usize = 4096;
+/// Floor so even a tiny interval avoids the first few doubling copies.
+const MIN_PREALLOC: usize = 16;
+
+/// Candidate slots to pre-size a window of the given finite width for, clamped
+/// to a sane range. A non-finite or non-positive width (an unbounded operator)
+/// falls back to the floor, since its live set is bounded by the longest
+/// monotone run rather than a time window.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "the estimate is clamped into [MIN_PREALLOC, MAX_PREALLOC], both small non-negative integers, so the round trip is exact and the cast cannot lose sign or magnitude"
+)]
+fn prealloc_for(width: f64) -> usize {
+    if !width.is_finite() || width <= 0.0 {
+        return MIN_PREALLOC;
+    }
+    let est = (width * ASSUMED_RATE).ceil();
+    est.clamp(MIN_PREALLOC as f64, MAX_PREALLOC as f64) as usize
+}
+
+/// Pre-sizing for a future operator's window, which spans back `offset_end` once
+/// resolved. An unbounded operator keeps only the longest monotone run, so it
+/// gets the floor rather than a window-derived guess.
+fn future_cap(offset_end: f64, bounded: bool) -> usize {
+    if bounded {
+        prealloc_for(offset_end)
+    } else {
+        MIN_PREALLOC
+    }
+}
+
 fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn Node>> {
     if !is_temporal(formula) {
         return atomic_node(formula, &symbols.names);
@@ -640,32 +679,33 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
         })),
         Formula::Historically(interval, inner) => Ok(Box::new(HistoricallyNode {
             child: build_node(inner, symbols)?,
-            delay: VecDeque::new(),
-            window: MonotonicDeque::new(),
+            delay: VecDeque::with_capacity(prealloc_for(interval.lower)),
+            window: MonotonicDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
             offset_lower: interval.lower,
             width: interval.upper_or_infinity(),
         })),
         Formula::Once(interval, inner) => Ok(Box::new(OnceNode {
             child: build_node(inner, symbols)?,
-            delay: VecDeque::new(),
-            window: MonotonicDeque::new(),
+            delay: VecDeque::with_capacity(prealloc_for(interval.lower)),
+            window: MonotonicDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
             offset_lower: interval.lower,
             width: interval.upper_or_infinity(),
         })),
         Formula::Since(interval, l, r) => Ok(Box::new(SinceNode {
             phi: build_node(l, symbols)?,
             psi: build_node(r, symbols)?,
-            candidates: VecDeque::new(),
-            delay: VecDeque::new(),
+            candidates: VecDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
+            delay: VecDeque::with_capacity(prealloc_for(interval.lower)),
             offset_lower: interval.lower,
             width: interval.upper_or_infinity(),
         })),
         Formula::Always(interval, inner) => {
             let (offset_start, offset_end, bounded) = offsets(*interval);
+            let cap = future_cap(offset_end, bounded);
             Ok(Box::new(FutureAlwaysNode {
                 child: build_node(inner, symbols)?,
-                buffer: VecDeque::new(),
-                window: MonotonicDeque::new(),
+                buffer: VecDeque::with_capacity(cap),
+                window: MonotonicDeque::with_capacity(cap),
                 offset_start,
                 offset_end,
                 bounded,
@@ -675,10 +715,11 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
         }
         Formula::Eventually(interval, inner) => {
             let (offset_start, offset_end, bounded) = offsets(*interval);
+            let cap = future_cap(offset_end, bounded);
             Ok(Box::new(FutureEventuallyNode {
                 child: build_node(inner, symbols)?,
-                buffer: VecDeque::new(),
-                window: MonotonicDeque::new(),
+                buffer: VecDeque::with_capacity(cap),
+                window: MonotonicDeque::with_capacity(cap),
                 offset_start,
                 offset_end,
                 bounded,
@@ -688,10 +729,11 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
         }
         Formula::Until(interval, l, r) => {
             let (offset_start, offset_end, bounded) = offsets(*interval);
+            let cap = future_cap(offset_end, bounded);
             Ok(Box::new(UntilNode {
                 phi: build_node(l, symbols)?,
                 psi: build_node(r, symbols)?,
-                buffer: VecDeque::new(),
+                buffer: VecDeque::with_capacity(cap),
                 offset_start,
                 offset_end,
                 bounded,
@@ -919,6 +961,32 @@ mod tests {
             .map(|(n, v)| ((*n).to_string(), v.to_vec()))
             .collect();
         super::super::discrete::robustness_trace(&phi, times, &map).unwrap()
+    }
+
+    #[test]
+    fn presizing_does_not_change_verdicts_even_past_the_estimate() {
+        let n = 600usize;
+        let times: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let x: Vec<f64> = (0..n).map(|i| ((i % 7) as f64) - 3.0).collect();
+        let f = "historically[0, 50](x > 0)";
+        assert_eq!(
+            stream_values(f, &times, &[("x", &x)]),
+            offline_values(f, &times, &[("x", &x)])
+        );
+    }
+
+    #[test]
+    fn prealloc_for_clamps_to_the_sane_range() {
+        assert_eq!(prealloc_for(0.0), MIN_PREALLOC);
+        assert_eq!(prealloc_for(f64::INFINITY), MIN_PREALLOC);
+        assert_eq!(prealloc_for(-1.0), MIN_PREALLOC);
+        assert_eq!(prealloc_for(f64::NAN), MIN_PREALLOC);
+        assert_eq!(prealloc_for(1e9), MAX_PREALLOC);
+        assert_eq!(prealloc_for(1.0), 256);
+        for &w in &[0.01, 0.5, 2.0, 17.0, 1e6, f64::INFINITY] {
+            let c = prealloc_for(w);
+            assert!((MIN_PREALLOC..=MAX_PREALLOC).contains(&c));
+        }
     }
 
     #[test]
