@@ -117,12 +117,16 @@ impl Formula {
         let Formula::Probabilistic(_, _, inner) = self else {
             return Err(Error::NotProbabilistic);
         };
+        if trace.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        let mut buf = trace.clone();
         let mut n = 0u64;
         sequential_test(config, || {
             n += 1;
             let mut rng = ChaCha8Rng::seed_from_u64(n);
-            let noisy = lifting.lift_with(trace, &mut rng)?;
-            Ok(inner.robustness(&noisy)? >= 0.0)
+            lifting.lift_into(trace, &mut rng, &mut buf)?;
+            Ok(inner.robustness(&buf)? >= 0.0)
         })
     }
 }
@@ -202,6 +206,17 @@ mod tests {
         assert!(matches!(
             phi.check_sequential(&trace, &lifting, &config()),
             Err(Error::NotProbabilistic)
+        ));
+    }
+
+    #[test]
+    fn an_empty_trace_is_rejected() {
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let trace = Trace::new(Vec::new()).unwrap();
+        let lifting = LiftingRegistry::new();
+        assert!(matches!(
+            phi.check_sequential(&trace, &lifting, &config()),
+            Err(Error::EmptyTrace)
         ));
     }
 }
