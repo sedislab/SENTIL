@@ -183,6 +183,11 @@ impl Trace {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::float_cmp,
+        reason = "the refilled values are exact and integer-valued"
+    )]
+
     use super::*;
 
     #[test]
@@ -231,5 +236,19 @@ mod tests {
         let mut trace = Trace::new([0.0, 1.0]).unwrap();
         let err = trace.add_signal("x", [1.0, f64::INFINITY]).unwrap_err();
         assert!(matches!(err, Error::NonFiniteSample { kind: "value", .. }));
+    }
+
+    #[test]
+    fn refill_signal_overwrites_in_place_and_validates() {
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", [1.0, 2.0, 3.0]).unwrap();
+        trace.refill_signal("x", [4.0, 5.0, 6.0]).unwrap();
+        assert_eq!(trace.signals()["x"], vec![4.0, 5.0, 6.0]);
+        let err = trace
+            .refill_signal("x", [1.0, f64::NAN, 3.0])
+            .unwrap_err();
+        assert!(matches!(err, Error::NonFiniteSample { kind: "value", .. }));
+        let err = trace.refill_signal("z", [0.0, 0.0, 0.0]).unwrap_err();
+        assert!(matches!(err, Error::UnknownVariable { .. }));
     }
 }

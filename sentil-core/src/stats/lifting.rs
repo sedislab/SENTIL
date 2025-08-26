@@ -175,4 +175,27 @@ mod tests {
         let noisy = lifting.lift(&base(), 1).unwrap();
         assert_eq!(noisy.signals()["x"], vec![10.0, 20.0, 30.0]);
     }
+
+    #[test]
+    fn lift_into_matches_a_fresh_lift_for_multiple_signals() {
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        lifting.register(
+            "y",
+            NoiseModel::gaussian(0.0, 2.0).unwrap(),
+            NoiseInteraction::Multiplicative,
+        );
+        let source = base();
+        let mut fresh_rng = ChaCha8Rng::seed_from_u64(123);
+        let fresh = lifting.lift_with(&source, &mut fresh_rng).unwrap();
+        let mut reuse_rng = ChaCha8Rng::seed_from_u64(123);
+        let mut dest = source.clone();
+        lifting.lift_into(&source, &mut reuse_rng, &mut dest).unwrap();
+        assert_eq!(fresh.signals()["x"], dest.signals()["x"]);
+        assert_eq!(fresh.signals()["y"], dest.signals()["y"]);
+    }
 }

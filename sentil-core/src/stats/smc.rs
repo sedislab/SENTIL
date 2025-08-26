@@ -261,6 +261,73 @@ fn times_f32(trace: &Trace) -> Option<Vec<f32>> {
         .collect()
 }
 
+#[cfg(test)]
+mod cpu_tests {
+    use super::*;
+    use crate::stats::{NoiseInteraction, NoiseModel};
+
+    #[test]
+    fn count_matches_the_fresh_lift_full_robustness_baseline() {
+        let inner = Formula::parse("always[0, 2](b > 0)").unwrap();
+        let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0]).unwrap();
+        trace.add_signal("a", vec![5.0; 5]).unwrap();
+        trace.add_signal("b", vec![1.0; 5]).unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "a",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        lifting.register(
+            "b",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 2000,
+            confidence: 0.95,
+            seed: 7,
+        };
+
+        let result = check(
+            ProbabilityOp::GreaterEqual,
+            0.5,
+            &inner,
+            &trace,
+            &lifting,
+            &config,
+        )
+        .unwrap();
+
+        let baseline: u64 = (0..config.samples)
+            .map(|i| {
+                let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
+                let noisy = lifting.lift_with(&trace, &mut rng).unwrap();
+                u64::from(inner.robustness_signal(&noisy).unwrap()[0] >= 0.0)
+            })
+            .sum();
+
+        assert_eq!(result.satisfactions, baseline);
+    }
+
+    #[test]
+    fn an_empty_trace_is_rejected() {
+        let inner = Formula::parse("x > 0").unwrap();
+        let trace = Trace::new(Vec::new()).unwrap();
+        let lifting = LiftingRegistry::new();
+        let err = check(
+            ProbabilityOp::GreaterEqual,
+            0.5,
+            &inner,
+            &trace,
+            &lifting,
+            &SmcConfig::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyTrace));
+    }
+}
+
 #[cfg(all(test, feature = "gpu"))]
 mod tests {
     use super::*;
