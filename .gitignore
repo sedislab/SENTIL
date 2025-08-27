@@ -6,6 +6,10 @@ target/
 # Lean proof build output (lake-manifest.json is committed)
 .lake/
 
+# Python runner bytecode
+__pycache__/
+*.pyc
+
 # Editor and OS noise
 .idea/
 .vscode/
