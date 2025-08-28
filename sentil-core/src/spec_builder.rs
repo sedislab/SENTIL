@@ -1126,6 +1126,10 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
             ("networking/latency_bound", "one_way_delay", 0.05, 0.15),
             ("robotics/velocity_limit", "velocity", 0.5, 1.5),
             ("automotive/speed_limit", "speed", 20.0, 40.0),
+            ("aerospace/load_factor_limit", "load_factor", 1.0, 3.0),
+            ("industrial/temperature_limit", "temperature", 25.0, 50.0),
+            ("uav/altitude_band", "altitude", 50.0, 150.0),
+            ("financial/max_drawdown_limit", "drawdown", 0.1, 0.3),
         ];
         let registry = SpecRegistry::default();
         let times: Vec<f64> = (0..=80).map(f64::from).collect();
