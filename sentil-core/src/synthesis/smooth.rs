@@ -354,17 +354,20 @@ fn soft_window(
     config: SmoothConfig,
     reduce: fn(&[f64], SmoothConfig) -> f64,
 ) -> Vec<f64> {
+    let mut scratch = Vec::new();
     times
         .iter()
         .map(|&t| {
             let (lo, hi) = (t + off_a, t + off_b);
-            let window: Vec<f64> = child
-                .iter()
-                .zip(times)
-                .filter(|(_, &tj)| tj >= lo && tj <= hi)
-                .map(|(&v, _)| v)
-                .collect();
-            reduce(&window, config)
+            let start = times.partition_point(|&tj| tj < lo - WINDOW_EPSILON);
+            scratch.clear();
+            for (&tj, &v) in times[start..].iter().zip(&child[start..]) {
+                if tj > hi + WINDOW_EPSILON {
+                    break;
+                }
+                scratch.push(v);
+            }
+            reduce(&scratch, config)
         })
         .collect()
 }
