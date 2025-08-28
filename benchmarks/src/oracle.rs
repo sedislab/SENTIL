@@ -78,6 +78,16 @@ pub const DETERMINISTIC: &[Case] = &[
     Case { id: "until_bounded", formula: "(x > 0) until[0, 2] (y > 0)", signals: &[("x", &[5.0, 3.0, -2.0]), ("y", &[-1.0, -1.0, 4.0])], expected: &[3.0, 3.0, 4.0] },
     Case { id: "since_unbounded", formula: "(x > 0) since (y > 0)", signals: &[("x", &[5.0, 3.0, 1.0]), ("y", &[2.0, -1.0, -1.0])], expected: &[2.0, 2.0, 1.0] },
     Case { id: "next", formula: "next(x > 0)", signals: &[("x", &[5.0, -3.0, 2.0])], expected: &[-3.0, 2.0, f64::NEG_INFINITY] },
+    Case { id: "always_eventually", formula: "always[0, 1](eventually[0, 1](x > 0))", signals: &[("x", &[-1.0, 2.0, -3.0, -1.0])], expected: &[2.0, -1.0, -1.0, -1.0] },
+    Case { id: "eventually_always", formula: "eventually[0, 1](always[0, 1](x > 0))", signals: &[("x", &[1.0, 3.0, -1.0, 2.0])], expected: &[1.0, -1.0, 2.0, 2.0] },
+    Case { id: "always_over_and", formula: "always[0, 2]((x > 0) and (y > 0))", signals: &[("x", &[3.0, 1.0, 2.0]), ("y", &[2.0, 4.0, -1.0])], expected: &[-1.0, -1.0, -1.0] },
+    Case { id: "implies_eventually", formula: "(p > 0) implies (eventually[0, 1](q > 0))", signals: &[("p", &[1.0, 1.0]), ("q", &[-1.0, 2.0])], expected: &[2.0, 2.0] },
+    Case { id: "negated_always", formula: "not(always[0, 1](x > 0))", signals: &[("x", &[3.0, -1.0, 2.0])], expected: &[1.0, 1.0, -2.0] },
+    Case { id: "historically_over_implies", formula: "historically[0, 2]((x > 0) implies (y > 0))", signals: &[("x", &[1.0, 1.0, -1.0]), ("y", &[2.0, -1.0, 3.0])], expected: &[2.0, -1.0, -1.0] },
+    Case { id: "single_sample", formula: "always[0, 5](x > 0)", signals: &[("x", &[3.0])], expected: &[3.0] },
+    Case { id: "on_threshold", formula: "always[0, 2](x >= 0)", signals: &[("x", &[0.0, 0.0, 0.0])], expected: &[0.0, 0.0, 0.0] },
+    Case { id: "eventually_over_threshold", formula: "eventually[0, 3](x > 2)", signals: &[("x", &[0.0, 1.0, 5.0, 1.0])], expected: &[3.0, 3.0, 3.0, -1.0] },
+    Case { id: "eventually_all_negative", formula: "eventually(x > 0)", signals: &[("x", &[-5.0, -3.0, -1.0])], expected: &[-1.0, -1.0, -1.0] },
 ];
 
 #[must_use]
