@@ -7,19 +7,19 @@ The tiers are CPU (runs anywhere, including in continuous integration), GPU (nee
 ## How the speed numbers are read
 
 1. Prefix scoring equals full scoring. `Formula::robustness` reads only the dependency prefix, and its value at the first sample matches scoring the whole trace, to the bit, over random formulas and traces.
-Command: `cargo test --offline -p sentil-core prefix_robustness_equals_full_at_index_zero` (and `PROPTEST_CASES=20000` for the deep run).
+Command: `cargo test --offline -p sentil prefix_robustness_equals_full_at_index_zero` (and `PROPTEST_CASES=20000` for the deep run).
 Expected: every case equal by `to_bits`.
 Tolerance: exact.
 Tier: CPU.
 
 Deque equals naive. The monotonic-deque sliding window matches the exhaustive scan on bounded and unbounded windows, both extrema. This is the equivalence the Lean proof formalizes.
-Command: `cargo test --offline -p sentil-core deque_equals_naive`.
+Command: `cargo test --offline -p sentil deque_equals_naive`.
 Expected: all equal.
 Tolerance: exact.
 Tier: CPU.
 
 Monte Carlo reuse changes no count. The reused per-worker trace buffer gives the same satisfaction count, bit for bit, as a fresh lift scored over the whole signal, including with several registered noise signals where the draw order matters.
-Command: `cargo test --offline -p sentil-core count_matches_the_fresh_lift_full_robustness_baseline`.
+Command: `cargo test --offline -p sentil count_matches_the_fresh_lift_full_robustness_baseline`.
 Expected: identical count.
 Tolerance: exact.
 Tier: CPU.
@@ -31,7 +31,7 @@ Tolerance: exact.
 Tier: CPU.
 
 Wilson and Clopper-Pearson reference values. The interval functions return the published values on a known input.
-Command: `cargo test --offline -p sentil-core --features statistical confidence`.
+Command: `cargo test --offline -p sentil --features statistical confidence`.
 Expected: wilson(50, 100, 0.95) = [0.403831, 0.596169], cp(50, 100, 0.95) = [0.39828, 0.60172] (R's binom.test), z(0.95) = 1.95996. Tolerance: 1e-6 for Wilson and z, 1e-3 for Clopper-Pearson. Tier: CPU.
 
 ## Speed: full-signal track, against RTAMT
