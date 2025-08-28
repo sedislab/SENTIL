@@ -59,6 +59,16 @@ pub const DETERMINISTIC: &[Case] = &[
     Case { id: "implies_holds", formula: "(x > 0) implies (y > 0)", signals: &[("x", &[5.0]), ("y", &[2.0])], expected: &[2.0] },
     Case { id: "implies_fails", formula: "(x > 0) implies (y > 0)", signals: &[("x", &[5.0]), ("y", &[-2.0])], expected: &[-2.0] },
     Case { id: "nested_boolean", formula: "((x > 0) and (y > 0)) or (z > 0)", signals: &[("x", &[5.0]), ("y", &[3.0]), ("z", &[-1.0])], expected: &[3.0] },
+    Case { id: "always_bounded", formula: "always[0, 2](x > 0)", signals: &[("x", &[3.0, 1.0, 2.0])], expected: &[1.0, 1.0, 2.0] },
+    Case { id: "always_bounded_violated", formula: "always[0, 2](x > 0)", signals: &[("x", &[3.0, -1.0, 2.0])], expected: &[-1.0, -1.0, 2.0] },
+    Case { id: "always_offset", formula: "always[1, 2](x > 0)", signals: &[("x", &[5.0, 1.0, 2.0, 4.0])], expected: &[1.0, 2.0, 4.0, f64::INFINITY] },
+    Case { id: "eventually_bounded", formula: "eventually[0, 2](x > 0)", signals: &[("x", &[-3.0, -1.0, -2.0])], expected: &[-1.0, -1.0, -2.0] },
+    Case { id: "eventually_bounded_sat", formula: "eventually[0, 2](x > 0)", signals: &[("x", &[-3.0, 4.0, -2.0])], expected: &[4.0, 4.0, -2.0] },
+    Case { id: "eventually_offset", formula: "eventually[1, 2](x > 0)", signals: &[("x", &[-3.0, -1.0, 4.0, -2.0])], expected: &[4.0, 4.0, -2.0, f64::NEG_INFINITY] },
+    Case { id: "single_dip", formula: "always[0, 4](x > 0)", signals: &[("x", &[5.0, 5.0, 0.5, 5.0, 5.0])], expected: &[0.5, 0.5, 0.5, 5.0, 5.0] },
+    Case { id: "always_unbounded", formula: "always(x > 0)", signals: &[("x", &[3.0, 1.0, 2.0])], expected: &[1.0, 1.0, 2.0] },
+    Case { id: "eventually_unbounded", formula: "eventually(x > 0)", signals: &[("x", &[-3.0, -1.0, -2.0])], expected: &[-1.0, -1.0, -2.0] },
+    Case { id: "horizon_exceeds_trace", formula: "always[0, 10](x > 0)", signals: &[("x", &[2.0, 4.0, 1.0])], expected: &[1.0, 1.0, 1.0] },
 ];
 
 #[must_use]
