@@ -116,6 +116,14 @@ pub fn soft_max(values: &[f64], beta: f64) -> f64 {
     shift + sum.ln() / beta
 }
 
+fn soft_min2(acc: f64, x: f64, beta: f64) -> f64 {
+    let m = acc.min(x);
+    if !m.is_finite() {
+        return m;
+    }
+    m - ((-beta * (acc - m)).exp() + (-beta * (x - m)).exp()).ln() / beta
+}
+
 /// Arithmetic-geometric mean soft minimum. When every margin is positive it is the
 /// geometric mean of the margins shifted by one, which recovers the exact value
 /// when the margins are equal; otherwise it averages the violations, so it shares
@@ -272,6 +280,9 @@ fn soft_until(
 ) -> Vec<f64> {
     let n = phi.len();
     let mut result = vec![f64::NEG_INFINITY; n];
+    let lse = matches!(config.kind, SoftKind::LogSumExp);
+    let mut candidates = Vec::new();
+    let mut prefix = Vec::new();
     for i in 0..n {
         let window_start = times[i] + a;
         let window_end = if b.is_infinite() {
@@ -283,17 +294,23 @@ fn soft_until(
             continue;
         }
         let first = times.partition_point(|&t| t < window_start - EPS);
-        let mut prefix = Vec::new();
-        let mut candidates = Vec::new();
+        candidates.clear();
+        prefix.clear();
+        let mut running = f64::INFINITY;
         for j in i..n {
             if j > i {
-                prefix.push(phi[j - 1]);
+                if lse {
+                    running = soft_min2(running, phi[j - 1], config.temperature);
+                } else {
+                    prefix.push(phi[j - 1]);
+                }
             }
             if times[j] > window_end + EPS {
                 break;
             }
             if j >= first {
-                candidates.push(reduce_min(&[psi[j], reduce_min(&prefix, config)], config));
+                let phi_min = if lse { running } else { agm_min(&prefix) };
+                candidates.push(reduce_min(&[psi[j], phi_min], config));
             }
         }
         result[i] = reduce_max(&candidates, config);
@@ -311,6 +328,9 @@ fn soft_since(
 ) -> Vec<f64> {
     let n = phi.len();
     let mut result = vec![f64::NEG_INFINITY; n];
+    let lse = matches!(config.kind, SoftKind::LogSumExp);
+    let mut candidates = Vec::new();
+    let mut prefix = Vec::new();
     for i in 0..n {
         let window_end = times[i] - a;
         let window_start = if b.is_infinite() {
@@ -319,17 +339,23 @@ fn soft_since(
             (times[i] - b).max(0.0)
         };
         let last = times.partition_point(|&t| t <= window_end + EPS);
-        let mut prefix = Vec::new();
-        let mut candidates = Vec::new();
+        candidates.clear();
+        prefix.clear();
+        let mut running = f64::INFINITY;
         for j in (0..=i).rev() {
             if j < i {
-                prefix.push(phi[j + 1]);
+                if lse {
+                    running = soft_min2(running, phi[j + 1], config.temperature);
+                } else {
+                    prefix.push(phi[j + 1]);
+                }
             }
             if times[j] < window_start - EPS {
                 break;
             }
             if j < last {
-                candidates.push(reduce_min(&[psi[j], reduce_min(&prefix, config)], config));
+                let phi_min = if lse { running } else { agm_min(&prefix) };
+                candidates.push(reduce_min(&[psi[j], phi_min], config));
             }
         }
         result[i] = reduce_max(&candidates, config);
@@ -519,6 +545,19 @@ mod tests {
     }
 
     #[test]
+    fn smooth_until_with_a_long_prefix_tracks_the_exact_value() {
+        let phi = Formula::parse("(x > 0) until[0, 5] (y > 0)").unwrap();
+        let mut trace = Trace::new([0.0, 1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        trace.add_signal("x", [3.0, 1.0, 2.0, 0.5, 4.0, 1.0]).unwrap();
+        trace.add_signal("y", [-2.0, -1.0, -3.0, 2.0, -1.0, 1.0]).unwrap();
+        let exact = phi.robustness(&trace).unwrap();
+        let smooth = phi
+            .smooth_robustness(&trace, SmoothConfig::new(200.0).unwrap())
+            .unwrap();
+        assert!((smooth - exact).abs() < 0.05, "smooth {smooth} exact {exact}");
+    }
+
+    #[test]
     fn smooth_next_shifts_one_step() {
         let phi = Formula::parse("next(x > 0)").unwrap();
         let mut trace = Trace::new([0.0, 1.0]).unwrap();
@@ -532,13 +571,6 @@ mod tests {
 
     #[test]
     fn running_lse_fold_matches_the_whole_set_soft_reduction() {
-        let soft_min2 = |acc: f64, x: f64, beta: f64| -> f64 {
-            let m = acc.min(x);
-            if !m.is_finite() {
-                return m;
-            }
-            m - ((-beta * (acc - m)).exp() + (-beta * (x - m)).exp()).ln() / beta
-        };
         let soft_max2 = |acc: f64, x: f64, beta: f64| -> f64 {
             let m = acc.max(x);
             if !m.is_finite() {
