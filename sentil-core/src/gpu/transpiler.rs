@@ -172,8 +172,6 @@ fn emit_call(
     };
     match name {
         "abs" => unary(ssa, &|a| format!("abs({a})")),
-        // The GPU clamps and guards the transcendentals the same way storm does,
-        // so a domain edge yields a finite value instead of a NaN.
         "sqrt" => unary(ssa, &|a| format!("sqrt(max({a}, 0.0))")),
         "exp" => unary(ssa, &|a| format!("exp(clamp({a}, -87.0, 87.0))")),
         "ln" => unary(ssa, &|a| format!("log(max({a}, 1e-38))")),
