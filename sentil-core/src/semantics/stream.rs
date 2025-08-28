@@ -268,7 +268,6 @@ impl Node for SinceNode {
 /// `always[a, b] phi`, settling the verdict for the time `b` behind the present.
 struct FutureAlwaysNode {
     child: Box<dyn Node>,
-    buffer: VecDeque<(f64, f64)>,
     window: MonotonicDeque,
     offset_start: f64,
     offset_end: f64,
@@ -284,7 +283,6 @@ impl Node for FutureAlwaysNode {
         let (lo, hi) = bounds(child);
         let first = *self.first_time.get_or_insert(time);
 
-        self.buffer.push_back((time, lo));
         self.window.push_min(time, lo);
         self.global_min = self.global_min.min(hi);
 
@@ -300,7 +298,6 @@ impl Node for FutureAlwaysNode {
 
         let window_start = query_time + self.offset_start;
         self.window.evict_before(window_start);
-        drop_front_before(&mut self.buffer, window_start);
         let min_rob = self.window.front_value().unwrap_or(f64::INFINITY);
 
         if concrete {
@@ -311,7 +308,6 @@ impl Node for FutureAlwaysNode {
     }
 
     fn reset(&mut self) {
-        self.buffer.clear();
         self.window.clear();
         self.first_time = None;
         self.global_min = f64::INFINITY;
@@ -322,7 +318,6 @@ impl Node for FutureAlwaysNode {
 /// `eventually[a, b] phi`: the dual of `always`, settling on a supremum.
 struct FutureEventuallyNode {
     child: Box<dyn Node>,
-    buffer: VecDeque<(f64, f64)>,
     window: MonotonicDeque,
     offset_start: f64,
     offset_end: f64,
@@ -338,7 +333,6 @@ impl Node for FutureEventuallyNode {
         let (lo, hi) = bounds(child);
         let first = *self.first_time.get_or_insert(time);
 
-        self.buffer.push_back((time, hi));
         self.window.push_max(time, hi);
         self.global_max = self.global_max.max(lo);
 
@@ -354,7 +348,6 @@ impl Node for FutureEventuallyNode {
 
         let window_start = query_time + self.offset_start;
         self.window.evict_before(window_start);
-        drop_front_before(&mut self.buffer, window_start);
         let max_rob = self.window.front_value().unwrap_or(f64::NEG_INFINITY);
 
         if concrete {
@@ -365,7 +358,6 @@ impl Node for FutureEventuallyNode {
     }
 
     fn reset(&mut self) {
-        self.buffer.clear();
         self.window.clear();
         self.first_time = None;
         self.global_max = f64::NEG_INFINITY;
@@ -475,17 +467,6 @@ impl Node for NextNode {
 
 fn bounds(robustness: Robustness) -> (f64, f64) {
     (robustness.lower(), robustness.upper())
-}
-
-/// Drops buffered `(time, _)` entries whose time is strictly before `limit`.
-fn drop_front_before(buffer: &mut VecDeque<(f64, f64)>, limit: f64) {
-    while let Some(&(t, _)) = buffer.front() {
-        if t < limit {
-            buffer.pop_front();
-        } else {
-            break;
-        }
-    }
 }
 
 /// An online monitor that evaluates a formula incrementally.
@@ -693,7 +674,6 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
             let cap = future_cap(offset_end, bounded);
             Ok(Box::new(FutureAlwaysNode {
                 child: build_node(inner, symbols)?,
-                buffer: VecDeque::with_capacity(cap),
                 window: MonotonicDeque::with_capacity(cap),
                 offset_start,
                 offset_end,
@@ -707,7 +687,6 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
             let cap = future_cap(offset_end, bounded);
             Ok(Box::new(FutureEventuallyNode {
                 child: build_node(inner, symbols)?,
-                buffer: VecDeque::with_capacity(cap),
                 window: MonotonicDeque::with_capacity(cap),
                 offset_start,
                 offset_end,
