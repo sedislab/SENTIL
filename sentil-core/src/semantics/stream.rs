@@ -19,6 +19,7 @@ use super::window::MonotonicDeque;
 use crate::error::{Error, Result};
 use crate::expr::Program;
 use crate::formula::Formula;
+use crate::signal::Trace;
 
 /// The lower-bound delay added when deciding whether a buffered sample has
 /// matured into a past-time window, absorbing floating-point rounding.
@@ -553,6 +554,37 @@ impl StreamMonitor {
         self.root.update(time, values)
     }
 
+    /// Replays a recorded `trace` through the monitor in time order, returning the
+    /// per-step robustness.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnknownVariable`] if the trace lacks a signal the formula
+    /// needs.
+    pub fn run(&mut self, trace: &Trace) -> Result<Vec<Robustness>> {
+        let signals = trace.signals();
+        let columns = self
+            .symbols
+            .names
+            .iter()
+            .map(|name| {
+                signals
+                    .get(name)
+                    .map(Vec::as_slice)
+                    .ok_or_else(|| Error::UnknownVariable { name: name.clone() })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut out = Vec::with_capacity(trace.len());
+        let mut packed = vec![0.0; columns.len()];
+        for (i, &time) in trace.times().iter().enumerate() {
+            for (slot, column) in packed.iter_mut().zip(&columns) {
+                *slot = column[i];
+            }
+            out.push(self.update_packed(time, &packed)?);
+        }
+        Ok(out)
+    }
+
     /// The packed-slice index of a variable, for use with
     /// [`StreamMonitor::update_packed`].
     pub fn symbol_index(&self, name: &str) -> Option<usize> {
@@ -1031,5 +1063,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn run_replays_a_trace_through_the_monitor() {
+        let trace = Trace::from_signal(vec![0.0, 1.0, 2.0], "x", vec![3.0, -1.0, 4.0]).unwrap();
+        let mut monitor = StreamMonitor::new("x > 0").unwrap();
+        let signal = monitor.run(&trace).unwrap();
+        let values: Vec<f64> = signal.iter().map(Robustness::value).collect();
+        assert_eq!(values, vec![3.0, -1.0, 4.0]);
+    }
+
+    #[test]
+    fn run_reports_a_missing_signal() {
+        let trace = Trace::from_signal(vec![0.0, 1.0], "y", vec![1.0, 2.0]).unwrap();
+        let mut monitor = StreamMonitor::new("x > 0").unwrap();
+        assert!(matches!(
+            monitor.run(&trace),
+            Err(Error::UnknownVariable { .. })
+        ));
     }
 }
