@@ -910,6 +910,69 @@ mod tests {
         assert!((p - 0.5).abs() < 0.005, "expected about 0.5, got {p}");
     }
 
+    #[test]
+    #[ignore = "needs a GPU device; prints SMC throughput, run with --nocapture"]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the sample count is four million, far below 2^52, so the casts are exact"
+    )]
+    fn gpu_smc_throughput_against_one_cpu_core() {
+        use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel};
+        use crate::{Formula, Trace};
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        use std::time::Instant;
+
+        let formula = Formula::parse("x > 0").unwrap();
+        let symbols = formula.variables();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let trace = Trace::from_signal([0.0], "x", [0.0]).unwrap();
+        let n: u64 = 4_000_000;
+
+        let (shader, _state) = build_count_shader(&formula, &symbols).unwrap();
+        let ctx = GpuMcContext::new(&shader, false).unwrap();
+        let base = [0.0f32];
+        let mut noise = [0.0f32; NOISE_RECORD];
+        noise[0] = 1.0; // Gaussian family
+        noise[3] = 1.0; // standard deviation 1
+        let _ = ctx
+            .gpu_satisfaction_count(&base, &noise, None, 200_000, 42)
+            .unwrap();
+        let start = Instant::now();
+        let gpu_count = ctx
+            .gpu_satisfaction_count(&base, &noise, None, n, 42)
+            .unwrap();
+        let gpu_ms = start.elapsed().as_secs_f64() * 1e3;
+
+        let mut buf = trace.clone();
+        let start = Instant::now();
+        let mut cpu_count = 0u64;
+        for i in 0..n {
+            let mut rng = ChaCha8Rng::seed_from_u64(42u64.wrapping_add(i));
+            lifting.lift_into(&trace, &mut rng, &mut buf).unwrap();
+            cpu_count += u64::from(formula.robustness(&buf).unwrap() >= 0.0);
+        }
+        let cpu_ms = start.elapsed().as_secs_f64() * 1e3;
+
+        let gpu_thr = n as f64 / gpu_ms / 1e3;
+        let cpu_thr = n as f64 / cpu_ms / 1e3;
+        println!(
+            "GPU SMC: {n} realizations in {gpu_ms:.1} ms, {gpu_thr:.1} M/s, p={:.4}",
+            gpu_count as f64 / n as f64
+        );
+        println!(
+            "CPU SMC (1 core): {n} realizations in {cpu_ms:.1} ms, {cpu_thr:.1} M/s, p={:.4}",
+            cpu_count as f64 / n as f64
+        );
+        println!("GPU speedup over one CPU core: {:.1}x", cpu_ms / gpu_ms);
+        assert!(gpu_ms < cpu_ms);
+    }
+
     #[allow(
         clippy::cast_possible_truncation,
         reason = "the GPU evaluates in f32; the test signals are small integers"
