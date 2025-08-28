@@ -71,6 +71,25 @@ impl Formula {
             _ => Err(Error::NotProbabilistic),
         }
     }
+
+    /// Like [`check`](Self::check) but reports the conservative Clopper-Pearson
+    /// exact interval, which never covers below the confidence level, in place of
+    /// the Wilson interval. The point estimate and the verdict are unchanged.
+    ///
+    /// # Errors
+    ///
+    /// As [`check`](Self::check).
+    pub fn check_conservative(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &SmcConfig,
+    ) -> Result<SmcResult> {
+        let mut result = self.check(trace, lifting, config)?;
+        result.interval =
+            clopper_pearson(result.satisfactions, result.samples, config.confidence);
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -123,6 +142,27 @@ mod tests {
             .unwrap();
         assert!((0.45..=0.55).contains(&result.probability));
         assert!(result.interval.contains(0.5));
+    }
+
+    #[test]
+    fn check_conservative_widens_to_the_exact_interval() {
+        let phi = Formula::parse("P>=0.4(x > 0)").unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let wilson = phi
+            .check(&trace(&[0.0]), &lifting, &SmcConfig::default())
+            .unwrap();
+        let exact = phi
+            .check_conservative(&trace(&[0.0]), &lifting, &SmcConfig::default())
+            .unwrap();
+        assert_eq!(exact.probability, wilson.probability);
+        assert_eq!(exact.satisfactions, wilson.satisfactions);
+        assert!(exact.interval.width() >= wilson.interval.width());
+        assert!(exact.interval.contains(exact.probability));
     }
 
     #[test]
