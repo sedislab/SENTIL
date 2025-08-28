@@ -119,11 +119,7 @@ impl Trace {
         Ok(())
     }
 
-    /// Overwrites an existing signal's values in place from an iterator, reusing
-    /// the column's allocation so a trace replayed many times draws no fresh
-    /// memory. The signal must already exist, the iterator must yield exactly one
-    /// value per time point, and every value must be finite, as in
-    /// [`add_signal`](Self::add_signal).
+    #[cfg(feature = "statistical")]
     pub(crate) fn refill_signal(
         &mut self,
         name: &str,
@@ -238,6 +234,7 @@ mod tests {
         assert!(matches!(err, Error::NonFiniteSample { kind: "value", .. }));
     }
 
+    #[cfg(feature = "statistical")]
     #[test]
     fn refill_signal_overwrites_in_place_and_validates() {
         let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();

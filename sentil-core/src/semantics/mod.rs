@@ -11,6 +11,9 @@ mod robustness;
 mod stream;
 mod window;
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+
 pub use multi::MultiFormulaMonitor;
 pub use robustness::Robustness;
 pub use stream::StreamMonitor;
@@ -48,10 +51,6 @@ impl Formula {
         if trace.is_empty() {
             return Err(Error::EmptyTrace);
         }
-        // The value at the first sample depends only on the trace up to the
-        // formula's horizon, so evaluate over that prefix rather than the whole
-        // trace. The slice bound m is in 1..=n; signal columns keep their full
-        // length and are read only at indices below m.
         let times = trace.times();
         let m = discrete::max_dep_index(self, 0, times) + 1;
         let values = discrete::robustness_trace(self, &times[..m], trace.signals())?;
@@ -83,12 +82,7 @@ impl Formula {
         Ok(signal.at(trace.times()[0]))
     }
 
-    /// The robustness at every sample of the trace, read in discrete time.
-    ///
-    /// [`robustness`](Self::robustness) answers the usual monitoring question,
-    /// the value at the first sample. This returns the whole signal, one
-    /// robustness per sample, for when the trajectory of satisfaction matters
-    /// and not just its value now.
+    /// The discrete-time robustness at every sample.
     ///
     /// ```
     /// use sentil::{Formula, Trace};
@@ -110,13 +104,7 @@ impl Formula {
         discrete::robustness_trace(self, trace.times(), trace.signals())
     }
 
-    /// The dense-time robustness sampled at every time of the trace.
-    ///
-    /// The dense counterpart of [`robustness_signal`](Self::robustness_signal):
-    /// the trace is read as a piecewise-linear signal and the robustness signal
-    /// is read back at the original sample times. Like
-    /// [`robustness_dense`](Self::robustness_dense) it accounts for window edges
-    /// and predicate crossings that fall between samples.
+    /// The dense-time robustness at every sample.
     ///
     /// ```
     /// use sentil::{Formula, Trace};
