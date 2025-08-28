@@ -1115,4 +1115,35 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
         let robustness = formula.robustness(&trace).unwrap();
         assert!((robustness + 0.05).abs() < 1e-9, "robustness {robustness}");
     }
+
+    #[test]
+    fn band_specs_score_holding_and_violating_traces() {
+        use crate::{Formula, Trace};
+
+        let cases = [
+            ("medical/euglycemia_band", "glucose", 100.0, 50.0),
+            ("power/voltage_band", "voltage", 1.0, 1.2),
+            ("networking/latency_bound", "one_way_delay", 0.05, 0.15),
+            ("robotics/velocity_limit", "velocity", 0.5, 1.5),
+            ("automotive/speed_limit", "speed", 20.0, 40.0),
+        ];
+        let registry = SpecRegistry::default();
+        let times: Vec<f64> = (0..=80).map(f64::from).collect();
+        for (spec, signal, ok, bad) in cases {
+            let text = registry.builder(spec).unwrap().build_deterministic().unwrap();
+            let formula = Formula::parse(&text).unwrap();
+            let mut holds = Trace::new(times.clone()).unwrap();
+            holds.add_signal(signal, vec![ok; times.len()]).unwrap();
+            assert!(
+                formula.robustness(&holds).unwrap() > 0.0,
+                "{spec} should hold at {ok}"
+            );
+            let mut fails = Trace::new(times.clone()).unwrap();
+            fails.add_signal(signal, vec![bad; times.len()]).unwrap();
+            assert!(
+                formula.robustness(&fails).unwrap() < 0.0,
+                "{spec} should fail at {bad}"
+            );
+        }
+    }
 }
