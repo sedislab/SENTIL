@@ -222,7 +222,7 @@ impl RingBuffer {
 
     /// The value sampled at `time`, within a small tolerance.
     #[must_use]
-    pub fn get_by_time(&self, time: f64) -> Option<f64> {
+    pub fn at_time(&self, time: f64) -> Option<f64> {
         let idx = self.lower_bound(time);
         for candidate in [idx, idx.wrapping_sub(1)] {
             if candidate < self.len {
@@ -237,7 +237,7 @@ impl RingBuffer {
 
     /// The sample whose time is closest to `time`. Runs in O(log n).
     #[must_use]
-    pub fn get_closest_by_time(&self, time: f64) -> Option<(f64, f64)> {
+    pub fn closest_to_time(&self, time: f64) -> Option<(f64, f64)> {
         if self.is_empty() {
             return None;
         }
@@ -259,7 +259,7 @@ impl RingBuffer {
 
     /// Every sample whose time lies in `[start, end]`, oldest first.
     #[must_use]
-    pub fn get_range(&self, start: f64, end: f64) -> Vec<(f64, f64)> {
+    pub fn between(&self, start: f64, end: f64) -> Vec<(f64, f64)> {
         if self.is_empty() || start > end {
             return Vec::new();
         }
@@ -343,10 +343,10 @@ mod tests {
         for (t, v) in [(0.0, 2.0), (1.0, 4.0), (2.0, 6.0), (3.0, 8.0)] {
             buffer.push(t, v).unwrap();
         }
-        assert_eq!(buffer.get_by_time(2.0), Some(6.0));
-        assert_eq!(buffer.get_by_time(2.5), None);
-        assert_eq!(buffer.get_closest_by_time(2.4), Some((2.0, 6.0)));
-        assert_eq!(buffer.get_range(1.0, 2.0), vec![(1.0, 4.0), (2.0, 6.0)]);
+        assert_eq!(buffer.at_time(2.0), Some(6.0));
+        assert_eq!(buffer.at_time(2.5), None);
+        assert_eq!(buffer.closest_to_time(2.4), Some((2.0, 6.0)));
+        assert_eq!(buffer.between(1.0, 2.0), vec![(1.0, 4.0), (2.0, 6.0)]);
         assert_eq!(buffer.time_range(), Some((0.0, 3.0)));
         assert_eq!(buffer.mean(), Some(5.0));
         assert_eq!(buffer.min(), Some(2.0));
@@ -362,6 +362,6 @@ mod tests {
         buffer.push(2.0, 30.0).unwrap();
         assert_eq!(buffer.mean(), Some(25.0));
         assert!((buffer.variance().unwrap() - 50.0).abs() < 1e-9);
-        assert_eq!(buffer.get_range(1.0, 2.0), vec![(1.0, 20.0), (2.0, 30.0)]);
+        assert_eq!(buffer.between(1.0, 2.0), vec![(1.0, 20.0), (2.0, 30.0)]);
     }
 }
