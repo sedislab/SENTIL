@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel};
+use crate::Formula;
 
 /// A complete specification template, deserialized from TOML, YAML, or JSON.
 #[derive(Debug, Clone, Deserialize)]
@@ -513,6 +514,25 @@ impl SpecBuilder {
     /// or the formula leaves a placeholder unresolved.
     pub fn build_probabilistic(&self) -> Result<String> {
         self.resolve_formula(false)
+    }
+
+    /// The deterministic formula parsed into a [`Formula`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] for an unresolved placeholder, or a parse
+    /// error naming the column.
+    pub fn build_formula(&self) -> Result<Formula> {
+        Formula::parse(&self.build_deterministic()?)
+    }
+
+    /// The probabilistic formula parsed into a [`Formula`].
+    ///
+    /// # Errors
+    ///
+    /// As [`build_formula`](Self::build_formula), for the probabilistic formula.
+    pub fn build_probabilistic_formula(&self) -> Result<Formula> {
+        Formula::parse(&self.build_probabilistic()?)
     }
 
     /// The available variant names, sorted.
