@@ -69,6 +69,15 @@ pub const DETERMINISTIC: &[Case] = &[
     Case { id: "always_unbounded", formula: "always(x > 0)", signals: &[("x", &[3.0, 1.0, 2.0])], expected: &[1.0, 1.0, 2.0] },
     Case { id: "eventually_unbounded", formula: "eventually(x > 0)", signals: &[("x", &[-3.0, -1.0, -2.0])], expected: &[-1.0, -1.0, -2.0] },
     Case { id: "horizon_exceeds_trace", formula: "always[0, 10](x > 0)", signals: &[("x", &[2.0, 4.0, 1.0])], expected: &[1.0, 1.0, 1.0] },
+
+    Case { id: "historically_bounded", formula: "historically[0, 1](x > 0)", signals: &[("x", &[3.0, -1.0, 2.0, 4.0])], expected: &[3.0, -1.0, -1.0, 2.0] },
+    Case { id: "once_bounded", formula: "once[0, 1](x > 0)", signals: &[("x", &[-3.0, 1.0, -2.0, -4.0])], expected: &[-3.0, 1.0, 1.0, -2.0] },
+    Case { id: "historically_unbounded", formula: "historically(x > 0)", signals: &[("x", &[3.0, 1.0, -2.0, 4.0])], expected: &[3.0, 1.0, -2.0, -2.0] },
+    Case { id: "once_unbounded", formula: "once(x > 0)", signals: &[("x", &[-3.0, -1.0, 2.0, -4.0])], expected: &[-3.0, -1.0, 2.0, 2.0] },
+    Case { id: "historically_offset", formula: "historically[1, 2](x > 0)", signals: &[("x", &[5.0, 1.0, 2.0, 4.0])], expected: &[f64::INFINITY, 5.0, 1.0, 1.0] },
+    Case { id: "until_bounded", formula: "(x > 0) until[0, 2] (y > 0)", signals: &[("x", &[5.0, 3.0, -2.0]), ("y", &[-1.0, -1.0, 4.0])], expected: &[3.0, 3.0, 4.0] },
+    Case { id: "since_unbounded", formula: "(x > 0) since (y > 0)", signals: &[("x", &[5.0, 3.0, 1.0]), ("y", &[2.0, -1.0, -1.0])], expected: &[2.0, 2.0, 1.0] },
+    Case { id: "next", formula: "next(x > 0)", signals: &[("x", &[5.0, -3.0, 2.0])], expected: &[-3.0, 2.0, f64::NEG_INFINITY] },
 ];
 
 #[must_use]
