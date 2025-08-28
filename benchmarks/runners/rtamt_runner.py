@@ -1,17 +1,14 @@
-"""RTAMT benchmark runner.
+"""RTAMT runner.
 
 Times RTAMT's discrete-time offline monitor on the same oracle SENTIL runs and
-emits the same JSON record, one per line, so the two line up directly. RTAMT
-computes the whole robustness signal, so this is the full-signal track, the
-like-for-like comparison against SENTIL's robustness_signal.
-
-Run as `python rtamt_runner.py <suite>`, where <suite> is `deterministic` or
-`scalability`. RTAMT writes the robustness it computed into each record, so a
-run also confirms both tools agree on the value before any timing is read.
+emits the same JSON record, one per line. RTAMT computes the whole signal, so
+this is the full-signal track. Run as
+`python rtamt_runner.py <deterministic|scalability>`.
 """
 
 import json
 import math
+import os
 import platform
 import statistics
 import sys
@@ -19,10 +16,6 @@ import time
 
 import rtamt
 
-# The oracle, matching benchmarks/src/oracle.rs: x is a scaled sine, p flips
-# every ten samples, q is a fixed sign sequence. RTAMT does not depend on q for
-# the value-matching formulas, so a constant q keeps the runner free of a
-# generator that would have to match Rust's bit for bit.
 def signals(n):
     x = [15.0 * math.sin(0.1 * i) for i in range(n)]
     p = [1.0 if (i // 10) % 2 == 0 else -1.0 for i in range(n)]
@@ -30,8 +23,6 @@ def signals(n):
     t = list(range(n))
     return t, x, p, q
 
-
-# RTAMT writes intervals with a colon; SENTIL writes a comma. Same operator.
 CANONICAL = [
     "always[0:10](x < 5)",
     "eventually[0:50](x > 10)",
@@ -39,9 +30,7 @@ CANONICAL = [
     "(p > 0) implies (eventually[0:20](q > 0))",
     "always[0:200]((p > 0) and (eventually[5:15](q > 0)))",
 ]
-
 SCALABILITY = "always[0:100](eventually[0:10](x > 5))"
-
 
 def build(formula):
     spec = rtamt.StlDiscreteTimeOfflineSpecification()
@@ -52,13 +41,9 @@ def build(formula):
     spec.parse()
     return spec
 
-
 def evaluate(formula, dataset):
-    # RTAMT consumes the spec on evaluate, so build a fresh one each run.
     spec = build(formula)
-    trace = spec.evaluate(dataset)
-    return trace[0][1]
-
+    return spec.evaluate(dataset)[0][1]
 
 def hardware():
     cpu = platform.processor() or "unknown"
@@ -70,12 +55,12 @@ def hardware():
                     break
     except OSError:
         pass
-    import os
-
     return {"cpu": cpu, "cores": os.cpu_count() or 1}
 
-
-def timing(run, runs):
+def measure(benchmark, formula, n, runs):
+    t, x, p, q = signals(n)
+    dataset = {"time": t, "x": x, "p": p, "q": q}
+    robustness = evaluate(formula, dataset)
     times_ms = []
     for _ in range(runs):
         start = time.perf_counter()
@@ -107,17 +92,12 @@ def record(benchmark, formula, question, n, robustness, times, runs, peak_rss_by
         "hardware": hardware(),
     }
 
-def measure(benchmark, formula, n, runs):
-    t, x, p, q = signals(n)
-    dataset = {"time": t, "x": x, "p": p, "q": q}
-    robustness = evaluate(formula, dataset)
+def timing(run, runs):
     times = timing(lambda: evaluate(formula, dataset), runs)
     return record(benchmark, formula, "full_signal", n, robustness, times, runs)
 
-
 def deterministic():
     return [measure("deterministic", f, 2001, 50) for f in CANONICAL]
-
 
 def scalability():
     out = []
@@ -125,7 +105,6 @@ def scalability():
         runs = 30 if n <= 100_000 else 5
         out.append(measure("scalability/length", SCALABILITY, n, runs))
     return out
-
 
 def main():
     suite = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -139,7 +118,6 @@ def main():
     for rec in records:
         print(json.dumps(rec))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

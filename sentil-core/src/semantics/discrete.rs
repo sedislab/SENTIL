@@ -25,20 +25,12 @@ pub(crate) fn robustness_trace(
     eval(formula, times, signals)
 }
 
-/// The largest sample index that the robustness of `formula` at index `i` can
-/// depend on. The robustness at a single index is set by a bounded span of the
-/// trace; evaluating over `times[..=max_dep_index(formula, 0, times)]` gives the
-/// same value at index zero as evaluating over the whole trace, so the offline
-/// reading of one value need not touch a sample beyond the formula's horizon.
-///
-/// `times` must be non-empty. A future operator with an infinite bound reaches
-/// the last sample, which collapses the span to the whole trace.
+/// The largest sample index the robustness of `formula` at index `i` reads.
 pub(crate) fn max_dep_index(formula: &Formula, i: usize, times: &[f64]) -> usize {
     let last = times.len() - 1;
-    // The last index whose time is within `bound + slack` of `times[i]`. The
-    // sweep admits a future window up to `times[i] + upper` exactly, so always
-    // and eventually pass no slack; until and since break one step past the
-    // window edge against the rounding tolerance, so they pass `EPSILON`.
+    // always and eventually admit the window up to `times[i] + upper` exactly;
+    // until and since break one step past the edge, so they pass the EPSILON
+    // slack to land on that step.
     let horizon = |bound: f64, slack: f64| -> usize {
         if bound.is_infinite() {
             last

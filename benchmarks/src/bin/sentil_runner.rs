@@ -1,14 +1,6 @@
-//! The SENTIL benchmark runner. It measures the engine on the shared oracle and
-//! emits one JSON record per measurement to standard output, the same record
-//! shape every other tool's runner emits.
-//!
-//! Two suites are available. `deterministic` times each canonical formula on a
-//! fixed-size trace, on both the full-signal and the monitoring question.
-//! `scalability` times one bounded formula across a range of trace lengths to
-//! show how the cost grows, again on both questions.
-//!
-//! Run as `sentil_runner <suite>`, where `<suite>` is `deterministic` or
-//! `scalability`. Heavy sizes belong on a quiet compute node.
+//! The SENTIL runner. Emits one JSON record per measurement to standard output.
+//! Run as `sentil_runner <deterministic|scalability>`. Heavy sizes belong on a
+//! quiet compute node.
 
 use std::env;
 use std::process::ExitCode;
@@ -16,7 +8,7 @@ use std::process::ExitCode;
 use sentil::Formula;
 use sentil_benchmarks::measure::{hardware, peak_rss_bytes, time_runs};
 use sentil_benchmarks::oracle::{trace, CANONICAL};
-use sentil_benchmarks::schema::{Question, Record};
+use sentil_benchmarks::schema::{Question, Record, Timing};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SWEEP: &str = "always[0, 100](eventually[0, 10](x > 5))";
@@ -43,7 +35,6 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Times every canonical formula on a fixed trace, both questions.
 fn deterministic() -> Vec<Record> {
     let size = 2001u64;
     let tr = trace(size as usize);
@@ -64,8 +55,6 @@ fn deterministic() -> Vec<Record> {
     records
 }
 
-/// Times one bounded formula as the trace grows, both questions, to show that
-/// the monitoring cost stays flat while the full-signal cost tracks length.
 fn scalability() -> Vec<Record> {
     let phi = Formula::parse(SWEEP).expect("a valid formula");
     let sizes = [1_000u64, 10_000, 100_000, 1_000_000, 10_000_000];
@@ -86,7 +75,6 @@ fn scalability() -> Vec<Record> {
     records
 }
 
-/// Measures the full-signal question: the robustness at every sample.
 fn measure_full(
     benchmark: &str,
     formula: &str,
@@ -97,18 +85,9 @@ fn measure_full(
 ) -> Record {
     let robustness = phi.robustness_signal(tr).expect("a finite signal")[0];
     let timing = time_runs(runs, || phi.robustness_signal(tr).expect("a finite signal"));
-    record(
-        benchmark,
-        formula,
-        Question::FullSignal,
-        size,
-        robustness,
-        timing,
-        runs,
-    )
+    record(benchmark, formula, Question::FullSignal, size, robustness, timing, runs)
 }
 
-/// Measures the monitoring question: the robustness at the first sample.
 fn measure_monitoring(
     benchmark: &str,
     formula: &str,
@@ -119,15 +98,7 @@ fn measure_monitoring(
 ) -> Record {
     let robustness = phi.robustness(tr).expect("a finite robustness");
     let timing = time_runs(runs, || phi.robustness(tr).expect("a finite robustness"));
-    record(
-        benchmark,
-        formula,
-        Question::Monitoring,
-        size,
-        robustness,
-        timing,
-        runs,
-    )
+    record(benchmark, formula, Question::Monitoring, size, robustness, timing, runs)
 }
 
 fn record(
@@ -136,7 +107,7 @@ fn record(
     question: Question,
     size: u64,
     robustness: f64,
-    timing: sentil_benchmarks::schema::Timing,
+    timing: Timing,
     runs: u64,
 ) -> Record {
     Record {

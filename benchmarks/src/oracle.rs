@@ -1,20 +1,12 @@
-//! The deterministic oracle: a fixed signal and a set of formulas whose
-//! robustness is known, so any monitor can be checked against the same ground
-//! truth. The signal and formulas match the discrete benchmark every tool in
-//! the comparison runs, and the expected values are what an exact hand or
-//! closed-form computation gives.
+//! Fixed signals and formulas with their robustness
 
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sentil::Trace;
 
-/// The seed for the pseudo-random `q` signal, fixed so every run sees the same
-/// trace.
 pub const SIGNAL_SEED: u64 = 42;
 
-/// The canonical formulas and their robustness at the first sample, computed
-/// independently of the monitor. `x`, `p`, and `q` are the oracle signals.
 pub const CANONICAL: &[(&str, f64)] = &[
     ("always[0, 10](x < 5)", -7.622_064_772_118_447),
     ("eventually[0, 50](x > 10)", 4.993_604_045_622_577),
@@ -23,11 +15,6 @@ pub const CANONICAL: &[(&str, f64)] = &[
     ("always[0, 200]((p > 0) and (eventually[5, 15](q > 0)))", -1.0),
 ];
 
-/// Builds the oracle trace of `n` samples on the integer time grid `0, 1, ...`.
-///
-/// `x` is a scaled sine, `p` flips sign every ten samples, and `q` is a fixed
-/// pseudo-random sign sequence. The temporal bounds in [`CANONICAL`] count
-/// sample steps on this grid.
 #[must_use]
 pub fn trace(n: usize) -> Trace {
     let mut rng = ChaCha8Rng::seed_from_u64(SIGNAL_SEED);

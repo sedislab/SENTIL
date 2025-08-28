@@ -93,9 +93,6 @@ pub(crate) struct MonotonicDeque {
 }
 
 impl MonotonicDeque {
-    /// A deque pre-sized to hold `capacity` candidate extrema, so a bounded
-    /// streaming window does not reallocate as it fills. The deque still grows
-    /// if more candidates than expected are live at once.
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             window: VecDeque::with_capacity(capacity),

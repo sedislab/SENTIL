@@ -615,20 +615,12 @@ fn offsets(interval: crate::formula::Interval) -> (f64, f64, bool) {
     }
 }
 
-/// Samples-per-unit-time assumed when pre-sizing a streaming window. Real rates
-/// vary, so this only sizes the initial allocation; the buffers grow if the true
-/// rate is higher. Covers the common control-loop range without overcommitting.
+/// Samples-per-unit-time assumed when pre-sizing a window.
 const ASSUMED_RATE: f64 = 256.0;
-/// Cap on pre-sized window slots, so an unbounded or very wide interval does not
-/// request a huge allocation up front.
 const MAX_PREALLOC: usize = 4096;
-/// Floor so even a tiny interval avoids the first few doubling copies.
 const MIN_PREALLOC: usize = 16;
 
-/// Candidate slots to pre-size a window of the given finite width for, clamped
-/// to a sane range. A non-finite or non-positive width (an unbounded operator)
-/// falls back to the floor, since its live set is bounded by the longest
-/// monotone run rather than a time window.
+/// Slots to pre-size a window of the given width for.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -643,9 +635,6 @@ fn prealloc_for(width: f64) -> usize {
     est.clamp(MIN_PREALLOC as f64, MAX_PREALLOC as f64) as usize
 }
 
-/// Pre-sizing for a future operator's window, which spans back `offset_end` once
-/// resolved. An unbounded operator keeps only the longest monotone run, so it
-/// gets the floor rather than a window-derived guess.
 fn future_cap(offset_end: f64, bounded: bool) -> usize {
     if bounded {
         prealloc_for(offset_end)

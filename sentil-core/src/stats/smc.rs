@@ -67,10 +67,6 @@ pub(crate) fn check(
         return Ok(result);
     }
 
-    // Sample `i` is seeded independently, so the count is the same however the
-    // samples are scheduled, and a robustness of exactly zero counts as
-    // satisfied, matching `Robustness::is_satisfied`. Each worker lifts into one
-    // reused trace buffer rather than allocating a fresh realization per draw.
     let satisfies = |i: u64, buf: &mut Trace| -> Result<u64> {
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
         lifting.lift_into(trace, &mut rng, buf)?;

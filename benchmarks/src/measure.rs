@@ -1,15 +1,10 @@
-//! Measurement helpers the runners share: timing a closure over many runs into
-//! a summary, and reading the machine's CPU and the process's peak memory.
+//! Timing helpers
 
 use std::hint::black_box;
 use std::time::Instant;
 
 use crate::schema::{Hardware, Timing};
 
-/// Runs `op` `runs` times, timing each, and summarizes the wall-clock times.
-///
-/// The closure's result is fed to `black_box` so the optimizer cannot elide the
-/// work being measured. `runs` must be at least one.
 pub fn time_runs<T>(runs: u64, mut op: impl FnMut() -> T) -> Timing {
     let mut samples = Vec::with_capacity(runs as usize);
     for _ in 0..runs {
@@ -20,7 +15,6 @@ pub fn time_runs<T>(runs: u64, mut op: impl FnMut() -> T) -> Timing {
     summarize(&mut samples)
 }
 
-/// Summarizes timing samples in milliseconds. Sorts `samples` in place.
 fn summarize(samples: &mut [f64]) -> Timing {
     samples.sort_by(f64::total_cmp);
     let n = samples.len();
@@ -44,19 +38,17 @@ fn summarize(samples: &mut [f64]) -> Timing {
     }
 }
 
-/// The value at quantile `q` of an already sorted slice, by nearest rank.
 fn percentile(sorted: &[f64], q: f64) -> f64 {
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "the index is formed from a small length and a quantile in [0, 1]"
+        reason = "the index comes from a small length and a quantile in [0, 1]"
     )]
     let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
     sorted[idx]
 }
 
-/// The machine description for a result record, read from the OS where possible.
 #[must_use]
 pub fn hardware() -> Hardware {
     Hardware {
@@ -65,7 +57,6 @@ pub fn hardware() -> Hardware {
     }
 }
 
-/// The CPU model from `/proc/cpuinfo`, or a portable fallback off Linux.
 fn cpu_model() -> String {
     std::fs::read_to_string("/proc/cpuinfo")
         .ok()
@@ -78,8 +69,6 @@ fn cpu_model() -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
-/// The process's peak resident set size in bytes, from `VmHWM` in
-/// `/proc/self/status`, or `None` where that is unavailable.
 #[must_use]
 pub fn peak_rss_bytes() -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;

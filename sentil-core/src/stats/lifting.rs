@@ -80,13 +80,6 @@ impl LiftingRegistry {
         Ok(noisy)
     }
 
-    /// Lifts `source` into `dest` in place, reusing `dest`'s columns so a trace
-    /// lifted many times allocates nothing per draw. `dest` must already hold the
-    /// signals of `source` (the Monte Carlo driver seeds it from a clone). The
-    /// registered signals are redrawn from `rng` in the same order and with the
-    /// same draws as [`lift_with`](Self::lift_with), so the realization is
-    /// identical to a fresh lift; unregistered signals are left as `dest` holds
-    /// them, which is the caller's copy of `source`.
     pub(crate) fn lift_into<R: Rng + ?Sized>(
         &self,
         source: &Trace,

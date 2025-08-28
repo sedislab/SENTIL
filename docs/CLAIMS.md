@@ -68,7 +68,7 @@ Expected: flat in trace length, low single-digit microseconds for a bounded form
 ## Streaming
 
 Per-sample latency on the online monitor, medium three-signal formula, after the buffers are pre-sized from the interval bounds.
-Command: the streaming harness over `StreamMonitor::update_packed`.
+Command: the streaming benchmark over `StreamMonitor::update_packed`.
 Expected: median in the low tens of nanoseconds, tail within a small multiple of the median; pre-sizing tightens the tail without moving the median. Tolerance: report the measured number, do not target one. Tier: CPU, hardware-bound for the exact figure.
 
 Memory is proportional to the largest temporal window, not the trace length, so an arbitrarily long stream holds steady resident memory for a given formula.
