@@ -78,6 +78,18 @@ Memory is proportional to the largest temporal window, not the trace length, so 
 On the reference model set, `verifyta` segfaults on all five models under the container it was run in, so no UPPAAL-SMC timing is available to compare against; SENTIL completes the same checks. A speedup is quoted only against a model UPPAAL actually finishes. PRISM and Modest have models and scripts but no committed run on this hardware; their expected values are recorded from the reference project rather than measured here.
 Tier: hardware-bound and tool-bound. State the situation plainly rather than a number the runs do not support.
 
+## GPU acceleration
+
+The Monte Carlo counting and the rare-event splitting run on a WebGPU device, with a clean fall back to the CPU when none is present. The device path is validated on an NVIDIA A40. Its tests are gated behind the `gpu` feature, skip cleanly with no device, and must run single-threaded: each builds its own device, and the driver does not survive several created at once.
+Command: `cargo test --offline --no-default-features --features synthesis-gpu -- --ignored --test-threads=1` on a GPU node.
+Expected: all 18 device tests pass. The on-device results match the CPU and the closed form to single precision: the satisfaction count tracks the normal CDF, the temporal robustness sign matches the CPU monitor across every operator, the splitter recovers the analytic crossing probability, and the soft robustness agrees with the CPU within an f32 tolerance. Tier: GPU.
+
+Throughput. On the A40 the Monte Carlo kernel sustains about 829 million realizations per second for `x > 0` under additive standard-normal noise, against about 7.9 million per second on one EPYC core running the full lift-and-score path, a speedup near 105x over a single core. The CPU path scales across cores, so one device sits in the range of many cores for this kernel, and a heavier temporal formula gives the device more work per realization and widens the gap.
+Command: `cargo test --release --offline --no-default-features --features synthesis-gpu -- --ignored gpu_smc_throughput --test-threads=1 --nocapture`.
+Expected: a GPU-over-one-core speedup near two orders of magnitude; the exact figure is hardware-bound. Tier: GPU.
+
+Rare events. The adaptive multilevel splitting resolves satisfaction probabilities that plain Monte Carlo cannot reach at the same sample budget. On the A40 it recovers a three-sigma crossing probability of about 0.0027 within 25 percent of the analytic value over eight seeds, and agrees with the CPU last-particle splitter within a factor of two. Splitting is the mechanism that carries the resolvable probability into the 1e-7 to 1e-9 range a flat Monte Carlo run of feasible size never reaches. Tier: GPU.
+
 ## The Lean proof
 
 The monotonic-deque sliding-window theorem is machine-checked, for both the minimum (always, historically) and the maximum (eventually, once) cases, over a decidable linear order.
