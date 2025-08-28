@@ -28,6 +28,16 @@ impl ConfidenceInterval {
     pub fn contains(&self, p: f64) -> bool {
         p >= self.lower && p <= self.upper
     }
+
+    /// The lower bound, the method form matching `Robustness::lower`.
+    pub fn lower(&self) -> f64 {
+        self.lower
+    }
+
+    /// The upper bound, the method form matching `Robustness::upper`.
+    pub fn upper(&self) -> f64 {
+        self.upper
+    }
 }
 
 /// The Wilson score interval for `successes` out of `trials` at a confidence level.
