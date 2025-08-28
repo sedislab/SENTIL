@@ -2,9 +2,12 @@
 //!
 //! The trace's samples are read as a continuous signal, linear between points.
 //! Each subformula becomes a [`Pwl`] robustness signal, and the answer at any
-//! time is read off that. Dense and discrete agree at the samples; they part
-//! when a temporal window's edge, or an equality predicate's zero, falls between
-//! samples, which dense captures exactly.
+//! time is read off that. For the single-operand operators dense and discrete
+//! agree at the samples, parting only when a temporal window's edge or an
+//! equality predicate's zero falls between them. `until` and `since` differ even
+//! at the samples: the dense path takes the left operand's infimum over the
+//! closed span up to the witness, the discrete path over the half-open span that
+//! excludes it.
 //!
 //! Predicates must be linear in the signals. A linear term stays linear between
 //! samples, so sampling it and joining the points reproduces it exactly; a
