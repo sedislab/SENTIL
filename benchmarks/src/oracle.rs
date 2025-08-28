@@ -34,9 +34,48 @@ pub fn trace(n: usize) -> Trace {
     trace
 }
 
+pub struct Case {
+    pub id: &'static str,
+    pub formula: &'static str,
+    pub signals: &'static [(&'static str, &'static [f64])],
+    pub expected: &'static [f64],
+}
+
+pub const DETERMINISTIC: &[Case] = &[
+    Case { id: "gt", formula: "x > 0", signals: &[("x", &[5.0, -3.0, 2.0])], expected: &[5.0, -3.0, 2.0] },
+    Case { id: "ge_at_boundary", formula: "x >= 5", signals: &[("x", &[5.0, 5.0])], expected: &[0.0, 0.0] },
+    Case { id: "gt_at_boundary", formula: "x > 5", signals: &[("x", &[5.0, 5.0])], expected: &[0.0, 0.0] },
+    Case { id: "lt", formula: "x < 5", signals: &[("x", &[3.0, 7.0])], expected: &[2.0, -2.0] },
+    Case { id: "le_at_boundary", formula: "x <= 5", signals: &[("x", &[5.0])], expected: &[0.0] },
+    Case { id: "eq", formula: "x == 5", signals: &[("x", &[5.0, 3.0])], expected: &[-0.0, -2.0] },
+    Case { id: "neq", formula: "x != 5", signals: &[("x", &[3.0, 5.0])], expected: &[2.0, 0.0] },
+    Case { id: "scaled_predicate", formula: "x * 2 > 5", signals: &[("x", &[4.0])], expected: &[3.0] },
+    Case { id: "shifted_predicate", formula: "x - 3 < 5", signals: &[("x", &[10.0])], expected: &[-2.0] },
+    Case { id: "abs_predicate", formula: "abs(x) < 5", signals: &[("x", &[-3.0, 6.0])], expected: &[2.0, -1.0] },
+    Case { id: "difference_predicate", formula: "x - y > 0", signals: &[("x", &[5.0]), ("y", &[2.0])], expected: &[3.0] },
+    Case { id: "and", formula: "(x > 0) and (y > 0)", signals: &[("x", &[5.0, 3.0]), ("y", &[2.0, -1.0])], expected: &[2.0, -1.0] },
+    Case { id: "or", formula: "(x > 0) or (y > 0)", signals: &[("x", &[-5.0, 1.0]), ("y", &[2.0, -3.0])], expected: &[2.0, 1.0] },
+    Case { id: "not", formula: "not(x > 0)", signals: &[("x", &[5.0, -3.0])], expected: &[-5.0, 3.0] },
+    Case { id: "implies_holds", formula: "(x > 0) implies (y > 0)", signals: &[("x", &[5.0]), ("y", &[2.0])], expected: &[2.0] },
+    Case { id: "implies_fails", formula: "(x > 0) implies (y > 0)", signals: &[("x", &[5.0]), ("y", &[-2.0])], expected: &[-2.0] },
+    Case { id: "nested_boolean", formula: "((x > 0) and (y > 0)) or (z > 0)", signals: &[("x", &[5.0]), ("y", &[3.0]), ("z", &[-1.0])], expected: &[3.0] },
+];
+
+#[must_use]
+pub fn case_trace(case: &Case) -> Trace {
+    let n = case.signals[0].1.len();
+    let mut trace = Trace::indexed(n);
+    for (name, values) in case.signals {
+        trace
+            .add_signal(name, values.to_vec())
+            .expect("oracle signal matches the grid");
+    }
+    trace
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{trace, CANONICAL};
+    use super::{case_trace, trace, CANONICAL, DETERMINISTIC};
     use sentil::Formula;
 
     #[test]
@@ -50,6 +89,27 @@ mod tests {
                 expected.to_bits(),
                 "{formula}: got {got}, expected {expected}"
             );
+        }
+    }
+
+    #[test]
+    fn sentil_reproduces_the_deterministic_oracle() {
+        for case in DETERMINISTIC {
+            let phi = Formula::parse(case.formula)
+                .unwrap_or_else(|e| panic!("{}: parse {e}", case.id));
+            let tr = case_trace(case);
+            let got = phi
+                .robustness_signal(&tr)
+                .unwrap_or_else(|e| panic!("{}: {e}", case.id));
+            assert_eq!(got.len(), case.expected.len(), "{}: signal length", case.id);
+            for (i, (g, e)) in got.iter().zip(case.expected).enumerate() {
+                assert_eq!(
+                    g.to_bits(),
+                    e.to_bits(),
+                    "{} at sample {i}: got {g}, want {e}",
+                    case.id
+                );
+            }
         }
     }
 }
