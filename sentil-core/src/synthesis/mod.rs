@@ -23,7 +23,7 @@
 //! let problem = SynthesisProblem::new(&model, &spec)
 //!     .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5])?);
 //! let result = Synthesizer::solve(&problem)?;
-//! assert!(result.satisfies);
+//! assert!(result.holds);
 //! # Ok::<(), sentil::Error>(())
 //! ```
 

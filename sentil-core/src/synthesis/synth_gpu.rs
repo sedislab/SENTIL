@@ -186,6 +186,6 @@ mod tests {
             .with_budget(400)
             .on_gpu(true);
         let result = Synthesizer::solve(&problem).unwrap();
-        assert!(result.satisfies, "robustness {}", result.robustness);
+        assert!(result.holds, "robustness {}", result.robustness);
     }
 }

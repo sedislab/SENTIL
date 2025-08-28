@@ -103,7 +103,7 @@ pub struct SynthesisResult {
     /// The exact robustness of the rollout under `input`.
     pub robustness: f64,
     /// Whether the specification holds.
-    pub satisfies: bool,
+    pub holds: bool,
     /// The backend that produced this result, with `Auto` resolved to its choice.
     pub backend: Backend,
 }
@@ -141,7 +141,7 @@ impl Synthesizer {
         };
         let robustness = spec.robustness(&model.rollout_from(initial, &input)?)?;
         Ok(SynthesisResult {
-            satisfies: robustness >= 0.0,
+            holds: robustness >= 0.0,
             robustness,
             input,
             backend,
@@ -200,7 +200,7 @@ mod tests {
             .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
             .with_budget(400);
         let result = Synthesizer::solve(&problem).unwrap();
-        assert!(result.satisfies, "robustness {}", result.robustness);
+        assert!(result.holds, "robustness {}", result.robustness);
         assert!(result.robustness >= 0.0);
     }
 
@@ -212,7 +212,7 @@ mod tests {
             .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
             .with_backend(Backend::CmaEs);
         let result = Synthesizer::solve(&problem).unwrap();
-        assert!(result.satisfies, "robustness {}", result.robustness);
+        assert!(result.holds, "robustness {}", result.robustness);
         assert_eq!(result.backend, Backend::CmaEs);
     }
 
@@ -225,7 +225,7 @@ mod tests {
             .with_backend(Backend::CmaEs)
             .with_population(32);
         let result = Synthesizer::solve(&problem).unwrap();
-        assert!(result.satisfies, "robustness {}", result.robustness);
+        assert!(result.holds, "robustness {}", result.robustness);
     }
 
     #[test]
@@ -236,7 +236,7 @@ mod tests {
             .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
             .with_budget(400);
         let result = Synthesizer::solve(&problem).unwrap();
-        assert!(!result.satisfies);
+        assert!(!result.holds);
         assert!(result.robustness < 0.0 && result.robustness > -6.0);
     }
 }

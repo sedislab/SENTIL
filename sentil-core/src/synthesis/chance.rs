@@ -38,7 +38,7 @@ pub struct ChanceReport {
     /// The number of trajectories simulated.
     pub samples: u64,
     /// Whether the lower bound clears the target plus any tightening.
-    pub satisfied: bool,
+    pub holds: bool,
 }
 
 impl ChanceConstraint {
@@ -114,7 +114,7 @@ impl ChanceConstraint {
             estimate: successes as f64 / samples as f64,
             lower_bound: interval.lower,
             samples,
-            satisfied: interval.lower >= self.probability + self.tightening,
+            holds: interval.lower >= self.probability + self.tightening,
         })
     }
 }
@@ -154,7 +154,7 @@ mod tests {
             "estimate {}",
             report.estimate
         );
-        assert!(report.satisfied);
+        assert!(report.holds);
     }
 
     #[test]
@@ -164,7 +164,7 @@ mod tests {
             .unwrap()
             .validate(&standard_normal_start(), 4000, 7)
             .unwrap();
-        assert!(!report.satisfied);
+        assert!(!report.holds);
     }
 
     #[test]
