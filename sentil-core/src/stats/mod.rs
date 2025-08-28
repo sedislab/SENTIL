@@ -41,7 +41,7 @@ impl Formula {
     /// Decides a probabilistic specification `P~p(phi)` over a trace by sampling.
     ///
     /// ```
-    /// use sentil::{Formula, Trace, stats::{LiftingRegistry, NoiseModel, NoiseInteraction, SmcConfig}};
+    /// use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, Trace};
     ///
     /// let phi = Formula::parse("P>=0.9(always[0, 2](x > 0))")?;
     /// let mut trace = Trace::new([0.0, 1.0, 2.0])?;

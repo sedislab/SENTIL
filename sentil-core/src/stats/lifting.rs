@@ -46,7 +46,7 @@ impl LiftingRegistry {
     /// Produces one noisy realization of `trace`, seeded with `seed`.
     ///
     /// ```
-    /// use sentil::{Formula, Trace, stats::{LiftingRegistry, NoiseModel, NoiseInteraction}};
+    /// use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, Trace};
     ///
     /// let mut trace = Trace::new([0.0, 1.0])?;
     /// trace.add_signal("x", [10.0, 20.0])?;
