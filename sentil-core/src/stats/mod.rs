@@ -11,7 +11,8 @@ mod smc;
 mod sprt;
 
 pub use confidence::{
-    chernoff_hoeffding_samples, clopper_pearson, wilson_interval, z_score, ConfidenceInterval,
+    chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval, z_score,
+    ConfidenceInterval,
 };
 pub use lifting::LiftingRegistry;
 #[cfg(feature = "gpu")]

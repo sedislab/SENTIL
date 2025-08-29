@@ -209,6 +209,42 @@ pub fn clopper_pearson(successes: u64, trials: u64, level: f64) -> ConfidenceInt
     }
 }
 
+/// The Jeffreys credible interval from a Beta(1/2, 1/2) prior.
+///
+/// ```
+/// use sentil::stats::jeffreys_interval;
+///
+/// let ci = jeffreys_interval(8, 10, 0.95);
+/// assert!(ci.lower < 0.8 && 0.8 < ci.upper);
+/// ```
+#[must_use]
+pub fn jeffreys_interval(successes: u64, trials: u64, level: f64) -> ConfidenceInterval {
+    if trials == 0 || !(0.0 < level && level < 1.0) {
+        return whole_range(level);
+    }
+    let successes = successes.min(trials);
+    let k = successes as f64;
+    let n = trials as f64;
+    let alpha = 1.0 - level;
+    let a = k + 0.5;
+    let b = n - k + 0.5;
+    let lower = if successes == 0 {
+        0.0
+    } else {
+        beta_quantile(alpha / 2.0, a, b)
+    };
+    let upper = if successes == trials {
+        1.0
+    } else {
+        beta_quantile(1.0 - alpha / 2.0, a, b)
+    };
+    ConfidenceInterval {
+        lower,
+        upper,
+        level,
+    }
+}
+
 fn beta_quantile(p: f64, a: f64, b: f64) -> f64 {
     if p <= 0.0 {
         return 0.0;
@@ -228,7 +264,7 @@ fn beta_quantile(p: f64, a: f64, b: f64) -> f64 {
     f64::midpoint(lo, hi)
 }
 
-fn regularized_incomplete_beta(a: f64, b: f64, x: f64) -> f64 {
+pub(crate) fn regularized_incomplete_beta(a: f64, b: f64, x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }
@@ -368,6 +404,14 @@ mod tests {
         let cp = clopper_pearson(20, 100, 0.95);
         let w = wilson_interval(20, 100, 0.95);
         assert!(cp.lower <= w.lower && cp.upper >= w.upper);
+    }
+
+    #[test]
+    fn jeffreys_is_tighter_than_clopper_pearson() {
+        let j = jeffreys_interval(20, 100, 0.95);
+        let cp = clopper_pearson(20, 100, 0.95);
+        assert!(j.lower >= cp.lower && j.upper <= cp.upper);
+        assert!(j.lower < 0.2 && 0.2 < j.upper);
     }
 
     #[test]
