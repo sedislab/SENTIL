@@ -1,9 +1,6 @@
 //! Reading traces from delimited text, and from the columnar and database formats.
 //!
-//! [`Trace::from_csv_str`] reads comma-separated data with a header row: the
-//! time column is found by name (`time`, `timestamp`, and so on) or falls back
-//! to the first column, and every other column becomes a signal. File loading
-//! and the columnar and database formats build on this foundation.
+//! Times are read in the units the source carries.
 
 use std::path::Path;
 
