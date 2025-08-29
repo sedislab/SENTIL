@@ -20,6 +20,14 @@ use crate::error::{Error, Result};
 use crate::expr::Program;
 use crate::formula::Formula;
 use crate::signal::Trace;
+#[cfg(feature = "statistical")]
+use crate::formula::ProbabilityOp;
+#[cfg(feature = "statistical")]
+use crate::stats::{LiftingRegistry, SmcConfig};
+#[cfg(feature = "statistical")]
+use rand::SeedableRng;
+#[cfg(feature = "statistical")]
+use rand_chacha::ChaCha8Rng;
 
 /// The lower-bound delay added when deciding whether a buffered sample has
 /// matured into a past-time window, absorbing floating-point rounding.
@@ -466,6 +474,60 @@ impl Node for NextNode {
     }
 }
 
+/// `P~p(phi)`, estimating online how often phi holds across a particle ensemble.
+#[cfg(feature = "statistical")]
+struct ProbabilisticNode {
+    op: ProbabilityOp,
+    threshold: f64,
+    particles: Vec<Box<dyn Node>>,
+    rngs: Vec<ChaCha8Rng>,
+    lifting: Arc<LiftingRegistry>,
+    symbols: Arc<SymbolTable>,
+    scratch: Vec<f64>,
+}
+
+#[cfg(feature = "statistical")]
+impl Node for ProbabilisticNode {
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the particle count stays far below 2^53, so the count cast is exact"
+    )]
+    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
+        let mut satisfied = 0u64;
+        for p in 0..self.particles.len() {
+            for (i, name) in self.symbols.names.iter().enumerate() {
+                self.scratch[i] = match self.lifting.model_for(name) {
+                    Some((model, interaction)) => {
+                        interaction.apply(state[i], model.sample(&mut self.rngs[p]))
+                    }
+                    None => state[i],
+                };
+            }
+            if self.particles[p].update(time, &self.scratch)?.lower() >= 0.0 {
+                satisfied += 1;
+            }
+        }
+        let estimate = satisfied as f64 / self.particles.len() as f64;
+        let holds = match self.op {
+            ProbabilityOp::GreaterEqual => estimate >= self.threshold,
+            ProbabilityOp::Greater => estimate > self.threshold,
+            ProbabilityOp::LessEqual => estimate <= self.threshold,
+            ProbabilityOp::Less => estimate < self.threshold,
+        };
+        Ok(Robustness::Concrete(if holds {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        }))
+    }
+
+    fn reset(&mut self) {
+        for particle in &mut self.particles {
+            particle.reset();
+        }
+    }
+}
+
 fn bounds(robustness: Robustness) -> (f64, f64) {
     (robustness.lower(), robustness.upper())
 }
@@ -506,6 +568,52 @@ impl StreamMonitor {
         validate_streaming(formula)?;
         let symbols = Arc::new(SymbolTable::from_formula(formula));
         let root = build_node(formula, &symbols)?;
+        let buffer = vec![0.0; symbols.len()];
+        Ok(Self {
+            root,
+            symbols,
+            buffer,
+        })
+    }
+
+    /// Builds a monitor that can decide a top-level probabilistic operator online,
+    /// lifting each reading into `config.samples` particles with `lifting`. A
+    /// deterministic formula builds as usual; a probabilistic one becomes a particle
+    /// ensemble whose share of satisfying members estimates the probability.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] for a `config` that cannot produce a
+    /// verdict, and [`Error::Unsupported`] for a nested probabilistic operator or an
+    /// inner formula that is not streamable.
+    #[cfg(feature = "statistical")]
+    pub fn with_lifting(
+        formula: &Formula,
+        lifting: &LiftingRegistry,
+        config: &SmcConfig,
+    ) -> Result<Self> {
+        validate_streaming(formula)?;
+        let symbols = Arc::new(SymbolTable::from_formula(formula));
+        let root: Box<dyn Node> = match formula {
+            Formula::Probabilistic(op, threshold, inner) => {
+                let particles = (0..config.samples)
+                    .map(|_| build_node(inner, &symbols))
+                    .collect::<Result<Vec<_>>>()?;
+                let rngs = (0..config.samples)
+                    .map(|p| ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(p)))
+                    .collect::<Vec<_>>();
+                Box::new(ProbabilisticNode {
+                    op: *op,
+                    threshold: *threshold,
+                    particles,
+                    rngs,
+                    lifting: Arc::new(lifting.clone()),
+                    symbols: symbols.clone(),
+                    scratch: vec![0.0; symbols.len()],
+                })
+            }
+            _ => build_node(formula, &symbols)?,
+        };
         let buffer = vec![0.0; symbols.len()];
         Ok(Self {
             root,
@@ -1081,6 +1189,65 @@ mod tests {
         assert!(matches!(
             monitor.run(&trace),
             Err(Error::UnknownVariable { .. })
+        ));
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn online_probabilistic_decides_a_clear_case() {
+        use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig};
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 2000,
+            confidence: 0.95,
+            seed: 7,
+        };
+        let mut holds = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
+        assert!(holds.update(0.0, &[("x", 2.0)]).unwrap().value() > 0.0);
+        let mut fails = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
+        assert!(fails.update(0.0, &[("x", -2.0)]).unwrap().value() < 0.0);
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn online_probabilistic_tracks_a_temporal_inner() {
+        use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig};
+        let phi = Formula::parse("P>=0.5(always[0, 1](x > 0))").unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 0.5).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 2000,
+            confidence: 0.95,
+            seed: 3,
+        };
+        let mut monitor = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
+        monitor.update(0.0, &[("x", 3.0)]).unwrap();
+        assert!(monitor.update(1.0, &[("x", 3.0)]).unwrap().value() > 0.0);
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn a_nested_probabilistic_operator_is_rejected() {
+        use crate::stats::{LiftingRegistry, SmcConfig};
+        let phi = Formula::parse("always[0, 2](P>=0.5(x > 0))").unwrap();
+        let config = SmcConfig {
+            samples: 100,
+            confidence: 0.95,
+            seed: 1,
+        };
+        assert!(matches!(
+            StreamMonitor::with_lifting(&phi, &LiftingRegistry::new(), &config),
+            Err(Error::Unsupported { .. })
         ));
     }
 }

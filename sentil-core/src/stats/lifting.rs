@@ -97,9 +97,6 @@ impl LiftingRegistry {
         Ok(())
     }
 
-    /// The noise model and interaction registered for `variable`, if any. The
-    /// GPU path uses this to pack each variable's noise parameters for the device.
-    #[cfg(feature = "gpu")]
     pub(crate) fn model_for(&self, variable: &str) -> Option<(&NoiseModel, NoiseInteraction)> {
         self.models
             .get(variable)
