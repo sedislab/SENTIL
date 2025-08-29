@@ -5,6 +5,7 @@ use crate::prelude::*;
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
+use super::interpolation::{read_at, Interpolation};
 use crate::error::{Error, Result};
 
 /// A set of signals sampled at a shared sequence of times.
@@ -175,6 +176,44 @@ impl Trace {
     pub(crate) fn signals(&self) -> &BTreeMap<String, Vec<f64>> {
         &self.signals
     }
+
+    /// Moves the trace onto a new set of times, reading every signal between its
+    /// samples with `interpolation`.
+    ///
+    /// ```
+    /// use sentil::{Interpolation, Trace};
+    ///
+    /// let trace = Trace::from_signal([0.0, 2.0, 4.0], "x", [0.0, 4.0, 8.0])?;
+    /// let dense = trace.resample([0.0, 1.0, 2.0, 3.0, 4.0], Interpolation::Linear)?;
+    /// assert_eq!(dense.signal("x"), Some(&[0.0, 2.0, 4.0, 6.0, 8.0][..]));
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyTrace`](crate::Error::EmptyTrace) if the trace has no
+    /// samples, and propagates the validation of the new times and values.
+    pub fn resample(
+        &self,
+        times: impl Into<Vec<f64>>,
+        interpolation: Interpolation,
+    ) -> Result<Trace> {
+        if self.times.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        let mut out = Trace::new(times)?;
+        let queries = out.times.clone();
+        for (name, values) in &self.signals {
+            out.add_signal(name, read_at(&self.times, values, interpolation, &queries))?;
+        }
+        Ok(out)
+    }
+
+    /// The value series for one signal, or `None` if the trace has no such signal.
+    #[must_use]
+    pub fn signal(&self, name: &str) -> Option<&[f64]> {
+        self.signals.get(name).map(Vec::as_slice)
+    }
 }
 
 #[cfg(test)]
@@ -199,6 +238,33 @@ mod tests {
     fn indexed_trace_uses_integer_times() {
         let trace = Trace::indexed(4);
         assert_eq!(trace.times(), &[0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn resample_moves_every_signal_onto_the_new_grid() {
+        let mut trace = Trace::new([0.0, 2.0, 4.0]).unwrap();
+        trace.add_signal("x", [0.0, 4.0, 8.0]).unwrap();
+        trace.add_signal("y", [1.0, 3.0, 5.0]).unwrap();
+        let out = trace.resample([1.0, 3.0], Interpolation::ZeroOrderHold).unwrap();
+        assert_eq!(out.times(), &[1.0, 3.0]);
+        assert_eq!(out.signal("x"), Some(&[0.0, 4.0][..]));
+        assert_eq!(out.signal("y"), Some(&[1.0, 3.0][..]));
+    }
+
+    #[test]
+    fn resample_of_an_empty_trace_is_rejected() {
+        let trace = Trace::new([]).unwrap();
+        let err = trace.resample([0.0, 1.0], Interpolation::Linear).unwrap_err();
+        assert!(matches!(err, Error::EmptyTrace));
+    }
+
+    #[test]
+    fn resample_validates_the_new_times() {
+        let trace = Trace::from_signal([0.0, 1.0], "x", [0.0, 1.0]).unwrap();
+        let err = trace
+            .resample([1.0, 0.0], Interpolation::Linear)
+            .unwrap_err();
+        assert!(matches!(err, Error::NonMonotonicTime { .. }));
     }
 
     #[test]

@@ -61,7 +61,7 @@ pub use formula::Formula;
 pub use gpu::GpuSplittingEstimate;
 pub use monitor::{Monitor, MonitorConfig, TimeMode};
 pub use semantics::{violation_intervals, MultiFormulaMonitor, Robustness, StreamMonitor};
-pub use signal::{RingBuffer, Trace};
+pub use signal::{Interpolation, RingBuffer, Trace};
 #[cfg(feature = "specs")]
 pub use spec_builder::{SpecBuilder, SpecRegistry, SpecTemplate};
 #[cfg(feature = "statistical")]
