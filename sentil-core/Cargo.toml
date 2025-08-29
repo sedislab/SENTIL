@@ -34,6 +34,9 @@ default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "pa
 # does its f64 math through libm.
 std = []
 
+# Serialize a formula, noise model, or run config through serde.
+serde = ["std", "dep:serde"]
+
 # The probabilistic operator: confidence intervals, Monte Carlo, sequential
 # testing. Off for a bare STL monitor.
 statistical = ["std", "dep:rand", "dep:rand_distr", "dep:rand_chacha"]
@@ -107,3 +110,4 @@ naga = { version = "27.0", optional = true, features = ["wgsl-in"] }
 
 [dev-dependencies]
 proptest = { workspace = true }
+serde_json = "1.0"

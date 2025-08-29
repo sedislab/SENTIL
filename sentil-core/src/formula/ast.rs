@@ -6,6 +6,7 @@ use core::fmt;
 
 /// A Signal Temporal Logic formula, optionally wrapped in a probabilistic operator to form PrSTL.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Formula {
     /// An atomic comparison between two arithmetic terms, e.g. `x + 1 < 5`.
     Predicate(Predicate),
@@ -37,6 +38,7 @@ pub enum Formula {
 
 /// An atomic predicate.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Predicate {
     /// The left-hand term.
     pub lhs: Expr,
@@ -48,6 +50,7 @@ pub struct Predicate {
 
 /// A comparison between two terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ComparisonOp {
     /// `<`
     Less,
@@ -65,6 +68,7 @@ pub enum ComparisonOp {
 
 /// A binary arithmetic operator inside a predicate term.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BinaryOp {
     /// `+`
     Add,
@@ -82,6 +86,7 @@ pub enum BinaryOp {
 
 /// An arithmetic term over signals and constants.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Expr {
     /// A binary operation between two sub-terms.
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
@@ -95,6 +100,7 @@ pub enum Expr {
 
 /// The relation between an estimated satisfaction probability and the threshold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ProbabilityOp {
     /// The probability is at least the threshold.
     GreaterEqual,
@@ -108,6 +114,7 @@ pub enum ProbabilityOp {
 
 /// A time interval `[lower, upper]` over which a temporal operator quantifies.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Interval {
     pub lower: f64,
     pub upper: Option<f64>,
@@ -446,5 +453,19 @@ mod tests {
         );
         assert_eq!(term.to_string(), "(x + (y * 2))");
         assert_eq!(term.depth(), 3);
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_tests {
+    use crate::Formula;
+
+    #[test]
+    fn a_formula_round_trips_through_json() {
+        let phi =
+            Formula::parse("P >= 0.9(always[0, 10]((x + 1 > 5) until[0, 2] (y < 3)))").unwrap();
+        let json = serde_json::to_string(&phi).unwrap();
+        let back: Formula = serde_json::from_str(&json).unwrap();
+        assert_eq!(phi, back);
     }
 }
