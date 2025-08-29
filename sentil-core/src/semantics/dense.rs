@@ -17,7 +17,7 @@
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
 #[cfg(feature = "std")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use super::eval::eval_expr;
 use super::pwl::{combine, crossing, window, Pwl};
@@ -103,10 +103,127 @@ fn common_grid(phi: &Pwl, psi: &Pwl) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     (times, phi_vals, psi_vals)
 }
 
-/// Dense `phi U_[a,b] psi`: at each time the best future instant `s` in the window
-/// where `psi` holds and `phi` held throughout `[t, s]`.
+/// Dense `phi U_[a,b] psi`: at each breakpoint the best future instant `s` in the
+/// window where `psi` holds and `phi` held throughout the closed span `[t, s]`.
 fn until_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
     let (times, phi_vals, psi_vals) = common_grid(phi, psi);
+    let values = until_values(&times, &phi_vals, &psi_vals, a, b);
+    Pwl::new(times.into_iter().zip(values).collect())
+}
+
+/// Dense `phi S_[a,b] psi`: the past dual of [`until_signal`], over the closed span.
+fn since_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
+    let (times, phi_vals, psi_vals) = common_grid(phi, psi);
+    let values = since_values(&times, &phi_vals, &psi_vals, a, b);
+    Pwl::new(times.into_iter().zip(values).collect())
+}
+
+/// Dense until robustness over a shared breakpoint grid. With a zero lower bound a
+/// monotonic deque answers in O(n) amortized; a positive lower bound falls back to
+/// the exhaustive scan. The deque's domination drops a farther witness whenever a
+/// nearer one already beats it, which is only sound when every future sample is in
+/// the window. A positive lower bound breaks that: a sample the deque kept can sit
+/// below the bound from a later start while the farther one it discarded was the
+/// only valid witness, so the scan stays the reference there.
+fn until_values(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
+    if a <= EPS {
+        until_deque(times, phi_vals, psi_vals, b)
+    } else {
+        until_naive(times, phi_vals, psi_vals, a, b)
+    }
+}
+
+/// Dense since robustness over a shared breakpoint grid; the past dual of
+/// [`until_values`], with the same zero lower bound split.
+fn since_values(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
+    if a <= EPS {
+        since_deque(times, phi_vals, psi_vals, b)
+    } else {
+        since_naive(times, phi_vals, psi_vals, a, b)
+    }
+}
+
+/// O(n) amortized dense until for a zero lower bound. Folding `phi` into the
+/// witness value as `min(psi, phi)` turns the closed span the dense path uses
+/// (phi held through the witness) into the half-open form the deque carries, so
+/// the result equals [`until_naive`] sample for sample. The deque holds candidate
+/// `(time, value)` pairs with values rising toward the back; sweeping `i` down, a
+/// new sample folds `phi[i]` into the survivors and offers `min(psi[i], phi[i])`
+/// as its own witness, and the answer for `i` is the back value once the entries
+/// past `t + b` are dropped.
+fn until_deque(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], b: f64) -> Vec<f64> {
+    let n = times.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    let mut deque: VecDeque<(f64, f64)> = VecDeque::new();
+    for i in (0..n).rev() {
+        let t = times[i];
+        let p = phi_vals[i];
+        // Cap every retained witness by phi[i]; the dominated ones collapse into a
+        // single entry at the nearest of their times carrying phi[i].
+        let mut collapsed = None;
+        while let Some(&(tb, vb)) = deque.back() {
+            if vb >= p {
+                collapsed = Some(tb);
+                deque.pop_back();
+            } else {
+                break;
+            }
+        }
+        if let Some(tc) = collapsed {
+            deque.push_back((tc, p));
+        }
+        let witness = psi_vals[i].min(p);
+        while deque.front().is_some_and(|&(_, vf)| vf <= witness) {
+            deque.pop_front();
+        }
+        deque.push_front((t, witness));
+        let window_end = t + b;
+        while deque.back().is_some_and(|&(tb, _)| tb > window_end + EPS) {
+            deque.pop_back();
+        }
+        result[i] = deque.back().map_or(f64::NEG_INFINITY, |&(_, v)| v);
+    }
+    result
+}
+
+/// O(n) amortized dense since for a zero lower bound; the forward-sweeping dual of
+/// [`until_deque`], reading the front once entries before `t - b` are dropped.
+fn since_deque(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], b: f64) -> Vec<f64> {
+    let n = times.len();
+    let mut result = vec![f64::NEG_INFINITY; n];
+    let mut deque: VecDeque<(f64, f64)> = VecDeque::new();
+    for i in 0..n {
+        let t = times[i];
+        let p = phi_vals[i];
+        let mut collapsed = None;
+        while let Some(&(tf, vf)) = deque.front() {
+            if vf >= p {
+                collapsed = Some(tf);
+                deque.pop_front();
+            } else {
+                break;
+            }
+        }
+        if let Some(tc) = collapsed {
+            deque.push_front((tc, p));
+        }
+        let witness = psi_vals[i].min(p);
+        while deque.back().is_some_and(|&(_, vb)| vb <= witness) {
+            deque.pop_back();
+        }
+        deque.push_back((t, witness));
+        let window_start = t - b;
+        while deque.front().is_some_and(|&(tf, _)| tf < window_start - EPS) {
+            deque.pop_front();
+        }
+        result[i] = deque.front().map_or(f64::NEG_INFINITY, |&(_, v)| v);
+    }
+    result
+}
+
+/// The exhaustive dense until, the correctness reference and the path a positive
+/// lower bound takes.
+fn until_naive(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
     let n = times.len();
     let mut result = vec![f64::NEG_INFINITY; n];
     for i in 0..n {
@@ -124,12 +241,11 @@ fn until_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
         }
         result[i] = best;
     }
-    Pwl::new(times.into_iter().zip(result).collect())
+    result
 }
 
-/// Dense `phi S_[a,b] psi`: the past dual of [`until_signal`], scanning backward.
-fn since_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
-    let (times, phi_vals, psi_vals) = common_grid(phi, psi);
+/// The exhaustive dense since, the past dual of [`until_naive`].
+fn since_naive(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
     let n = times.len();
     let mut result = vec![f64::NEG_INFINITY; n];
     for i in 0..n {
@@ -147,7 +263,7 @@ fn since_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
         }
         result[i] = best;
     }
-    Pwl::new(times.into_iter().zip(result).collect())
+    result
 }
 
 fn predicate(p: &Predicate, times: &[f64], signals: &BTreeMap<String, Vec<f64>>) -> Result<Pwl> {
@@ -361,5 +477,79 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Strictly increasing times built from positive gaps, with paired phi and psi
+    /// values, the shape the until and since deques sweep.
+    fn grid_strategy() -> impl Strategy<Value = (Vec<f64>, Vec<f64>, Vec<f64>)> {
+        prop::collection::vec((0.1f64..5.0, -20.0f64..20.0, -20.0f64..20.0), 1..30).prop_map(
+            |rows| {
+                let mut t = 0.0;
+                let (mut times, mut phi, mut psi) = (Vec::new(), Vec::new(), Vec::new());
+                for (gap, p, s) in rows {
+                    t += gap;
+                    times.push(t);
+                    phi.push(p);
+                    psi.push(s);
+                }
+                (times, phi, psi)
+            },
+        )
+    }
+
+    proptest! {
+        /// The zero-lower deque reproduces the exhaustive scan for until and since,
+        /// across finite and open upper bounds.
+        #[test]
+        fn deque_matches_the_scan_at_zero_lower_bound(
+            (times, phi, psi) in grid_strategy(),
+            span in 0.0f64..12.0,
+            open in any::<bool>(),
+        ) {
+            let b = if open { f64::INFINITY } else { span };
+            prop_assert_eq!(
+                super::until_deque(&times, &phi, &psi, b),
+                super::until_naive(&times, &phi, &psi, 0.0, b)
+            );
+            prop_assert_eq!(
+                super::since_deque(&times, &phi, &psi, b),
+                super::since_naive(&times, &phi, &psi, 0.0, b)
+            );
+        }
+
+        /// The dispatcher sends a zero lower bound to the deque and a positive one
+        /// to the scan, returning the scan's value in both regimes.
+        #[test]
+        fn values_match_the_scan_for_any_bound(
+            (times, phi, psi) in grid_strategy(),
+            a in prop_oneof![Just(0.0f64), 0.05f64..6.0],
+            span in 0.0f64..12.0,
+            open in any::<bool>(),
+        ) {
+            let b = if open { f64::INFINITY } else { a + span };
+            prop_assert_eq!(
+                super::until_values(&times, &phi, &psi, a, b),
+                super::until_naive(&times, &phi, &psi, a, b)
+            );
+            prop_assert_eq!(
+                super::since_values(&times, &phi, &psi, a, b),
+                super::since_naive(&times, &phi, &psi, a, b)
+            );
+        }
+    }
+
+    #[test]
+    fn the_zero_lower_until_stays_linear() {
+        // The old scan was quadratic for a wide upper bound; a regression to that
+        // would run for a minute or more, far past this budget, while the deque
+        // clears a hundred thousand samples in milliseconds.
+        let n = 100_000;
+        let times: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let phi: Vec<f64> = (0..n).map(|i| ((i * 7) % 13) as f64 - 6.0).collect();
+        let psi: Vec<f64> = (0..n).map(|i| ((i * 5) % 11) as f64 - 5.0).collect();
+        let start = std::time::Instant::now();
+        let out = super::until_deque(&times, &phi, &psi, 1e9);
+        assert_eq!(out.len(), n);
+        assert!(start.elapsed() < std::time::Duration::from_secs(60));
     }
 }
