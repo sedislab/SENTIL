@@ -88,7 +88,7 @@ Throughput. On the A40 the Monte Carlo kernel sustains about 829 million realiza
 Command: `cargo test --release --offline --no-default-features --features synthesis-gpu -- --ignored gpu_smc_throughput --test-threads=1 --nocapture`.
 Expected: a GPU-over-one-core speedup near two orders of magnitude; the exact figure is hardware-bound. Tier: GPU.
 
-Rare events. The adaptive multilevel splitting resolves satisfaction probabilities that plain Monte Carlo cannot reach at the same sample budget. On the A40 it recovers a three-sigma crossing probability of about 0.0027 within 25 percent of the analytic value over eight seeds, and agrees with the CPU last-particle splitter within a factor of two. Splitting is the mechanism that carries the resolvable probability into the 1e-7 to 1e-9 range a flat Monte Carlo run of feasible size never reaches. Tier: GPU.
+Rare events. The adaptive multilevel splitting resolves satisfaction probabilities that plain Monte Carlo cannot reach at the same sample budget. On the A40 it recovers a three-sigma crossing probability of about 0.0027 within 25 percent of the analytic value over eight seeds, and agrees within a factor of two with the CPU last-particle splitter, a different but equally valid estimator, so a rare-event probability differs by scheme as well as by seed. Splitting is the mechanism that carries the resolvable probability into the 1e-7 to 1e-9 range a flat Monte Carlo run of feasible size never reaches. Tier: GPU.
 
 ## The Lean proof
 
