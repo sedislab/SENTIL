@@ -1,6 +1,4 @@
-//! Robustness semantics: turning a formula and a signal trace into a margin.
-//!
-//! Every evaluation mode should reference these.
+//! Turning a formula and a signal trace into a robustness margin.
 
 mod dense;
 mod discrete;
@@ -30,9 +28,6 @@ use crate::signal::Trace;
 
 impl Formula {
     /// The robustness of the formula over a trace, measured at its start.
-    ///
-    /// A positive result means the trace satisfies the formula with that much
-    /// margin; a negative result is the depth of the worst violation.
     ///
     /// ```
     /// use sentil::{Formula, Trace};
@@ -128,6 +123,36 @@ impl Formula {
         let signal = dense::robustness_signal(self, trace.times(), trace.signals())?;
         Ok(trace.times().iter().map(|&t| signal.at(t)).collect())
     }
+
+    /// The time spans over which the formula is violated on the trace.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyTrace`] for an empty trace, and propagates any error
+    /// from evaluating the formula.
+    pub fn violations(&self, trace: &Trace) -> Result<Vec<(f64, f64)>> {
+        let signal = self.robustness_signal(trace)?;
+        Ok(violation_intervals(trace.times(), &signal))
+    }
+}
+
+/// The time spans where `signal` is negative.
+#[must_use]
+pub fn violation_intervals(times: &[f64], signal: &[f64]) -> Vec<(f64, f64)> {
+    let n = times.len().min(signal.len());
+    let mut spans = Vec::new();
+    let mut start: Option<usize> = None;
+    for (i, &r) in signal.iter().take(n).enumerate() {
+        if r < 0.0 {
+            start.get_or_insert(i);
+        } else if let Some(s) = start.take() {
+            spans.push((times[s], times[i - 1]));
+        }
+    }
+    if let Some(s) = start {
+        spans.push((times[s], times[n - 1]));
+    }
+    spans
 }
 
 #[cfg(test)]
@@ -147,6 +172,24 @@ mod tests {
             trace.add_signal(name, values.to_vec()).unwrap();
         }
         phi.robustness(&trace).unwrap()
+    }
+
+    #[test]
+    fn violation_intervals_finds_negative_runs() {
+        let times = [0.0, 1.0, 2.0, 3.0, 4.0];
+        let signal = [1.0, -1.0, -2.0, 0.5, -3.0];
+        assert_eq!(
+            super::violation_intervals(&times, &signal),
+            vec![(1.0, 2.0), (4.0, 4.0)]
+        );
+    }
+
+    #[test]
+    fn a_formula_reports_its_violation_spans() {
+        let phi = Formula::parse("x > 0").unwrap();
+        let mut trace = Trace::new(vec![0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", vec![1.0, -2.0, 3.0]).unwrap();
+        assert_eq!(phi.violations(&trace).unwrap(), vec![(1.0, 1.0)]);
     }
 
     #[test]
