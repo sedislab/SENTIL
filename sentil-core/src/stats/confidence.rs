@@ -245,6 +245,35 @@ pub fn jeffreys_interval(successes: u64, trials: u64, level: f64) -> ConfidenceI
     }
 }
 
+/// The Agresti-Coull interval for `successes` out of `trials`.
+///
+/// ```
+/// use sentil::stats::agresti_coull;
+///
+/// let ci = agresti_coull(50, 100, 0.95);
+/// assert!((ci.lower - 0.403_831).abs() < 1e-6);
+/// assert!((ci.upper - 0.596_169).abs() < 1e-6);
+/// ```
+#[must_use]
+pub fn agresti_coull(successes: u64, trials: u64, level: f64) -> ConfidenceInterval {
+    if trials == 0 || !(0.0 < level && level < 1.0) {
+        return whole_range(level);
+    }
+    let successes = successes.min(trials);
+    let n = trials as f64;
+    let k = successes as f64;
+    let z = z_score(level);
+    let z2 = z * z;
+    let n_tilde = n + z2;
+    let p_tilde = (k + z2 / 2.0) / n_tilde;
+    let half_width = z * (p_tilde * (1.0 - p_tilde) / n_tilde).sqrt();
+    ConfidenceInterval {
+        lower: (p_tilde - half_width).max(0.0),
+        upper: (p_tilde + half_width).min(1.0),
+        level,
+    }
+}
+
 fn beta_quantile(p: f64, a: f64, b: f64) -> f64 {
     if p <= 0.0 {
         return 0.0;
@@ -412,6 +441,14 @@ mod tests {
         let cp = clopper_pearson(20, 100, 0.95);
         assert!(j.lower >= cp.lower && j.upper <= cp.upper);
         assert!(j.lower < 0.2 && 0.2 < j.upper);
+    }
+
+    #[test]
+    fn agresti_coull_matches_known_intervals() {
+        let half = agresti_coull(50, 100, 0.95);
+        assert!(close(half.lower, 0.403_831) && close(half.upper, 0.596_169));
+        let rare = agresti_coull(5, 100, 0.95);
+        assert!(close(rare.lower, 0.018_676_36) && close(rare.upper, 0.114_617_79));
     }
 
     #[test]
