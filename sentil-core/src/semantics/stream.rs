@@ -374,9 +374,7 @@ impl Node for FutureEventuallyNode {
     }
 }
 
-/// `phi until[a, b] psi`: psi must hold somewhere in the future window with phi
-/// holding until then. Unbounded until folds with a constant-space recurrence;
-/// the bounded case keeps a short buffer and resolves with a delay of `b`.
+/// `phi until[a, b] psi`.
 struct UntilNode {
     phi: Box<dyn Node>,
     psi: Box<dyn Node>,
@@ -386,6 +384,8 @@ struct UntilNode {
     bounded: bool,
     first_time: Option<f64>,
     unbounded_dp: f64,
+    pending_min_phi: f64,
+    pending_best: f64,
 }
 
 impl Node for UntilNode {
@@ -403,10 +403,15 @@ impl Node for UntilNode {
 
         let query_time = time - self.offset_end;
         if query_time < first {
-            return Ok(Robustness::Interval(
-                self.until_over(first, time),
-                f64::INFINITY,
-            ));
+            // The oldest query's window has not fully arrived. Its phi base is the
+            // first sample and never moves while it is unresolved, so its best-so-far
+            // is a running fold: a sound lower bound that only later samples can
+            // raise. Folding here keeps the wide-bound case off the rescan path.
+            if time >= first + self.offset_start - MATURITY_EPSILON {
+                self.pending_best = self.pending_best.max(r_psi.min(self.pending_min_phi));
+            }
+            self.pending_min_phi = self.pending_min_phi.min(r_phi);
+            return Ok(Robustness::Interval(self.pending_best, f64::INFINITY));
         }
 
         while let Some(&(t, _, _)) = self.buffer.front() {
@@ -416,35 +421,30 @@ impl Node for UntilNode {
                 break;
             }
         }
-        let start = query_time + self.offset_start;
-        let end = query_time + self.offset_end;
-        Ok(Robustness::Concrete(self.until_over(start, end)))
+        Ok(Robustness::Concrete(self.resolve(query_time)))
     }
 
     fn reset(&mut self) {
         self.buffer.clear();
         self.first_time = None;
         self.unbounded_dp = f64::NEG_INFINITY;
+        self.pending_min_phi = f64::INFINITY;
+        self.pending_best = f64::NEG_INFINITY;
         self.phi.reset();
         self.psi.reset();
     }
 }
 
 impl UntilNode {
-    /// The until robustness over witness times in `[start, end]`: the best over
-    /// those times of `min(psi, inf of phi from the query time up to but not
-    /// including the witness)`.
-    fn until_over(&self, start: f64, end: f64) -> f64 {
+    /// The resolved until at `query`, read off the trimmed buffer.
+    fn resolve(&self, query: f64) -> f64 {
+        let lower = query + self.offset_start;
         let mut best = f64::NEG_INFINITY;
         let mut min_phi = f64::INFINITY;
         for &(t, phi, psi) in &self.buffer {
-            if t < start {
-                continue;
+            if t >= lower - MATURITY_EPSILON {
+                best = best.max(psi.min(min_phi));
             }
-            if t > end {
-                break;
-            }
-            best = best.max(psi.min(min_phi));
             min_phi = min_phi.min(phi);
         }
         best
@@ -847,6 +847,8 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
                 bounded,
                 first_time: None,
                 unbounded_dp: f64::NEG_INFINITY,
+                pending_min_phi: f64::INFINITY,
+                pending_best: f64::NEG_INFINITY,
             }))
         }
         Formula::Next(inner) => Ok(Box::new(NextNode {
@@ -1153,6 +1155,8 @@ mod tests {
                 ("eventually[1, 4](x > 5)", 4, &[("x", x)][..]),
                 ("next(x > 0)", 1, &[("x", x)][..]),
                 ("x > 0 until[0, 3] y > 0", 3, &[("x", x), ("y", y)][..]),
+                ("x > 0 until[1, 4] y > 0", 4, &[("x", x), ("y", y)][..]),
+                ("x > 0 until[2, 2] y > 0", 2, &[("x", x), ("y", y)][..]),
             ] {
                 let offline = offline_values(formula, &times, signals);
                 let mut monitor = StreamMonitor::new(formula).unwrap();
@@ -1171,6 +1175,22 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_wide_until_bound_stays_linear() {
+        let n: usize = 200_000;
+        let mut monitor = StreamMonitor::new("x > 0 until[0, 100000000] y > 0").unwrap();
+        let xi = monitor.symbol_index("x").unwrap();
+        let yi = monitor.symbol_index("y").unwrap();
+        let mut packed = vec![0.0; monitor.variable_count()];
+        let start = std::time::Instant::now();
+        for i in 0..n {
+            packed[xi] = ((i * 7) % 13) as f64 - 6.0;
+            packed[yi] = ((i * 5) % 11) as f64 - 5.0;
+            monitor.update_packed(i as f64, &packed).unwrap();
+        }
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]
