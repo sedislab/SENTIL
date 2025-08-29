@@ -191,7 +191,7 @@ impl Formula {
     }
 }
 
-fn soft_eval(
+pub(crate) fn soft_eval(
     formula: &Formula,
     times: &[f64],
     signals: &BTreeMap<String, Vec<f64>>,

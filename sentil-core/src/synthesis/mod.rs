@@ -27,6 +27,7 @@
 //! # Ok::<(), sentil::Error>(())
 //! ```
 
+mod autodiff;
 mod cbf;
 #[cfg(feature = "statistical")]
 mod chance;

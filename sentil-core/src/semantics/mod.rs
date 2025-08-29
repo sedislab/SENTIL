@@ -19,6 +19,8 @@ pub use robustness::Robustness;
 pub use stream::StreamMonitor;
 
 #[cfg(feature = "synthesis")]
+pub(crate) use eval::eval_expr;
+#[cfg(feature = "synthesis")]
 pub(crate) use eval::eval_predicate;
 pub(crate) use eval::predicate_margin;
 
