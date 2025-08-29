@@ -8,6 +8,7 @@ use crate::error::{Error, Result};
 
 /// How a noise draw combines with a deterministic reading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum NoiseInteraction {
     /// The noise is added to the reading: `reading + noise`.
     Additive,
@@ -27,11 +28,14 @@ impl NoiseInteraction {
 
 /// A probability distribution that sensor noise is drawn from.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "RawNoiseModel"))]
 pub struct NoiseModel {
     kind: Kind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 enum Kind {
     Dirac {
         value: f64,
@@ -970,6 +974,65 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn a_noise_model_round_trips_through_json() {
+        let model = NoiseModel::gaussian(1.5, 0.4).unwrap();
+        let json = serde_json::to_string(&model).unwrap();
+        let back: NoiseModel = serde_json::from_str(&json).unwrap();
+        assert_eq!(model, back);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn deserialization_rejects_models_the_constructors_reject() {
+        let empty_bootstrap = r#"{"kind":{"Bootstrap":{"residuals":[]}}}"#;
+        let empty_mixture = r#"{"kind":{"Mixture":{"weights":[],"total":0.0,"components":[]}}}"#;
+        let err = serde_json::from_str::<NoiseModel>(empty_bootstrap).unwrap_err();
+        assert!(
+            err.to_string().contains("Bootstrap") && err.to_string().contains("non-empty"),
+            "{err}"
+        );
+        let err = serde_json::from_str::<NoiseModel>(empty_mixture).unwrap_err();
+        assert!(
+            err.to_string().contains("Mixture") && err.to_string().contains("at least one"),
+            "{err}"
+        );
+
+        let ragged = concat!(
+            r#"{"kind":{"Mixture":{"weights":[1.0,2.0],"total":3.0,"components":"#,
+            r#"[{"kind":{"Dirac":{"value":0.0}}}]}}}"#
+        );
+        let nested = concat!(
+            r#"{"kind":{"Mixture":{"weights":[1.0],"total":1.0,"components":"#,
+            r#"[{"kind":{"Gaussian":{"mean":0.0,"std_dev":-1.0}}}]}}}"#
+        );
+        let degenerate_gamma = r#"{"kind":{"Gamma":{"shape":0.0,"scale":1.0}}}"#;
+        assert!(serde_json::from_str::<NoiseModel>(ragged).is_err());
+        assert!(serde_json::from_str::<NoiseModel>(nested).is_err());
+        assert!(serde_json::from_str::<NoiseModel>(degenerate_gamma).is_err());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn a_mixture_round_trips_with_its_weight_total_recomputed() {
+        let model = NoiseModel::mixture(
+            vec![1.0, 3.0],
+            vec![
+                NoiseModel::dirac(0.0).unwrap(),
+                NoiseModel::gaussian(2.0, 0.5).unwrap(),
+            ],
+        )
+        .unwrap();
+        let json = serde_json::to_string(&model).unwrap();
+        let back: NoiseModel = serde_json::from_str(&json).unwrap();
+        assert_eq!(model, back);
+        let doctored = json.replace("\"total\":4.0", "\"total\":0.0");
+        assert_ne!(doctored, json);
+        let repaired: NoiseModel = serde_json::from_str(&doctored).unwrap();
+        assert_eq!(repaired, model);
+    }
 
     #[test]
     fn dirac_is_deterministic() {

@@ -16,6 +16,7 @@ use crate::signal::Trace;
 
 /// How a statistical check is run.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SmcConfig {
     /// How many noisy realizations to draw.
     pub samples: u64,
