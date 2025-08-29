@@ -1,12 +1,14 @@
 //! The SENTIL runner. Emits one JSON record per measurement to standard output.
-//! Run as `sentil_runner <deterministic|scalability>`. Heavy sizes belong on a
-//! quiet compute node.
+//! Run as `sentil_runner <deterministic|scalability|streaming>`. Heavy sizes belong
+//! on a quiet compute node.
 
 use std::env;
+use std::hint::black_box;
 use std::process::ExitCode;
+use std::time::Instant;
 
-use sentil::Formula;
-use sentil_benchmarks::measure::{hardware, peak_rss_bytes, time_runs};
+use sentil::{Formula, StreamMonitor};
+use sentil_benchmarks::measure::{hardware, peak_rss_bytes, summarize, time_runs};
 use sentil_benchmarks::oracle::{trace, CANONICAL};
 use sentil_benchmarks::schema::{Question, Record, Timing};
 
@@ -18,8 +20,9 @@ fn main() -> ExitCode {
     let records = match suite.as_str() {
         "deterministic" => deterministic(),
         "scalability" => scalability(),
+        "streaming" => streaming(),
         other => {
-            eprintln!("unknown suite `{other}`; use `deterministic` or `scalability`");
+            eprintln!("unknown suite `{other}`; use `deterministic`, `scalability`, or `streaming`");
             return ExitCode::FAILURE;
         }
     };
@@ -73,6 +76,11 @@ fn scalability() -> Vec<Record> {
         ));
     }
     records
+}
+
+fn streaming() -> Vec<Record> {
+    let n = 1_000_000usize;
+    vec![measure_stream("streaming", SWEEP, n, n as u64)]
 }
 
 fn measure_full(

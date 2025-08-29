@@ -15,7 +15,7 @@ pub fn time_runs<T>(runs: u64, mut op: impl FnMut() -> T) -> Timing {
     summarize(&mut samples)
 }
 
-fn summarize(samples: &mut [f64]) -> Timing {
+pub fn summarize(samples: &mut [f64]) -> Timing {
     samples.sort_by(f64::total_cmp);
     let n = samples.len();
     #[allow(
