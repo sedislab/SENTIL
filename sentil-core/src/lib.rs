@@ -74,8 +74,8 @@ pub use stats::{
 pub use stats::{SimExpr, SimModel};
 #[cfg(feature = "synthesis")]
 pub use synthesis::{
-    Backend, Bounds, CmaConfig, Controller, LinearModel, SafetyFilter, SmoothConfig, SoftKind,
-    SynthesisProblem, SynthesisResult, Synthesizer, SystemModel, Witness,
+    mine_tightest_parameter, Backend, Bounds, CmaConfig, Controller, LinearModel, SafetyFilter,
+    SmoothConfig, SoftKind, SynthesisProblem, SynthesisResult, Synthesizer, SystemModel, Witness,
 };
 #[cfg(all(feature = "synthesis", feature = "statistical"))]
 pub use synthesis::{ChanceConstraint, ChanceReport};

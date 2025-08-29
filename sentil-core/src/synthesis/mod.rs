@@ -34,6 +34,7 @@ mod chance;
 mod cmaes;
 mod controller;
 mod gradient;
+mod mining;
 mod model;
 mod numerics;
 mod pgrad;
