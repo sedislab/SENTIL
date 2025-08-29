@@ -1,5 +1,6 @@
 //! Statistical model checking for the probabilistic operator.
 
+mod bayesian;
 mod confidence;
 mod lifting;
 mod noise;
@@ -23,6 +24,7 @@ pub use rare_events::{adaptive_multilevel_splitting, RareEventEstimate, RareEven
 #[cfg(feature = "gpu")]
 pub use sim_model::{SimExpr, SimModel};
 pub use smc::{SmcConfig, SmcResult};
+pub use bayesian::{bayes_sequential_test, BayesConfig, BayesResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
 use crate::error::{Error, Result};
