@@ -268,6 +268,7 @@ mod tests {
             samples: 2_000_000,
             confidence: 0.95,
             seed: 7,
+            ..Default::default()
         };
         for (c, expected) in [
             (0.0, 0.5),
@@ -297,6 +298,7 @@ mod tests {
             samples: 2_000_000,
             confidence: 0.95,
             seed: 11,
+            ..Default::default()
         };
         let cases: [(NoiseModel, f64, f64); 4] = [
             (
@@ -343,6 +345,7 @@ mod tests {
             samples: 2_000_000,
             confidence: 0.95,
             seed: 13,
+            ..Default::default()
         };
         let median = Formula::parse("P>=0.5(x <= 0)").unwrap();
         let p = median.check(&trace(&[0.0]), &lifting, &config).unwrap();
@@ -368,6 +371,7 @@ mod tests {
             samples: 2_000_000,
             confidence: 0.95,
             seed: 17,
+            ..Default::default()
         };
         let cases: [(NoiseModel, f64, f64); 3] = [
             (
@@ -403,6 +407,7 @@ mod tests {
             samples: 2_000_000,
             confidence: 0.95,
             seed: 19,
+            ..Default::default()
         };
         let cases: [(NoiseModel, f64, f64); 2] = [
             (NoiseModel::poisson(4.0).unwrap(), 4.0, 0.628_837),

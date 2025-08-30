@@ -533,6 +533,7 @@ mod tests {
             samples: 500_000,
             confidence: 0.95,
             seed: 7,
+            ..Default::default()
         };
 
         let gpu = try_gpu_check(
