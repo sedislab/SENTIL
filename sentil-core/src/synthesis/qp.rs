@@ -32,10 +32,24 @@ pub fn solve_qp(
 ) -> Result<Vec<f64>> {
     let n = q.len();
     let m = h.len();
-    if p.len() != n || g.len() != m || g.iter().any(|row| row.len() != n) {
+    if p.len() != n || p.iter().any(|row| row.len() != n) {
         return Err(Error::InvalidConfig {
             context: "quadratic program",
-            message: "P, q, G, and h have inconsistent shapes".to_owned(),
+            message: format!(
+                "P must be {n}x{n} to match q of length {n}, but it is {}x{}",
+                p.len(),
+                p.first().map_or(0, Vec::len)
+            ),
+        });
+    }
+    if g.len() != m || g.iter().any(|row| row.len() != n) {
+        return Err(Error::InvalidConfig {
+            context: "quadratic program",
+            message: format!(
+                "G must be {m}x{n}, one row per constraint in h and one column per variable, but it is {}x{}",
+                g.len(),
+                g.first().map_or(0, Vec::len)
+            ),
         });
     }
 

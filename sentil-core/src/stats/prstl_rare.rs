@@ -47,8 +47,11 @@ impl StochasticSystem {
         if variables.is_empty() {
             return Err(config_error("at least one variable is required".to_owned()));
         }
-        if variables.iter().collect::<BTreeSet<_>>().len() != variables.len() {
-            return Err(config_error("variable names must be unique".to_owned()));
+        let mut seen = BTreeSet::new();
+        if let Some(dup) = variables.iter().find(|name| !seen.insert((*name).clone())) {
+            return Err(config_error(format!(
+                "variable names must be unique, but `{dup}` is repeated"
+            )));
         }
         Ok(Self {
             variables,

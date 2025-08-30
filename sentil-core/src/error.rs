@@ -43,6 +43,17 @@ pub enum Error {
         arity: usize,
     },
 
+    /// A known function was called with the wrong number of arguments.
+    #[error("function `{name}` takes {expected} argument(s) but got {found}")]
+    ArityMismatch {
+        /// The function name as written.
+        name: String,
+        /// How many arguments the function takes.
+        expected: usize,
+        /// How many arguments it was given.
+        found: usize,
+    },
+
     /// A trace's sample times were not strictly increasing.
     #[error("trace times must strictly increase, but time {time} does not follow {previous}")]
     NonMonotonicTime {

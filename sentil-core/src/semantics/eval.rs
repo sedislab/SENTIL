@@ -73,9 +73,10 @@ where
         if let [arg] = args {
             Ok(f(eval_expr(arg, lookup)?))
         } else {
-            Err(Error::UnknownFunction {
+            Err(Error::ArityMismatch {
                 name: name.to_owned(),
-                arity: args.len(),
+                expected: 1,
+                found: args.len(),
             })
         }
     };
@@ -96,9 +97,10 @@ where
                 let b = eval_expr(rhs, lookup)?;
                 Ok(if name == "min" { a.min(b) } else { a.max(b) })
             } else {
-                Err(Error::UnknownFunction {
+                Err(Error::ArityMismatch {
                     name: name.to_owned(),
-                    arity: args.len(),
+                    expected: 2,
+                    found: args.len(),
                 })
             }
         }
@@ -165,12 +167,25 @@ mod tests {
     }
 
     #[test]
-    fn wrong_arity_is_reported() {
+    fn wrong_arity_is_reported_separately_from_an_unknown_name() {
         let f = Formula::parse("sin(x, y) > 0").unwrap();
         let Formula::Predicate(p) = f else {
             unreachable!()
         };
         let err = eval_predicate(&p, &|_: &str| Some(1.0)).unwrap_err();
-        assert!(matches!(err, Error::UnknownFunction { arity: 2, .. }));
+        assert!(matches!(
+            err,
+            Error::ArityMismatch {
+                expected: 1,
+                found: 2,
+                ..
+            }
+        ));
+        let g = Formula::parse("nope(x) > 0").unwrap();
+        let Formula::Predicate(p) = g else {
+            unreachable!()
+        };
+        let err = eval_predicate(&p, &|_: &str| Some(1.0)).unwrap_err();
+        assert!(matches!(err, Error::UnknownFunction { .. }));
     }
 }

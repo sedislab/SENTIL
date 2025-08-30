@@ -137,19 +137,30 @@ impl LinearModel {
         let x0 = x0.into();
         let variables: Vec<String> = variables.into_iter().map(Into::into).collect();
         let n = x0.len();
-        if n == 0 || a.len() != n || a.iter().any(|row| row.len() != n) {
-            return Err(config_error("A must be square and match the initial state"));
+        if n == 0 {
+            return Err(config_error(
+                "the initial state must have at least one component",
+            ));
+        }
+        if a.len() != n || a.iter().any(|row| row.len() != n) {
+            return Err(config_error(&format!(
+                "A must be {n}x{n} to match the {n}-component state, but it is {}x{}",
+                a.len(),
+                a.first().map_or(0, Vec::len)
+            )));
         }
         let width = b.first().map_or(0, Vec::len);
         if b.len() != n || b.iter().any(|row| row.len() != width) {
-            return Err(config_error(
-                "B must have one row per state with a uniform width",
-            ));
+            return Err(config_error(&format!(
+                "B must have {n} rows, one per state, each the same width, but it has {} rows",
+                b.len()
+            )));
         }
         if variables.len() != n {
-            return Err(config_error(
-                "there must be one variable name per state component",
-            ));
+            return Err(config_error(&format!(
+                "there must be one variable name per state component: {n} expected, {} given",
+                variables.len()
+            )));
         }
         if !(dt.is_finite() && dt > 0.0) {
             return Err(config_error("dt must be finite and positive"));
@@ -262,8 +273,11 @@ mod tests {
     }
 
     #[test]
-    fn a_shape_mismatch_is_rejected() {
+    fn a_shape_mismatch_names_the_dimensions() {
         let bad = LinearModel::new(vec![vec![1.0, 0.0]], vec![vec![1.0]], [0.0], ["x"], 1.0, 2);
-        assert!(bad.is_err());
+        let Err(Error::InvalidConfig { message, .. }) = bad else {
+            panic!("expected an invalid-config error");
+        };
+        assert!(message.contains("1x1"), "message should name the shape: {message}");
     }
 }

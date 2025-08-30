@@ -74,13 +74,11 @@ impl SimModel {
         if n == 0 {
             return Err(config_error("at least one variable is required".to_owned()));
         }
-        if variables
-            .iter()
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
-            != n
-        {
-            return Err(config_error("variable names must be unique".to_owned()));
+        let mut seen = std::collections::BTreeSet::new();
+        if let Some(dup) = variables.iter().find(|name| !seen.insert((*name).clone())) {
+            return Err(config_error(format!(
+                "variable names must be unique, but `{dup}` is repeated"
+            )));
         }
         if init.len() != n || advance.len() != n {
             return Err(config_error(format!(
@@ -398,6 +396,22 @@ mod tests {
             vec![],
         );
         assert!(matches!(bad_fn, Err(Error::InvalidConfig { .. })));
+    }
+
+    #[test]
+    fn a_repeated_variable_name_is_named_in_the_error() {
+        let dup = SimModel::new(
+            ["x", "x"],
+            1.0,
+            3,
+            vec![SimExpr::Const(0.0), SimExpr::Const(0.0)],
+            vec![SimExpr::Prev(0), SimExpr::Prev(1)],
+            vec![],
+        );
+        let Err(Error::InvalidConfig { message, .. }) = dup else {
+            panic!("expected an invalid-config error");
+        };
+        assert!(message.contains("`x`"), "should name the duplicate: {message}");
     }
 
     #[test]

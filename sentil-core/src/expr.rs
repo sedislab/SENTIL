@@ -189,9 +189,10 @@ impl Program {
     fn emit_call(&mut self, name: &str, args: &[Expr], symbols: &[String]) -> Result<()> {
         let unary = |this: &mut Self, op: Op| -> Result<()> {
             let [arg] = args else {
-                return Err(Error::UnknownFunction {
+                return Err(Error::ArityMismatch {
                     name: name.to_owned(),
-                    arity: args.len(),
+                    expected: 1,
+                    found: args.len(),
                 });
             };
             this.emit_expr(arg, symbols)?;
@@ -211,9 +212,10 @@ impl Program {
             "ceil" => unary(self, Op::Ceil),
             "min" | "max" => {
                 let [lhs, rhs] = args else {
-                    return Err(Error::UnknownFunction {
+                    return Err(Error::ArityMismatch {
                         name: name.to_owned(),
-                        arity: args.len(),
+                        expected: 2,
+                        found: args.len(),
                     });
                 };
                 self.emit_expr(lhs, symbols)?;
@@ -332,10 +334,19 @@ mod tests {
             Program::compile(&f, &[]),
             Err(Error::UnknownVariable { .. })
         ));
+        let h = Formula::parse("wat(x) > 0").unwrap();
+        assert!(matches!(
+            Program::compile(&h, &["x".to_string()]),
+            Err(Error::UnknownFunction { .. })
+        ));
         let g = Formula::parse("sin(x, y) > 0").unwrap();
         assert!(matches!(
             Program::compile(&g, &["x".to_string(), "y".to_string()]),
-            Err(Error::UnknownFunction { arity: 2, .. })
+            Err(Error::ArityMismatch {
+                expected: 1,
+                found: 2,
+                ..
+            })
         ));
     }
 

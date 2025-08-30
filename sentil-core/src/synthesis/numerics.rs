@@ -18,10 +18,13 @@ const TOLERANCE: f64 = 1e-28;
 )]
 pub fn symmetric_eigen(matrix: &[Vec<f64>]) -> Result<(Vec<f64>, Vec<Vec<f64>>)> {
     let n = matrix.len();
-    if matrix.iter().any(|row| row.len() != n) {
+    if let Some((i, row)) = matrix.iter().enumerate().find(|(_, row)| row.len() != n) {
         return Err(Error::InvalidConfig {
             context: "eigendecomposition",
-            message: "matrix must be square".to_owned(),
+            message: format!(
+                "matrix must be square: it has {n} rows but row {i} has {} entries",
+                row.len()
+            ),
         });
     }
     let mut a = matrix.to_vec();
@@ -99,10 +102,22 @@ fn rotate(a: &mut [Vec<f64>], v: &mut [Vec<f64>], p: usize, q: usize, c: f64, s:
 )]
 pub fn solve_spd(matrix: &[Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
     let n = matrix.len();
-    if matrix.iter().any(|row| row.len() != n) || rhs.len() != n {
+    if let Some((i, row)) = matrix.iter().enumerate().find(|(_, row)| row.len() != n) {
         return Err(Error::InvalidConfig {
             context: "linear solve",
-            message: "matrix must be square and match the right-hand side".to_owned(),
+            message: format!(
+                "matrix must be square: it has {n} rows but row {i} has {} entries",
+                row.len()
+            ),
+        });
+    }
+    if rhs.len() != n {
+        return Err(Error::InvalidConfig {
+            context: "linear solve",
+            message: format!(
+                "the {n}x{n} matrix does not match the right-hand side of length {}",
+                rhs.len()
+            ),
         });
     }
     let mut l = vec![vec![0.0; n]; n];
