@@ -133,11 +133,7 @@ impl RingBuffer {
             }
         }
         let evicted = if self.is_full() {
-            let old = self.data[self.head];
-            self.head = self.slot(1);
-            self.len -= 1;
-            self.welford_remove(old.1);
-            Some(old)
+            self.pop_front()
         } else {
             None
         };
@@ -146,6 +142,30 @@ impl RingBuffer {
         self.len += 1;
         self.welford_add(value);
         Ok(evicted)
+    }
+
+    /// Removes and returns the oldest sample.
+    pub fn pop_front(&mut self) -> Option<(f64, f64)> {
+        if self.len == 0 {
+            return None;
+        }
+        let old = self.data[self.head];
+        self.head = self.slot(1);
+        self.len -= 1;
+        self.welford_remove(old.1);
+        Some(old)
+    }
+
+    /// Removes and returns the newest sample, updating the running statistics.
+    /// Useful for taking back a sample that was pushed in error.
+    pub fn pop_back(&mut self) -> Option<(f64, f64)> {
+        if self.len == 0 {
+            return None;
+        }
+        let last = self.data[self.slot(self.len - 1)];
+        self.len -= 1;
+        self.welford_remove(last.1);
+        Some(last)
     }
 
     /// The earliest and latest sample times.
@@ -179,6 +199,23 @@ impl RingBuffer {
         self.variance().map(f64::sqrt)
     }
 
+    /// Recomputes the running mean and squared deviation from the held samples.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the sample count is bounded by the capacity and fits f64 exactly"
+    )]
+    pub fn recompute_statistics(&mut self) {
+        if self.len == 0 {
+            self.mean = 0.0;
+            self.m2 = 0.0;
+            return;
+        }
+        let n = self.len as f64;
+        let mean = self.values().sum::<f64>() / n;
+        self.m2 = self.values().map(|v| (v - mean) * (v - mean)).sum();
+        self.mean = mean;
+    }
+
     /// The smallest value held.
     #[must_use]
     pub fn min(&self) -> Option<f64> {
@@ -204,6 +241,12 @@ impl RingBuffer {
     /// The sample times in time order.
     pub fn times(&self) -> impl Iterator<Item = f64> + '_ {
         self.iter().map(|(t, _)| t)
+    }
+
+    /// The most recent `count` samples in time order.
+    pub fn recent(&self, count: usize) -> impl Iterator<Item = (f64, f64)> + '_ {
+        let start = self.len.saturating_sub(count);
+        (start..self.len).map(move |i| self.data[self.slot(i)])
     }
 
     fn lower_bound(&self, time: f64) -> usize {
@@ -363,5 +406,46 @@ mod tests {
         assert_eq!(buffer.mean(), Some(25.0));
         assert!((buffer.variance().unwrap() - 50.0).abs() < 1e-9);
         assert_eq!(buffer.between(1.0, 2.0), vec![(1.0, 20.0), (2.0, 30.0)]);
+    }
+
+    #[test]
+    fn pops_from_either_end_and_tracks_statistics() {
+        let mut buffer = RingBuffer::new(4).unwrap();
+        for (t, v) in [(0.0, 2.0), (1.0, 4.0), (2.0, 6.0), (3.0, 8.0)] {
+            buffer.push(t, v).unwrap();
+        }
+        assert_eq!(buffer.pop_back(), Some((3.0, 8.0)));
+        assert_eq!(buffer.pop_front(), Some((0.0, 2.0)));
+        assert_eq!(buffer.iter().collect::<Vec<_>>(), vec![(1.0, 4.0), (2.0, 6.0)]);
+        assert_eq!(buffer.mean(), Some(5.0));
+        buffer.push(4.0, 10.0).unwrap();
+        assert_eq!(buffer.back(), Some((4.0, 10.0)));
+        let mut empty = RingBuffer::new(2).unwrap();
+        assert_eq!(empty.pop_front(), None);
+        assert_eq!(empty.pop_back(), None);
+    }
+
+    #[test]
+    fn recent_yields_the_last_samples_for_a_windowed_query() {
+        let mut buffer = RingBuffer::new(5).unwrap();
+        for (t, v) in [(0.0, 3.0), (1.0, 1.0), (2.0, 4.0), (3.0, 1.0), (4.0, 5.0)] {
+            buffer.push(t, v).unwrap();
+        }
+        assert_eq!(buffer.recent(2).collect::<Vec<_>>(), vec![(3.0, 1.0), (4.0, 5.0)]);
+        assert_eq!(buffer.recent(10).count(), 5);
+        assert_eq!(buffer.recent(3).map(|(_, v)| v).reduce(f64::min), Some(1.0));
+        assert_eq!(buffer.recent(3).map(|(_, v)| v).reduce(f64::max), Some(5.0));
+    }
+
+    #[test]
+    fn recompute_statistics_matches_the_incremental_values() {
+        let mut buffer = RingBuffer::new(8).unwrap();
+        for i in 0..8 {
+            buffer.push(f64::from(i), f64::from(i) * 1.5 - 3.0).unwrap();
+        }
+        let (mean, variance) = (buffer.mean(), buffer.variance());
+        buffer.recompute_statistics();
+        assert!((buffer.mean().unwrap() - mean.unwrap()).abs() < 1e-12);
+        assert!((buffer.variance().unwrap() - variance.unwrap()).abs() < 1e-12);
     }
 }
