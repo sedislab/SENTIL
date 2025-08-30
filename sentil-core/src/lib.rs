@@ -67,8 +67,8 @@ pub use spec_builder::{SpecBuilder, SpecRegistry, SpecTemplate};
 #[cfg(feature = "statistical")]
 pub use stats::{
     BayesConfig, BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry,
-    NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, SmcConfig, SmcResult,
-    SprtConfig, SprtResult, StochasticSystem,
+    NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, RobustnessDistribution,
+    SmcConfig, SmcResult, SprtConfig, SprtResult, StochasticSystem,
 };
 #[cfg(feature = "gpu")]
 pub use stats::{SimExpr, SimModel};

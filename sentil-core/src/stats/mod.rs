@@ -23,7 +23,7 @@ pub use prstl_rare::{RareEventConfig, RareEventResult, StochasticSystem};
 pub use rare_events::{adaptive_multilevel_splitting, RareEventEstimate, RareEventSimulator};
 #[cfg(feature = "gpu")]
 pub use sim_model::{SimExpr, SimModel};
-pub use smc::{SmcConfig, SmcResult};
+pub use smc::{RobustnessDistribution, SmcConfig, SmcResult};
 pub use bayesian::{bayes_sequential_test, BayesConfig, BayesResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
@@ -70,6 +70,39 @@ impl Formula {
         match self {
             Formula::Probabilistic(op, threshold, inner) => {
                 smc::check(*op, *threshold, inner, trace, lifting, config)
+            }
+            _ => Err(Error::NotProbabilistic),
+        }
+    }
+
+    /// Like [`check`](Self::check) but also reports the robustness distribution.
+    ///
+    /// ```
+    /// use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, Trace};
+    ///
+    /// let phi = Formula::parse("P>=0.9(x > 0)")?;
+    /// let trace = Trace::from_signal([0.0], "x", [5.0])?;
+    /// let mut lifting = LiftingRegistry::new();
+    /// lifting.register("x", NoiseModel::gaussian(0.0, 1.0)?, NoiseInteraction::Additive);
+    ///
+    /// let (result, spread) = phi.check_distribution(&trace, &lifting, &SmcConfig::default())?;
+    /// assert!(result.holds);
+    /// assert!(spread.mean > 4.0 && spread.mean < 6.0);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`check`](Self::check).
+    pub fn check_distribution(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &SmcConfig,
+    ) -> Result<(SmcResult, RobustnessDistribution)> {
+        match self {
+            Formula::Probabilistic(op, threshold, inner) => {
+                smc::check_distribution(*op, *threshold, inner, trace, lifting, config)
             }
             _ => Err(Error::NotProbabilistic),
         }

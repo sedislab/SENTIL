@@ -54,6 +54,60 @@ pub struct SmcResult {
     pub holds: bool,
 }
 
+/// How the robustness of the inner formula was spread across the realizations.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RobustnessDistribution {
+    /// How many realizations were scored.
+    pub count: u64,
+    /// The mean robustness across realizations.
+    pub mean: f64,
+    /// The population variance of the robustness values.
+    pub variance: f64,
+    /// The least robustness seen.
+    pub min: f64,
+    /// The greatest robustness seen.
+    pub max: f64,
+}
+
+impl RobustnessDistribution {
+    /// The square root of the variance.
+    #[must_use]
+    pub fn std_dev(&self) -> f64 {
+        self.variance.sqrt()
+    }
+
+    fn from_values(values: &[f64]) -> Self {
+        if values.is_empty() {
+            return Self {
+                count: 0,
+                mean: 0.0,
+                variance: 0.0,
+                min: 0.0,
+                max: 0.0,
+            };
+        }
+        let count = values.len() as u64;
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        let mut sum = 0.0;
+        for &v in values {
+            min = min.min(v);
+            max = max.max(v);
+            sum += v;
+        }
+        let mean = sum / count as f64;
+        let variance =
+            values.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / count as f64;
+        Self {
+            count,
+            mean,
+            variance,
+            min,
+            max,
+        }
+    }
+}
+
 pub(crate) fn check(
     op: ProbabilityOp,
     threshold: f64,
@@ -107,6 +161,57 @@ pub(crate) fn check(
         samples,
         holds: super::decides(op, probability, threshold),
     })
+}
+
+pub(crate) fn check_distribution(
+    op: ProbabilityOp,
+    threshold: f64,
+    inner: &Formula,
+    trace: &Trace,
+    lifting: &LiftingRegistry,
+    config: &SmcConfig,
+) -> Result<(SmcResult, RobustnessDistribution)> {
+    if trace.is_empty() {
+        return Err(Error::EmptyTrace);
+    }
+    let score = |i: u64, buf: &mut Trace| -> Result<f64> {
+        let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(i));
+        lifting.lift_into(trace, &mut rng, buf)?;
+        inner.robustness(buf)
+    };
+
+    #[cfg(feature = "parallel")]
+    let values: Vec<f64> = {
+        use rayon::prelude::*;
+        (0..config.samples)
+            .into_par_iter()
+            .map_init(|| trace.clone(), |buf, i| score(i, buf))
+            .collect::<Result<Vec<f64>>>()?
+    };
+    #[cfg(not(feature = "parallel"))]
+    let values: Vec<f64> = {
+        let mut buf = trace.clone();
+        let mut out = Vec::new();
+        for i in 0..config.samples {
+            out.push(score(i, &mut buf)?);
+        }
+        out
+    };
+
+    let samples = config.samples;
+    let satisfactions = values.iter().filter(|&&v| v >= 0.0).count() as u64;
+    let probability = satisfactions as f64 / samples as f64;
+    let interval = config
+        .interval_method
+        .interval(satisfactions, samples, config.confidence);
+    let result = SmcResult {
+        probability,
+        interval,
+        satisfactions,
+        samples,
+        holds: super::decides(op, probability, threshold),
+    };
+    Ok((result, RobustnessDistribution::from_values(&values)))
 }
 
 /// The smallest sample count that repays the per-call device and shader setup.
@@ -313,6 +418,47 @@ mod cpu_tests {
             .sum();
 
         assert_eq!(result.satisfactions, baseline);
+    }
+
+    #[test]
+    fn the_distribution_agrees_with_the_plain_check() {
+        let inner = Formula::parse("x > 0").unwrap();
+        let trace = Trace::from_signal(vec![0.0, 1.0, 2.0], "x", vec![3.0, 3.0, 3.0]).unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 1000,
+            confidence: 0.95,
+            seed: 5,
+            ..Default::default()
+        };
+        let plain = check(
+            ProbabilityOp::GreaterEqual,
+            0.9,
+            &inner,
+            &trace,
+            &lifting,
+            &config,
+        )
+        .unwrap();
+        let (result, spread) = check_distribution(
+            ProbabilityOp::GreaterEqual,
+            0.9,
+            &inner,
+            &trace,
+            &lifting,
+            &config,
+        )
+        .unwrap();
+        assert_eq!(result, plain);
+        assert_eq!(spread.count, config.samples);
+        assert!(spread.min <= spread.mean && spread.mean <= spread.max);
+        assert!(spread.mean > 2.0 && spread.mean < 4.0);
+        assert!(spread.std_dev() > 0.0);
     }
 
     #[test]
