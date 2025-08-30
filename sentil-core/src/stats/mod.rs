@@ -13,7 +13,7 @@ mod sprt;
 
 pub use confidence::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
-    z_score, ConfidenceInterval,
+    z_score, ConfidenceInterval, IntervalMethod,
 };
 pub use lifting::LiftingRegistry;
 #[cfg(feature = "gpu")]
@@ -181,6 +181,7 @@ mod tests {
             samples: 5_000,
             confidence: 0.95,
             seed: 7,
+            ..Default::default()
         };
         let a = phi.check(&trace(&[1.0]), &lifting, &config).unwrap();
         let b = phi.check(&trace(&[1.0]), &lifting, &config).unwrap();

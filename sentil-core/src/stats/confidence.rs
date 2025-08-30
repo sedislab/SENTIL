@@ -40,6 +40,34 @@ impl ConfidenceInterval {
     }
 }
 
+/// Which interval a statistical check reports around its estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum IntervalMethod {
+    /// The Wilson score interval.
+    #[default]
+    Wilson,
+    /// The Clopper-Pearson exact interval.
+    ClopperPearson,
+    /// The Jeffreys credible interval.
+    Jeffreys,
+    /// The Agresti-Coull interval.
+    AgrestiCoull,
+}
+
+impl IntervalMethod {
+    /// The interval this method gives for `successes` out of `trials` at `level`.
+    #[must_use]
+    pub fn interval(self, successes: u64, trials: u64, level: f64) -> ConfidenceInterval {
+        match self {
+            IntervalMethod::Wilson => wilson_interval(successes, trials, level),
+            IntervalMethod::ClopperPearson => clopper_pearson(successes, trials, level),
+            IntervalMethod::Jeffreys => jeffreys_interval(successes, trials, level),
+            IntervalMethod::AgrestiCoull => agresti_coull(successes, trials, level),
+        }
+    }
+}
+
 /// The Wilson score interval for `successes` out of `trials` at a confidence level.
 ///
 /// ```
@@ -441,6 +469,19 @@ mod tests {
         let cp = clopper_pearson(20, 100, 0.95);
         assert!(j.lower >= cp.lower && j.upper <= cp.upper);
         assert!(j.lower < 0.2 && 0.2 < j.upper);
+    }
+
+    #[test]
+    fn the_method_selector_dispatches_to_each_interval() {
+        let (s, t, l) = (30, 100, 0.95);
+        assert_eq!(IntervalMethod::Wilson.interval(s, t, l), wilson_interval(s, t, l));
+        assert_eq!(
+            IntervalMethod::ClopperPearson.interval(s, t, l),
+            clopper_pearson(s, t, l)
+        );
+        assert_eq!(IntervalMethod::Jeffreys.interval(s, t, l), jeffreys_interval(s, t, l));
+        assert_eq!(IntervalMethod::AgrestiCoull.interval(s, t, l), agresti_coull(s, t, l));
+        assert_eq!(IntervalMethod::default(), IntervalMethod::Wilson);
     }
 
     #[test]

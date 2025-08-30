@@ -66,9 +66,9 @@ pub use signal::{Interpolation, RingBuffer, Trace};
 pub use spec_builder::{SpecBuilder, SpecRegistry, SpecTemplate};
 #[cfg(feature = "statistical")]
 pub use stats::{
-    BayesConfig, BayesResult, ConfidenceInterval, LiftingRegistry, NoiseInteraction, NoiseModel,
-    RareEventConfig, RareEventResult, SmcConfig, SmcResult, SprtConfig, SprtResult,
-    StochasticSystem,
+    BayesConfig, BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry,
+    NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, SmcConfig, SmcResult,
+    SprtConfig, SprtResult, StochasticSystem,
 };
 #[cfg(feature = "gpu")]
 pub use stats::{SimExpr, SimModel};

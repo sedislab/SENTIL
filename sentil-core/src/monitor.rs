@@ -305,6 +305,7 @@ mod tests {
             samples: 200,
             confidence: 0.95,
             seed: 9,
+            ..Default::default()
         };
         let monitor = Monitor::from_formula(phi.clone(), MonitorConfig::new().smc(smc));
         let via_monitor = monitor.check(&trace, &lifting).unwrap();

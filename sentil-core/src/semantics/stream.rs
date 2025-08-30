@@ -1227,6 +1227,7 @@ mod tests {
             samples: 2000,
             confidence: 0.95,
             seed: 7,
+            ..Default::default()
         };
         let mut holds = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
         assert!(holds.update(0.0, &[("x", 2.0)]).unwrap().value() > 0.0);
@@ -1249,6 +1250,7 @@ mod tests {
             samples: 2000,
             confidence: 0.95,
             seed: 3,
+            ..Default::default()
         };
         let mut monitor = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
         monitor.update(0.0, &[("x", 3.0)]).unwrap();
@@ -1264,6 +1266,7 @@ mod tests {
             samples: 100,
             confidence: 0.95,
             seed: 1,
+            ..Default::default()
         };
         assert!(matches!(
             StreamMonitor::with_lifting(&phi, &LiftingRegistry::new(), &config),

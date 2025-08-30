@@ -60,6 +60,7 @@ mod tests {
                 samples: 50_000,
                 confidence: 0.95,
                 seed: 7,
+                ..Default::default()
             };
             let result = phi.check(&trace, &lifting, &config).expect("a probability");
             assert!(

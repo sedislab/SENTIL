@@ -8,7 +8,7 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use super::confidence::{wilson_interval, ConfidenceInterval};
+use super::confidence::{ConfidenceInterval, IntervalMethod};
 use super::lifting::LiftingRegistry;
 use crate::error::{Error, Result};
 use crate::formula::{Formula, ProbabilityOp};
@@ -24,6 +24,8 @@ pub struct SmcConfig {
     pub confidence: f64,
     /// The base seed.
     pub seed: u64,
+    /// Which interval to report around the estimate.
+    pub interval_method: IntervalMethod,
 }
 
 impl Default for SmcConfig {
@@ -32,6 +34,7 @@ impl Default for SmcConfig {
             samples: 10_000,
             confidence: 0.95,
             seed: 42,
+            interval_method: IntervalMethod::Wilson,
         }
     }
 }
@@ -94,7 +97,9 @@ pub(crate) fn check(
 
     let samples = config.samples;
     let probability = satisfactions as f64 / samples as f64;
-    let interval = wilson_interval(satisfactions, samples, config.confidence);
+    let interval = config
+        .interval_method
+        .interval(satisfactions, samples, config.confidence);
     Ok(SmcResult {
         probability,
         interval,
@@ -139,7 +144,9 @@ fn try_gpu_check(
     let probability = satisfactions as f64 / samples as f64;
     Some(SmcResult {
         probability,
-        interval: wilson_interval(satisfactions, samples, config.confidence),
+        interval: config
+            .interval_method
+            .interval(satisfactions, samples, config.confidence),
         satisfactions,
         samples,
         holds: super::decides(op, probability, threshold),
@@ -284,6 +291,7 @@ mod cpu_tests {
             samples: 2000,
             confidence: 0.95,
             seed: 7,
+            ..Default::default()
         };
 
         let result = check(
@@ -305,6 +313,38 @@ mod cpu_tests {
             .sum();
 
         assert_eq!(result.satisfactions, baseline);
+    }
+
+    #[test]
+    fn check_reports_the_chosen_interval() {
+        use super::super::confidence::clopper_pearson;
+        let inner = Formula::parse("x > 0").unwrap();
+        let trace = Trace::from_signal(vec![0.0, 1.0], "x", vec![1.0, 1.0]).unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 500,
+            confidence: 0.95,
+            seed: 11,
+            interval_method: IntervalMethod::ClopperPearson,
+        };
+        let result = check(
+            ProbabilityOp::GreaterEqual,
+            0.4,
+            &inner,
+            &trace,
+            &lifting,
+            &config,
+        )
+        .unwrap();
+        assert_eq!(
+            result.interval,
+            clopper_pearson(result.satisfactions, result.samples, 0.95)
+        );
     }
 
     #[test]
