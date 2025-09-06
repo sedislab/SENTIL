@@ -8,6 +8,8 @@ use crate::error::{Error, Result};
 use crate::formula::Formula;
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
+#[cfg(feature = "statistical")]
+use crate::stats::{LiftingRegistry, SmcConfig};
 
 use super::{Robustness, StreamMonitor};
 
@@ -44,6 +46,26 @@ impl MultiFormulaMonitor {
     /// Returns the composition error if the formula is not streaming-admissible.
     pub fn add_formula(&mut self, id: impl Into<String>, formula: &Formula) -> Result<()> {
         let monitor = StreamMonitor::from_formula(formula)?;
+        self.monitors.push((id.into(), monitor));
+        Ok(())
+    }
+
+    /// Adds a probabilistic formula `P~p(phi)` under `id`, monitored online by a
+    /// lifted particle ensemble.
+    ///
+    /// # Errors
+    ///
+    /// Returns the composition error if the formula is not a streamable
+    /// probabilistic specification.
+    #[cfg(feature = "statistical")]
+    pub fn add_lifted(
+        &mut self,
+        id: impl Into<String>,
+        formula: &Formula,
+        lifting: &LiftingRegistry,
+        config: &SmcConfig,
+    ) -> Result<()> {
+        let monitor = StreamMonitor::with_lifting(formula, lifting, config)?;
         self.monitors.push((id.into(), monitor));
         Ok(())
     }
@@ -152,6 +174,33 @@ mod tests {
         let out = bank.update(2.0, &[("x", 5.0), ("z", 1.0)]).unwrap();
         let a = out.iter().find(|(id, _)| id == "a").unwrap().1;
         assert_eq!(a.value(), 1.0);
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn a_bank_mixes_deterministic_and_probabilistic_formulas() {
+        use crate::stats::{NoiseInteraction, NoiseModel};
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 1.0).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let config = SmcConfig {
+            samples: 2000,
+            seed: 7,
+            ..Default::default()
+        };
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let mut bank = MultiFormulaMonitor::new();
+        bank.add("plain", "x > 0").unwrap();
+        bank.add_lifted("prob", &phi, &lifting, &config).unwrap();
+        let out = bank.update(0.0, &[("x", 3.0)]).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "plain");
+        assert_eq!(out[1].0, "prob");
+        assert!(out[0].1.value() > 0.0);
+        assert!(out[1].1.value() > 0.0);
     }
 
     #[test]
