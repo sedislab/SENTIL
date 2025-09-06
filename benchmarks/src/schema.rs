@@ -37,3 +37,22 @@ pub struct Record {
     pub runs: u64,
     pub hardware: Hardware,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SmcRecord {
+    pub tool: String,
+    pub version: String,
+    pub language: String,
+    pub device: String,
+    pub model: String,
+    pub formula: String,
+    pub samples: u64,
+    pub probability: f64,
+    pub ci_lower: f64,
+    pub ci_upper: f64,
+    pub ground_truth: Option<f64>,
+    pub timing: Timing,
+    pub throughput_per_s: f64,
+    pub runs: u64,
+    pub hardware: Hardware,
+}
