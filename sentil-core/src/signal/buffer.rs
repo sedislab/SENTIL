@@ -156,8 +156,7 @@ impl RingBuffer {
         Some(old)
     }
 
-    /// Removes and returns the newest sample, updating the running statistics.
-    /// Useful for taking back a sample that was pushed in error.
+    /// Removes and returns the newest sample.
     pub fn pop_back(&mut self) -> Option<(f64, f64)> {
         if self.len == 0 {
             return None;

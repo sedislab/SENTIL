@@ -108,9 +108,7 @@ impl Formula {
         }
     }
 
-    /// Like [`check`](Self::check) but reports the conservative Clopper-Pearson
-    /// exact interval, which never covers below the confidence level, in place of
-    /// the Wilson interval. The point estimate and the verdict are unchanged.
+    /// Like [`check`](Self::check) but reports the Clopper-Pearson exact interval.
     ///
     /// # Errors
     ///
