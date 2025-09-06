@@ -1,15 +1,12 @@
 //! Monitoring several formulas over one stream.
-//!
-//! A [`MultiFormulaMonitor`] drives a bank of independent [`StreamMonitor`]s from
-//! the same timed samples, each keyed by a caller-chosen id. The monitors are
-//! independent, one per formula; the value of the bank is the single drive point.
 
 use crate::error::{Error, Result};
 use crate::formula::Formula;
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
+use crate::signal::Trace;
 #[cfg(feature = "statistical")]
-use crate::stats::{LiftingRegistry, SmcConfig};
+use crate::stats::{LiftingRegistry, SmcConfig, SmcResult};
 
 use super::{Robustness, StreamMonitor};
 
@@ -145,6 +142,107 @@ impl Default for MultiFormulaMonitor {
     }
 }
 
+/// A bank of named formulas evaluated together over one complete trace.
+///
+/// ```
+/// use sentil::{FormulaBank, Trace};
+///
+/// let mut bank = FormulaBank::new();
+/// bank.add("safe", "always[0, 2](x > 0)")?;
+/// bank.add("reaches", "eventually[0, 2](x > 4)")?;
+/// let trace = Trace::from_signal([0.0, 1.0, 2.0], "x", [1.0, 3.0, 5.0])?;
+/// let verdicts = bank.robustness(&trace);
+/// assert_eq!(verdicts[0].0, "safe");
+/// assert_eq!(verdicts[0].1.as_ref().unwrap(), &1.0);
+/// # Ok::<(), sentil::Error>(())
+/// ```
+pub struct FormulaBank {
+    formulas: Vec<(String, Formula)>,
+}
+
+impl FormulaBank {
+    /// Creates an empty bank.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            formulas: Vec::new(),
+        }
+    }
+
+    /// Adds a formula, parsed from text, under `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the parse error if `formula` is malformed.
+    pub fn add(&mut self, id: impl Into<String>, formula: &str) -> Result<()> {
+        let formula = Formula::parse(formula)?;
+        self.formulas.push((id.into(), formula));
+        Ok(())
+    }
+
+    /// Adds an already-parsed formula under `id`.
+    pub fn add_formula(&mut self, id: impl Into<String>, formula: &Formula) {
+        self.formulas.push((id.into(), formula.clone()));
+    }
+
+    /// The discrete robustness of every formula over `trace`, paired with its id.
+    #[must_use]
+    pub fn robustness(&self, trace: &Trace) -> Vec<(String, Result<f64>)> {
+        self.formulas
+            .iter()
+            .map(|(id, formula)| (id.clone(), formula.robustness(trace)))
+            .collect()
+    }
+
+    /// The dense robustness of every formula over `trace`, paired with its id.
+    #[must_use]
+    pub fn robustness_dense(&self, trace: &Trace) -> Vec<(String, Result<f64>)> {
+        self.formulas
+            .iter()
+            .map(|(id, formula)| (id.clone(), formula.robustness_dense(trace)))
+            .collect()
+    }
+
+    /// The statistical check of every formula over the lifted trace ensemble,
+    /// paired with its id.
+    #[cfg(feature = "statistical")]
+    #[must_use]
+    pub fn check(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &SmcConfig,
+    ) -> Vec<(String, Result<SmcResult>)> {
+        self.formulas
+            .iter()
+            .map(|(id, formula)| (id.clone(), formula.check(trace, lifting, config)))
+            .collect()
+    }
+
+    /// The ids in the bank, in insertion order.
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.formulas.iter().map(|(id, _)| id.as_str())
+    }
+
+    /// The number of formulas in the bank.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.formulas.len()
+    }
+
+    /// Whether the bank holds no formulas.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.formulas.is_empty()
+    }
+}
+
+impl Default for FormulaBank {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the asserted robustness values are exact")]
@@ -220,5 +318,46 @@ mod tests {
         assert!(bank.remove("a"));
         assert!(!bank.remove("a"));
         assert_eq!(bank.ids().collect::<Vec<_>>(), ["b"]);
+    }
+
+    #[test]
+    fn an_offline_bank_evaluates_every_formula_even_when_one_fails() {
+        let mut bank = FormulaBank::new();
+        bank.add("safe", "always[0, 2](x > 0)").unwrap();
+        bank.add("missing", "y > 0").unwrap();
+        let trace = Trace::from_signal([0.0, 1.0, 2.0], "x", [1.0, 3.0, 5.0]).unwrap();
+        let out = bank.robustness(&trace);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "safe");
+        assert_eq!(*out[0].1.as_ref().unwrap(), 1.0);
+        assert!(matches!(out[1].1, Err(Error::UnknownVariable { .. })));
+    }
+
+    #[test]
+    fn an_offline_bank_reads_densely() {
+        let mut bank = FormulaBank::new();
+        bank.add("dip", "always[0, 1.5](x > 0)").unwrap();
+        let trace = Trace::from_signal([0.0, 1.0, 2.0], "x", [1.0, 1.0, -3.0]).unwrap();
+        let out = bank.robustness_dense(&trace);
+        assert_eq!(*out[0].1.as_ref().unwrap(), -1.0);
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn an_offline_bank_checks_probabilistic_formulas() {
+        use crate::stats::{NoiseInteraction, NoiseModel};
+        let mut bank = FormulaBank::new();
+        bank.add("likely", "P>=0.9(x > 0)").unwrap();
+        bank.add("plain", "x > 0").unwrap();
+        let mut lifting = LiftingRegistry::new();
+        lifting.register(
+            "x",
+            NoiseModel::gaussian(0.0, 0.5).unwrap(),
+            NoiseInteraction::Additive,
+        );
+        let trace = Trace::from_signal([0.0], "x", [5.0]).unwrap();
+        let out = bank.check(&trace, &lifting, &SmcConfig::default());
+        assert!(out[0].1.as_ref().unwrap().holds);
+        assert!(matches!(out[1].1, Err(Error::NotProbabilistic)));
     }
 }

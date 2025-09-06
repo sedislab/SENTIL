@@ -12,7 +12,7 @@ mod window;
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
 
-pub use multi::MultiFormulaMonitor;
+pub use multi::{FormulaBank, MultiFormulaMonitor};
 pub use robustness::Robustness;
 pub use stream::StreamMonitor;
 
