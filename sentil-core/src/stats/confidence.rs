@@ -28,15 +28,13 @@ impl ConfidenceInterval {
     pub fn contains(&self, p: f64) -> bool {
         p >= self.lower && p <= self.upper
     }
+}
 
-    /// The lower bound, the method form matching `Robustness::lower`.
-    pub fn lower(&self) -> f64 {
-        self.lower
-    }
-
-    /// The upper bound, the method form matching `Robustness::upper`.
-    pub fn upper(&self) -> f64 {
-        self.upper
+fn whole_range(level: f64) -> ConfidenceInterval {
+    ConfidenceInterval {
+        lower: 0.0,
+        upper: 1.0,
+        level,
     }
 }
 
