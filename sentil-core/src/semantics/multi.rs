@@ -55,7 +55,7 @@ impl MultiFormulaMonitor {
     /// Returns the composition error if the formula is not a streamable
     /// probabilistic specification.
     #[cfg(feature = "statistical")]
-    pub fn add_lifted(
+    pub fn add_probabilistic(
         &mut self,
         id: impl Into<String>,
         formula: &Formula,
@@ -292,7 +292,7 @@ mod tests {
         let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
         let mut bank = MultiFormulaMonitor::new();
         bank.add("plain", "x > 0").unwrap();
-        bank.add_lifted("prob", &phi, &lifting, &config).unwrap();
+        bank.add_probabilistic("prob", &phi, &lifting, &config).unwrap();
         let out = bank.update(0.0, &[("x", 3.0)]).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].0, "plain");
