@@ -66,6 +66,9 @@ sqlite = ["ingest", "dep:rusqlite"]
 
 # HDF5 / MATLAB v7.3 traces. Needs a system or bundled HDF5 library.
 hdf5 = ["ingest", "dep:hdf5"]
+# Reading classic MATLAB v5/v6/v7 .mat trace files (the pre-7.3 binary format).
+# Pure Rust, no MATLAB. A v7.3 .mat is HDF5, so it goes through the hdf5 feature.
+mat = ["ingest", "dep:matfile"]
 
 # MCAP recordings, the robotics log format.
 mcap = ["ingest", "dep:mcap", "dep:serde_json"]
@@ -98,6 +101,7 @@ parquet = { version = "58.1", optional = true, default-features = false, feature
 arrow = { version = "58.1", optional = true, default-features = false, features = ["ipc"] }
 rusqlite = { version = "0.39", optional = true, features = ["bundled"] }
 hdf5 = { version = "0.8.1", optional = true }
+matfile = { version = "0.5", optional = true }
 mcap = { version = "0.24", optional = true }
 wgpu = { version = "27.0", optional = true }
 pollster = { version = "0.4", optional = true }

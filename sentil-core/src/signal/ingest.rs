@@ -71,7 +71,8 @@ impl Trace {
             "parquet" | "pq" => load_parquet(path),
             "arrow" | "feather" | "ipc" => load_arrow(path),
             "db" | "sqlite" | "sqlite3" => load_sqlite(path),
-            "h5" | "hdf5" | "mat" => load_hdf5(path),
+            "h5" | "hdf5" => load_hdf5(path),
+            "mat" => load_mat(path),
             "mcap" => load_mcap(path),
             other => Err(ingest_at(
                 path,
@@ -353,6 +354,58 @@ fn load_hdf5(path: &Path) -> Result<Trace> {
     ))
 }
 
+/// Reads a MATLAB `.mat` file; a v7.3 file is HDF5 underneath.
+fn load_mat(path: &Path) -> Result<Trace> {
+    use std::io::Read;
+    let mut head = [0u8; 128];
+    let read = std::fs::File::open(path)
+        .and_then(|mut file| file.read(&mut head))
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    if String::from_utf8_lossy(&head[..read]).contains("MATLAB 7.3") {
+        load_hdf5(path)
+    } else {
+        load_mat5(path)
+    }
+}
+
+#[cfg(feature = "mat")]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "a 64-bit integer signal sample past 2^53 is implausible, and f64 is the trace's type"
+)]
+fn load_mat5(path: &Path) -> Result<Trace> {
+    use matfile::NumericData;
+    let file = std::fs::File::open(path)
+        .map_err(|e| ingest_at(path, format!("could not open the file: {e}")))?;
+    let mat = matfile::MatFile::parse(file)
+        .map_err(|e| ingest_at(path, format!("not a readable MATLAB v5 .mat file: {e}")))?;
+    let mut columns = Vec::new();
+    for array in mat.arrays() {
+        let values: Vec<f64> = match array.data() {
+            NumericData::Double { real, .. } => real.clone(),
+            NumericData::Single { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::Int8 { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::UInt8 { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::Int16 { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::UInt16 { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::Int32 { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::UInt32 { real, .. } => real.iter().map(|&v| f64::from(v)).collect(),
+            NumericData::Int64 { real, .. } => real.iter().map(|&v| v as f64).collect(),
+            NumericData::UInt64 { real, .. } => real.iter().map(|&v| v as f64).collect(),
+        };
+        columns.push((array.name().to_owned(), values));
+    }
+    from_columns(columns, path)
+}
+
+#[cfg(not(feature = "mat"))]
+fn load_mat5(path: &Path) -> Result<Trace> {
+    Err(ingest_at(
+        path,
+        "classic v5/v6/v7 .mat files need the `mat` feature enabled",
+    ))
+}
+
 /// Reads a trace from the JSON-encoded messages of an MCAP recording. Each
 /// message's log time is the sample time; its numeric fields become signals,
 /// aligned across messages with a missing field read as NaN.
@@ -462,6 +515,27 @@ mod tests {
     #[test]
     fn an_unrecognized_extension_is_rejected() {
         assert!(Trace::from_path("/tmp/whatever.xyz").is_err());
+    }
+
+    #[cfg(feature = "mat")]
+    #[test]
+    #[allow(clippy::float_cmp, reason = "the fixture values are exact")]
+    fn reads_a_classic_v5_mat_file() {
+        // A v5 .mat written by scipy.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sample_v5.mat");
+        let trace = Trace::from_path(path).unwrap();
+        assert_eq!(trace.len(), 3);
+        assert_eq!(trace.variables(), vec!["x"]);
+        assert_eq!(trace.times(), &[0.0, 1.0, 2.0]);
+        assert_eq!(trace.signal("x"), Some(&[10.0, 5.0, 1.0][..]));
+    }
+
+    #[cfg(not(feature = "mat"))]
+    #[test]
+    fn a_classic_mat_file_without_the_feature_reports_the_feature() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sample_v5.mat");
+        let err = Trace::from_path(path).unwrap_err();
+        assert!(format!("{err}").contains("mat"), "{err}");
     }
 
     #[cfg(feature = "parquet")]
