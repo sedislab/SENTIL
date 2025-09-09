@@ -25,7 +25,7 @@ def load():
     return records
 
 def scalability(records):
-    rows = [r for r in records if r["benchmark"] == "scalability/length"]
+    rows = [r for r in records if r.get("benchmark") == "scalability/length"]
     if not rows:
         return
     fig, ax = plt.subplots(figsize=(7, 5))
@@ -59,7 +59,7 @@ def deterministic(records):
     rows = [
         r
         for r in records
-        if r["benchmark"] == "deterministic" and r["question"] == "full_signal"
+        if r.get("benchmark") == "deterministic" and r.get("question") == "full_signal"
     ]
     if not rows:
         return
@@ -84,6 +84,59 @@ def deterministic(records):
     plt.close(fig)
     print("wrote", out)
 
+THROUGHPUT_MODELS = ("single_step", "always_ten", "eventually_ten")
+
+def smc_throughput(records):
+    rows = [r for r in records if "device" in r and r["model"] in THROUGHPUT_MODELS]
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(7, 5))
+    series = {}
+    for r in rows:
+        series.setdefault((r["device"], r["model"]), []).append(
+            (r["samples"], r["throughput_per_s"] / 1e6)
+        )
+    for (device, model), points in sorted(series.items()):
+        points.sort()
+        ax.plot(
+            [p[0] for p in points],
+            [p[1] for p in points],
+            marker="o",
+            label=f"{device}: {model}",
+        )
+    ax.set_xscale("log")
+    ax.set_xlabel("samples")
+    ax.set_ylabel("throughput (million realization-steps/s)")
+    ax.set_title("Statistical model checking throughput, CPU versus GPU")
+    ax.grid(True, which="both", linewidth=0.3)
+    ax.legend()
+    fig.tight_layout()
+    out = os.path.join(RESULTS, "smc_throughput.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print("wrote", out)
+
+def smc_accuracy(records):
+    rows = [
+        r
+        for r in records
+        if "device" in r and r.get("ground_truth") is not None and r["samples"] <= 100_000
+    ]
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.plot([0, 1], [0, 1], linewidth=0.8, color="gray")
+    ax.scatter([r["ground_truth"] for r in rows], [r["probability"] for r in rows], s=20)
+    ax.set_xlabel("known probability")
+    ax.set_ylabel("estimated probability")
+    ax.set_title("Estimate versus closed-form truth")
+    ax.grid(True, linewidth=0.3)
+    fig.tight_layout()
+    out = os.path.join(RESULTS, "smc_accuracy.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print("wrote", out)
+
 def main():
     records = load()
     if not records:
@@ -91,6 +144,8 @@ def main():
         return
     scalability(records)
     deterministic(records)
+    smc_throughput(records)
+    smc_accuracy(records)
 
 if __name__ == "__main__":
     main()
