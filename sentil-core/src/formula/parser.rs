@@ -10,6 +10,7 @@ pub(crate) fn parse(input: &str) -> Result<Formula, ParseError> {
     let mut parser = Parser {
         tokens: tokenize(input)?,
         pos: 0,
+        depth: 0,
     };
     let formula = parser.formula()?;
     if !matches!(parser.peek(), TokenKind::End) {
@@ -26,14 +27,34 @@ pub(crate) fn parse(input: &str) -> Result<Formula, ParseError> {
     Ok(formula)
 }
 
+const MAX_DEPTH: usize = 256;
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    depth: usize,
 }
 
 impl Parser {
     fn peek(&self) -> &TokenKind {
         &self.tokens[self.pos].kind
+    }
+
+    fn enter(&mut self) -> Result<(), ParseError> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            let (line, column) = self.position();
+            return Err(ParseError::at(
+                format!("formula nests deeper than the limit of {MAX_DEPTH}"),
+                line,
+                column,
+            ));
+        }
+        Ok(())
+    }
+
+    fn leave(&mut self) {
+        self.depth -= 1;
     }
 
     fn position(&self) -> (usize, usize) {
@@ -52,13 +73,17 @@ impl Parser {
     }
 
     fn implies(&mut self) -> Result<Formula, ParseError> {
+        self.enter()?;
         let left = self.or()?;
-        if matches!(self.peek(), TokenKind::Implies) {
+        let formula = if matches!(self.peek(), TokenKind::Implies) {
             self.bump();
             let right = self.implies()?;
-            return Ok(Formula::Implies(Box::new(left), Box::new(right)));
-        }
-        Ok(left)
+            Formula::Implies(Box::new(left), Box::new(right))
+        } else {
+            left
+        };
+        self.leave();
+        Ok(formula)
     }
 
     fn or(&mut self) -> Result<Formula, ParseError> {
@@ -82,25 +107,33 @@ impl Parser {
     }
 
     fn until(&mut self) -> Result<Formula, ParseError> {
+        self.enter()?;
         let left = self.since()?;
-        if matches!(self.peek(), TokenKind::Until) {
+        let formula = if matches!(self.peek(), TokenKind::Until) {
             self.bump();
             let interval = self.interval()?;
             let right = self.until()?;
-            return Ok(Formula::Until(interval, Box::new(left), Box::new(right)));
-        }
-        Ok(left)
+            Formula::Until(interval, Box::new(left), Box::new(right))
+        } else {
+            left
+        };
+        self.leave();
+        Ok(formula)
     }
 
     fn since(&mut self) -> Result<Formula, ParseError> {
+        self.enter()?;
         let left = self.temporal()?;
-        if matches!(self.peek(), TokenKind::Since) {
+        let formula = if matches!(self.peek(), TokenKind::Since) {
             self.bump();
             let interval = self.interval()?;
             let right = self.since()?;
-            return Ok(Formula::Since(interval, Box::new(left), Box::new(right)));
-        }
-        Ok(left)
+            Formula::Since(interval, Box::new(left), Box::new(right))
+        } else {
+            left
+        };
+        self.leave();
+        Ok(formula)
     }
 
     fn temporal(&mut self) -> Result<Formula, ParseError> {
@@ -134,11 +167,15 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Result<Formula, ParseError> {
-        if matches!(self.peek(), TokenKind::Not) {
+        self.enter()?;
+        let formula = if matches!(self.peek(), TokenKind::Not) {
             self.bump();
-            return Ok(Formula::Not(Box::new(self.unary()?)));
-        }
-        self.probabilistic()
+            Formula::Not(Box::new(self.unary()?))
+        } else {
+            self.probabilistic()?
+        };
+        self.leave();
+        Ok(formula)
     }
 
     fn probabilistic(&mut self) -> Result<Formula, ParseError> {
@@ -214,60 +251,59 @@ impl Parser {
     }
 
     fn power(&mut self) -> Result<Expr, ParseError> {
+        self.enter()?;
         let base = self.term()?;
-        if matches!(self.peek(), TokenKind::Caret) {
+        let expr = if matches!(self.peek(), TokenKind::Caret) {
             self.bump();
             let exponent = self.power()?;
-            return Ok(Expr::Binary(
-                BinaryOp::Pow,
-                Box::new(base),
-                Box::new(exponent),
-            ));
-        }
-        Ok(base)
+            Expr::Binary(BinaryOp::Pow, Box::new(base), Box::new(exponent))
+        } else {
+            base
+        };
+        self.leave();
+        Ok(expr)
     }
 
     fn term(&mut self) -> Result<Expr, ParseError> {
-        match self.peek() {
+        self.enter()?;
+        let expr = match self.peek() {
             TokenKind::LeftParen => {
                 self.bump();
                 let inner = self.expr()?;
                 self.expect(&TokenKind::RightParen, "`)` to close the parentheses")?;
-                Ok(inner)
+                inner
             }
             TokenKind::Minus => {
                 self.bump();
                 let operand = self.term()?;
-                Ok(Expr::Binary(
-                    BinaryOp::Sub,
-                    Box::new(Expr::Literal(0.0)),
-                    Box::new(operand),
-                ))
+                Expr::Binary(BinaryOp::Sub, Box::new(Expr::Literal(0.0)), Box::new(operand))
             }
             TokenKind::Number(n) => {
                 let value = *n;
                 self.bump();
-                Ok(Expr::Literal(value))
+                Expr::Literal(value)
             }
             TokenKind::Identifier(name) => {
                 let name = name.clone();
                 self.bump();
                 if matches!(self.peek(), TokenKind::LeftParen) {
                     self.bump();
-                    Ok(Expr::Call(name, self.call_arguments()?))
+                    Expr::Call(name, self.call_arguments()?)
                 } else {
-                    Ok(Expr::Variable(name))
+                    Expr::Variable(name)
                 }
             }
             other => {
                 let (line, column) = self.position();
-                Err(ParseError::at(
+                return Err(ParseError::at(
                     format!("expected a value or `(`, found {}", other.describe()),
                     line,
                     column,
-                ))
+                ));
             }
-        }
+        };
+        self.leave();
+        Ok(expr)
     }
 
     fn call_arguments(&mut self) -> Result<Vec<Expr>, ParseError> {
@@ -554,6 +590,25 @@ mod tests {
         match f {
             Formula::Predicate(p) => assert_eq!(p.op, ComparisonOp::Equal),
             _ => panic!("expected a predicate"),
+        }
+    }
+
+    #[test]
+    fn moderately_nested_input_still_parses() {
+        let nested = format!("{}x > 0{}", "(".repeat(30), ")".repeat(30));
+        assert!(parse(&nested).is_ok());
+    }
+
+    #[test]
+    fn pathological_nesting_reports_an_error_rather_than_overflowing() {
+        let bombs = [
+            format!("{}x > 0{}", "(".repeat(20_000), ")".repeat(20_000)),
+            format!("{}x > 0", "not ".repeat(20_000)),
+            format!("x > {}1", "-".repeat(20_000)),
+        ];
+        for bomb in bombs {
+            let err = parse(&bomb).unwrap_err();
+            assert!(err.message.contains("deeper than"), "got: {}", err.message);
         }
     }
 }
