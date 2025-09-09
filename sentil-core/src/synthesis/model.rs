@@ -32,14 +32,21 @@ impl Bounds {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidConfig`] if the two limits differ in length or any
-    /// lower limit exceeds its upper limit.
+    /// Returns [`Error::InvalidConfig`] if the two limits differ in length, any
+    /// limit is `NaN`, or any lower limit exceeds its upper limit.
     pub fn new(lower: impl Into<Vec<f64>>, upper: impl Into<Vec<f64>>) -> Result<Self> {
         let (lower, upper) = (lower.into(), upper.into());
         if lower.len() != upper.len() {
             return Err(config_error(
                 "lower and upper bounds must have the same length",
             ));
+        }
+        for (i, (&lo, &hi)) in lower.iter().zip(&upper).enumerate() {
+            if lo.is_nan() || hi.is_nan() {
+                return Err(config_error(&format!(
+                    "bound at coordinate {i} is NaN (lower {lo}, upper {hi}); use a finite value or an infinity"
+                )));
+            }
         }
         if lower.iter().zip(&upper).any(|(lo, hi)| lo > hi) {
             return Err(config_error(
@@ -258,6 +265,13 @@ mod tests {
     fn mismatched_or_inverted_bounds_are_rejected() {
         assert!(Bounds::new([0.0], [1.0, 2.0]).is_err());
         assert!(Bounds::new([1.0], [0.0]).is_err());
+    }
+
+    #[test]
+    fn nan_bounds_are_rejected_so_clamp_cannot_panic() {
+        assert!(Bounds::new([f64::NAN], [1.0]).is_err());
+        assert!(Bounds::new([0.0], [f64::NAN]).is_err());
+        assert!(Bounds::new([f64::NEG_INFINITY], [f64::INFINITY]).is_ok());
     }
 
     #[test]
