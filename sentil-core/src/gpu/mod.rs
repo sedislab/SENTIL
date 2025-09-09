@@ -21,48 +21,25 @@ pub(crate) use synth_forward::{build_soft_forward_shader, SynthForwardContext};
 
 use pollster::FutureExt;
 
-/// A GPU device and its command queue, acquired once and reused across runs.
-pub struct GpuContext {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-}
-
-impl GpuContext {
-    /// Acquires a GPU device, or `None` when no compatible adapter is present.
-    ///
-    /// This never fails loudly: a missing or unusable device yields `None` so the
-    /// caller can fall back to the CPU rather than crash.
-    #[must_use]
-    pub fn new() -> Option<Self> {
-        let instance = wgpu::Instance::default();
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions::default())
-            .block_on()
-            .ok()?;
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
-            .block_on()
-            .ok()?;
-        Some(Self { device, queue })
-    }
-
-    /// The underlying device, for building buffers and pipelines.
-    #[must_use]
-    pub fn device(&self) -> &wgpu::Device {
-        &self.device
-    }
-
-    /// The command queue, for submitting work.
-    #[must_use]
-    pub fn queue(&self) -> &wgpu::Queue {
-        &self.queue
-    }
-}
-
-/// Whether a GPU device is available, so the GPU statistical path can run.
+/// Whether a usable GPU device is available, so the GPU statistical path can run.
+///
+/// Never fails loudly: a missing adapter, or one that cannot hand out a device,
+/// yields `false` so the caller stays on the CPU rather than crash. The three
+/// internal contexts acquire their own device when they run, so this only probes
+/// reachability.
 #[must_use]
 pub fn is_available() -> bool {
-    GpuContext::new().is_some()
+    let instance = wgpu::Instance::default();
+    let Ok(adapter) = instance
+        .request_adapter(&wgpu::RequestAdapterOptions::default())
+        .block_on()
+    else {
+        return false;
+    };
+    adapter
+        .request_device(&wgpu::DeviceDescriptor::default())
+        .block_on()
+        .is_ok()
 }
 
 #[cfg(test)]
