@@ -11,6 +11,13 @@ serde_json = "1.0"
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 
+[features]
+gpu = ["sentil/gpu"]
+
 [[bin]]
 name = "sentil_runner"
 path = "src/bin/sentil_runner.rs"
+
+[[bin]]
+name = "sentil_smc_runner"
+path = "src/bin/sentil_smc_runner.rs"
