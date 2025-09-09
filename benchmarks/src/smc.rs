@@ -50,12 +50,15 @@ pub struct Outcome {
 ///
 /// # Panics
 ///
-/// Panics if a model in the suite is malformed (a parse error, a non-positive noise
-/// deviation, or a signal that does not match the grid), which is a bug in the suite,
-/// not in the library under test.
+/// Panics if a model in the suite is malformed (no signals, a parse error, a non-positive noise deviation, or a signal that does not match the grid)
 #[must_use]
 pub fn estimate(model: &SmcModel, samples: u64, runs: u64, seed: u64) -> Outcome {
-    let n = model.signals[0].1.len();
+    let n = model
+        .signals
+        .first()
+        .expect("a model carries at least one signal")
+        .1
+        .len();
     let mut trace = Trace::indexed(n);
     for (name, values) in model.signals {
         trace

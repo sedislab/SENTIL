@@ -75,7 +75,7 @@ fn main() -> ExitCode {
             THROUGHPUT.iter().map(|m| record(m, samples, 3)).collect()
         }
         other => {
-            eprintln!("unknown suite `{other}`; use `accuracy` or `throughput`");
+            eprintln!("usage: sentil_smc_runner <accuracy|throughput> [samples] (got `{other}`)");
             return ExitCode::FAILURE;
         }
     };
