@@ -730,9 +730,9 @@ fn atomic_node(formula: &Formula, names: &[String]) -> Result<Box<dyn Node>> {
 }
 
 fn offsets(interval: crate::formula::Interval) -> (f64, f64, bool) {
-    match interval.upper {
-        Some(b) => (interval.lower, b, true),
-        None => (interval.lower, 0.0, false),
+    match interval.upper() {
+        Some(b) => (interval.lower(), b, true),
+        None => (interval.lower(), 0.0, false),
     }
 }
 
@@ -789,24 +789,24 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
         })),
         Formula::Historically(interval, inner) => Ok(Box::new(HistoricallyNode {
             child: build_node(inner, symbols)?,
-            delay: VecDeque::with_capacity(prealloc_for(interval.lower)),
+            delay: VecDeque::with_capacity(prealloc_for(interval.lower())),
             window: MonotonicDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
-            offset_lower: interval.lower,
+            offset_lower: interval.lower(),
             width: interval.upper_or_infinity(),
         })),
         Formula::Once(interval, inner) => Ok(Box::new(OnceNode {
             child: build_node(inner, symbols)?,
-            delay: VecDeque::with_capacity(prealloc_for(interval.lower)),
+            delay: VecDeque::with_capacity(prealloc_for(interval.lower())),
             window: MonotonicDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
-            offset_lower: interval.lower,
+            offset_lower: interval.lower(),
             width: interval.upper_or_infinity(),
         })),
         Formula::Since(interval, l, r) => Ok(Box::new(SinceNode {
             phi: build_node(l, symbols)?,
             psi: build_node(r, symbols)?,
             candidates: VecDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
-            delay: VecDeque::with_capacity(prealloc_for(interval.lower)),
-            offset_lower: interval.lower,
+            delay: VecDeque::with_capacity(prealloc_for(interval.lower())),
+            offset_lower: interval.lower(),
             width: interval.upper_or_infinity(),
         })),
         Formula::Always(interval, inner) => {

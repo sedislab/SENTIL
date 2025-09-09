@@ -1,5 +1,6 @@
 //! The syntax tree of a temporal-logic formula.
 
+use crate::error::{Error, Result};
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
 use core::fmt;
@@ -116,22 +117,58 @@ pub enum ProbabilityOp {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Interval {
-    pub lower: f64,
-    pub upper: Option<f64>,
+    lower: f64,
+    upper: Option<f64>,
 }
 
 impl Interval {
-    /// A bounded interval `[lower, upper]`.
-    pub fn bounded(lower: f64, upper: f64) -> Self {
-        Self {
-            lower,
-            upper: Some(upper),
+    /// Builds `[lower, upper]`, where `upper` is `None` for an interval unbounded
+    /// above.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the bounds are not a valid interval.
+    pub fn new(lower: f64, upper: Option<f64>) -> Result<Self> {
+        if !lower.is_finite() || lower < 0.0 {
+            return Err(interval_error(format!(
+                "an interval lower bound must be finite and at least 0, found {lower}"
+            )));
         }
+        if let Some(u) = upper {
+            if !u.is_finite() {
+                return Err(interval_error(format!(
+                    "an interval upper bound must be finite; leave it unbounded for inf, found {u}"
+                )));
+            }
+            if lower > u {
+                return Err(interval_error(format!(
+                    "interval lower bound {lower} is greater than upper bound {u}"
+                )));
+            }
+        }
+        Ok(Self { lower, upper })
+    }
+
+    pub(crate) fn new_unchecked(lower: f64, upper: Option<f64>) -> Self {
+        Self { lower, upper }
+    }
+
+    /// A bounded interval `[lower, upper]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if the bounds are not a valid interval.
+    pub fn bounded(lower: f64, upper: f64) -> Result<Self> {
+        Self::new(lower, Some(upper))
     }
 
     /// An interval `[lower, inf)` unbounded above.
-    pub fn from_lower(lower: f64) -> Self {
-        Self { lower, upper: None }
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if `lower` is not finite and non-negative.
+    pub fn from_lower(lower: f64) -> Result<Self> {
+        Self::new(lower, None)
     }
 
     /// The interval `[0, inf)`.
@@ -140,6 +177,16 @@ impl Interval {
             lower: 0.0,
             upper: None,
         }
+    }
+
+    /// The lower bound.
+    pub fn lower(&self) -> f64 {
+        self.lower
+    }
+
+    /// The upper bound, or `None` when the interval is unbounded above.
+    pub fn upper(&self) -> Option<f64> {
+        self.upper
     }
 
     /// Whether the interval has a finite upper bound.
@@ -155,6 +202,13 @@ impl Interval {
     /// The upper bound, or positive infinity when unbounded.
     pub fn upper_or_infinity(&self) -> f64 {
         self.upper.unwrap_or(f64::INFINITY)
+    }
+}
+
+fn interval_error(message: String) -> Error {
+    Error::InvalidConfig {
+        context: "interval",
+        message,
     }
 }
 
@@ -367,7 +421,7 @@ mod tests {
     #[test]
     fn display_renders_a_bounded_temporal_formula() {
         let f = Formula::Always(
-            Interval::bounded(0.0, 10.0),
+            Interval::bounded(0.0, 10.0).unwrap(),
             Box::new(pred("x", ComparisonOp::Less, 5.0)),
         );
         assert_eq!(f.to_string(), "always[0, 10](x < 5)");
@@ -396,7 +450,7 @@ mod tests {
         let inner = pred("x", ComparisonOp::Less, 5.0);
         let f = Formula::And(
             Box::new(Formula::Always(
-                Interval::bounded(0.0, 10.0),
+                Interval::bounded(0.0, 10.0).unwrap(),
                 Box::new(inner.clone()),
             )),
             Box::new(inner),
@@ -410,7 +464,7 @@ mod tests {
         assert!(!p.has_temporal());
         assert!(!Formula::Not(Box::new(p.clone())).has_temporal());
         assert!(!Formula::And(Box::new(p.clone()), Box::new(p.clone())).has_temporal());
-        let always = Formula::Always(Interval::bounded(0.0, 5.0), Box::new(p.clone()));
+        let always = Formula::Always(Interval::bounded(0.0, 5.0).unwrap(), Box::new(p.clone()));
         assert!(always.has_temporal());
         assert!(
             Formula::Probabilistic(ProbabilityOp::GreaterEqual, 0.9, Box::new(always))
@@ -423,7 +477,7 @@ mod tests {
 
     #[test]
     fn interval_contains_is_inclusive_at_both_ends() {
-        let i = Interval::bounded(0.0, 10.0);
+        let i = Interval::bounded(0.0, 10.0).unwrap();
         assert!(i.contains(0.0) && i.contains(10.0) && i.contains(5.0));
         assert!(!i.contains(-0.1) && !i.contains(10.1));
         assert!(Interval::unbounded().contains(1e9));
@@ -453,6 +507,15 @@ mod tests {
         );
         assert_eq!(term.to_string(), "(x + (y * 2))");
         assert_eq!(term.depth(), 3);
+    }
+
+    #[test]
+    fn invalid_intervals_are_rejected() {
+        assert!(Interval::bounded(5.0, 1.0).is_err());
+        assert!(Interval::bounded(-1.0, 5.0).is_err());
+        assert!(Interval::bounded(f64::NAN, 5.0).is_err());
+        assert!(Interval::from_lower(-2.0).is_err());
+        assert!(Interval::bounded(0.0, 10.0).is_ok());
     }
 }
 

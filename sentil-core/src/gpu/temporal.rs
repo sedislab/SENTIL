@@ -161,8 +161,8 @@ impl<'a> Builder<'a> {
         let k = self.next;
         self.next += 1;
         let l = self.trace_len;
-        let a = interval.lower;
-        let membership = match (forward, interval.upper) {
+        let a = interval.lower();
+        let membership = match (forward, interval.upper()) {
             (true, Some(b)) => {
                 format!("tj >= (*times)[i] + f32({a:?}) && tj <= (*times)[i] + f32({b:?})")
             }
@@ -188,9 +188,9 @@ impl<'a> Builder<'a> {
         let k = self.next;
         self.next += 1;
         let l = self.trace_len;
-        let a = interval.lower;
+        let a = interval.lower();
         let (min_op, max_op) = self.ops();
-        let upper_break = match interval.upper {
+        let upper_break = match interval.upper() {
             Some(b) => {
                 format!("            if ((*times)[j] > (*times)[i] + f32({b:?})) {{ break; }}\n")
             }
@@ -212,9 +212,9 @@ impl<'a> Builder<'a> {
         let k = self.next;
         self.next += 1;
         let l = self.trace_len;
-        let a = interval.lower;
+        let a = interval.lower();
         let (min_op, max_op) = self.ops();
-        let lower_break = match interval.upper {
+        let lower_break = match interval.upper() {
             Some(b) => {
                 format!("            if ((*times)[j] < (*times)[i] - f32({b:?})) {{ break; }}\n")
             }

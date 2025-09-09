@@ -97,39 +97,39 @@ fn eval(
         Formula::Always(interval, f) => Ok(sliding_window_min(
             &eval(f, times, signals)?,
             times,
-            interval.lower,
+            interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Eventually(interval, f) => Ok(sliding_window_max(
             &eval(f, times, signals)?,
             times,
-            interval.lower,
+            interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Historically(interval, f) => Ok(sliding_window_min(
             &eval(f, times, signals)?,
             times,
             -interval.upper_or_infinity(),
-            -interval.lower,
+            -interval.lower(),
         )),
         Formula::Once(interval, f) => Ok(sliding_window_max(
             &eval(f, times, signals)?,
             times,
             -interval.upper_or_infinity(),
-            -interval.lower,
+            -interval.lower(),
         )),
         Formula::Until(interval, l, r) => Ok(until(
             &eval(l, times, signals)?,
             &eval(r, times, signals)?,
             times,
-            interval.lower,
+            interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Since(interval, l, r) => Ok(since(
             &eval(l, times, signals)?,
             &eval(r, times, signals)?,
             times,
-            interval.lower,
+            interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Next(f) => Ok(next(&eval(f, times, signals)?)),
@@ -280,8 +280,8 @@ mod tests {
 
     fn arb_interval() -> impl Strategy<Value = Interval> {
         (0.0f64..5.0, prop::option::of(0.0f64..8.0)).prop_map(|(lo, width)| match width {
-            Some(w) => Interval::bounded(lo, lo + w),
-            None => Interval::from_lower(lo),
+            Some(w) => Interval::bounded(lo, lo + w).unwrap(),
+            None => Interval::from_lower(lo).unwrap(),
         })
     }
 

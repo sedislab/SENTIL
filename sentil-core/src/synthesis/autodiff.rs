@@ -81,16 +81,16 @@ fn backward(
         Formula::Or(l, r) => combine_backward(l, r, times, signals, config, out_adj, grad, true, false),
         Formula::Implies(l, r) => combine_backward(l, r, times, signals, config, out_adj, grad, true, true),
         Formula::Always(iv, f) => {
-            window_backward(f, times, signals, config, out_adj, grad, iv.lower, iv.upper_or_infinity(), false)
+            window_backward(f, times, signals, config, out_adj, grad, iv.lower(), iv.upper_or_infinity(), false)
         }
         Formula::Eventually(iv, f) => {
-            window_backward(f, times, signals, config, out_adj, grad, iv.lower, iv.upper_or_infinity(), true)
+            window_backward(f, times, signals, config, out_adj, grad, iv.lower(), iv.upper_or_infinity(), true)
         }
         Formula::Historically(iv, f) => {
-            window_backward(f, times, signals, config, out_adj, grad, -iv.upper_or_infinity(), -iv.lower, false)
+            window_backward(f, times, signals, config, out_adj, grad, -iv.upper_or_infinity(), -iv.lower(), false)
         }
         Formula::Once(iv, f) => {
-            window_backward(f, times, signals, config, out_adj, grad, -iv.upper_or_infinity(), -iv.lower, true)
+            window_backward(f, times, signals, config, out_adj, grad, -iv.upper_or_infinity(), -iv.lower(), true)
         }
         Formula::Next(f) => {
             let mut inner = vec![0.0; times.len()];

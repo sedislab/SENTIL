@@ -632,12 +632,12 @@ impl Formula {
                     .into(),
             });
         };
-        if interval.lower > 0.0 {
+        if interval.lower() > 0.0 {
             return Err(Error::Transpilation {
                 message: format!(
                     "the GPU splitter needs an always window starting at 0, got lower bound {}; \
                      run check_rare_event on the CPU",
-                    interval.lower
+                    interval.lower()
                 ),
             });
         }
@@ -658,7 +658,7 @@ impl Formula {
             });
         }
         let symbols = psi.variables();
-        let window = window_length(model.dt(), model.horizon(), interval.upper);
+        let window = window_length(model.dt(), model.horizon(), interval.upper());
         gpu_split(
             model,
             psi,

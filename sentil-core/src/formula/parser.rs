@@ -354,7 +354,7 @@ impl Parser {
                 ));
             }
         }
-        Ok(Interval { lower, upper })
+        Ok(Interval::new_unchecked(lower, upper))
     }
 
     fn bound(&mut self) -> Result<Option<f64>, ParseError> {
