@@ -28,14 +28,14 @@ pub const THROUGHPUT: &[SmcModel] = &[
         signals: &[("x", &[1.0; 10])],
         noise: &[("x", 1.0)],
         formula: "P >= 0.5(always[0, 9](x > 0))",
-        ground_truth: None,
+        ground_truth: Some(0.177_721_459_208_027_73),
     },
     SmcModel {
         id: "eventually_ten",
         signals: &[("x", &[-1.0; 10])],
         noise: &[("x", 1.0)],
         formula: "P >= 0.5(eventually[0, 9](x > 0))",
-        ground_truth: None,
+        ground_truth: Some(0.822_278_540_791_972_3),
     },
 ];
 
@@ -104,16 +104,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_throughput_models_estimate_near_their_truth() {
-        // single_step has a closed-form 0.6915; a short run lands close.
-        let out = estimate(&THROUGHPUT[0], 20_000, 1, 7);
-        let truth = THROUGHPUT[0].ground_truth.unwrap();
-        assert!(
-            (out.result.probability - truth).abs() < 0.02,
-            "estimate {} vs {truth}",
-            out.result.probability
-        );
-        assert!(out.throughput_per_s > 0.0);
-        assert_eq!(out.steps, 1);
+    fn every_throughput_model_estimates_near_its_closed_form_truth() {
+        for model in THROUGHPUT {
+            let truth = model
+                .ground_truth
+                .expect("every throughput model carries a closed-form truth");
+            let out = estimate(model, 40_000, 1, 7);
+            assert!(
+                (out.result.probability - truth).abs() < 0.02,
+                "{}: estimate {} vs {truth}",
+                model.id,
+                out.result.probability
+            );
+            assert!(out.throughput_per_s > 0.0);
+        }
     }
 }
