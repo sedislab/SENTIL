@@ -161,14 +161,16 @@ pub struct RareEventResult {
     pub simulations: u64,
 }
 
-/// A trajectory prefix. The monitor is rebuilt and replayed when scoring rather
-/// than carried, since [`StreamMonitor`] is not cloneable.
+/// A trajectory prefix together with its violation score. The score is computed
+/// once when the state is built and carried here, so the splitter reads it rather
+/// than re-evaluating the whole prefix on every `score` and `is_terminal` call.
 #[derive(Clone)]
 struct WalkState {
     samples: Vec<Vec<f64>>,
     last_value: Vec<f64>,
     step_index: usize,
     time: f64,
+    score: f64,
 }
 
 struct PrstlWalk<'a> {
@@ -182,11 +184,14 @@ impl RareEventSimulator for PrstlWalk<'_> {
 
     fn initial_state(&self, rng: &mut dyn RngCore) -> WalkState {
         let v0 = self.system.initial(rng);
+        let samples = vec![v0.clone()];
+        let score = self.compute_score(&samples);
         WalkState {
-            samples: vec![v0.clone()],
+            samples,
             last_value: v0,
             step_index: 0,
             time: 0.0,
+            score,
         }
     }
 
@@ -197,28 +202,37 @@ impl RareEventSimulator for PrstlWalk<'_> {
         let next = self.system.advance(&state.last_value, state.time, rng);
         let mut samples = state.samples.clone();
         samples.push(next.clone());
+        let score = self.compute_score(&samples);
         WalkState {
             samples,
             last_value: next,
             step_index: state.step_index + 1,
             time: state.time + self.system.dt(),
+            score,
         }
     }
 
     fn is_terminal(&self, state: &WalkState) -> (bool, bool) {
-        let violated = self.score(state) >= self.margin;
+        let violated = state.score >= self.margin;
         (violated, violated)
     }
 
-    /// The current violation: the negated robustness of the inner formula over the
-    /// prefix treated as a complete trace, which only ever sees what has happened
-    /// so far. A malformed system or evaluation error maps to NaN so the splitter
-    /// reports [`Error::Splitting`] rather than scoring on garbage.
     fn score(&self, state: &WalkState) -> f64 {
+        state.score
+    }
+}
+
+impl PrstlWalk<'_> {
+    /// The violation of a prefix: the negated robustness of the inner formula over
+    /// the samples treated as a complete trace, which only ever sees what has
+    /// happened so far. Called once per [`WalkState`] and cached on it. A malformed
+    /// system or evaluation error maps to NaN so the splitter reports
+    /// [`Error::Splitting`] rather than scoring on garbage.
+    fn compute_score(&self, samples: &[Vec<f64>]) -> f64 {
         let vars = self.system.variables();
-        let mut times = Vec::with_capacity(state.samples.len());
+        let mut times = Vec::with_capacity(samples.len());
         let mut t = 0.0;
-        for _ in &state.samples {
+        for _ in samples {
             times.push(t);
             t += self.system.dt();
         }
@@ -226,8 +240,7 @@ impl RareEventSimulator for PrstlWalk<'_> {
             return f64::NAN;
         };
         for (i, var) in vars.iter().enumerate() {
-            let column: Vec<f64> = state
-                .samples
+            let column: Vec<f64> = samples
                 .iter()
                 .map(|s| s.get(i).copied().unwrap_or(f64::NAN))
                 .collect();
