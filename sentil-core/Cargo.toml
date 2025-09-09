@@ -28,7 +28,7 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "parquet", "arrow", "sqlite", "mat"]
+default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "parquet", "arrow", "sqlite"]
 
 # On by default. Drop it (--no-default-features) for a no_std STL monitor that
 # does its f64 math through libm.
@@ -47,10 +47,10 @@ synthesis = ["std"]
 # Spread Monte Carlo across cores with Rayon. Same answer as one thread; each
 # sample is seeded independently.
 parallel = ["statistical", "dep:rayon"]
-# Reading traces from files: CSV, TSV, and file-path loading. Parquet, Arrow, SQLite,
-# and classic .mat ship in the default build; HDF5 (needs a system library) and MCAP
-# stay opt-in.
-ingest = ["std", "dep:csv"]
+# Reading traces from files: CSV, TSV, classic MATLAB .mat, and file-path loading.
+# Parquet, Arrow, and SQLite ship in the default build too; HDF5 and MATLAB v7.3
+# (which need a system library) and MCAP stay opt-in.
+ingest = ["std", "dep:csv", "dep:matfile"]
 
 # The premade PrSTL specs: parameterized templates in embedded TOML/YAML/JSON.
 # Needs the statistical layer to build their lifting registries.
@@ -67,9 +67,6 @@ sqlite = ["ingest", "dep:rusqlite"]
 
 # HDF5 / MATLAB v7.3 traces. Needs a system or bundled HDF5 library.
 hdf5 = ["ingest", "dep:hdf5"]
-# Reading classic MATLAB v5/v6/v7 .mat trace files (the pre-7.3 binary format).
-# Pure Rust, no MATLAB. A v7.3 .mat is HDF5, so it goes through the hdf5 feature.
-mat = ["ingest", "dep:matfile"]
 
 # MCAP recordings, the robotics log format.
 mcap = ["ingest", "dep:mcap", "dep:serde_json"]

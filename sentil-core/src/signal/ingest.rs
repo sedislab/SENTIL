@@ -368,7 +368,6 @@ fn load_mat(path: &Path) -> Result<Trace> {
     }
 }
 
-#[cfg(feature = "mat")]
 #[allow(
     clippy::cast_precision_loss,
     reason = "a 64-bit integer signal sample past 2^53 is implausible, and f64 is the trace's type"
@@ -396,14 +395,6 @@ fn load_mat5(path: &Path) -> Result<Trace> {
         columns.push((array.name().to_owned(), values));
     }
     from_columns(columns, path)
-}
-
-#[cfg(not(feature = "mat"))]
-fn load_mat5(path: &Path) -> Result<Trace> {
-    Err(ingest_at(
-        path,
-        "classic v5/v6/v7 .mat files need the `mat` feature enabled",
-    ))
 }
 
 /// Reads a trace from the JSON-encoded messages of an MCAP recording. Each
@@ -517,7 +508,6 @@ mod tests {
         assert!(Trace::from_path("/tmp/whatever.xyz").is_err());
     }
 
-    #[cfg(feature = "mat")]
     #[test]
     #[allow(clippy::float_cmp, reason = "the fixture values are exact")]
     fn reads_a_classic_v5_mat_file() {
@@ -528,14 +518,6 @@ mod tests {
         assert_eq!(trace.variables(), vec!["x"]);
         assert_eq!(trace.times(), &[0.0, 1.0, 2.0]);
         assert_eq!(trace.signal("x"), Some(&[10.0, 5.0, 1.0][..]));
-    }
-
-    #[cfg(not(feature = "mat"))]
-    #[test]
-    fn a_classic_mat_file_without_the_feature_reports_the_feature() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sample_v5.mat");
-        let err = Trace::from_path(path).unwrap_err();
-        assert!(format!("{err}").contains("mat"), "{err}");
     }
 
     #[cfg(feature = "parquet")]
