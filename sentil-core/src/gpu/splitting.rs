@@ -191,16 +191,10 @@ fn build_splitting_shader(
 }
 
 /// The outcome of a GPU rare-event splitting run.
-///
-/// `probability` is the fixed-effort multilevel-splitting estimate. It is
-/// consistent as `particles` grows but carries an `O(levels / particles)` bias,
-/// unlike the unbiased CPU last-particle estimate in
-/// [`RareEventResult`](crate::stats::RareEventResult); it is a distinct type so the
-/// two are never read as the same number.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpuSplittingEstimate {
     /// The estimated probability of the rare violation.
-    pub probability: f64,
+    pub violation_probability: f64,
     /// The particle population the run used.
     pub particles: usize,
     /// The number of splitting levels the run resolved.
@@ -443,7 +437,7 @@ impl GpuSplittingContext {
                 let reached = z_host.iter().filter(|&&zi| zi >= margin).count();
                 probability *= reached as f64 / n as f64;
                 return Ok(GpuSplittingEstimate {
-                    probability,
+                    violation_probability: probability,
                     particles: n,
                     levels: round - 1,
                 });
@@ -606,7 +600,7 @@ impl Formula {
     /// let phi = Formula::parse("P>=0.5(always[0, 400](x > -6))")?;
     /// let config = RareEventConfig { particles: 8192, margin: 0.0, seed: 1 };
     /// let estimate = phi.check_rare_event_gpu(&model, &config)?;
-    /// println!("rare-event probability about {}", estimate.probability);
+    /// println!("rare-event violation probability about {}", estimate.violation_probability);
     /// # Ok::<(), sentil::Error>(())
     /// ```
     ///
