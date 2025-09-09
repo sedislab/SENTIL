@@ -175,6 +175,14 @@ impl SynthForwardContext {
                 ),
             });
         }
+        if batch.len() > u32::MAX as usize {
+            return Err(Error::Gpu {
+                message: format!(
+                    "the candidate batch addresses {} f32 slots, beyond the u32 index space the kernel uses; reduce the population or trace length",
+                    batch.len()
+                ),
+            });
+        }
         let params = ForwardParams {
             n_candidates: n_candidates as u32,
             pad: [0; 3],

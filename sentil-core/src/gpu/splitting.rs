@@ -360,6 +360,15 @@ impl GpuSplittingContext {
         margin: f32,
         seed: u32,
     ) -> Result<GpuSplittingEstimate> {
+        let cells = (n as u64)
+            .checked_mul(window_len as u64)
+            .and_then(|c| c.checked_mul(v as u64))
+            .filter(|&c| c <= u32::MAX as u64)
+            .ok_or_else(|| Error::Gpu {
+                message: format!(
+                    "a splitting buffer of {n} particles by {window_len} steps by {v} variables exceeds the u32 index space the kernel addresses; reduce particles or the window"
+                ),
+            })?;
         let n_bytes = n as u64 * 4;
         let storage = |label: &str, size: u64, extra: wgpu::BufferUsages| {
             self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -369,11 +378,7 @@ impl GpuSplittingContext {
                 mapped_at_creation: false,
             })
         };
-        let trajectory = storage(
-            "trajectory",
-            (n * window_len * v) as u64 * 4,
-            wgpu::BufferUsages::empty(),
-        );
+        let trajectory = storage("trajectory", cells * 4, wgpu::BufferUsages::empty());
         let z = storage("z", n_bytes, wgpu::BufferUsages::COPY_SRC);
         let assignment = storage("assignment", n_bytes, wgpu::BufferUsages::COPY_DST);
         let noise_buf = self
