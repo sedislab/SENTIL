@@ -18,8 +18,18 @@ pub enum Interpolation {
 pub(crate) fn read_at(times: &[f64], values: &[f64], interp: Interpolation, at: &[f64]) -> Vec<f64> {
     let segments = (interp == Interpolation::CubicSpline && times.len() >= 2)
         .then(|| cubic_segments(times, values));
+    read_with_segments(times, values, segments.as_deref(), interp, at)
+}
+
+pub(crate) fn read_with_segments(
+    times: &[f64],
+    values: &[f64],
+    segments: Option<&[[f64; 3]]>,
+    interp: Interpolation,
+    at: &[f64],
+) -> Vec<f64> {
     at.iter()
-        .map(|&t| read_one(times, values, segments.as_deref(), interp, t))
+        .map(|&t| read_one(times, values, segments, interp, t))
         .collect()
 }
 
@@ -66,7 +76,7 @@ fn read_one(
     clippy::many_single_char_names,
     reason = "h, b, c, d are the standard spline-coefficient names"
 )]
-fn cubic_segments(times: &[f64], values: &[f64]) -> Vec<[f64; 3]> {
+pub(crate) fn cubic_segments(times: &[f64], values: &[f64]) -> Vec<[f64; 3]> {
     let n = times.len();
     let h: Vec<f64> = (0..n - 1).map(|i| times[i + 1] - times[i]).collect();
     if n == 2 {

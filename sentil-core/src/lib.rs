@@ -63,7 +63,7 @@ pub use monitor::{Monitor, MonitorConfig, TimeMode};
 pub use semantics::{
     violation_intervals, FormulaBank, MultiFormulaMonitor, Robustness, StreamMonitor,
 };
-pub use signal::{Interpolation, RingBuffer, Trace};
+pub use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
 #[cfg(feature = "specs")]
 pub use spec_builder::{SpecBuilder, SpecRegistry, SpecTemplate};
 #[cfg(feature = "statistical")]

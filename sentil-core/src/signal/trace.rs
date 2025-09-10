@@ -5,7 +5,7 @@ use crate::prelude::*;
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
-use super::interpolation::{read_at, Interpolation};
+use super::interpolation::{cubic_segments, read_at, read_with_segments, Interpolation};
 use crate::error::{Error, Result};
 
 /// A set of signals sampled at a shared sequence of times.
@@ -202,17 +202,104 @@ impl Trace {
             return Err(Error::EmptyTrace);
         }
         let mut out = Trace::new(times)?;
-        let queries = out.times.clone();
-        for (name, values) in &self.signals {
-            out.add_signal(name, read_at(&self.times, values, interpolation, &queries))?;
+        let resampled: Vec<(String, Vec<f64>)> = self
+            .signals
+            .iter()
+            .map(|(name, values)| {
+                (name.clone(), read_at(&self.times, values, interpolation, &out.times))
+            })
+            .collect();
+        for (name, values) in resampled {
+            out.add_signal(&name, values)?;
         }
         Ok(out)
+    }
+
+    /// Prepares the trace for repeated resampling under `interp`.
+    ///
+    /// ```
+    /// use sentil::{Interpolation, Trace};
+    ///
+    /// let mut trace = Trace::new([0.0, 1.0, 2.0])?;
+    /// trace.add_signal("x", [0.0, 1.0, 4.0])?;
+    /// let prepared = trace.prepare(Interpolation::CubicSpline);
+    /// let coarse = prepared.resample([0.0, 2.0])?;
+    /// let fine = prepared.resample([0.0, 0.5, 1.0, 1.5, 2.0])?;
+    /// assert_eq!(coarse.len(), 2);
+    /// assert_eq!(fine.len(), 5);
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    #[must_use]
+    pub fn prepare(&self, interp: Interpolation) -> PreparedTrace {
+        let solve = interp == Interpolation::CubicSpline && self.times.len() >= 2;
+        let columns = self
+            .signals
+            .iter()
+            .map(|(name, values)| PreparedColumn {
+                name: name.clone(),
+                values: values.clone(),
+                segments: solve.then(|| cubic_segments(&self.times, values)),
+            })
+            .collect();
+        PreparedTrace {
+            times: self.times.clone(),
+            interp,
+            columns,
+        }
     }
 
     /// The value series for one signal, or `None` if the trace has no such signal.
     #[must_use]
     pub fn signal(&self, name: &str) -> Option<&[f64]> {
         self.signals.get(name).map(Vec::as_slice)
+    }
+}
+
+/// A trace with its cubic spline already solved, ready to resample onto many grids.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreparedTrace {
+    times: Vec<f64>,
+    interp: Interpolation,
+    columns: Vec<PreparedColumn>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PreparedColumn {
+    name: String,
+    values: Vec<f64>,
+    segments: Option<Vec<[f64; 3]>>,
+}
+
+impl PreparedTrace {
+    /// Resamples onto `times`, reusing the prepared spline solve.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyTrace`] if the source trace had no samples, or an error
+    /// if `times` is not a valid grid.
+    pub fn resample(&self, times: impl Into<Vec<f64>>) -> Result<Trace> {
+        if self.times.is_empty() {
+            return Err(Error::EmptyTrace);
+        }
+        let mut out = Trace::new(times)?;
+        let resampled: Vec<(String, Vec<f64>)> = self
+            .columns
+            .iter()
+            .map(|col| {
+                let values = read_with_segments(
+                    &self.times,
+                    &col.values,
+                    col.segments.as_deref(),
+                    self.interp,
+                    &out.times,
+                );
+                (col.name.clone(), values)
+            })
+            .collect();
+        for (name, values) in resampled {
+            out.add_signal(&name, values)?;
+        }
+        Ok(out)
     }
 }
 
@@ -224,6 +311,18 @@ mod tests {
     )]
 
     use super::*;
+
+    #[test]
+    fn a_prepared_trace_resamples_like_a_direct_one() {
+        let mut trace = Trace::new([0.0, 1.0, 2.0, 3.0]).unwrap();
+        trace.add_signal("x", [0.0, 1.0, 4.0, 9.0]).unwrap();
+        let prepared = trace.prepare(Interpolation::CubicSpline);
+        for grid in [vec![0.5, 1.5, 2.5], vec![0.0, 1.0, 2.0, 3.0], vec![1.5]] {
+            let direct = trace.resample(grid.clone(), Interpolation::CubicSpline).unwrap();
+            let reused = prepared.resample(grid).unwrap();
+            assert_eq!(direct, reused);
+        }
+    }
 
     #[test]
     fn builds_a_trace_and_lists_signals_sorted() {

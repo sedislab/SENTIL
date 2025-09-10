@@ -8,4 +8,4 @@ mod trace;
 
 pub use buffer::RingBuffer;
 pub use interpolation::Interpolation;
-pub use trace::Trace;
+pub use trace::{PreparedTrace, Trace};
