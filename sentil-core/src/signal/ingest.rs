@@ -465,7 +465,7 @@ fn detect_time_column(headers: &[String]) -> Option<usize> {
 fn parse_cell(record: &csv::StringRecord, idx: usize, row: usize, what: &str) -> Result<f64> {
     let cell = record
         .get(idx)
-        .ok_or_else(|| ingest(Some(row), format!("missing column {idx}")))?;
+        .ok_or_else(|| ingest(Some(row), format!("missing the {what} column")))?;
     cell.trim().parse::<f64>().map_err(|_| {
         ingest(
             Some(row),

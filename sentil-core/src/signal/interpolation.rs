@@ -60,8 +60,6 @@ fn read_one(
     match interp {
         Interpolation::ZeroOrderHold => values[i],
         Interpolation::Linear => lerp,
-        // With fewer than two samples there is no spline to fit, so fall back to
-        // the line; the endpoint guards above make that case unreachable here.
         Interpolation::CubicSpline => segments.map_or(lerp, |s| {
             let [b, c, d] = s[i];
             let dt = t - t0;

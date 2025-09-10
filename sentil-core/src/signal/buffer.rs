@@ -277,7 +277,7 @@ impl RingBuffer {
         None
     }
 
-    /// The sample whose time is closest to `time`. Runs in O(log n).
+    /// The sample whose time is closest to `time`.
     #[must_use]
     pub fn closest_to_time(&self, time: f64) -> Option<(f64, f64)> {
         if self.is_empty() {
