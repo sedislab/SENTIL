@@ -63,6 +63,11 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
     max_steps: u64,
     seed: u64,
 ) -> Result<RareEventEstimate> {
+    // Bound the run so a target that can never be reached still terminates. Each
+    // removal multiplies the estimate by `ratio`, so after this many removals per
+    // particle the estimate has fallen to about `e^-MAX_LEVELS_PER_PARTICLE`, far
+    // below any probability worth resolving.
+    const MAX_LEVELS_PER_PARTICLE: u64 = 28;
     if particles == 0 {
         return Err(Error::InvalidConfig {
             context: "adaptive splitting",
@@ -86,9 +91,7 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
     }
 
     let ratio = 1.0 - 1.0 / particles as f64;
-    // Bound the run so a target that can never be reached still terminates, by the
-    // point the estimate would have underflowed to nothing.
-    let cap = (particles as u64).saturating_mul(28);
+    let cap = (particles as u64).saturating_mul(MAX_LEVELS_PER_PARTICLE);
     let mut removed = 0u64;
     while removed < cap {
         let level = population.iter().fold(f64::INFINITY, |m, t| m.min(t.z));
@@ -153,7 +156,7 @@ fn extend<S: RareEventSimulator>(
         *simulations += 1;
         let next = simulator.step(last, rng);
         let score = simulator.score(&next);
-        if score.is_nan() {
+        if !score.is_finite() {
             return Err(splitting_error(index, states.len(), "score is not finite"));
         }
         z = z.max(score);
@@ -171,7 +174,7 @@ fn simulate<S: RareEventSimulator>(
     index: usize,
 ) -> Result<Trajectory<S::State>> {
     let z = simulator.score(&start);
-    if z.is_nan() {
+    if !z.is_finite() {
         return Err(splitting_error(index, 0, "score is not finite"));
     }
     extend(

@@ -97,6 +97,10 @@ pub fn wilson_interval(successes: u64, trials: u64, level: f64) -> ConfidenceInt
 
 /// The two-sided z critical value for a confidence level, for example `1.95996`
 /// at `0.95`.
+///
+/// `level` must lie in `(0, 1)`. A level of `1` returns `+inf` and a level of `0`
+/// returns a finite but meaningless value, so the interval functions that call
+/// this validate `level` before they reach it.
 #[must_use]
 pub fn z_score(level: f64) -> f64 {
     normal_quantile(0.5 * (1.0 + level))
@@ -206,8 +210,8 @@ fn normal_quantile(p: f64) -> f64 {
 /// use sentil::stats::clopper_pearson;
 ///
 /// let ci = clopper_pearson(50, 100, 0.95);
-/// assert!((ci.lower - 0.398_28).abs() < 1e-3);
-/// assert!((ci.upper - 0.601_72).abs() < 1e-3);
+/// assert!((ci.lower - 0.398_321).abs() < 1e-5);
+/// assert!((ci.upper - 0.601_679).abs() < 1e-5);
 /// ```
 #[must_use]
 pub fn clopper_pearson(successes: u64, trials: u64, level: f64) -> ConfidenceInterval {
@@ -449,7 +453,7 @@ mod tests {
     fn clopper_pearson_matches_known_intervals() {
         // Values from R's binom.test at 95%.
         let half = clopper_pearson(50, 100, 0.95);
-        assert!(close3(half.lower, 0.398_28) && close3(half.upper, 0.601_72));
+        assert!((half.lower - 0.398_321).abs() < 1e-5 && (half.upper - 0.601_679).abs() < 1e-5);
         let rare = clopper_pearson(5, 100, 0.95);
         assert!(close3(rare.lower, 0.016_43) && close3(rare.upper, 0.112_80));
     }

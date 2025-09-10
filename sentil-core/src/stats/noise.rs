@@ -101,6 +101,7 @@ enum Kind {
     },
     Mixture {
         weights: Vec<f64>,
+        total: f64,
         components: Vec<NoiseModel>,
     },
 }
@@ -584,6 +585,7 @@ impl NoiseModel {
         Ok(Self {
             kind: Kind::Mixture {
                 weights,
+                total,
                 components,
             },
         })
@@ -693,10 +695,10 @@ impl NoiseModel {
             Kind::Bootstrap { residuals } => residuals[rng.random_range(0..residuals.len())],
             Kind::Mixture {
                 weights,
+                total,
                 components,
             } => {
-                let total: f64 = weights.iter().sum();
-                let mut threshold = rng.random::<f64>() * total;
+                let mut threshold = rng.random::<f64>() * *total;
                 let mut chosen = &components[components.len() - 1];
                 for (w, component) in weights.iter().zip(components) {
                     threshold -= w;

@@ -38,6 +38,7 @@ pub enum BayesResult {
 /// The test parameters: the probability `threshold`, the Bayes-factor cutoff that
 /// makes a decision, and the sample cap. The prior is the uniform Beta(1, 1).
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BayesConfig {
     threshold: f64,
     bayes_factor: f64,
@@ -69,6 +70,24 @@ impl BayesConfig {
             bayes_factor,
             max_samples,
         })
+    }
+
+    /// The probability threshold the test decides against.
+    #[must_use]
+    pub fn threshold(&self) -> f64 {
+        self.threshold
+    }
+
+    /// The Bayes-factor cutoff that makes a decision.
+    #[must_use]
+    pub fn bayes_factor(&self) -> f64 {
+        self.bayes_factor
+    }
+
+    /// The sample budget.
+    #[must_use]
+    pub fn max_samples(&self) -> u64 {
+        self.max_samples
     }
 }
 
@@ -201,6 +220,15 @@ mod tests {
         assert!(BayesConfig::new(0.0, 100.0, 100).is_err());
         assert!(BayesConfig::new(0.5, 1.0, 100).is_err());
         assert!(BayesConfig::new(0.5, 100.0, 0).is_err());
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp, reason = "the getters return the exact values set")]
+    fn config_reads_back_its_parameters() {
+        let config = BayesConfig::new(0.8, 50.0, 1000).unwrap();
+        assert_eq!(config.threshold(), 0.8);
+        assert_eq!(config.bayes_factor(), 50.0);
+        assert_eq!(config.max_samples(), 1000);
     }
 
     #[test]

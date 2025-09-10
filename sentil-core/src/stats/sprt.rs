@@ -33,6 +33,7 @@ pub enum SprtResult {
 /// The test parameters: the indifference region `(p0, p1)`, the error rates, and
 /// the sample cap.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SprtConfig {
     p0: f64,
     p1: f64,
@@ -65,6 +66,36 @@ impl SprtConfig {
             beta,
             max_samples,
         })
+    }
+
+    /// The lower bound `p0` of the indifference region.
+    #[must_use]
+    pub fn p0(&self) -> f64 {
+        self.p0
+    }
+
+    /// The upper bound `p1` of the indifference region.
+    #[must_use]
+    pub fn p1(&self) -> f64 {
+        self.p1
+    }
+
+    /// The bound on the false-positive rate.
+    #[must_use]
+    pub fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    /// The bound on the false-negative rate.
+    #[must_use]
+    pub fn beta(&self) -> f64 {
+        self.beta
+    }
+
+    /// The sample budget.
+    #[must_use]
+    pub fn max_samples(&self) -> u64 {
+        self.max_samples
     }
 }
 
@@ -197,6 +228,17 @@ mod tests {
         assert!(SprtConfig::new(0.6, 0.4, 0.05, 0.05, 100).is_err());
         assert!(SprtConfig::new(0.4, 0.6, 0.0, 0.05, 100).is_err());
         assert!(SprtConfig::new(0.4, 0.6, 0.05, 0.05, 0).is_err());
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp, reason = "the getters return the exact values set")]
+    fn config_reads_back_its_parameters() {
+        let config = SprtConfig::new(0.3, 0.7, 0.05, 0.1, 500).unwrap();
+        assert_eq!(config.p0(), 0.3);
+        assert_eq!(config.p1(), 0.7);
+        assert_eq!(config.alpha(), 0.05);
+        assert_eq!(config.beta(), 0.1);
+        assert_eq!(config.max_samples(), 500);
     }
 
     #[test]
