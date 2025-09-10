@@ -84,12 +84,29 @@ impl<'a, M: SystemModel> Controller<'a, M> {
         let (model, spec, smooth) = (self.model, self.spec, self.smooth);
         let objective = |u: &[f64]| spec.smooth_gradient(model, state, u, smooth);
         let bounds = &self.bounds;
-        let deadline = Instant::now() + self.budget;
+        let start = Instant::now();
+        let deadline = start + self.budget;
 
-        let (mut best, mut best_score) = maximize(objective, &self.warm_start, bounds, CHUNK)?;
+        let (mut best, mut best_score) = maximize(objective, &self.warm_start, bounds, 1)?;
         let mut plan = best.clone();
-        while Instant::now() < deadline {
-            let (next, score) = maximize(objective, &plan, bounds, CHUNK)?;
+        let mut steps = 1usize;
+        loop {
+            let now = Instant::now();
+            if now >= deadline {
+                break;
+            }
+            // Size the next chunk to the time left, from the average step cost so far,
+            // so a chunk that could not finish before the deadline is not started.
+            let per_step = start.elapsed().as_secs_f64() / steps as f64;
+            let remaining = (deadline - now).as_secs_f64();
+            let fits = if per_step > 0.0 {
+                (remaining / per_step) as usize
+            } else {
+                CHUNK
+            };
+            let chunk = fits.clamp(1, CHUNK);
+            let (next, score) = maximize(objective, &plan, bounds, chunk)?;
+            steps += chunk;
             let gain = score - best_score;
             if score > best_score {
                 best_score = score;
@@ -145,6 +162,18 @@ mod tests {
             state[0] += u[0];
         }
         assert!(state[0] > 2.0, "reached only {}", state[0]);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_tiny_budget_still_returns_a_valid_input() {
+        let model = integrator(4);
+        let spec = Formula::parse("eventually[0, 4](pos > 1)").unwrap();
+        let mut controller = Controller::new(&model, &spec, 1, Duration::from_nanos(1))
+            .with_bounds(Bounds::new(vec![-1.0; 4], vec![1.0; 4]).unwrap());
+        let u = controller.control(&[0.0]).unwrap();
+        assert_eq!(u.len(), 1);
+        assert!((-1.0..=1.0).contains(&u[0]), "input {} left the box", u[0]);
     }
 
     #[cfg(feature = "std")]
