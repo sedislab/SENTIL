@@ -579,9 +579,11 @@ mod tests {
     }
 
     #[test]
-    fn negative_interval_bound_parses() {
-        let f = parse("historically[0, 5](x > 0)").unwrap();
-        assert!(matches!(f, Formula::Historically(..)));
+    fn negative_interval_bound_is_rejected() {
+        let err = parse("always[-1, 5](x > 0)").unwrap_err();
+        assert!(err.message.contains("lower bound must be at least 0"));
+        let err = parse("always[0, 5](x > 0) until[-2, 3] (y > 0)").unwrap_err();
+        assert!(err.message.contains("lower bound must be at least 0"));
     }
 
     #[test]
