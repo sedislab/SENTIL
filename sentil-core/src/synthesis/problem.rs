@@ -1,11 +1,16 @@
 //! Open-loop trajectory synthesis: find an input sequence that satisfies a spec.
 
 use super::cmaes::{cma_es, CmaConfig};
+use super::milp::solve_milp;
 use super::model::{Bounds, SystemModel};
 use super::pgrad::maximize;
 use super::smooth::SmoothConfig;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::formula::Formula;
+
+/// The branch-and-bound node cap for the MILP backend, ample for the horizons and
+/// nesting depths open-loop synthesis reaches in practice.
+const MILP_MAX_NODES: usize = 200_000;
 
 /// The search backend a synthesis problem uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -17,6 +22,9 @@ pub enum Backend {
     Gradient,
     /// CMA-ES, a gradient-free search for a rugged landscape.
     CmaEs,
+    /// A big-M mixed-integer encoding of robustness solved by branch and bound, for
+    /// a model that exposes [`affine_form`](SystemModel::affine_form).
+    Milp,
 }
 
 /// An open-loop search for an input sequence that makes `spec` hold on `model`.
@@ -125,7 +133,15 @@ impl Synthesizer {
         let spec = problem.spec;
         let initial = model.initial_state();
         let start = vec![0.0; model.input_dimension()];
-        let (input, backend) = if problem.backend == Backend::CmaEs {
+        let (input, backend) = if problem.backend == Backend::Milp {
+            let affine = model.affine_form().ok_or(Error::Unsupported {
+                feature: "the MILP backend needs an affine model; use Gradient or CmaEs",
+            })?;
+            (
+                solve_milp(&affine, spec, &problem.bounds, MILP_MAX_NODES)?,
+                Backend::Milp,
+            )
+        } else if problem.backend == Backend::CmaEs {
             let config = CmaConfig {
                 max_generations: problem.max_iters,
                 population: problem.population,
@@ -178,6 +194,7 @@ fn cma_es_input<M: SystemModel>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal::Trace;
     use crate::synthesis::LinearModel;
 
     fn integrator(horizon: usize) -> LinearModel {
@@ -238,5 +255,68 @@ mod tests {
         let result = Synthesizer::solve(&problem).unwrap();
         assert!(!result.holds);
         assert!(result.robustness < 0.0 && result.robustness > -6.0);
+    }
+
+    #[test]
+    fn the_milp_backend_solves_the_reachable_spec_to_optimality() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap())
+            .with_backend(Backend::Milp);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert!(result.holds, "robustness {}", result.robustness);
+        assert_eq!(result.backend, Backend::Milp);
+    }
+
+    #[test]
+    fn the_milp_backend_matches_or_beats_the_gradient_robustness() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2) and always[0, 5](pos > -3)").unwrap();
+        let bounds = || Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap();
+        let gradient = Synthesizer::solve(
+            &SynthesisProblem::new(&model, &spec)
+                .with_bounds(bounds())
+                .with_budget(800),
+        )
+        .unwrap();
+        let milp = Synthesizer::solve(
+            &SynthesisProblem::new(&model, &spec)
+                .with_bounds(bounds())
+                .with_backend(Backend::Milp),
+        )
+        .unwrap();
+        assert!(milp.holds);
+        assert!(
+            milp.robustness >= gradient.robustness - 1e-6,
+            "milp {} gradient {}",
+            milp.robustness,
+            gradient.robustness
+        );
+    }
+
+    #[test]
+    fn the_milp_backend_needs_an_affine_model() {
+        struct Custom;
+        impl SystemModel for Custom {
+            fn input_dimension(&self) -> usize {
+                1
+            }
+            fn initial_state(&self) -> &[f64] {
+                &[0.0]
+            }
+            fn rollout_from(&self, _initial: &[f64], input: &[f64]) -> Result<Trace> {
+                let mut trace = Trace::new([0.0, 1.0])?;
+                trace.add_signal("pos", [0.0, input[0]])?;
+                Ok(trace)
+            }
+        }
+        let model = Custom;
+        let spec = Formula::parse("eventually[0, 1](pos > 0)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec).with_backend(Backend::Milp);
+        assert!(matches!(
+            Synthesizer::solve(&problem),
+            Err(Error::Unsupported { .. })
+        ));
     }
 }

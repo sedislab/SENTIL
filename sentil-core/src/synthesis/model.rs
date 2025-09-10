@@ -19,6 +19,29 @@ pub trait SystemModel {
     /// Returns an error if `input` is not [`input_dimension`](Self::input_dimension)
     /// long, or if the trace cannot be built.
     fn rollout_from(&self, initial: &[f64], input: &[f64]) -> Result<Trace>;
+
+    /// The model's affine structure, when it has one, for the MILP backend.
+    fn affine_form(&self) -> Option<AffineForm> {
+        None
+    }
+}
+
+/// The affine dynamics `x_{t+1} = A x_t + B u_t` a model exposes for the MILP
+/// backend.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AffineForm {
+    /// The square state matrix `A`, one row per state component.
+    pub a: Vec<Vec<f64>>,
+    /// The input matrix `B`, one row per state component, one column per input.
+    pub b: Vec<Vec<f64>>,
+    /// The initial state `x_0`.
+    pub x0: Vec<f64>,
+    /// The per-state signal names, matching the trace the model rolls out.
+    pub variables: Vec<String>,
+    /// The step spacing.
+    pub dt: f64,
+    /// The number of steps.
+    pub horizon: usize,
 }
 
 /// Box bounds on a packed input vector: a lower and upper limit per coordinate.
@@ -205,6 +228,17 @@ impl SystemModel for LinearModel {
 
     fn initial_state(&self) -> &[f64] {
         &self.x0
+    }
+
+    fn affine_form(&self) -> Option<AffineForm> {
+        Some(AffineForm {
+            a: self.a.clone(),
+            b: self.b.clone(),
+            x0: self.x0.clone(),
+            variables: self.variables.clone(),
+            dt: self.dt,
+            horizon: self.horizon,
+        })
     }
 
     fn rollout_from(&self, initial: &[f64], input: &[f64]) -> Result<Trace> {
