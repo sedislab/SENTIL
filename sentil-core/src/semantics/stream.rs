@@ -464,7 +464,7 @@ impl Node for NextNode {
             Ok(Robustness::Concrete(child))
         } else {
             self.initialized = true;
-            Ok(Robustness::Interval(f64::NEG_INFINITY, f64::INFINITY))
+            Ok(Robustness::UNKNOWN)
         }
     }
 

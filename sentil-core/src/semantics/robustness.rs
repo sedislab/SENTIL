@@ -14,14 +14,10 @@ impl Robustness {
     pub const TRUE: Robustness = Robustness::Concrete(f64::INFINITY);
     /// Robustness of a property that fails unconditionally.
     pub const FALSE: Robustness = Robustness::Concrete(f64::NEG_INFINITY);
+    /// A verdict with no information yet, whose [`value`](Self::value) is NaN.
+    pub const UNKNOWN: Robustness = Robustness::Interval(f64::NEG_INFINITY, f64::INFINITY);
 
-    /// A single representative value: the margin itself when concrete, or the
-    /// midpoint of the interval otherwise.
-    ///
-    /// While streaming, a temporal formula can return an unresolved
-    /// [`Interval`](Self::Interval), and its midpoint is only provisional (it can
-    /// even be infinite). Use [`concrete`](Self::concrete) when you need the
-    /// settled answer rather than a representative one.
+    /// The margin itself when concrete, or the midpoint of the interval otherwise.
     pub fn value(&self) -> f64 {
         match *self {
             Robustness::Concrete(r) => r,
@@ -56,13 +52,7 @@ impl Robustness {
         }
     }
 
-    /// Whether the property is satisfied, using the representative value.
-    ///
-    /// A robustness of exactly zero counts as satisfied, matching the convention
-    /// that a predicate holds on its boundary. On an unresolved
-    /// [`Interval`](Self::Interval) this decides from the midpoint and is
-    /// therefore provisional; check [`is_resolved`](Self::is_resolved) first if a
-    /// final verdict is required.
+    /// Whether the property is satisfied, using [`value`](Self::value).
     pub fn is_satisfied(&self) -> bool {
         self.value() >= 0.0
     }
@@ -76,13 +66,13 @@ impl Robustness {
         }
     }
 
-    /// Conjunction: the pointwise minimum of two robustness values.
+    /// Conjunction, the pointwise minimum.
     #[must_use]
     pub fn min(self, other: Robustness) -> Robustness {
         Self::combine(self, other, f64::min)
     }
 
-    /// Disjunction: the pointwise maximum of two robustness values.
+    /// Disjunction, the pointwise maximum.
     #[must_use]
     pub fn max(self, other: Robustness) -> Robustness {
         Self::combine(self, other, f64::max)
@@ -173,5 +163,14 @@ mod tests {
         assert!(!Robustness::Concrete(-0.1).is_satisfied());
         assert!(Robustness::TRUE.is_satisfied());
         assert!(!Robustness::FALSE.is_satisfied());
+    }
+
+    #[test]
+    fn unknown_has_a_nan_value_and_reads_as_unresolved() {
+        let unknown = Robustness::UNKNOWN;
+        assert!(!unknown.is_resolved());
+        assert_eq!(unknown.concrete(), None);
+        assert!(unknown.value().is_nan());
+        assert!(!unknown.is_satisfied());
     }
 }
