@@ -33,6 +33,7 @@ mod cbf;
 mod chance;
 mod cmaes;
 mod controller;
+mod convex;
 mod gradient;
 mod milp;
 mod mining;
