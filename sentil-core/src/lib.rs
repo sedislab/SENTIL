@@ -1,14 +1,5 @@
-//! SENTIL is a runtime verification engine for Signal Temporal Logic (STL) and
-//! its probabilistic extension, PrSTL.
-//!
-//! It answers one question: does a system's behaviour, recorded as a set of
-//! timed signals, satisfy a temporal specification, and by how much. The "how
-//! much" is the quantitative robustness: a positive margin means the property
-//! holds with room to spare, a negative one says how badly it fails.
-//!
-//! The library grows from a fast deterministic STL monitor into probabilistic
-//! verification over noisy or stochastic systems. This module tree is being
-//! built up from that core outward.
+//! A runtime verification engine for Signal Temporal Logic (STL) and its
+//! probabilistic extension, PrSTL.
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]

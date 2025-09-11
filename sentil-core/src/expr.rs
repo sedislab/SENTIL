@@ -73,7 +73,7 @@ impl Program {
                 Op::Sub => sp = fold(stack, sp, |a, b| a - b),
                 Op::Mul => sp = fold(stack, sp, |a, b| a * b),
                 Op::Pow => sp = fold(stack, sp, f64::powf),
-                // `min`/`max` functions and boolean and/or share the same fold.
+                // `f64::min`/`f64::max` drop a NaN operand, matching the offline oracle.
                 Op::FnMin | Op::And => sp = fold(stack, sp, f64::min),
                 Op::FnMax | Op::Or => sp = fold(stack, sp, f64::max),
                 Op::Margin(cmp) => {

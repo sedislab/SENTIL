@@ -2,7 +2,9 @@
 
 use crate::error::Result;
 use crate::formula::Formula;
-use crate::semantics::{Robustness, StreamMonitor};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::semantics::{violation_intervals, Robustness, StreamMonitor};
 use crate::signal::Trace;
 #[cfg(feature = "statistical")]
 use crate::stats::{
@@ -111,14 +113,35 @@ impl Monitor {
         }
     }
 
+    /// The robustness at every sample of `trace`.
+    ///
+    /// # Errors
+    ///
+    /// As for [`robustness`](Self::robustness).
+    pub fn robustness_signal(&self, trace: &Trace) -> Result<Vec<f64>> {
+        match self.config.time {
+            TimeMode::Discrete => self.formula.robustness_signal(trace),
+            TimeMode::Dense => self.formula.robustness_dense_signal(trace),
+        }
+    }
+
+    /// The time spans where `trace` violates the formula.
+    ///
+    /// # Errors
+    ///
+    /// As for [`robustness`](Self::robustness).
+    pub fn violations(&self, trace: &Trace) -> Result<Vec<(f64, f64)>> {
+        let signal = self.robustness_signal(trace)?;
+        Ok(violation_intervals(trace.times(), &signal))
+    }
+
     /// Folds one timestamped sample into the running monitor and returns the
     /// robustness so far.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Unsupported`](crate::Error::Unsupported) the first time it is
-    /// called if the formula uses an operator the streaming monitor cannot handle
-    /// (an unbounded future operator, say), and
+    /// Returns [`Error::Unsupported`](crate::Error::Unsupported) for an operator the
+    /// streaming monitor cannot handle, and
     /// [`Error::UnknownVariable`](crate::Error::UnknownVariable) if `values` omits a
     /// variable the formula needs.
     pub fn update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Robustness> {
@@ -155,6 +178,8 @@ impl Monitor {
         if self.stream.is_none() {
             self.stream = Some(StreamMonitor::from_formula(&self.formula)?);
         }
+        // Invariant: the branch above leaves `self.stream` as `Some`, so this unwrap
+        // is unreachable; only an internal bug could break it.
         Ok(self
             .stream
             .as_mut()
@@ -241,6 +266,27 @@ mod tests {
         assert_eq!(
             dense.robustness(&trace).unwrap(),
             phi.robustness_dense(&trace).unwrap()
+        );
+    }
+
+    #[test]
+    fn the_signal_and_violations_honour_the_time_mode() {
+        let mut trace = Trace::new([0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", [1.0, -2.0, 3.0]).unwrap();
+        let text = "x > 0";
+        let phi = Formula::parse(text).unwrap();
+
+        let discrete = Monitor::new(text, MonitorConfig::new()).unwrap();
+        assert_eq!(
+            discrete.robustness_signal(&trace).unwrap(),
+            phi.robustness_signal(&trace).unwrap()
+        );
+        assert_eq!(discrete.violations(&trace).unwrap(), vec![(1.0, 1.0)]);
+
+        let dense = Monitor::new(text, MonitorConfig::new().time(TimeMode::Dense)).unwrap();
+        assert_eq!(
+            dense.robustness_signal(&trace).unwrap(),
+            phi.robustness_dense_signal(&trace).unwrap()
         );
     }
 

@@ -705,7 +705,8 @@ fn format_param(value: f64) -> String {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "the binomial count is validated as a non-negative integer before the cast"
+    clippy::cast_precision_loss,
+    reason = "the binomial count is validated as a non-negative integer in u64 range before the cast"
 )]
 pub fn noise_model_from_def(def: &NoiseDef) -> Result<NoiseModel> {
     let params = &def.params;
@@ -759,9 +760,9 @@ pub fn noise_model_from_def(def: &NoiseDef) -> Result<NoiseModel> {
         "poisson" => NoiseModel::poisson(require_f64(params, "lambda", "Poisson")?),
         "binomial" => {
             let n = require_f64(params, "n", "Binomial")?;
-            if n < 0.0 || n.fract() != 0.0 {
+            if n < 0.0 || n.fract() != 0.0 || n > u64::MAX as f64 {
                 return Err(spec_error(format!(
-                    "binomial 'n' must be a non-negative integer, got {n}"
+                    "binomial 'n' must be a non-negative integer that fits a u64, got {n}"
                 )));
             }
             NoiseModel::binomial(n as u64, require_f64(params, "p", "Binomial")?)

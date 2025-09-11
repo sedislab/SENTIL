@@ -112,6 +112,7 @@ pub enum Error {
 
     /// A noise model was given parameters outside its valid range.
     #[error("invalid {model} noise model: {reason}")]
+    #[non_exhaustive]
     InvalidNoiseModel {
         /// The distribution family, for example `Gaussian`.
         model: &'static str,
@@ -126,6 +127,7 @@ pub enum Error {
 
     /// A trace could not be read from a file or other source.
     #[error("could not read trace: {message}")]
+    #[non_exhaustive]
     Ingest {
         /// The source path, when the data came from a file.
         path: Option<String>,
@@ -137,6 +139,7 @@ pub enum Error {
 
     /// Fitting a noise model to sample data failed.
     #[error("could not fit a {method} model: {message}")]
+    #[non_exhaustive]
     Fit {
         /// The fitting method, for example `Gaussian MLE`.
         method: &'static str,
@@ -146,6 +149,7 @@ pub enum Error {
 
     /// A statistical procedure was handed an invalid configuration.
     #[error("invalid {context} configuration: {message}")]
+    #[non_exhaustive]
     InvalidConfig {
         /// The procedure, for example `Chernoff-Hoeffding` or `SPRT`.
         context: &'static str,
@@ -155,6 +159,7 @@ pub enum Error {
 
     /// A rare-event splitting run hit a numerical problem.
     #[error("adaptive splitting failed at particle {particle}, level {level}: {message}")]
+    #[non_exhaustive]
     Splitting {
         /// The particle index where the problem arose.
         particle: usize,
@@ -167,6 +172,7 @@ pub enum Error {
     /// A formula could not be lowered to a GPU shader.
     #[cfg(feature = "gpu")]
     #[error("could not transpile to a GPU shader: {message}")]
+    #[non_exhaustive]
     Transpilation {
         /// Why the formula cannot run on the GPU.
         message: String,
@@ -175,6 +181,7 @@ pub enum Error {
     /// A GPU run failed after a device was acquired.
     #[cfg(feature = "gpu")]
     #[error("GPU run failed: {message}")]
+    #[non_exhaustive]
     Gpu {
         /// What went wrong on the device.
         message: String,
