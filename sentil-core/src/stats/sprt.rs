@@ -30,16 +30,35 @@ pub enum SprtResult {
     },
 }
 
-/// The test parameters: the indifference region `(p0, p1)`, the error rates, and
-/// the sample cap.
+/// The SPRT parameters.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "RawSprtConfig"))]
 pub struct SprtConfig {
     p0: f64,
     p1: f64,
     alpha: f64,
     beta: f64,
     max_samples: u64,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct RawSprtConfig {
+    p0: f64,
+    p1: f64,
+    alpha: f64,
+    beta: f64,
+    max_samples: u64,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<RawSprtConfig> for SprtConfig {
+    type Error = String;
+
+    fn try_from(raw: RawSprtConfig) -> core::result::Result<Self, Self::Error> {
+        Self::new(raw.p0, raw.p1, raw.alpha, raw.beta, raw.max_samples).map_err(|e| e.to_string())
+    }
 }
 
 impl SprtConfig {
@@ -249,6 +268,31 @@ mod tests {
             phi.check_sequential(&trace, &lifting, &config()),
             Err(Error::NotProbabilistic)
         ));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    #[allow(clippy::float_cmp, reason = "the round trip preserves the exact values")]
+    fn valid_config_round_trips_through_json() {
+        let config = SprtConfig::new(0.3, 0.7, 0.05, 0.1, 500).unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        let back: SprtConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.p0(), 0.3);
+        assert_eq!(back.p1(), 0.7);
+        assert_eq!(back.alpha(), 0.05);
+        assert_eq!(back.beta(), 0.1);
+        assert_eq!(back.max_samples(), 500);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn deserialization_rejects_invalid_shapes() {
+        let inverted = r#"{"p0":0.6,"p1":0.4,"alpha":0.05,"beta":0.05,"max_samples":100}"#;
+        let zero_errors = r#"{"p0":0.4,"p1":0.6,"alpha":0.0,"beta":0.0,"max_samples":100}"#;
+        let no_budget = r#"{"p0":0.4,"p1":0.6,"alpha":0.05,"beta":0.05,"max_samples":0}"#;
+        assert!(serde_json::from_str::<SprtConfig>(inverted).is_err());
+        assert!(serde_json::from_str::<SprtConfig>(zero_errors).is_err());
+        assert!(serde_json::from_str::<SprtConfig>(no_budget).is_err());
     }
 
     #[test]

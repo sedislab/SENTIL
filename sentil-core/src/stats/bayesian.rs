@@ -35,14 +35,31 @@ pub enum BayesResult {
     },
 }
 
-/// The test parameters: the probability `threshold`, the Bayes-factor cutoff that
-/// makes a decision, and the sample cap. The prior is the uniform Beta(1, 1).
+/// The Bayesian test parameters, with a uniform Beta(1, 1) prior.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "RawBayesConfig"))]
 pub struct BayesConfig {
     threshold: f64,
     bayes_factor: f64,
     max_samples: u64,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct RawBayesConfig {
+    threshold: f64,
+    bayes_factor: f64,
+    max_samples: u64,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<RawBayesConfig> for BayesConfig {
+    type Error = String;
+
+    fn try_from(raw: RawBayesConfig) -> core::result::Result<Self, Self::Error> {
+        Self::new(raw.threshold, raw.bayes_factor, raw.max_samples).map_err(|e| e.to_string())
+    }
 }
 
 impl BayesConfig {
@@ -239,5 +256,28 @@ mod tests {
             phi.check_bayesian(&trace, &lifting, &config()),
             Err(Error::NotProbabilistic)
         ));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    #[allow(clippy::float_cmp, reason = "the round trip preserves the exact values")]
+    fn valid_config_round_trips_through_json() {
+        let config = BayesConfig::new(0.8, 50.0, 1000).unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        let back: BayesConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.threshold(), 0.8);
+        assert_eq!(back.bayes_factor(), 50.0);
+        assert_eq!(back.max_samples(), 1000);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn deserialization_rejects_invalid_shapes() {
+        let bad_threshold = r#"{"threshold":0.0,"bayes_factor":100.0,"max_samples":100}"#;
+        let weak_factor = r#"{"threshold":0.5,"bayes_factor":1.0,"max_samples":100}"#;
+        let no_budget = r#"{"threshold":0.5,"bayes_factor":100.0,"max_samples":0}"#;
+        assert!(serde_json::from_str::<BayesConfig>(bad_threshold).is_err());
+        assert!(serde_json::from_str::<BayesConfig>(weak_factor).is_err());
+        assert!(serde_json::from_str::<BayesConfig>(no_budget).is_err());
     }
 }
