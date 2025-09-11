@@ -8,8 +8,6 @@ use super::smooth::SmoothConfig;
 use crate::error::{Error, Result};
 use crate::formula::Formula;
 
-/// The branch-and-bound node cap for the MILP backend, ample for the horizons and
-/// nesting depths open-loop synthesis reaches in practice.
 const MILP_MAX_NODES: usize = 200_000;
 
 /// The search backend a synthesis problem uses.
@@ -120,14 +118,13 @@ pub struct SynthesisResult {
 pub struct Synthesizer;
 
 impl Synthesizer {
-    /// Finds the best input within the problem's budget by climbing the smooth
-    /// robustness, then scores it with the exact robustness. An infeasible spec
-    /// gives a minimally violating input, never an error or nothing.
+    /// Finds the best input within the problem's budget, scored by the exact
+    /// robustness. An infeasible spec gives a minimally violating input.
     ///
     /// # Errors
     ///
-    /// Propagates a specification error (an unknown variable, or a bare
-    /// probabilistic operator) surfaced while scoring.
+    /// Propagates a specification error surfaced while scoring, and returns
+    /// [`Error::Unsupported`] when [`Backend::Milp`] cannot encode the model or spec.
     pub fn solve<M: SystemModel>(problem: &SynthesisProblem<'_, M>) -> Result<SynthesisResult> {
         let model = problem.model;
         let spec = problem.spec;

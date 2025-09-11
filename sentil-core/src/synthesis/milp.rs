@@ -11,19 +11,17 @@ use super::model::{AffineForm, Bounds};
 use crate::error::{Error, Result};
 use crate::formula::{BinaryOp, ComparisonOp, Expr, Formula, Predicate};
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+const DEFAULT_MILP_BUDGET: Duration = Duration::from_secs(5);
 
 const PIVOT_EPS: f64 = 1e-9;
 
 const TIME_EPS: f64 = 1e-9;
 
 /// Solves the affine-plus-STL synthesis problem, returning the packed input of
-/// greatest robustness within `bounds`.
-///
-/// The encoding maximizes the exact discrete robustness of `spec` on the rollout
-/// of `affine`, so a feasible spec yields a satisfying input and an infeasible one
-/// yields the minimally violating input rather than an error. `max_nodes` caps the
-/// branch-and-bound search; on the cap the best integer-feasible input found so far
-/// is returned.
+/// greatest robustness within `bounds`, capped by `max_nodes` and a default
+/// wall-clock budget.
 ///
 /// # Errors
 ///
@@ -49,14 +47,30 @@ pub fn solve_milp(
     bounds: &Bounds,
     max_nodes: usize,
 ) -> Result<Vec<f64>> {
-    let mut enc = Encoder::new(affine, bounds)?;
+    solve_milp_within(affine, spec, bounds, max_nodes, DEFAULT_MILP_BUDGET)
+}
+
+/// [`solve_milp`] with an explicit wall-clock budget for the branch-and-bound loop.
+fn solve_milp_within(
+    affine: &AffineForm,
+    spec: &Formula,
+    bounds: &Bounds,
+    max_nodes: usize,
+    budget: Duration,
+) -> Result<Vec<f64>> {
+    let mut enc = Encoder::new(affine, spec, bounds)?;
     let root = enc.encode(spec, 0)?;
-    enc.lp.objective[root.var] = 1.0;
-    let Some(solution) = branch_and_bound(&enc.lp, &enc.binaries, max_nodes) else {
-        // The state recurrence and the box are always jointly satisfiable, so the
-        // root relaxation is feasible and branch-and-bound returns at least its
-        // fallback. Reaching here would mean the encoding produced an infeasible
-        // root, which is an internal inconsistency rather than a bad input.
+    let var = match root {
+        Node::Static(_) => {
+            let mut input = vec![0.0; enc.inputs.len()];
+            bounds.clamp(&mut input);
+            return Ok(input);
+        }
+        Node::Lp { var } => var,
+    };
+    enc.lp.objective[var] = 1.0;
+    let deadline = Instant::now() + budget;
+    let Some(solution) = branch_and_bound(&enc.lp, &enc.binaries, max_nodes, deadline) else {
         return Err(Error::InvalidConfig {
             context: "MILP synthesis",
             message: "the encoded program was infeasible at the root, which the dynamics \
@@ -84,14 +98,17 @@ struct Encoder {
     binaries: Vec<usize>,
 }
 
-/// A node's robustness in the encoding: the LP variable holding its value.
+/// A subformula's robustness in the encoding.
 #[derive(Clone, Copy)]
-struct Node {
-    var: usize,
+enum Node {
+    /// A robustness fixed independently of the input.
+    Static(f64),
+    /// An LP variable holding the robustness.
+    Lp { var: usize },
 }
 
 impl Encoder {
-    fn new(affine: &AffineForm, bounds: &Bounds) -> Result<Self> {
+    fn new(affine: &AffineForm, spec: &Formula, bounds: &Bounds) -> Result<Self> {
         let n = affine.x0.len();
         let width = affine.b.first().map_or(0, Vec::len);
         let input_dim = width * affine.horizon;
@@ -129,7 +146,7 @@ impl Encoder {
             }
         }
 
-        let big_m = big_m_bound(affine, bounds);
+        let big_m = big_m_bound(affine, spec, bounds);
         Ok(Self {
             lp,
             inputs,
@@ -297,19 +314,28 @@ impl Encoder {
             terms.push((col, -coeff));
         }
         self.lp.equal(&terms, value.constant);
-        Node { var }
+        Node::Lp { var }
     }
 
     fn negate(&mut self, child: Node) -> Node {
-        let var = self.lp.add_variable(f64::NEG_INFINITY, f64::INFINITY);
-        self.lp.equal(&[(var, 1.0), (child.var, 1.0)], 0.0);
-        Node { var }
+        match child {
+            Node::Static(value) => Node::Static(-value),
+            Node::Lp { var } => {
+                let neg = self.lp.add_variable(f64::NEG_INFINITY, f64::INFINITY);
+                self.lp.equal(&[(neg, 1.0), (var, 1.0)], 0.0);
+                Node::Lp { var: neg }
+            }
+        }
     }
 
-    /// A constant robustness node, used for the out-of-range `next`.
     fn constant(&mut self, value: f64) -> Node {
-        let var = self.lp.add_variable(value, value);
-        Node { var }
+        if value.is_finite() {
+            Node::Lp {
+                var: self.lp.add_variable(value, value),
+            }
+        } else {
+            Node::Static(value)
+        }
     }
 
     fn min_of(&mut self, members: &[Node]) -> Node {
@@ -321,35 +347,40 @@ impl Encoder {
     }
 
     /// The big-M reduction of `members` to their min or max.
-    ///
-    /// The min node satisfies `rho <= m_i` for every member, and the selector
-    /// binaries (one per member, summing to one) make it tight from below:
-    /// `rho >= m_i - M(1 - b_i)`, so the chosen member pins `rho` to itself while
-    /// the others slacken. The max case is the dual. An empty set returns the
-    /// operator's identity and no binaries.
     fn reduce(&mut self, members: &[Node], kind: Reduce) -> Node {
-        match members {
-            [] => self.constant(kind.identity()),
-            [single] => *single,
+        let mut lp_vars = Vec::with_capacity(members.len());
+        for m in members {
+            match *m {
+                Node::Lp { var } => lp_vars.push(var),
+                Node::Static(value) => match kind.fold(value) {
+                    Fold::Decides => return Node::Static(value),
+                    Fold::Drops => {}
+                    Fold::Member => lp_vars.push(self.lp.add_variable(value, value)),
+                },
+            }
+        }
+        match lp_vars.as_slice() {
+            [] => Node::Static(kind.identity()),
+            [single] => Node::Lp { var: *single },
             _ => {
                 let rho = self.lp.add_variable(f64::NEG_INFINITY, f64::INFINITY);
-                let mut selectors = Vec::with_capacity(members.len());
-                for m in members {
+                let mut selectors = Vec::with_capacity(lp_vars.len());
+                for &m in &lp_vars {
                     let b = self.lp.add_variable(0.0, 1.0);
                     self.binaries.push(b);
                     selectors.push(b);
                     match kind {
                         Reduce::Min => {
-                            self.lp.less_equal(&[(rho, 1.0), (m.var, -1.0)], 0.0);
+                            self.lp.less_equal(&[(rho, 1.0), (m, -1.0)], 0.0);
                             self.lp.greater_equal(
-                                &[(rho, 1.0), (m.var, -1.0), (b, -self.big_m)],
+                                &[(rho, 1.0), (m, -1.0), (b, -self.big_m)],
                                 -self.big_m,
                             );
                         }
                         Reduce::Max => {
-                            self.lp.greater_equal(&[(rho, 1.0), (m.var, -1.0)], 0.0);
+                            self.lp.greater_equal(&[(rho, 1.0), (m, -1.0)], 0.0);
                             self.lp.less_equal(
-                                &[(rho, 1.0), (m.var, -1.0), (b, self.big_m)],
+                                &[(rho, 1.0), (m, -1.0), (b, self.big_m)],
                                 self.big_m,
                             );
                         }
@@ -357,7 +388,7 @@ impl Encoder {
                 }
                 let select: Vec<(usize, f64)> = selectors.iter().map(|&b| (b, 1.0)).collect();
                 self.lp.equal(&select, 1.0);
-                Node { var: rho }
+                Node::Lp { var: rho }
             }
         }
     }
@@ -370,13 +401,34 @@ enum Reduce {
 }
 
 impl Reduce {
-    /// The reducer's identity over an empty set, matching the exact semantics.
+    /// The reducer's identity over an empty set.
     fn identity(self) -> f64 {
         match self {
             Reduce::Min => f64::INFINITY,
             Reduce::Max => f64::NEG_INFINITY,
         }
     }
+
+    /// How a static member folds into this reduction.
+    fn fold(self, value: f64) -> Fold {
+        if value.is_finite() {
+            Fold::Member
+        } else if (value > 0.0) == matches!(self, Reduce::Max) {
+            Fold::Decides
+        } else {
+            Fold::Drops
+        }
+    }
+}
+
+/// How a static `+/-inf` member folds into a min or max reduction.
+enum Fold {
+    /// It fixes the result on its own.
+    Decides,
+    /// It leaves the reduction unchanged.
+    Drops,
+    /// A finite static, joining as an ordinary pinned member.
+    Member,
 }
 
 /// An affine form over the LP variables: `sum coeff * var + constant`.
@@ -775,28 +827,20 @@ fn pivot(a: &mut [Vec<f64>], b: &mut [f64], basis: &mut [usize], row: usize, col
     basis[row] = col;
 }
 
-/// Branch and bound over the binary variables on top of the LP relaxation.
-///
-/// It solves the relaxation, and if a binary variable is fractional it branches by
-/// fixing that variable to zero and to one, keeping the best integer-feasible
-/// objective and pruning a subproblem whose relaxation cannot beat the incumbent.
-/// `max_nodes` caps the search; on the cap the best solution found so far is
-/// returned. Returns `None` only when the root relaxation is itself infeasible,
-/// which the affine encoding never produces.
+/// Branch and bound over the binary variables on top of the LP relaxation, capped
+/// by `max_nodes` and `deadline`.
 fn branch_and_bound(
     lp: &LinearProgram,
     binaries: &[usize],
     max_nodes: usize,
+    deadline: Instant,
 ) -> Option<LpSolution> {
     let mut incumbent: Option<LpSolution> = None;
-    // The root relaxation is feasible and bounds-respecting; it backstops the
-    // answer if the cap truncates the search before an integer leaf closes, so the
-    // caller always gets a usable input rather than nothing.
     let mut fallback: Option<LpSolution> = None;
     let mut stack = vec![lp.clone()];
     let mut nodes = 0;
     while let Some(node) = stack.pop() {
-        if nodes >= max_nodes {
+        if nodes >= max_nodes || Instant::now() >= deadline {
             break;
         }
         nodes += 1;
@@ -846,18 +890,23 @@ fn branch_and_bound(
     incumbent.or(fallback)
 }
 
-/// A finite big-M that bounds every robustness value the encoding can produce.
-///
-/// Robustness is a signed margin `f(x) - c`, so its magnitude is at most the span
-/// of `f` over the reachable states plus the constant. The reachable state is
-/// bounded by rolling the box of inputs through the dynamics with absolute values,
-/// which gives a conservative, finite cap; a generous multiple keeps the big-M
-/// constraints slack at the optimum without inflating the numbers.
-fn big_m_bound(affine: &AffineForm, bounds: &Bounds) -> f64 {
+/// A finite big-M that strictly dominates the largest member spread the encoding
+/// can produce.
+fn big_m_bound(affine: &AffineForm, spec: &Formula, bounds: &Bounds) -> f64 {
+    let reach = state_reach(affine, bounds);
+    let names = &affine.variables;
+    let max_magnitude = predicate_magnitudes(spec)
+        .map(|margin| margin.magnitude(names, &reach))
+        .fold(0.0, f64::max);
+    (4.0 * max_magnitude + 1.0).max(1.0)
+}
+
+/// A per-state bound on the reachable magnitude `|x_s|` over the horizon.
+fn state_reach(affine: &AffineForm, bounds: &Bounds) -> Vec<f64> {
     let width = affine.b.first().map_or(0, Vec::len);
     let input_cap = |i: usize| bounds.lower()[i].abs().max(bounds.upper()[i].abs());
     let mut reach: Vec<f64> = affine.x0.iter().map(|x| x.abs()).collect();
-    let mut peak = reach.iter().copied().fold(0.0, f64::max);
+    let mut peak = reach.clone();
     for t in 0..affine.horizon {
         let next: Vec<f64> = affine
             .a
@@ -873,12 +922,132 @@ fn big_m_bound(affine: &AffineForm, bounds: &Bounds) -> f64 {
                 drift + control
             })
             .collect();
-        peak = peak.max(next.iter().copied().fold(0.0, f64::max));
+        for (p, &v) in peak.iter_mut().zip(&next) {
+            *p = p.max(v);
+        }
         reach = next;
     }
-    // The margin can be twice the state span (two reachable states differenced)
-    // plus headroom; a finite, non-tiny floor guards a degenerate all-zero model.
-    (4.0 * peak + 1.0).max(1.0)
+    peak
+}
+
+/// The affine margin `lhs - rhs` of every predicate in `spec`.
+fn predicate_magnitudes(spec: &Formula) -> impl Iterator<Item = Margin> + '_ {
+    fn walk(formula: &Formula, out: &mut Vec<Margin>) {
+        match formula {
+            Formula::Predicate(p) => {
+                if let (Some(lhs), Some(rhs)) = (margin_of(&p.lhs), margin_of(&p.rhs)) {
+                    out.push(lhs.sub(&rhs));
+                }
+            }
+            Formula::Not(f)
+            | Formula::Always(_, f)
+            | Formula::Eventually(_, f)
+            | Formula::Historically(_, f)
+            | Formula::Once(_, f)
+            | Formula::Next(f)
+            | Formula::Probabilistic(_, _, f) => walk(f, out),
+            Formula::And(l, r)
+            | Formula::Or(l, r)
+            | Formula::Implies(l, r)
+            | Formula::Until(_, l, r)
+            | Formula::Since(_, l, r) => {
+                walk(l, out);
+                walk(r, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(spec, &mut out);
+    out.into_iter()
+}
+
+/// An affine form over named state components, used to size the big-M.
+struct Margin {
+    terms: BTreeMap<String, f64>,
+    constant: f64,
+}
+
+impl Margin {
+    fn add(&self, other: &Self) -> Self {
+        let mut terms = self.terms.clone();
+        for (name, &c) in &other.terms {
+            *terms.entry(name.clone()).or_insert(0.0) += c;
+        }
+        Self {
+            terms,
+            constant: self.constant + other.constant,
+        }
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        let mut terms = self.terms.clone();
+        for (name, &c) in &other.terms {
+            *terms.entry(name.clone()).or_insert(0.0) -= c;
+        }
+        Self {
+            terms,
+            constant: self.constant - other.constant,
+        }
+    }
+
+    /// The product, defined only when one side is a bare constant.
+    fn mul(&self, other: &Self) -> Option<Self> {
+        let scale = |m: &Self, factor: f64| Self {
+            terms: m.terms.iter().map(|(n, &c)| (n.clone(), c * factor)).collect(),
+            constant: m.constant * factor,
+        };
+        match (self.terms.is_empty(), other.terms.is_empty()) {
+            (true, _) => Some(scale(other, self.constant)),
+            (_, true) => Some(scale(self, other.constant)),
+            _ => None,
+        }
+    }
+
+    /// The largest `|margin|` over the reachable box.
+    fn magnitude(&self, names: &[String], reach: &[f64]) -> f64 {
+        let bound: f64 = self
+            .terms
+            .iter()
+            .map(|(name, coeff)| {
+                let r = names
+                    .iter()
+                    .position(|n| n == name)
+                    .map_or(0.0, |s| reach[s]);
+                coeff.abs() * r
+            })
+            .sum();
+        bound + self.constant.abs()
+    }
+}
+
+/// The affine form of an arithmetic term over named state components, or `None`
+/// when the term is not affine.
+fn margin_of(expr: &Expr) -> Option<Margin> {
+    match expr {
+        Expr::Literal(v) => Some(Margin {
+            terms: BTreeMap::new(),
+            constant: *v,
+        }),
+        Expr::Variable(name) => {
+            let mut terms = BTreeMap::new();
+            terms.insert(name.clone(), 1.0);
+            Some(Margin {
+                terms,
+                constant: 0.0,
+            })
+        }
+        Expr::Binary(op, l, r) => {
+            let a = margin_of(l)?;
+            let b = margin_of(r)?;
+            match op {
+                BinaryOp::Add => Some(a.add(&b)),
+                BinaryOp::Sub => Some(a.sub(&b)),
+                BinaryOp::Mul => a.mul(&b),
+                BinaryOp::Div | BinaryOp::Mod | BinaryOp::Pow => None,
+            }
+        }
+        Expr::Call(..) => None,
+    }
 }
 
 #[cfg(test)]
@@ -995,10 +1164,13 @@ mod tests {
         ];
         for text in specs {
             let spec = Formula::parse(text).unwrap();
-            let mut enc = Encoder::new(&affine, &box_bounds(5)).unwrap();
-            let root = enc.encode(&spec, 0).unwrap();
-            enc.lp.objective[root.var] = 1.0;
-            let solution = branch_and_bound(&enc.lp, &enc.binaries, 200_000).unwrap();
+            let mut enc = Encoder::new(&affine, &spec, &box_bounds(5)).unwrap();
+            let Node::Lp { var } = enc.encode(&spec, 0).unwrap() else {
+                panic!("{text}: expected a non-static root");
+            };
+            enc.lp.objective[var] = 1.0;
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let solution = branch_and_bound(&enc.lp, &enc.binaries, 200_000, deadline).unwrap();
             let input: Vec<f64> = enc.inputs.iter().map(|&v| solution.values[v]).collect();
             let rho = exact(&model, &spec, &input);
             assert!(
@@ -1059,6 +1231,65 @@ mod tests {
         let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
         let input = solve_milp(&affine, &spec, &box_bounds(5), 1).unwrap();
         assert_eq!(input.len(), 5);
+        assert!(input.iter().all(|&u| (-1.0..=1.0).contains(&u)), "input {input:?}");
+    }
+
+    #[test]
+    fn mixed_large_and_small_thresholds_stay_feasible() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec =
+            Formula::parse("(eventually[0, 5](pos > 1000)) and (always[0, 5](pos < 5))").unwrap();
+        let input = solve_milp(&affine, &spec, &box_bounds(5), 100_000).unwrap();
+        let rho = exact(&model, &spec, &input);
+        assert!(rho < 0.0 && rho.is_finite(), "rho {rho}");
+        assert!((rho + 995.0).abs() < 1e-6, "expected -995, got {rho}");
+    }
+
+    #[test]
+    fn an_empty_always_window_holds() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("always[10, 12](pos > 2)").unwrap();
+        let input = solve_milp(&affine, &spec, &box_bounds(5), 100_000).unwrap();
+        assert_eq!(input.len(), 5);
+        let rho = exact(&model, &spec, &input);
+        assert!(rho.is_infinite() && rho > 0.0, "rho {rho}");
+    }
+
+    #[test]
+    fn an_empty_eventually_window_does_not_hold() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("eventually[10, 12](pos > 2)").unwrap();
+        let input = solve_milp(&affine, &spec, &box_bounds(5), 100_000).unwrap();
+        assert_eq!(input.len(), 5);
+        let rho = exact(&model, &spec, &input);
+        assert!(rho.is_infinite() && rho < 0.0, "rho {rho}");
+    }
+
+    #[test]
+    fn a_partially_in_range_window_still_encodes_its_steps() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("eventually[3, 12](pos > 2)").unwrap();
+        let input = solve_milp(&affine, &spec, &box_bounds(5), 100_000).unwrap();
+        let rho = exact(&model, &spec, &input);
+        assert!(rho.is_finite() && rho >= 0.0, "rho {rho}");
+    }
+
+    #[test]
+    fn a_large_horizon_until_returns_within_the_budget() {
+        let model = integrator(8);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("(pos > -3) until[0, 8] (pos > 2)").unwrap();
+        let bounds = box_bounds(8);
+        let start = Instant::now();
+        let input =
+            solve_milp_within(&affine, &spec, &bounds, 1_000_000, Duration::from_millis(500))
+                .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(3), "ran for {:?}", start.elapsed());
+        assert_eq!(input.len(), 8);
         assert!(input.iter().all(|&u| (-1.0..=1.0).contains(&u)), "input {input:?}");
     }
 }
