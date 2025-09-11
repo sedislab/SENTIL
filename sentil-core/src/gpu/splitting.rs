@@ -223,6 +223,9 @@ fn build_assignment(z: &[f32], level: f32, seed: u32, round: u32) -> Vec<u32> {
         .filter(|&i| z[i] >= level)
         .map(|i| i as u32)
         .collect();
+    if survivors.is_empty() {
+        return (0..z.len() as u32).collect();
+    }
     let mut rng = ChaCha8Rng::seed_from_u64(u64::from(seed) ^ (u64::from(round) << 40));
     (0..z.len())
         .map(|i| {
@@ -734,14 +737,20 @@ mod tests {
     }
 
     #[test]
+    fn the_assignment_is_identity_with_no_survivors() {
+        let z = [1.0_f32, 2.0, 0.5];
+        assert_eq!(build_assignment(&z, 10.0, 42, 1), [0, 1, 2]);
+    }
+
+    #[test]
     #[ignore = "needs a GPU; run with --ignored on a GPU node"]
     fn the_splitter_runs_on_a_device_and_returns_a_probability() {
         let (model, psi, symbols) = walk_model();
         let estimate = gpu_split(&model, &psi, &symbols, 4096, 33, 0.0, 7).unwrap();
         assert!(
-            (0.0..=1.0).contains(&estimate.probability),
+            (0.0..=1.0).contains(&estimate.violation_probability),
             "probability {}",
-            estimate.probability
+            estimate.violation_probability
         );
         assert_eq!(estimate.particles, 4096);
         assert!(estimate.levels > 0, "expected several splitting levels");
@@ -802,7 +811,7 @@ mod tests {
             seed: 11,
         };
         let estimate = phi.check_rare_event_gpu(&model, &config).unwrap();
-        assert!((0.0..=1.0).contains(&estimate.probability));
+        assert!((0.0..=1.0).contains(&estimate.violation_probability));
     }
 
     #[test]
@@ -833,7 +842,7 @@ mod tests {
             sum += phi
                 .check_rare_event_gpu(&model, &config)
                 .unwrap()
-                .probability;
+                .violation_probability;
         }
         let mean = sum / runs as f64;
         let relative = (mean - analytic).abs() / analytic;
@@ -870,7 +879,7 @@ mod tests {
             gpu_sum += phi
                 .check_rare_event_gpu(&model, &config)
                 .unwrap()
-                .probability;
+                .violation_probability;
             cpu_sum += phi
                 .check_rare_event(&system, &config)
                 .unwrap()
