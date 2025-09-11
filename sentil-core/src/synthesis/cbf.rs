@@ -9,7 +9,7 @@
 
 use super::model::Bounds;
 use super::qp::solve_qp;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// A least-restrictive control-barrier safety filter over a fixed input box.
 pub struct SafetyFilter {
@@ -68,7 +68,16 @@ impl SafetyFilter {
                 h.push(-lo);
             }
         }
-        for (coefficients, bound) in barriers {
+        for (k, (coefficients, bound)) in barriers.iter().enumerate() {
+            if coefficients.len() != n {
+                return Err(Error::InvalidConfig {
+                    context: "safety filter",
+                    message: format!(
+                        "barrier {k} has {} coefficients but the input has width {n}",
+                        coefficients.len()
+                    ),
+                });
+            }
             g.push(coefficients.iter().map(|&x| -x).collect());
             h.push(-bound);
         }
@@ -99,5 +108,18 @@ mod tests {
         let filter = SafetyFilter::new(Bounds::new([-2.0], [2.0]).unwrap());
         let u = filter.filter(&[5.0], &[]).unwrap();
         assert!((u[0] - 2.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_barrier_of_the_wrong_width_is_named_in_the_error() {
+        let filter = SafetyFilter::new(Bounds::unbounded(2));
+        let err = filter
+            .filter(&[0.0, 0.0], &[(vec![1.0, 0.0], 0.0), (vec![1.0], 0.0)])
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig { context: "safety filter", ref message }
+                if message.contains("barrier 1") && message.contains("width 2")
+        ));
     }
 }

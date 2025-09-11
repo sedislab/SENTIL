@@ -12,8 +12,10 @@
 //! re-planning from the live state within a deadline. The [`SafetyFilter`] shields a
 //! nominal controller, overriding it as little as a control barrier allows.
 //! [`Formula::find_counterexample`](crate::Formula::find_counterexample) searches for
-//! a violating trajectory, and (with the `statistical` feature) a `ChanceConstraint`
-//! checks a probabilistic guarantee against a stochastic system.
+//! a violating trajectory by local descent, and
+//! [`Formula::falsify`](crate::Formula::falsify) does the same globally with CMA-ES
+//! restarts for a rugged landscape. With the `statistical` feature a
+//! `ChanceConstraint` checks a probabilistic guarantee against a stochastic system.
 //!
 //! ```
 //! use sentil::{Bounds, Formula, LinearModel, SynthesisProblem, Synthesizer};

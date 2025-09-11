@@ -94,26 +94,36 @@ impl Default for SmoothConfig {
 
 /// A smooth lower bound on the minimum of `values`, approaching the true minimum
 /// as `beta` grows. An empty slice has minimum positive infinity.
+///
+/// `beta` must be finite and positive, the temperature [`SmoothConfig::new`]
+/// validates. A non-positive `beta` would make the soft minimum diverge or flip
+/// into a maximum, so it falls back to the exact minimum instead.
 #[must_use]
 pub fn soft_min(values: &[f64], beta: f64) -> f64 {
     let shift = values.iter().copied().fold(f64::INFINITY, f64::min);
-    if !shift.is_finite() {
-        return shift;
+    if shift.is_finite() && beta.is_finite() && beta > 0.0 {
+        let sum: f64 = values.iter().map(|&x| (-beta * (x - shift)).exp()).sum();
+        shift - sum.ln() / beta
+    } else {
+        shift
     }
-    let sum: f64 = values.iter().map(|&x| (-beta * (x - shift)).exp()).sum();
-    shift - sum.ln() / beta
 }
 
 /// A smooth upper bound on the maximum of `values`, approaching the true maximum
 /// as `beta` grows. An empty slice has maximum negative infinity.
+///
+/// `beta` must be finite and positive, the temperature [`SmoothConfig::new`]
+/// validates. A non-positive `beta` would make the soft maximum diverge or flip
+/// into a minimum, so it falls back to the exact maximum instead.
 #[must_use]
 pub fn soft_max(values: &[f64], beta: f64) -> f64 {
     let shift = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    if !shift.is_finite() {
-        return shift;
+    if shift.is_finite() && beta.is_finite() && beta > 0.0 {
+        let sum: f64 = values.iter().map(|&x| (beta * (x - shift)).exp()).sum();
+        shift + sum.ln() / beta
+    } else {
+        shift
     }
-    let sum: f64 = values.iter().map(|&x| (beta * (x - shift)).exp()).sum();
-    shift + sum.ln() / beta
 }
 
 fn soft_min2(acc: f64, x: f64, beta: f64) -> f64 {
@@ -127,29 +137,41 @@ fn soft_min2(acc: f64, x: f64, beta: f64) -> f64 {
 /// Arithmetic-geometric mean soft minimum. When every margin is positive it is the
 /// geometric mean of the margins shifted by one, which recovers the exact value
 /// when the margins are equal; otherwise it averages the violations, so it shares
-/// its sign with the true minimum. An empty slice has minimum positive infinity.
+/// its sign with the true minimum. A positive infinity is the identity for the
+/// minimum and is dropped, so an empty (or all-infinite) slice has minimum positive
+/// infinity, which keeps the empty-prefix until/since witness from blowing up.
 fn agm_min(values: &[f64]) -> f64 {
-    if values.is_empty() {
+    let count = values.iter().filter(|r| **r != f64::INFINITY).count();
+    if count == 0 {
         return f64::INFINITY;
     }
-    let count = values.len() as f64;
+    let count = count as f64;
     if values.iter().all(|&r| r > 0.0) {
-        let log_mean = values.iter().map(|&r| (1.0 + r).ln()).sum::<f64>() / count;
+        let log_mean = values
+            .iter()
+            .filter(|r| **r != f64::INFINITY)
+            .map(|&r| (1.0 + r).ln())
+            .sum::<f64>()
+            / count;
         log_mean.exp() - 1.0
     } else {
         values.iter().filter(|&&r| r <= 0.0).sum::<f64>() / count
     }
 }
 
-/// Arithmetic-geometric mean soft maximum, the dual of [`agm_min`]. An empty slice
-/// has maximum negative infinity.
 fn agm_max(values: &[f64]) -> f64 {
-    if values.is_empty() {
+    let count = values.iter().filter(|r| **r != f64::NEG_INFINITY).count();
+    if count == 0 {
         return f64::NEG_INFINITY;
     }
-    let count = values.len() as f64;
+    let count = count as f64;
     if values.iter().all(|&r| r < 0.0) {
-        let log_mean = values.iter().map(|&r| (1.0 - r).ln()).sum::<f64>() / count;
+        let log_mean = values
+            .iter()
+            .filter(|r| **r != f64::NEG_INFINITY)
+            .map(|&r| (1.0 - r).ln())
+            .sum::<f64>()
+            / count;
         1.0 - log_mean.exp()
     } else {
         values.iter().filter(|&&r| r >= 0.0).sum::<f64>() / count
@@ -443,11 +465,29 @@ mod tests {
     }
 
     #[test]
+    fn a_non_positive_beta_falls_back_to_the_exact_extremum() {
+        let values = [1.0, -2.0, 3.5, 0.25];
+        for beta in [0.0, -5.0, f64::NAN] {
+            assert_eq!(soft_min(&values, beta), -2.0);
+            assert_eq!(soft_max(&values, beta), 3.5);
+        }
+    }
+
+    #[test]
     fn the_agm_recovers_equal_margins_and_keeps_the_sign() {
         assert!((agm_min(&[3.0, 3.0]) - 3.0).abs() < 1e-12);
         assert!((agm_max(&[-3.0, -3.0]) + 3.0).abs() < 1e-12);
         assert!(agm_min(&[5.0, -1.0]) < 0.0);
         assert!(agm_max(&[-5.0, 1.0]) > 0.0);
+    }
+
+    #[test]
+    fn the_agm_drops_infinite_operands_at_the_window_head() {
+        assert!((agm_min(&[2.0, f64::INFINITY]) - 2.0).abs() < 1e-12);
+        assert!((agm_min(&[-1.0, f64::INFINITY]) + 1.0).abs() < 1e-12);
+        assert!((agm_max(&[-2.0, f64::NEG_INFINITY]) + 2.0).abs() < 1e-12);
+        assert_eq!(agm_min(&[f64::INFINITY]), f64::INFINITY);
+        assert_eq!(agm_max(&[f64::NEG_INFINITY]), f64::NEG_INFINITY);
     }
 
     #[test]

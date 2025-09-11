@@ -1,11 +1,12 @@
 //! Reverse-mode differentiation of the smooth robustness.
 //!
-//! One backward pass over the formula tree gives the exact gradient of the smooth
-//! robustness with respect to every trace value, where finite differences would
-//! need a forward evaluation per value and carry a step-size error. This is the
-//! differentiable signal-temporal-logic primitive for learning and gradient-based
-//! trajectory optimization: a differentiable model that supplies its own Jacobian
-//! chains this to reach the gradient with respect to its own inputs.
+//! A backward pass over the formula tree gives the exact gradient of the smooth
+//! robustness with respect to every trace value in one sweep over the trace per
+//! node, where finite differences would need a forward evaluation per value and
+//! carry a step-size error. This is the differentiable signal-temporal-logic
+//! primitive for learning and gradient-based trajectory optimization: a
+//! differentiable model that supplies its own Jacobian chains this to reach the
+//! gradient with respect to its own inputs.
 
 use std::collections::BTreeMap;
 
@@ -234,7 +235,7 @@ where
                             term: format!("{l} % {r}"),
                         });
                     }
-                    Ok(da - (a / b).floor() * db)
+                    Ok(da - (a / b).trunc() * db)
                 }
                 BinaryOp::Pow => {
                     if db == 0.0 {
@@ -257,9 +258,10 @@ where
         if let [arg] = args {
             Ok(outer(eval_expr(arg, lookup)?) * expr_grad(arg, var, lookup)?)
         } else {
-            Err(Error::UnknownFunction {
+            Err(Error::ArityMismatch {
                 name: name.to_owned(),
-                arity: args.len(),
+                expected: 1,
+                found: args.len(),
             })
         }
     };
@@ -284,9 +286,10 @@ where
                     expr_grad(r, var, lookup)
                 }
             } else {
-                Err(Error::UnknownFunction {
+                Err(Error::ArityMismatch {
                     name: name.to_owned(),
-                    arity: args.len(),
+                    expected: 2,
+                    found: args.len(),
                 })
             }
         }
@@ -388,6 +391,7 @@ mod tests {
         check("once[0, 1](x > 1)", &[("x", vec![0.2, 1.4, 0.6])]);
         check("next(x > 0)", &[("x", vec![1.0, 0.5, 2.0])]);
         check("always[0, 2](eventually[0, 1](x > 0))", &[("x", vec![-0.5, 1.0, 0.3, 2.0])]);
+        check("x % y > -2", &[("x", vec![-7.0, -5.0]), ("y", vec![3.0, 4.0])]);
     }
 
     #[test]
