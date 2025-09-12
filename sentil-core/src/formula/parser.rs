@@ -40,6 +40,11 @@ impl Parser {
         &self.tokens[self.pos].kind
     }
 
+    fn peek_next(&self) -> &TokenKind {
+        let i = (self.pos + 1).min(self.tokens.len() - 1);
+        &self.tokens[i].kind
+    }
+
     fn enter(&mut self) -> Result<(), ParseError> {
         self.depth += 1;
         if self.depth > MAX_DEPTH {
@@ -145,6 +150,23 @@ impl Parser {
     }
 
     fn temporal(&mut self) -> Result<Formula, ParseError> {
+        if matches!(
+            self.peek(),
+            TokenKind::Always
+                | TokenKind::Eventually
+                | TokenKind::Next
+                | TokenKind::Historically
+                | TokenKind::Once
+        ) && is_comparison(self.peek_next())
+        {
+            let (line, column) = self.position();
+            let hint = reserved_hint(self.peek()).unwrap_or_default();
+            return Err(ParseError::at(
+                format!("expected a value, found {}; {hint}", self.peek().describe()),
+                line,
+                column,
+            ));
+        }
         match self.peek() {
             TokenKind::Always => {
                 self.bump();
@@ -196,7 +218,10 @@ impl Parser {
         let threshold = self.signed_number("a probability threshold")?;
         if !(0.0..=1.0).contains(&threshold) {
             return Err(ParseError::at(
-                format!("probability threshold {threshold} must lie between 0 and 1"),
+                format!(
+                    "probability threshold {threshold} must lie between 0 and 1; `P` is reserved \
+                     for the probabilistic operator, so rename the signal if you meant a variable P"
+                ),
                 line,
                 column,
             ));
@@ -311,11 +336,11 @@ impl Parser {
             }
             other => {
                 let (line, column) = self.position();
-                return Err(ParseError::at(
-                    format!("expected a value or `(`, found {}", other.describe()),
-                    line,
-                    column,
-                ));
+                let mut message = format!("expected a value or `(`, found {}", other.describe());
+                if let Some(hint) = reserved_hint(other) {
+                    message = format!("{message}; {hint}");
+                }
+                return Err(ParseError::at(message, line, column));
             }
         };
         self.leave();
@@ -484,6 +509,36 @@ impl Parser {
     }
 }
 
+fn is_comparison(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Less
+            | TokenKind::LessEqual
+            | TokenKind::Greater
+            | TokenKind::GreaterEqual
+            | TokenKind::Equal
+            | TokenKind::NotEqual
+    )
+}
+
+fn reserved_hint(kind: &TokenKind) -> Option<&'static str> {
+    Some(match kind {
+        TokenKind::Always => "`G`, `globally`, and `always` are reserved for the always operator",
+        TokenKind::Eventually => {
+            "`F`, `finally`, and `eventually` are reserved for the eventually operator"
+        }
+        TokenKind::Until => "`U` and `until` are reserved for the until operator",
+        TokenKind::Next => "`X` and `next` are reserved for the next operator",
+        TokenKind::Since => "`S` and `since` are reserved for the since operator",
+        TokenKind::Historically => {
+            "`H` and `historically` are reserved for the historically operator"
+        }
+        TokenKind::Once => "`O` and `once` are reserved for the once operator",
+        TokenKind::Probability => "`P` is reserved for the probabilistic operator",
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::ast::{ComparisonOp, Formula};
@@ -586,6 +641,20 @@ mod tests {
     fn probability_threshold_out_of_range() {
         let err = parse("P>=1.5(x > 0)").unwrap_err();
         assert!(err.message.contains("between 0 and 1"));
+    }
+
+    #[test]
+    fn a_reserved_operator_name_used_as_a_variable_is_explained() {
+        let err = parse("G < 5").unwrap_err();
+        assert!(err.message.contains("always operator"), "{}", err.message);
+        let err = parse("x > U").unwrap_err();
+        assert!(err.message.contains("until operator"), "{}", err.message);
+        let err = parse("P < 5").unwrap_err();
+        assert!(
+            err.message.contains("reserved for the probabilistic operator"),
+            "{}",
+            err.message
+        );
     }
 
     #[test]
