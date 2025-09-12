@@ -301,6 +301,8 @@ impl Node for FutureAlwaysNode {
 
         let query_time = time - self.offset_end;
         if query_time < first {
+            // samples before first + offset_start belong to no query yet, so evict before the front read
+            self.window.evict_before(first + self.offset_start);
             let partial = self.window.front_value().unwrap_or(f64::INFINITY);
             return Ok(Robustness::Interval(f64::NEG_INFINITY, partial));
         }
@@ -351,6 +353,8 @@ impl Node for FutureEventuallyNode {
 
         let query_time = time - self.offset_end;
         if query_time < first {
+            // dual of always: drop samples ahead of the oldest query's window
+            self.window.evict_before(first + self.offset_start);
             let partial = self.window.front_value().unwrap_or(f64::NEG_INFINITY);
             return Ok(Robustness::Interval(partial, f64::INFINITY));
         }
@@ -948,6 +952,28 @@ mod tests {
                 .value(),
             -2.0
         );
+    }
+
+    #[test]
+    fn future_always_partial_upper_bound_stays_sound() {
+        let mut m = StreamMonitor::new("always[1, 3](x > 0)").unwrap();
+        for (t, &x) in [-5.0, 10.0, 10.0, 10.0].iter().enumerate() {
+            let r = m.update(t as f64, &[("x", x)]).unwrap();
+            if let Robustness::Interval(_, hi) = r {
+                assert!(hi >= 10.0, "step {t}: provisional upper {hi} below the resolved 10");
+            }
+        }
+    }
+
+    #[test]
+    fn future_eventually_partial_lower_bound_stays_sound() {
+        let mut m = StreamMonitor::new("eventually[1, 3](x > 0)").unwrap();
+        for (t, &x) in [10.0, -5.0, -5.0, -5.0].iter().enumerate() {
+            let r = m.update(t as f64, &[("x", x)]).unwrap();
+            if let Robustness::Interval(lo, _) = r {
+                assert!(lo <= -5.0, "step {t}: provisional lower {lo} above the resolved -5");
+            }
+        }
     }
 
     #[test]
