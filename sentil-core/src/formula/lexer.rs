@@ -3,6 +3,10 @@
 use crate::error::ParseError;
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
+#[cfg(feature = "std")]
+use std::borrow::Cow;
+#[cfg(not(feature = "std"))]
+use alloc::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Token {
@@ -55,10 +59,10 @@ pub(crate) enum TokenKind {
 }
 
 impl TokenKind {
-    pub(crate) fn describe(&self) -> String {
+    pub(crate) fn describe(&self) -> Cow<'static, str> {
         match self {
-            TokenKind::Identifier(s) => format!("variable `{s}`"),
-            TokenKind::Number(n) => format!("number {n}"),
+            TokenKind::Identifier(s) => format!("variable `{s}`").into(),
+            TokenKind::Number(n) => format!("number {n}").into(),
             TokenKind::Always => "`always`".into(),
             TokenKind::Eventually => "`eventually`".into(),
             TokenKind::Until => "`until`".into(),
