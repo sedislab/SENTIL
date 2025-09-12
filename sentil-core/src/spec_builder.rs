@@ -1151,4 +1151,24 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
             );
         }
     }
+
+    #[test]
+    fn time_to_collision_holds_without_dividing_on_a_non_closing_trace() {
+        use crate::{Formula, Trace};
+
+        let text = SpecRegistry::default()
+            .builder("automotive/time_to_collision")
+            .unwrap()
+            .build_deterministic()
+            .unwrap();
+        let formula = Formula::parse(&text).unwrap();
+        let times: Vec<f64> = (0..=30).map(f64::from).collect();
+        let mut trace = Trace::new(times.clone()).unwrap();
+        trace.add_signal("range", vec![40.0; times.len()]).unwrap();
+        trace
+            .add_signal("closing_speed", vec![0.0; times.len()])
+            .unwrap();
+        let robustness = formula.robustness(&trace).unwrap();
+        assert!(robustness > 0.0, "non-closing TTC should hold, got {robustness}");
+    }
 }

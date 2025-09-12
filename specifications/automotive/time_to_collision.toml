@@ -1,17 +1,13 @@
-# Whenever the ego is closing on a lead vehicle, the time-to-collision stays above a
-# minimum. TTC is the range divided by the closing speed, defined only while the
-# closing speed is positive; below the threshold the situation is an imminent-
-# collision hazard the avoidance function must act on. The threshold is an accepted
-# surrogate-safety value, not a standard-mandated number.
-
 [metadata]
 name = "Time To Collision"
 domain = "automotive"
 description = """
 While closing on the lead vehicle (positive closing speed), the time-to-collision \
-range/closing_speed stays above the minimum. The implication leaves the property \
-trivially satisfied when not closing. The 2.0 s default is a common surrogate-safety \
-threshold; set it for the operating domain."""
+stays above the minimum, written as range > ttc_min * closing_speed so it holds \
+without dividing when the closing speed is zero. The implication leaves the property \
+trivially satisfied when not closing, and the robustness reads as a distance margin \
+in metres. The 2.0 s default is a common surrogate-safety threshold; set it for the \
+operating domain."""
 references = [
     "ISO 26262-4:2018, Road vehicles - Functional safety - Part 4, Clause 6.4.2.1 (safety mechanisms), with the ACC/brake stimulus-response example of 6.4.1.2",
 ]
@@ -26,8 +22,8 @@ ttc_min = { type = "float", default = 2.0,  unit = "seconds", description = "Min
 p       = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
 
 [formulas]
-deterministic = "always[0, {T}]((closing_speed > 0.0) implies (range / closing_speed > {ttc_min}))"
-probabilistic = "P >= {p}(always[0, {T}]((closing_speed > 0.0) implies (range / closing_speed > {ttc_min})))"
+deterministic = "always[0, {T}]((closing_speed > 0.0) implies (range > {ttc_min} * closing_speed))"
+probabilistic = "P >= {p}(always[0, {T}]((closing_speed > 0.0) implies (range > {ttc_min} * closing_speed)))"
 
 [noise]
 range         = { model = "Gaussian", mean = 0.0, std_dev = 0.2, interaction = "additive" }
