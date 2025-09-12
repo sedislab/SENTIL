@@ -88,21 +88,29 @@ impl Parser {
 
     fn or(&mut self) -> Result<Formula, ParseError> {
         let mut left = self.and()?;
+        let mut chained = 0;
         while matches!(self.peek(), TokenKind::Or) {
+            self.enter()?;
+            chained += 1;
             self.bump();
             let right = self.and()?;
             left = Formula::Or(Box::new(left), Box::new(right));
         }
+        self.depth -= chained;
         Ok(left)
     }
 
     fn and(&mut self) -> Result<Formula, ParseError> {
         let mut left = self.until()?;
+        let mut chained = 0;
         while matches!(self.peek(), TokenKind::And) {
+            self.enter()?;
+            chained += 1;
             self.bump();
             let right = self.until()?;
             left = Formula::And(Box::new(left), Box::new(right));
         }
+        self.depth -= chained;
         Ok(left)
     }
 
@@ -221,21 +229,26 @@ impl Parser {
 
     fn expr(&mut self) -> Result<Expr, ParseError> {
         let mut left = self.factor()?;
+        let mut chained = 0;
         loop {
             let op = match self.peek() {
                 TokenKind::Plus => BinaryOp::Add,
                 TokenKind::Minus => BinaryOp::Sub,
                 _ => break,
             };
+            self.enter()?;
+            chained += 1;
             self.bump();
             let right = self.factor()?;
             left = Expr::Binary(op, Box::new(left), Box::new(right));
         }
+        self.depth -= chained;
         Ok(left)
     }
 
     fn factor(&mut self) -> Result<Expr, ParseError> {
         let mut left = self.power()?;
+        let mut chained = 0;
         loop {
             let op = match self.peek() {
                 TokenKind::Star => BinaryOp::Mul,
@@ -243,10 +256,13 @@ impl Parser {
                 TokenKind::Percent => BinaryOp::Mod,
                 _ => break,
             };
+            self.enter()?;
+            chained += 1;
             self.bump();
             let right = self.power()?;
             left = Expr::Binary(op, Box::new(left), Box::new(right));
         }
+        self.depth -= chained;
         Ok(left)
     }
 
@@ -607,6 +623,10 @@ mod tests {
             format!("{}x > 0{}", "(".repeat(20_000), ")".repeat(20_000)),
             format!("{}x > 0", "not ".repeat(20_000)),
             format!("x > {}1", "-".repeat(20_000)),
+            format!("x > 0{}", " or x > 0".repeat(20_000)),
+            format!("x > 0{}", " and x > 0".repeat(20_000)),
+            format!("x < 1{}", "+1".repeat(20_000)),
+            format!("x < 1{}", "*1".repeat(20_000)),
         ];
         for bomb in bombs {
             let err = parse(&bomb).unwrap_err();
