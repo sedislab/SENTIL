@@ -1,6 +1,6 @@
 //! A runtime verification engine for Signal Temporal Logic (STL) and its
 //! probabilistic extension, PrSTL.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
 #![allow(
@@ -28,6 +28,7 @@ pub(crate) mod prelude {
     pub(crate) use alloc::sync::Arc;
     pub(crate) use alloc::vec::Vec;
     pub(crate) use alloc::{format, vec};
+    #[cfg(not(test))]
     pub(crate) use num_traits::Float;
 }
 
