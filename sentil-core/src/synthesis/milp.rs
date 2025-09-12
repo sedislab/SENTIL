@@ -122,6 +122,18 @@ impl Encoder {
                 ),
             });
         }
+        if let Some(i) = (0..input_dim)
+            .find(|&i| !bounds.lower()[i].is_finite() || !bounds.upper()[i].is_finite())
+        {
+            return Err(Error::InvalidConfig {
+                context: "MILP synthesis",
+                message: format!(
+                    "input coordinate {i} is unbounded, so the optimal robustness is \
+                     unbounded and the big-M encoding has no finite value; pass a finite \
+                     input box or use Backend::Gradient"
+                ),
+            });
+        }
         let mut lp = LinearProgram::default();
         let inputs: Vec<usize> = (0..input_dim)
             .map(|i| lp.add_variable(bounds.lower()[i], bounds.upper()[i]))
@@ -147,6 +159,15 @@ impl Encoder {
         }
 
         let big_m = big_m_bound(affine, spec, bounds);
+        if !big_m.is_finite() {
+            return Err(Error::InvalidConfig {
+                context: "MILP synthesis",
+                message: "the model's reachable state span is unbounded, so the big-M \
+                          encoding has no finite value; the MILP backend needs finite \
+                          dynamics and a finite input box"
+                    .to_owned(),
+            });
+        }
         Ok(Self {
             lp,
             inputs,
@@ -1200,6 +1221,17 @@ mod tests {
         assert!(matches!(
             solve_milp(&affine, &spec, &box_bounds(5), 1000),
             Err(Error::Unsupported { .. })
+        ));
+    }
+
+    #[test]
+    fn an_unbounded_input_box_is_rejected_rather_than_solved_wrong() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        assert!(matches!(
+            solve_milp(&affine, &spec, &Bounds::unbounded(5), 100_000),
+            Err(Error::InvalidConfig { .. })
         ));
     }
 
