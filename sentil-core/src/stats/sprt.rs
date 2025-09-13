@@ -8,6 +8,13 @@ use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::signal::Trace;
 
+const DEFAULT_SEED: u64 = 42;
+
+#[cfg(feature = "serde")]
+fn default_seed() -> u64 {
+    DEFAULT_SEED
+}
+
 /// The outcome of a sequential test.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SprtResult {
@@ -40,6 +47,8 @@ pub struct SprtConfig {
     alpha: f64,
     beta: f64,
     max_samples: u64,
+    #[cfg_attr(feature = "serde", serde(default = "default_seed"))]
+    seed: u64,
 }
 
 #[cfg(feature = "serde")]
@@ -50,6 +59,8 @@ struct RawSprtConfig {
     alpha: f64,
     beta: f64,
     max_samples: u64,
+    #[serde(default = "default_seed")]
+    seed: u64,
 }
 
 #[cfg(feature = "serde")]
@@ -57,7 +68,9 @@ impl TryFrom<RawSprtConfig> for SprtConfig {
     type Error = String;
 
     fn try_from(raw: RawSprtConfig) -> core::result::Result<Self, Self::Error> {
-        Self::new(raw.p0, raw.p1, raw.alpha, raw.beta, raw.max_samples).map_err(|e| e.to_string())
+        Self::new(raw.p0, raw.p1, raw.alpha, raw.beta, raw.max_samples)
+            .map(|c| c.with_seed(raw.seed))
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -84,7 +97,21 @@ impl SprtConfig {
             alpha,
             beta,
             max_samples,
+            seed: DEFAULT_SEED,
         })
+    }
+
+    /// Sets the base seed for [`Formula::check_sequential`].
+    #[must_use]
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// The base seed used to draw realizations.
+    #[must_use]
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// The lower bound `p0` of the indifference region.
@@ -129,8 +156,8 @@ where
 {
     let accept_h0 = (config.beta / (1.0 - config.alpha)).ln();
     let accept_h1 = ((1.0 - config.beta) / config.alpha).ln();
-    let on_satisfied = (config.p1 / config.p0).ln();
-    let on_unsatisfied = ((1.0 - config.p1) / (1.0 - config.p0)).ln();
+    let on_satisfied = config.p1.ln() - config.p0.ln();
+    let on_unsatisfied = (1.0 - config.p1).ln() - (1.0 - config.p0).ln();
 
     let mut log_likelihood = 0.0;
     for n in 1..=config.max_samples {
@@ -173,8 +200,8 @@ impl Formula {
         let mut buf = trace.clone();
         let mut n = 0u64;
         sequential_test(config, || {
+            let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(n));
             n += 1;
-            let mut rng = ChaCha8Rng::seed_from_u64(n);
             lifting.lift_into(trace, &mut rng, &mut buf)?;
             Ok(inner.robustness(&buf)? >= 0.0)
         })
@@ -268,6 +295,42 @@ mod tests {
             phi.check_sequential(&trace, &lifting, &config()),
             Err(Error::NotProbabilistic)
         ));
+    }
+
+    fn samples_of(result: SprtResult) -> u64 {
+        match result {
+            SprtResult::AcceptH0 { samples }
+            | SprtResult::AcceptH1 { samples }
+            | SprtResult::Inconclusive { samples, .. } => samples,
+        }
+    }
+
+    #[test]
+    fn the_seed_varies_the_realization_stream() {
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let (trace, lifting) = additive_gaussian(0.2);
+        let counts: Vec<u64> = (1..=6)
+            .map(|s| {
+                samples_of(
+                    phi.check_sequential(&trace, &lifting, &config().with_seed(s))
+                        .unwrap(),
+                )
+            })
+            .collect();
+        assert!(
+            counts.iter().any(|&c| c != counts[0]),
+            "the seed must vary the draws, got {counts:?}"
+        );
+    }
+
+    #[test]
+    fn the_same_seed_reproduces_the_run() {
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let (trace, lifting) = additive_gaussian(0.2);
+        let cfg = config().with_seed(7);
+        let a = phi.check_sequential(&trace, &lifting, &cfg).unwrap();
+        let b = phi.check_sequential(&trace, &lifting, &cfg).unwrap();
+        assert_eq!(a, b);
     }
 
     #[cfg(feature = "serde")]
