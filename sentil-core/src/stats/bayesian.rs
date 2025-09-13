@@ -9,6 +9,13 @@ use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::signal::Trace;
 
+const DEFAULT_SEED: u64 = 42;
+
+#[cfg(feature = "serde")]
+fn default_seed() -> u64 {
+    DEFAULT_SEED
+}
+
 /// The outcome of a Bayesian sequential test against a probability threshold.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BayesResult {
@@ -43,6 +50,8 @@ pub struct BayesConfig {
     threshold: f64,
     bayes_factor: f64,
     max_samples: u64,
+    #[cfg_attr(feature = "serde", serde(default = "default_seed"))]
+    seed: u64,
 }
 
 #[cfg(feature = "serde")]
@@ -51,6 +60,8 @@ struct RawBayesConfig {
     threshold: f64,
     bayes_factor: f64,
     max_samples: u64,
+    #[serde(default = "default_seed")]
+    seed: u64,
 }
 
 #[cfg(feature = "serde")]
@@ -58,7 +69,9 @@ impl TryFrom<RawBayesConfig> for BayesConfig {
     type Error = String;
 
     fn try_from(raw: RawBayesConfig) -> core::result::Result<Self, Self::Error> {
-        Self::new(raw.threshold, raw.bayes_factor, raw.max_samples).map_err(|e| e.to_string())
+        Self::new(raw.threshold, raw.bayes_factor, raw.max_samples)
+            .map(|c| c.with_seed(raw.seed))
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -86,7 +99,21 @@ impl BayesConfig {
             threshold,
             bayes_factor,
             max_samples,
+            seed: DEFAULT_SEED,
         })
+    }
+
+    /// Sets the base seed for [`Formula::check_bayesian`].
+    #[must_use]
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// The base seed used to draw realizations.
+    #[must_use]
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// The probability threshold the test decides against.
@@ -110,12 +137,6 @@ impl BayesConfig {
 
 /// Runs the test over a Bernoulli source, calling `draw` for each fresh sample.
 ///
-/// The posterior over the satisfaction probability is Beta(1 + successes,
-/// 1 + failures). The test weighs the posterior mass above the threshold against
-/// the mass below it; once one outweighs the other by the configured Bayes factor
-/// it decides. The comparison is written without division, so a posterior mass of
-/// zero is handled cleanly.
-///
 /// # Errors
 ///
 /// Propagates any error returned by `draw`.
@@ -136,10 +157,12 @@ where
         let b = 1.0 + (n - successes) as f64;
         let below = regularized_incomplete_beta(a, b, config.threshold);
         let posterior = 1.0 - below;
-        if posterior >= config.bayes_factor * below {
+        let prior_h0 = 1.0 - config.threshold;
+        let prior_h1 = config.threshold;
+        if posterior * prior_h1 >= config.bayes_factor * below * prior_h0 {
             return Ok(BayesResult::Holds { samples: n, posterior });
         }
-        if below >= config.bayes_factor * posterior {
+        if below * prior_h0 >= config.bayes_factor * posterior * prior_h1 {
             return Ok(BayesResult::Fails { samples: n, posterior });
         }
     }
@@ -173,8 +196,8 @@ impl Formula {
         let mut buf = trace.clone();
         let mut n = 0u64;
         bayes_sequential_test(config, || {
+            let mut rng = ChaCha8Rng::seed_from_u64(config.seed.wrapping_add(n));
             n += 1;
-            let mut rng = ChaCha8Rng::seed_from_u64(n);
             lifting.lift_into(trace, &mut rng, &mut buf)?;
             Ok(inner.robustness(&buf)? >= 0.0)
         })
@@ -256,6 +279,51 @@ mod tests {
             phi.check_bayesian(&trace, &lifting, &config()),
             Err(Error::NotProbabilistic)
         ));
+    }
+
+    #[test]
+    fn a_high_threshold_uses_the_prior_odds() {
+        let cfg = BayesConfig::new(0.9, 2.0, 5000).unwrap();
+        assert!(matches!(
+            bayes_sequential_test(&cfg, || Ok(true)),
+            Ok(BayesResult::Holds { .. })
+        ));
+    }
+
+    fn samples_of(result: BayesResult) -> u64 {
+        match result {
+            BayesResult::Holds { samples, .. }
+            | BayesResult::Fails { samples, .. }
+            | BayesResult::Inconclusive { samples, .. } => samples,
+        }
+    }
+
+    #[test]
+    fn the_seed_varies_the_realization_stream() {
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let (trace, lifting) = additive_gaussian(0.2);
+        let counts: Vec<u64> = (1..=6)
+            .map(|s| {
+                samples_of(
+                    phi.check_bayesian(&trace, &lifting, &config().with_seed(s))
+                        .unwrap(),
+                )
+            })
+            .collect();
+        assert!(
+            counts.iter().any(|&c| c != counts[0]),
+            "the seed must vary the draws, got {counts:?}"
+        );
+    }
+
+    #[test]
+    fn the_same_seed_reproduces_the_run() {
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let (trace, lifting) = additive_gaussian(0.2);
+        let cfg = config().with_seed(7);
+        let a = phi.check_bayesian(&trace, &lifting, &cfg).unwrap();
+        let b = phi.check_bayesian(&trace, &lifting, &cfg).unwrap();
+        assert_eq!(a, b);
     }
 
     #[cfg(feature = "serde")]
