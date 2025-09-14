@@ -161,9 +161,6 @@ pub struct RareEventResult {
     pub simulations: u64,
 }
 
-/// A trajectory prefix together with its violation score. The score is computed
-/// once when the state is built and carried here, so the splitter reads it rather
-/// than re-evaluating the whole prefix on every `score` and `is_terminal` call.
 #[derive(Clone)]
 struct WalkState {
     samples: Vec<Vec<f64>>,
@@ -173,10 +170,41 @@ struct WalkState {
     score: f64,
 }
 
+#[derive(Clone, Copy)]
+enum ScoreMode<'a> {
+    Always(&'a Formula),
+    Eventually(&'a Formula),
+    Full,
+}
+
+fn classify(inner: &Formula) -> ScoreMode<'_> {
+    match inner {
+        Formula::Always(iv, body) if iv.is_unbounded() && is_atemporal(body) => {
+            ScoreMode::Always(body)
+        }
+        Formula::Eventually(iv, body) if iv.is_unbounded() && is_atemporal(body) => {
+            ScoreMode::Eventually(body)
+        }
+        _ => ScoreMode::Full,
+    }
+}
+
+fn is_atemporal(f: &Formula) -> bool {
+    match f {
+        Formula::Predicate(_) => true,
+        Formula::Not(a) => is_atemporal(a),
+        Formula::And(a, b) | Formula::Or(a, b) | Formula::Implies(a, b) => {
+            is_atemporal(a) && is_atemporal(b)
+        }
+        _ => false,
+    }
+}
+
 struct PrstlWalk<'a> {
     inner: &'a Formula,
     system: &'a StochasticSystem,
     margin: f64,
+    mode: ScoreMode<'a>,
 }
 
 impl RareEventSimulator for PrstlWalk<'_> {
@@ -184,8 +212,16 @@ impl RareEventSimulator for PrstlWalk<'_> {
 
     fn initial_state(&self, rng: &mut dyn RngCore) -> WalkState {
         let v0 = self.system.initial(rng);
-        let samples = vec![v0.clone()];
-        let score = self.compute_score(&samples);
+        let (samples, score) = match self.mode {
+            ScoreMode::Full => {
+                let samples = vec![v0.clone()];
+                let score = self.compute_score(&samples);
+                (samples, score)
+            }
+            ScoreMode::Always(psi) | ScoreMode::Eventually(psi) => {
+                (Vec::new(), self.point_score(psi, &v0))
+            }
+        };
         WalkState {
             samples,
             last_value: v0,
@@ -200,9 +236,22 @@ impl RareEventSimulator for PrstlWalk<'_> {
             return state.clone();
         }
         let next = self.system.advance(&state.last_value, state.time, rng);
-        let mut samples = state.samples.clone();
-        samples.push(next.clone());
-        let score = self.compute_score(&samples);
+        let (samples, score) = match self.mode {
+            ScoreMode::Full => {
+                let mut samples = state.samples.clone();
+                samples.push(next.clone());
+                let score = self.compute_score(&samples);
+                (samples, score)
+            }
+            ScoreMode::Always(psi) => (
+                Vec::new(),
+                fold_extremum(true, state.score, self.point_violation(psi, &next)),
+            ),
+            ScoreMode::Eventually(psi) => (
+                Vec::new(),
+                fold_extremum(false, state.score, self.point_violation(psi, &next)),
+            ),
+        };
         WalkState {
             samples,
             last_value: next,
@@ -223,11 +272,6 @@ impl RareEventSimulator for PrstlWalk<'_> {
 }
 
 impl PrstlWalk<'_> {
-    /// The violation of a prefix: the negated robustness of the inner formula over
-    /// the samples treated as a complete trace, which only ever sees what has
-    /// happened so far. Called once per [`WalkState`] and cached on it. A malformed
-    /// system or evaluation error maps to NaN so the splitter reports
-    /// [`Error::Splitting`] rather than scoring on garbage.
     fn compute_score(&self, samples: &[Vec<f64>]) -> f64 {
         let vars = self.system.variables();
         let mut times = Vec::with_capacity(samples.len());
@@ -253,6 +297,45 @@ impl PrstlWalk<'_> {
             Err(_) => f64::NAN,
         }
     }
+
+    fn point_violation(&self, psi: &Formula, values: &[f64]) -> f64 {
+        let Ok(mut trace) = Trace::new(vec![0.0]) else {
+            return f64::NAN;
+        };
+        for (i, var) in self.system.variables().iter().enumerate() {
+            let value = values.get(i).copied().unwrap_or(f64::NAN);
+            if trace.add_signal(var, vec![value]).is_err() {
+                return f64::NAN;
+            }
+        }
+        match psi.robustness(&trace) {
+            Ok(rho) => -rho,
+            Err(_) => f64::NAN,
+        }
+    }
+
+    fn point_score(&self, psi: &Formula, values: &[f64]) -> f64 {
+        let v = self.point_violation(psi, values);
+        if v.is_nan() {
+            v
+        } else {
+            v.clamp(-1e12, 1e12)
+        }
+    }
+}
+
+/// Folds a per-sample violation into the running extremum, max for always, min for
+/// eventually. NaN propagates; the clamp matches the full recompute's single clamp.
+fn fold_extremum(is_always: bool, running: f64, term: f64) -> f64 {
+    if running.is_nan() || term.is_nan() {
+        return f64::NAN;
+    }
+    let combined = if is_always {
+        running.max(term)
+    } else {
+        running.min(term)
+    };
+    combined.clamp(-1e12, 1e12)
 }
 
 impl Formula {
@@ -273,6 +356,7 @@ impl Formula {
             inner,
             system,
             margin: config.margin,
+            mode: classify(inner),
         };
         let est = adaptive_multilevel_splitting(
             &walk,
@@ -359,6 +443,57 @@ mod tests {
         let trace = system.simulate(&mut rng).unwrap();
         assert_eq!(trace.times(), &[0.0, 1.0, 2.0, 3.0]);
         assert_eq!(trace.signals()["x"], vec![0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn the_incremental_score_matches_the_full_recompute() {
+        use rand::SeedableRng;
+
+        let inner = Formula::parse("always((x < 8.0) and (x > -8.0))").unwrap();
+        assert!(matches!(classify(&inner), ScoreMode::Always(_)));
+        let system = random_walk(40);
+        let fast = PrstlWalk {
+            inner: &inner,
+            system: &system,
+            margin: 0.0,
+            mode: classify(&inner),
+        };
+        let full = PrstlWalk {
+            inner: &inner,
+            system: &system,
+            margin: 0.0,
+            mode: ScoreMode::Full,
+        };
+        let mut rng_fast = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        let mut rng_full = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        let mut sa = fast.initial_state(&mut rng_fast);
+        let mut sb = full.initial_state(&mut rng_full);
+        assert_eq!(sa.score.to_bits(), sb.score.to_bits());
+        for step in 0..40 {
+            sa = fast.step(&sa, &mut rng_fast);
+            sb = full.step(&sb, &mut rng_full);
+            assert_eq!(
+                sa.score.to_bits(),
+                sb.score.to_bits(),
+                "scores diverged at step {step}: fast {} full {}",
+                sa.score,
+                sb.score
+            );
+        }
+    }
+
+    #[test]
+    fn an_eventually_inner_takes_the_fast_path() {
+        let inner = Formula::parse("eventually(x > 8.0)").unwrap();
+        assert!(matches!(classify(&inner), ScoreMode::Eventually(_)));
+        assert!(matches!(
+            classify(&Formula::parse("always[0, 3](x < 8.0)").unwrap()),
+            ScoreMode::Full
+        ));
+        assert!(matches!(
+            classify(&Formula::parse("always(eventually(x < 8.0))").unwrap()),
+            ScoreMode::Full
+        ));
     }
 
     #[test]

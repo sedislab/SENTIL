@@ -194,6 +194,11 @@ impl Interval {
         self.upper.is_some()
     }
 
+    /// Whether the interval is the whole future `[0, inf)`.
+    pub fn is_unbounded(&self) -> bool {
+        self.upper.is_none() && self.lower <= 0.0
+    }
+
     /// Whether `t` lies in the interval.
     pub fn contains(&self, t: f64) -> bool {
         t >= self.lower && self.upper.is_none_or(|u| t <= u)
