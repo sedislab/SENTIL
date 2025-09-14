@@ -245,12 +245,11 @@ fn arrow_columns(
                         ingest_at(path, "an Arrow column cast to Float64 but did not read back as one")
                     })?;
                     for value in values {
-                        match value {
-                            Some(v) => columns[i].push(v),
-                            None => {
-                                columns[i].push(f64::NAN);
-                                nulls[i] += 1;
-                            }
+                        if let Some(v) = value {
+                            columns[i].push(v);
+                        } else {
+                            columns[i].push(f64::NAN);
+                            nulls[i] += 1;
                         }
                     }
                 }
@@ -469,7 +468,7 @@ fn load_mcap(path: &Path) -> Result<Trace> {
     }
     records.sort_by(|a, b| a.0.total_cmp(&b.0));
     let times: Vec<f64> = records.iter().map(|(t, _)| *t).collect();
-    if let Some(t) = times.windows(2).find_map(|w| (w[0] == w[1]).then_some(w[0])) {
+    if let Some(t) = times.windows(2).find_map(|w| (w[0] >= w[1]).then_some(w[0])) {
         return Err(ingest_at(
             path,
             format!("two messages share the log time {t}; an MCAP trace needs distinct times"),
@@ -488,12 +487,11 @@ fn load_mcap(path: &Path) -> Result<Trace> {
         let mut column = Vec::with_capacity(records.len());
         let mut missing = 0usize;
         for (_, obj) in &records {
-            match obj.get(&name).and_then(serde_json::Value::as_f64) {
-                Some(v) => column.push(v),
-                None => {
-                    missing += 1;
-                    column.push(f64::NAN);
-                }
+            if let Some(v) = obj.get(&name).and_then(serde_json::Value::as_f64) {
+                column.push(v);
+            } else {
+                missing += 1;
+                column.push(f64::NAN);
             }
         }
         if missing > 0 {

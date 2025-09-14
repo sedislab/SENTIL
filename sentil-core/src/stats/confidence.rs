@@ -451,9 +451,9 @@ mod tests {
 
     #[test]
     fn z_scores_match_the_standard_values() {
-        assert!((z_score(0.90) - 1.644_853_626_951_472).abs() < 1e-10);
-        assert!((z_score(0.95) - 1.959_963_984_540_054).abs() < 1e-10);
-        assert!((z_score(0.99) - 2.575_829_303_548_900).abs() < 1e-10);
+        assert!((z_score(0.90) - 1.644_853_626_95).abs() < 1e-10);
+        assert!((z_score(0.95) - 1.959_963_984_54).abs() < 1e-10);
+        assert!((z_score(0.99) - 2.575_829_303_55).abs() < 1e-10);
     }
 
     #[test]
