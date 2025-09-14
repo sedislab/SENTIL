@@ -97,10 +97,6 @@ pub fn wilson_interval(successes: u64, trials: u64, level: f64) -> ConfidenceInt
 
 /// The two-sided z critical value for a confidence level, for example `1.95996`
 /// at `0.95`.
-///
-/// `level` must lie in `(0, 1)`. A level of `1` returns `+inf` and a level of `0`
-/// returns a finite but meaningless value, so the interval functions that call
-/// this validate `level` before they reach it.
 #[must_use]
 pub fn z_score(level: f64) -> f64 {
     normal_quantile(0.5 * (1.0 + level))
@@ -146,9 +142,48 @@ pub fn chernoff_hoeffding_samples(epsilon: f64, delta: f64) -> Result<u64> {
     })
 }
 
-/// The inverse of the standard normal cumulative distribution, by Acklam's
-/// rational approximation. Accurate to a few parts in `1e9` across `(0, 1)`,
-/// which is well past what a confidence bound needs.
+/// How many samples bound the Wilson (or normal) half-width by `epsilon` at the
+/// given confidence `level`, by the worst-case `ceil(z^2 / (4 epsilon^2))` at
+/// `p = 1/2`.
+///
+/// ```
+/// use sentil::stats::wilson_samples;
+///
+/// assert_eq!(wilson_samples(0.01, 0.95)?, 9604);
+/// # Ok::<(), sentil::Error>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidConfig`] if `epsilon` is not positive or `level` is not in `(0, 1)`.
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    reason = "the count is positive and finite, and clamped to u64::MAX"
+)]
+pub fn wilson_samples(epsilon: f64, level: f64) -> Result<u64> {
+    if !epsilon.is_finite() || epsilon <= 0.0 {
+        return Err(Error::InvalidConfig {
+            context: "Wilson sample sizing",
+            message: format!("epsilon must be finite and positive, got {epsilon}"),
+        });
+    }
+    if !level.is_finite() || level <= 0.0 || level >= 1.0 {
+        return Err(Error::InvalidConfig {
+            context: "Wilson sample sizing",
+            message: format!("level must be in (0, 1), got {level}"),
+        });
+    }
+    let z = z_score(level);
+    let n = (z * z / (4.0 * epsilon * epsilon)).ceil();
+    Ok(if n >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        n as u64
+    })
+}
+
+/// Inverse standard normal CDF by Acklam's approximation with a Halley step.
 fn normal_quantile(p: f64) -> f64 {
     const A: [f64; 6] = [
         -3.969_683_028_665_376e1,
@@ -188,7 +223,7 @@ fn normal_quantile(p: f64) -> f64 {
     if p >= 1.0 {
         return f64::INFINITY;
     }
-    if p < LOW {
+    let x = if p < LOW {
         let q = (-2.0 * p.ln()).sqrt();
         (((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
             / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
@@ -201,7 +236,11 @@ fn normal_quantile(p: f64) -> f64 {
         let q = (-2.0 * (1.0 - p).ln()).sqrt();
         -(((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
             / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
-    }
+    };
+
+    let e = 0.5 * libm::erfc(-x * core::f64::consts::FRAC_1_SQRT_2) - p;
+    let u = e * (2.0 * core::f64::consts::PI).sqrt() * (0.5 * x * x).exp();
+    x - u / (1.0 + 0.5 * x * u)
 }
 
 /// The Clopper-Pearson exact interval for `successes` out of `trials`.
@@ -412,9 +451,9 @@ mod tests {
 
     #[test]
     fn z_scores_match_the_standard_values() {
-        assert!(close(z_score(0.90), 1.644_854));
-        assert!(close(z_score(0.95), 1.959_964));
-        assert!(close(z_score(0.99), 2.575_829));
+        assert!((z_score(0.90) - 1.644_853_626_951_472).abs() < 1e-10);
+        assert!((z_score(0.95) - 1.959_963_984_540_054).abs() < 1e-10);
+        assert!((z_score(0.99) - 2.575_829_303_548_900).abs() < 1e-10);
     }
 
     #[test]

@@ -11,9 +11,10 @@ mod sim_model;
 mod smc;
 mod sprt;
 
+pub use bayesian::{bayes_sequential_test, BayesConfig, BayesResult};
 pub use confidence::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
-    z_score, ConfidenceInterval, IntervalMethod,
+    wilson_samples, z_score, ConfidenceInterval, IntervalMethod,
 };
 pub use lifting::LiftingRegistry;
 #[cfg(feature = "gpu")]
@@ -24,7 +25,6 @@ pub use rare_events::{adaptive_multilevel_splitting, RareEventEstimate, RareEven
 #[cfg(feature = "gpu")]
 pub use sim_model::{SimExpr, SimModel};
 pub use smc::{RobustnessDistribution, SmcConfig, SmcResult};
-pub use bayesian::{bayes_sequential_test, BayesConfig, BayesResult};
 pub use sprt::{sequential_test, SprtConfig, SprtResult};
 
 use crate::error::{Error, Result};
