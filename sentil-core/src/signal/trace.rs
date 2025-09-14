@@ -202,15 +202,9 @@ impl Trace {
             return Err(Error::EmptyTrace);
         }
         let mut out = Trace::new(times)?;
-        let resampled: Vec<(String, Vec<f64>)> = self
-            .signals
-            .iter()
-            .map(|(name, values)| {
-                (name.clone(), read_at(&self.times, values, interpolation, &out.times))
-            })
-            .collect();
-        for (name, values) in resampled {
-            out.add_signal(&name, values)?;
+        for (name, values) in &self.signals {
+            let resampled = read_at(&self.times, values, interpolation, &out.times);
+            out.add_signal(name, resampled)?;
         }
         Ok(out)
     }
@@ -282,22 +276,15 @@ impl PreparedTrace {
             return Err(Error::EmptyTrace);
         }
         let mut out = Trace::new(times)?;
-        let resampled: Vec<(String, Vec<f64>)> = self
-            .columns
-            .iter()
-            .map(|col| {
-                let values = read_with_segments(
-                    &self.times,
-                    &col.values,
-                    col.segments.as_deref(),
-                    self.interp,
-                    &out.times,
-                );
-                (col.name.clone(), values)
-            })
-            .collect();
-        for (name, values) in resampled {
-            out.add_signal(&name, values)?;
+        for col in &self.columns {
+            let values = read_with_segments(
+                &self.times,
+                &col.values,
+                col.segments.as_deref(),
+                self.interp,
+                &out.times,
+            );
+            out.add_signal(&col.name, values)?;
         }
         Ok(out)
     }

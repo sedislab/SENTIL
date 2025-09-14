@@ -299,23 +299,16 @@ impl RingBuffer {
         }
     }
 
-    /// Every sample whose time lies in `[start, end]`, oldest first.
-    #[must_use]
-    pub fn between(&self, start: f64, end: f64) -> Vec<(f64, f64)> {
-        if self.is_empty() || start > end {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
-        let mut i = self.lower_bound(start);
-        while i < self.len {
-            let sample = self.data[self.slot(i)];
-            if sample.0 > end + TIME_EPSILON {
-                break;
-            }
-            out.push(sample);
-            i += 1;
-        }
-        out
+    /// Every sample whose time lies in `[start, end]`.
+    pub fn between(&self, start: f64, end: f64) -> impl Iterator<Item = (f64, f64)> + '_ {
+        let begin = if self.is_empty() || start > end {
+            self.len
+        } else {
+            self.lower_bound(start)
+        };
+        (begin..self.len)
+            .map(move |i| self.data[self.slot(i)])
+            .take_while(move |sample| sample.0 <= end + TIME_EPSILON)
     }
 
     #[allow(
@@ -388,7 +381,7 @@ mod tests {
         assert_eq!(buffer.at_time(2.0), Some(6.0));
         assert_eq!(buffer.at_time(2.5), None);
         assert_eq!(buffer.closest_to_time(2.4), Some((2.0, 6.0)));
-        assert_eq!(buffer.between(1.0, 2.0), vec![(1.0, 4.0), (2.0, 6.0)]);
+        assert_eq!(buffer.between(1.0, 2.0).collect::<Vec<_>>(), vec![(1.0, 4.0), (2.0, 6.0)]);
         assert_eq!(buffer.time_range(), Some((0.0, 3.0)));
         assert_eq!(buffer.mean(), Some(5.0));
         assert_eq!(buffer.min(), Some(2.0));
@@ -404,7 +397,7 @@ mod tests {
         buffer.push(2.0, 30.0).unwrap();
         assert_eq!(buffer.mean(), Some(25.0));
         assert!((buffer.variance().unwrap() - 50.0).abs() < 1e-9);
-        assert_eq!(buffer.between(1.0, 2.0), vec![(1.0, 20.0), (2.0, 30.0)]);
+        assert_eq!(buffer.between(1.0, 2.0).collect::<Vec<_>>(), vec![(1.0, 20.0), (2.0, 30.0)]);
     }
 
     #[test]
