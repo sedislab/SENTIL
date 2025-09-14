@@ -183,41 +183,83 @@ fn from_columns(columns: Vec<(String, Vec<f64>)>, path: &Path) -> Result<Trace> 
     assemble(time, signals).map_err(|e| with_path(e, path))
 }
 
-/// Reads each Arrow column as f64 through Arrow's cast kernels, dropping any
-/// column that is not numeric. A null cell becomes NaN.
+#[cfg(any(feature = "parquet", feature = "arrow", feature = "sqlite"))]
+fn check_columns(names: &[String], numeric: &[bool], nulls: &[usize], path: &Path) -> Result<()> {
+    for (i, name) in names.iter().enumerate() {
+        if numeric[i] && nulls[i] > 0 {
+            return Err(ingest_at(
+                path,
+                format!(
+                    "column '{name}' has {} null cell(s); a trace cannot carry a missing value",
+                    nulls[i]
+                ),
+            ));
+        }
+    }
+    let time_idx = detect_time_column(names).unwrap_or(0);
+    if !names.is_empty() && !numeric[time_idx] {
+        return Err(ingest_at(
+            path,
+            format!("the time column '{}' is not numeric", names[time_idx]),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "parquet", feature = "arrow", feature = "sqlite"))]
+fn keep_numeric(
+    names: Vec<String>,
+    columns: Vec<Vec<f64>>,
+    numeric: &[bool],
+) -> Vec<(String, Vec<f64>)> {
+    names
+        .into_iter()
+        .zip(columns)
+        .zip(numeric)
+        .filter(|(_, keep)| **keep)
+        .map(|((name, column), _)| (name, column))
+        .collect()
+}
+
 #[cfg(any(feature = "parquet", feature = "arrow"))]
-fn arrow_columns(batches: &[arrow::array::RecordBatch]) -> Vec<(String, Vec<f64>)> {
+fn arrow_columns(
+    batches: &[arrow::array::RecordBatch],
+    path: &Path,
+) -> Result<Vec<(String, Vec<f64>)>> {
     use arrow::array::Float64Array;
     use arrow::datatypes::DataType;
 
     let Some(first) = batches.first() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let schema = first.schema();
-    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); schema.fields().len()];
-    let mut numeric = vec![true; columns.len()];
+    let names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
+    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); names.len()];
+    let mut numeric = vec![true; names.len()];
+    let mut nulls = vec![0usize; names.len()];
     for batch in batches {
         for (i, column) in batch.columns().iter().enumerate() {
             match arrow::compute::cast(column, &DataType::Float64) {
                 Ok(cast) => {
-                    let values = cast
-                        .as_any()
-                        .downcast_ref::<Float64Array>()
-                        .expect("a cast to Float64 yields a Float64Array");
-                    columns[i].extend(values.iter().map(|v| v.unwrap_or(f64::NAN)));
+                    let values = cast.as_any().downcast_ref::<Float64Array>().ok_or_else(|| {
+                        ingest_at(path, "an Arrow column cast to Float64 but did not read back as one")
+                    })?;
+                    for value in values {
+                        match value {
+                            Some(v) => columns[i].push(v),
+                            None => {
+                                columns[i].push(f64::NAN);
+                                nulls[i] += 1;
+                            }
+                        }
+                    }
                 }
                 Err(_) => numeric[i] = false,
             }
         }
     }
-    schema
-        .fields()
-        .iter()
-        .zip(columns)
-        .zip(numeric)
-        .filter(|(_, keep)| *keep)
-        .map(|((field, column), _)| (field.name().clone(), column))
-        .collect()
+    check_columns(&names, &numeric, &nulls, path)?;
+    Ok(keep_numeric(names, columns, &numeric))
 }
 
 #[cfg(feature = "parquet")]
@@ -234,7 +276,7 @@ fn load_parquet(path: &Path) -> Result<Trace> {
     for batch in reader {
         batches.push(batch.map_err(|e| ingest_at(path, e.to_string()))?);
     }
-    from_columns(arrow_columns(&batches), path)
+    from_columns(arrow_columns(&batches, path)?, path)
 }
 
 #[cfg(not(feature = "parquet"))]
@@ -257,7 +299,7 @@ fn load_arrow(path: &Path) -> Result<Trace> {
     for batch in reader {
         batches.push(batch.map_err(|e| ingest_at(path, e.to_string()))?);
     }
-    from_columns(arrow_columns(&batches), path)
+    from_columns(arrow_columns(&batches, path)?, path)
 }
 
 #[cfg(not(feature = "arrow"))]
@@ -282,23 +324,25 @@ fn load_sqlite(path: &Path) -> Result<Trace> {
             |row| row.get(0),
         )
         .map_err(|e| ingest_at(path, format!("no table to read: {e}")))?;
-    let columns = read_sqlite_table(&conn, &table).map_err(|e| with_path(e, path))?;
+    let columns = read_sqlite_table(&conn, &table, path)?;
     from_columns(columns, path)
 }
 
-/// Reads every numeric column of a SQLite table as f64; text and blob columns are
-/// dropped, a null cell becomes NaN.
 #[cfg(feature = "sqlite")]
 #[allow(
     clippy::cast_precision_loss,
     reason = "integer columns are counts or timestamps that fit f64 exactly to 2^53"
 )]
-fn read_sqlite_table(conn: &rusqlite::Connection, table: &str) -> Result<Vec<(String, Vec<f64>)>> {
+fn read_sqlite_table(
+    conn: &rusqlite::Connection,
+    table: &str,
+    path: &Path,
+) -> Result<Vec<(String, Vec<f64>)>> {
     use rusqlite::types::ValueRef;
 
     let mut stmt = conn
         .prepare(&format!("SELECT * FROM \"{table}\""))
-        .map_err(|e| ingest(None, format!("could not read table '{table}': {e}")))?;
+        .map_err(|e| ingest_at(path, format!("could not read table '{table}': {e}")))?;
     let names: Vec<String> = stmt
         .column_names()
         .iter()
@@ -306,17 +350,22 @@ fn read_sqlite_table(conn: &rusqlite::Connection, table: &str) -> Result<Vec<(St
         .collect();
     let mut columns: Vec<Vec<f64>> = vec![Vec::new(); names.len()];
     let mut numeric = vec![true; names.len()];
-    let mut rows = stmt.query([]).map_err(|e| ingest(None, e.to_string()))?;
-    while let Some(row) = rows.next().map_err(|e| ingest(None, e.to_string()))? {
+    let mut nulls = vec![0usize; names.len()];
+    let mut rows = stmt.query([]).map_err(|e| ingest_at(path, e.to_string()))?;
+    while let Some(row) = rows.next().map_err(|e| ingest_at(path, e.to_string()))? {
         for (i, column) in columns.iter_mut().enumerate() {
-            match row.get_ref(i).map_err(|e| ingest(None, e.to_string()))? {
+            match row.get_ref(i).map_err(|e| ingest_at(path, e.to_string()))? {
                 ValueRef::Integer(v) => column.push(v as f64),
                 ValueRef::Real(v) => column.push(v),
-                ValueRef::Null => column.push(f64::NAN),
+                ValueRef::Null => {
+                    column.push(f64::NAN);
+                    nulls[i] += 1;
+                }
                 ValueRef::Text(_) | ValueRef::Blob(_) => numeric[i] = false,
             }
         }
     }
+    check_columns(&names, &numeric, &nulls, path)?;
     Ok(keep_numeric(names, columns, &numeric))
 }
 
@@ -397,9 +446,7 @@ fn load_mat5(path: &Path) -> Result<Trace> {
     from_columns(columns, path)
 }
 
-/// Reads a trace from the JSON-encoded messages of an MCAP recording. Each
-/// message's log time is the sample time; its numeric fields become signals,
-/// aligned across messages with a missing field read as NaN.
+/// Reads a trace from the JSON-encoded messages of an MCAP recording.
 #[cfg(feature = "mcap")]
 #[allow(
     clippy::cast_precision_loss,
@@ -421,6 +468,13 @@ fn load_mcap(path: &Path) -> Result<Trace> {
         return Err(ingest_at(path, "no JSON-encoded messages to read"));
     }
     records.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let times: Vec<f64> = records.iter().map(|(t, _)| *t).collect();
+    if let Some(t) = times.windows(2).find_map(|w| (w[0] == w[1]).then_some(w[0])) {
+        return Err(ingest_at(
+            path,
+            format!("two messages share the log time {t}; an MCAP trace needs distinct times"),
+        ));
+    }
     let mut fields: Vec<String> = Vec::new();
     for (_, obj) in &records {
         for (key, value) in obj {
@@ -429,21 +483,29 @@ fn load_mcap(path: &Path) -> Result<Trace> {
             }
         }
     }
-    let times: Vec<f64> = records.iter().map(|(t, _)| *t).collect();
-    let signals = fields
-        .into_iter()
-        .map(|name| {
-            let column = records
-                .iter()
-                .map(|(_, obj)| {
-                    obj.get(&name)
-                        .and_then(serde_json::Value::as_f64)
-                        .unwrap_or(f64::NAN)
-                })
-                .collect();
-            (name, column)
-        })
-        .collect();
+    let mut signals = Vec::new();
+    for name in fields {
+        let mut column = Vec::with_capacity(records.len());
+        let mut missing = 0usize;
+        for (_, obj) in &records {
+            match obj.get(&name).and_then(serde_json::Value::as_f64) {
+                Some(v) => column.push(v),
+                None => {
+                    missing += 1;
+                    column.push(f64::NAN);
+                }
+            }
+        }
+        if missing > 0 {
+            return Err(ingest_at(
+                path,
+                format!(
+                    "field '{name}' is absent from {missing} message(s); a trace signal needs a value at every time"
+                ),
+            ));
+        }
+        signals.push((name, column));
+    }
     assemble(times, signals).map_err(|e| with_path(e, path))
 }
 
@@ -594,6 +656,63 @@ mod tests {
         let trace = trace.unwrap();
         assert_eq!(trace.len(), 3);
         assert_eq!(trace.variables(), vec!["x"]);
+    }
+
+    #[cfg(feature = "arrow")]
+    #[test]
+    fn a_null_arrow_cell_is_reported_with_its_column() {
+        use arrow::array::{Float64Array, RecordBatch};
+        use arrow::ipc::writer::FileWriter;
+        use std::sync::Arc;
+
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "time",
+                Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0])) as _,
+            ),
+            (
+                "x",
+                Arc::new(Float64Array::from(vec![Some(10.0), None, Some(1.0)])) as _,
+            ),
+        ])
+        .unwrap();
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_null_{}.arrow", std::process::id()));
+        let schema = batch.schema();
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = FileWriter::try_new(file, &schema).unwrap();
+        writer.write(&batch).unwrap();
+        writer.finish().unwrap();
+        let result = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        match result.unwrap_err() {
+            Error::Ingest { message, .. } => {
+                assert!(message.contains("'x'") && message.contains("null"), "{message}");
+            }
+            other => panic!("expected an ingest error, got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn a_null_sqlite_cell_is_reported_with_its_column() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("sentil_null_{}.sqlite", std::process::id()));
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute("CREATE TABLE trace (time REAL, x REAL)", [])
+                .unwrap();
+            conn.execute("INSERT INTO trace VALUES (0, 10), (1, NULL), (2, 1)", [])
+                .unwrap();
+        }
+        let result = Trace::from_path(&path);
+        std::fs::remove_file(&path).ok();
+        match result.unwrap_err() {
+            Error::Ingest { message, .. } => {
+                assert!(message.contains("'x'") && message.contains("null"), "{message}");
+            }
+            other => panic!("expected an ingest error, got {other:?}"),
+        }
     }
 
     #[cfg(feature = "hdf5")]
