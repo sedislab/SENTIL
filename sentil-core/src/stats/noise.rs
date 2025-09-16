@@ -712,6 +712,58 @@ impl NoiseModel {
         }
     }
 
+    /// Residuals from paired calibration data, the input the fitters expect.
+    ///
+    /// ```
+    /// use sentil::{NoiseInteraction, NoiseModel};
+    ///
+    /// let truth = [1.0, 2.0, 3.0, 4.0];
+    /// let sensor = [1.1, 1.9, 3.2, 3.8];
+    /// let residuals = NoiseModel::residuals(&truth, &sensor, NoiseInteraction::Additive)?;
+    /// let model = NoiseModel::fit_gaussian(&residuals)?;
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Fit`] if the two slices differ in length or are empty.
+    pub fn residuals(
+        ground_truth: &[f64],
+        sensor: &[f64],
+        interaction: NoiseInteraction,
+    ) -> Result<Vec<f64>> {
+        if ground_truth.len() != sensor.len() {
+            return Err(fit_error(
+                "residual computation",
+                format!(
+                    "ground truth has {} points but the sensor has {}",
+                    ground_truth.len(),
+                    sensor.len()
+                ),
+            ));
+        }
+        if ground_truth.is_empty() {
+            return Err(fit_error(
+                "residual computation",
+                "need at least one calibration pair".to_owned(),
+            ));
+        }
+        Ok(ground_truth
+            .iter()
+            .zip(sensor)
+            .map(|(&truth, &reading)| match interaction {
+                NoiseInteraction::Additive => reading - truth,
+                NoiseInteraction::Multiplicative => {
+                    if truth.abs() < 1e-9 {
+                        1.0
+                    } else {
+                        reading / truth
+                    }
+                }
+            })
+            .collect())
+    }
+
     /// Fits a Gaussian to sample residuals by maximum likelihood.
     ///
     /// # Errors
@@ -1216,6 +1268,24 @@ mod tests {
             }
         }
         assert!((f64::from(tens) / f64::from(n) - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn residuals_recover_additive_and_multiplicative_noise() {
+        let add =
+            NoiseModel::residuals(&[1.0, 2.0, 4.0], &[1.5, 2.5, 4.5], NoiseInteraction::Additive)
+                .unwrap();
+        assert_eq!(add, vec![0.5, 0.5, 0.5]);
+        let mult =
+            NoiseModel::residuals(&[2.0, 4.0], &[3.0, 6.0], NoiseInteraction::Multiplicative)
+                .unwrap();
+        assert_eq!(mult, vec![1.5, 1.5]);
+        // a near-zero truth reads as no multiplicative deviation
+        let guarded =
+            NoiseModel::residuals(&[0.0], &[5.0], NoiseInteraction::Multiplicative).unwrap();
+        assert_eq!(guarded, vec![1.0]);
+        assert!(NoiseModel::residuals(&[1.0, 2.0], &[1.0], NoiseInteraction::Additive).is_err());
+        assert!(NoiseModel::residuals(&[], &[], NoiseInteraction::Additive).is_err());
     }
 
     #[test]
