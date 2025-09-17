@@ -712,6 +712,119 @@ impl NoiseModel {
         }
     }
 
+    /// The analytic mean of the distribution, or `None` when it has none.
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a binomial count and a residual count are small and exact in f64"
+    )]
+    pub fn mean(&self) -> Option<f64> {
+        match &self.kind {
+            Kind::Dirac { value } => Some(*value),
+            Kind::Gaussian { mean, .. } => Some(*mean),
+            Kind::Uniform { low, high } => Some(0.5 * (low + high)),
+            Kind::LogNormal { mu, sigma } => Some((mu + 0.5 * sigma * sigma).exp()),
+            Kind::Exponential { lambda } => Some(1.0 / lambda),
+            Kind::Gamma { shape, scale } => Some(shape * scale),
+            Kind::Beta { alpha, beta } => Some(alpha / (alpha + beta)),
+            Kind::Weibull { shape, scale } => Some(scale * libm::tgamma(1.0 + 1.0 / shape)),
+            Kind::Rayleigh { scale } => Some(scale * (core::f64::consts::PI / 2.0).sqrt()),
+            Kind::Gumbel { location, scale } => Some(location + scale * EULER_GAMMA),
+            Kind::Cauchy { .. } => None,
+            Kind::StudentT { df, location, .. } => (*df > 1.0).then_some(*location),
+            Kind::TruncatedNormal {
+                mean,
+                std_dev,
+                lower,
+                upper,
+            } => Some(truncated_normal_moments(*mean, *std_dev, *lower, *upper).0),
+            Kind::Poisson { lambda } => Some(*lambda),
+            Kind::Binomial { n, p } => Some(*n as f64 * p),
+            Kind::Bootstrap { residuals } => (!residuals.is_empty())
+                .then(|| residuals.iter().sum::<f64>() / residuals.len() as f64),
+            Kind::Mixture {
+                weights,
+                total,
+                components,
+            } => {
+                let mut m = 0.0;
+                for (w, c) in weights.iter().zip(components) {
+                    m += (w / total) * c.mean()?;
+                }
+                Some(m)
+            }
+        }
+    }
+
+    /// The analytic variance, or `None` when it has none.
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a binomial count and a residual count are small and exact in f64"
+    )]
+    pub fn variance(&self) -> Option<f64> {
+        match &self.kind {
+            Kind::Dirac { .. } => Some(0.0),
+            Kind::Gaussian { std_dev, .. } => Some(std_dev * std_dev),
+            Kind::Uniform { low, high } => Some((high - low) * (high - low) / 12.0),
+            Kind::LogNormal { mu, sigma } => {
+                let s2 = sigma * sigma;
+                Some((s2.exp() - 1.0) * (2.0 * mu + s2).exp())
+            }
+            Kind::Exponential { lambda } => Some(1.0 / (lambda * lambda)),
+            Kind::Gamma { shape, scale } => Some(shape * scale * scale),
+            Kind::Beta { alpha, beta } => {
+                let s = alpha + beta;
+                Some(alpha * beta / (s * s * (s + 1.0)))
+            }
+            Kind::Weibull { shape, scale } => {
+                let g1 = libm::tgamma(1.0 + 1.0 / shape);
+                let g2 = libm::tgamma(1.0 + 2.0 / shape);
+                Some(scale * scale * (g2 - g1 * g1))
+            }
+            Kind::Rayleigh { scale } => {
+                Some((4.0 - core::f64::consts::PI) / 2.0 * scale * scale)
+            }
+            Kind::Gumbel { scale, .. } => {
+                Some(core::f64::consts::PI * core::f64::consts::PI / 6.0 * scale * scale)
+            }
+            Kind::Cauchy { .. } => None,
+            Kind::StudentT { df, scale, .. } => {
+                (*df > 2.0).then(|| scale * scale * df / (df - 2.0))
+            }
+            Kind::TruncatedNormal {
+                mean,
+                std_dev,
+                lower,
+                upper,
+            } => Some(truncated_normal_moments(*mean, *std_dev, *lower, *upper).1),
+            Kind::Poisson { lambda } => Some(*lambda),
+            Kind::Binomial { n, p } => Some(*n as f64 * p * (1.0 - p)),
+            Kind::Bootstrap { residuals } => {
+                if residuals.is_empty() {
+                    return None;
+                }
+                let n = residuals.len() as f64;
+                let m = residuals.iter().sum::<f64>() / n;
+                Some(residuals.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / n)
+            }
+            Kind::Mixture {
+                weights,
+                total,
+                components,
+            } => {
+                let mut second = 0.0;
+                for (w, c) in weights.iter().zip(components) {
+                    let mi = c.mean()?;
+                    let vi = c.variance()?;
+                    second += (w / total) * (vi + mi * mi);
+                }
+                let m = self.mean()?;
+                Some(second - m * m)
+            }
+        }
+    }
+
     /// Residuals from paired calibration data, the input the fitters expect.
     ///
     /// ```
@@ -1007,6 +1120,31 @@ fn fit_error(method: &'static str, message: String) -> Error {
     Error::Fit { method, message }
 }
 
+const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
+
+fn std_normal_pdf(x: f64) -> f64 {
+    (-0.5 * x * x).exp() / (2.0 * core::f64::consts::PI).sqrt()
+}
+
+fn std_normal_cdf(x: f64) -> f64 {
+    0.5 * (1.0 + libm::erf(x * core::f64::consts::FRAC_1_SQRT_2))
+}
+
+fn truncated_normal_moments(mean: f64, std_dev: f64, lower: f64, upper: f64) -> (f64, f64) {
+    let a = (lower - mean) / std_dev;
+    let b = (upper - mean) / std_dev;
+    let pa = std_normal_pdf(a);
+    let pb = std_normal_pdf(b);
+    let z = std_normal_cdf(b) - std_normal_cdf(a);
+    let ratio = (pa - pb) / z;
+    // a*phi(a) and b*phi(b) vanish at an infinite bound.
+    let a_pa = if a.is_finite() { a * pa } else { 0.0 };
+    let b_pb = if b.is_finite() { b * pb } else { 0.0 };
+    let trunc_mean = mean + std_dev * ratio;
+    let trunc_var = std_dev * std_dev * (1.0 + (a_pa - b_pb) / z - ratio * ratio);
+    (trunc_mean, trunc_var)
+}
+
 fn check_finite(method: &'static str, samples: &[f64]) -> Result<()> {
     if let Some(pos) = samples.iter().position(|v| !v.is_finite()) {
         return Err(fit_error(
@@ -1286,6 +1424,64 @@ mod tests {
         assert_eq!(guarded, vec![1.0]);
         assert!(NoiseModel::residuals(&[1.0, 2.0], &[1.0], NoiseInteraction::Additive).is_err());
         assert!(NoiseModel::residuals(&[], &[], NoiseInteraction::Additive).is_err());
+    }
+
+    #[test]
+    fn analytic_moments_match_the_empirical_ones() {
+        let mut rng = StdRng::seed_from_u64(7);
+        let models = [
+            NoiseModel::gaussian(2.0, 1.5).unwrap(),
+            NoiseModel::uniform(-1.0, 3.0).unwrap(),
+            NoiseModel::exponential(0.5).unwrap(),
+            NoiseModel::gamma(2.0, 1.5).unwrap(),
+            NoiseModel::beta(2.0, 5.0).unwrap(),
+            NoiseModel::weibull(1.5, 2.0).unwrap(),
+            NoiseModel::rayleigh(1.0).unwrap(),
+            NoiseModel::gumbel(0.0, 1.0).unwrap(),
+            NoiseModel::log_normal(0.0, 0.5).unwrap(),
+            NoiseModel::truncated_normal(0.0, 1.0, -1.0, 2.0).unwrap(),
+            NoiseModel::poisson(3.0).unwrap(),
+            NoiseModel::binomial(10, 0.3).unwrap(),
+        ];
+        let n = 200_000;
+        for model in &models {
+            let samples: Vec<f64> = (0..n).map(|_| model.sample(&mut rng)).collect();
+            let count = samples.len() as f64;
+            let emp_mean = samples.iter().sum::<f64>() / count;
+            let emp_var =
+                samples.iter().map(|x| (x - emp_mean).powi(2)).sum::<f64>() / count;
+            let am = model.mean().unwrap();
+            let av = model.variance().unwrap();
+            assert!(
+                (emp_mean - am).abs() < 0.05 * (1.0 + am.abs()),
+                "{model:?}: mean {am} vs empirical {emp_mean}"
+            );
+            assert!(
+                (emp_var - av).abs() < 0.12 * (1.0 + av.abs()),
+                "{model:?}: variance {av} vs empirical {emp_var}"
+            );
+        }
+    }
+
+    #[test]
+    fn moments_of_degenerate_and_undefined_families() {
+        assert_eq!(NoiseModel::dirac(3.0).unwrap().mean(), Some(3.0));
+        assert_eq!(NoiseModel::dirac(3.0).unwrap().variance(), Some(0.0));
+        assert_eq!(NoiseModel::cauchy(0.0, 1.0).unwrap().mean(), None);
+        assert_eq!(NoiseModel::cauchy(0.0, 1.0).unwrap().variance(), None);
+        assert_eq!(NoiseModel::student_t(1.0, 0.0, 1.0).unwrap().mean(), None);
+        assert_eq!(NoiseModel::student_t(2.0, 0.0, 1.0).unwrap().variance(), None);
+        assert_eq!(NoiseModel::student_t(3.0, 5.0, 1.0).unwrap().mean(), Some(5.0));
+        let boot = NoiseModel::bootstrap(vec![1.0, 2.0, 3.0]).unwrap();
+        assert_eq!(boot.mean(), Some(2.0));
+        assert_eq!(boot.variance(), Some(2.0 / 3.0));
+        let mix = NoiseModel::mixture(
+            vec![1.0, 1.0],
+            vec![NoiseModel::dirac(0.0).unwrap(), NoiseModel::dirac(10.0).unwrap()],
+        )
+        .unwrap();
+        assert_eq!(mix.mean(), Some(5.0));
+        assert_eq!(mix.variance(), Some(25.0));
     }
 
     #[test]
