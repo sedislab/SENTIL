@@ -83,34 +83,42 @@ impl Default for SmoothConfig {
 }
 
 /// A smooth lower bound on the minimum of `values`, approaching the true minimum
-/// as `beta` grows. An empty slice has minimum positive infinity.
+/// as `temperature` grows.
 ///
-/// `beta` must be finite and positive, the temperature [`SmoothConfig::new`]
-/// validates. A non-positive `beta` would make the soft minimum diverge or flip
-/// into a maximum, so it falls back to the exact minimum instead.
+/// ```
+/// use sentil::synthesis::soft_min;
+/// assert!((soft_min(&[1.0, -2.0, 3.0], 20.0) + 2.0).abs() < 0.1);
+/// ```
 #[must_use]
-pub fn soft_min(values: &[f64], beta: f64) -> f64 {
+pub fn soft_min(values: &[f64], temperature: f64) -> f64 {
     let shift = values.iter().copied().fold(f64::INFINITY, f64::min);
-    if shift.is_finite() && beta.is_finite() && beta > 0.0 {
-        let sum: f64 = values.iter().map(|&x| (-beta * (x - shift)).exp()).sum();
-        shift - sum.ln() / beta
+    if shift.is_finite() && temperature.is_finite() && temperature > 0.0 {
+        let sum: f64 = values
+            .iter()
+            .map(|&x| (-temperature * (x - shift)).exp())
+            .sum();
+        shift - sum.ln() / temperature
     } else {
         shift
     }
 }
 
 /// A smooth upper bound on the maximum of `values`, approaching the true maximum
-/// as `beta` grows. An empty slice has maximum negative infinity.
+/// as `temperature` grows.
 ///
-/// `beta` must be finite and positive, the temperature [`SmoothConfig::new`]
-/// validates. A non-positive `beta` would make the soft maximum diverge or flip
-/// into a minimum, so it falls back to the exact maximum instead.
+/// ```
+/// use sentil::synthesis::soft_max;
+/// assert!((soft_max(&[1.0, -2.0, 3.0], 20.0) - 3.0).abs() < 0.1);
+/// ```
 #[must_use]
-pub fn soft_max(values: &[f64], beta: f64) -> f64 {
+pub fn soft_max(values: &[f64], temperature: f64) -> f64 {
     let shift = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    if shift.is_finite() && beta.is_finite() && beta > 0.0 {
-        let sum: f64 = values.iter().map(|&x| (beta * (x - shift)).exp()).sum();
-        shift + sum.ln() / beta
+    if shift.is_finite() && temperature.is_finite() && temperature > 0.0 {
+        let sum: f64 = values
+            .iter()
+            .map(|&x| (temperature * (x - shift)).exp())
+            .sum();
+        shift + sum.ln() / temperature
     } else {
         shift
     }
