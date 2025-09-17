@@ -48,6 +48,8 @@ struct Trajectory<S> {
 /// population (larger is tighter), `max_steps` caps a trajectory's length, and
 /// `seed` makes the run reproducible.
 ///
+/// The removal loop is sequential: each step's level depends on the whole current population.
+///
 /// # Errors
 ///
 /// Returns [`Error::InvalidConfig`] if `particles` is zero, and

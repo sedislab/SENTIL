@@ -184,7 +184,7 @@ pub fn wilson_samples(epsilon: f64, level: f64) -> Result<u64> {
 }
 
 /// Inverse standard normal CDF by Acklam's approximation with a Halley step.
-fn normal_quantile(p: f64) -> f64 {
+pub(crate) fn normal_quantile(p: f64) -> f64 {
     const A: [f64; 6] = [
         -3.969_683_028_665_376e1,
         2.209_460_984_245_205e2,

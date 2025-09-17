@@ -2,7 +2,7 @@
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use rand_distr::StandardNormal;
+use rand_distr::{Poisson, StandardNormal};
 
 use crate::error::{Error, Result};
 
@@ -457,7 +457,7 @@ impl NoiseModel {
         })
     }
 
-    /// A Gaussian truncated to `[lower, upper]`, drawn by rejection.
+    /// A Gaussian truncated to `[lower, upper]`.
     ///
     /// # Errors
     ///
@@ -641,48 +641,21 @@ impl NoiseModel {
                 let denom = (chi2 / df).sqrt().max(f64::MIN_POSITIVE);
                 location + scale * z / denom
             }
-            // Rejection: redraw a Gaussian until it lands inside the bounds. The
-            // cap stops a pathological far-tail interval from looping; it then
-            // falls back to the clamped mean.
             Kind::TruncatedNormal {
                 mean,
                 std_dev,
                 lower,
                 upper,
             } => {
-                let mut out = mean.clamp(*lower, *upper);
-                for _ in 0..256 {
-                    let z: f64 = rng.sample(StandardNormal);
-                    let x = mean + std_dev * z;
-                    if (*lower..=*upper).contains(&x) {
-                        out = x;
-                        break;
-                    }
-                }
-                out
+                let a = std_normal_cdf((lower - mean) / std_dev);
+                let b = std_normal_cdf((upper - mean) / std_dev);
+                let u: f64 = rng.random();
+                let p = (a + u * (b - a)).clamp(f64::MIN_POSITIVE, 1.0 - f64::EPSILON);
+                (mean + std_dev * super::confidence::normal_quantile(p)).clamp(*lower, *upper)
             }
-            // Knuth's method for a modest rate; for a large rate the Poisson is
-            // close to a Gaussian, which avoids a long inner loop.
             Kind::Poisson { lambda } => {
-                if *lambda < 30.0 {
-                    let threshold = (-lambda).exp();
-                    let mut k = 0.0;
-                    let mut product = 1.0;
-                    loop {
-                        k += 1.0;
-                        product *= rng.random::<f64>();
-                        if product <= threshold {
-                            break;
-                        }
-                    }
-                    k - 1.0
-                } else {
-                    let z: f64 = rng.sample(StandardNormal);
-                    (lambda + lambda.sqrt() * z).round().max(0.0)
-                }
+                Poisson::new(*lambda).map_or(*lambda, |dist| rng.sample(dist))
             }
-            // Counting Bernoulli trials is exact and cheap for the small trial
-            // counts noise models use.
             Kind::Binomial { n, p } => {
                 let mut count = 0.0;
                 for _ in 0..*n {
@@ -1050,12 +1023,15 @@ impl NoiseModel {
             }
         }
 
-        let parts = means
-            .iter()
-            .zip(&variances)
-            .map(|(&m, &v)| Self::gaussian(m, v.sqrt()))
-            .collect::<Result<Vec<_>>>()?;
-        Self::mixture(weights, parts)
+        let mut kept_weights = Vec::new();
+        let mut parts = Vec::new();
+        for ((&w, &m), &v) in weights.iter().zip(&means).zip(&variances) {
+            if w > 1e-6 {
+                kept_weights.push(w);
+                parts.push(Self::gaussian(m, v.sqrt())?);
+            }
+        }
+        Self::mixture(kept_weights, parts)
     }
 }
 
