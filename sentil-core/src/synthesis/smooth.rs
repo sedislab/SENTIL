@@ -1,13 +1,4 @@
-//! Smooth, differentiable robustness operators for synthesis.
-//!
-//! Monitoring uses exact min and max, which are not differentiable at ties.
-//! Synthesis instead needs a robustness that varies smoothly with the trace so an
-//! optimizer can follow its gradient. Two smoothings are offered. The default is a
-//! log-sum-exp soft minimum and maximum controlled by a temperature: as the
-//! temperature rises they approach the exact operators, and at every temperature
-//! the soft minimum stays at or below the true minimum and the soft maximum at or
-//! above the true maximum. The alternative is an arithmetic-geometric mean
-//! robustness, which is parameter-free and shares its sign with the exact value.
+//! Smooth robustness operators for synthesis.
 
 #![allow(
     clippy::cast_precision_loss,
@@ -29,9 +20,8 @@ pub enum SoftKind {
     /// Log-sum-exp soft min and max at the configuration's temperature.
     #[default]
     LogSumExp,
-    /// Arithmetic-geometric mean robustness: the geometric mean of the satisfied
-    /// margins, or the arithmetic mean of the violated ones. Parameter-free, so it
-    /// ignores the temperature.
+    /// The geometric mean of the satisfied margins, or the arithmetic mean of the
+    /// violated ones.
     ArithmeticGeometricMean,
 }
 
@@ -134,12 +124,6 @@ fn soft_min2(acc: f64, x: f64, beta: f64) -> f64 {
     m - ((-beta * (acc - m)).exp() + (-beta * (x - m)).exp()).ln() / beta
 }
 
-/// Arithmetic-geometric mean soft minimum. When every margin is positive it is the
-/// geometric mean of the margins shifted by one, which recovers the exact value
-/// when the margins are equal; otherwise it averages the violations, so it shares
-/// its sign with the true minimum. A positive infinity is the identity for the
-/// minimum and is dropped, so an empty (or all-infinite) slice has minimum positive
-/// infinity, which keeps the empty-prefix until/since witness from blowing up.
 fn agm_min(values: &[f64]) -> f64 {
     let count = values.iter().filter(|r| **r != f64::INFINITY).count();
     if count == 0 {
@@ -150,10 +134,10 @@ fn agm_min(values: &[f64]) -> f64 {
         let log_mean = values
             .iter()
             .filter(|r| **r != f64::INFINITY)
-            .map(|&r| (1.0 + r).ln())
+            .map(|&r| r.ln())
             .sum::<f64>()
             / count;
-        log_mean.exp() - 1.0
+        log_mean.exp()
     } else {
         values.iter().filter(|&&r| r <= 0.0).sum::<f64>() / count
     }
@@ -169,10 +153,10 @@ fn agm_max(values: &[f64]) -> f64 {
         let log_mean = values
             .iter()
             .filter(|r| **r != f64::NEG_INFINITY)
-            .map(|&r| (1.0 - r).ln())
+            .map(|&r| (-r).ln())
             .sum::<f64>()
             / count;
-        1.0 - log_mean.exp()
+        -log_mean.exp()
     } else {
         values.iter().filter(|&&r| r >= 0.0).sum::<f64>() / count
     }
@@ -193,11 +177,7 @@ fn reduce_max(values: &[f64], config: SmoothConfig) -> f64 {
 }
 
 impl Formula {
-    /// The smooth robustness of the formula over a trace: a differentiable
-    /// surrogate for [`robustness`](Self::robustness) that synthesis can climb.
-    ///
-    /// It mirrors the exact robustness but with the soft minimum and maximum from
-    /// `config`, so the result varies smoothly with the trace.
+    /// The smooth robustness of the formula over a trace.
     ///
     /// # Errors
     ///
@@ -479,6 +459,15 @@ mod tests {
         assert!((agm_max(&[-3.0, -3.0]) + 3.0).abs() < 1e-12);
         assert!(agm_min(&[5.0, -1.0]) < 0.0);
         assert!(agm_max(&[-5.0, 1.0]) > 0.0);
+    }
+
+    #[test]
+    fn the_agm_is_continuous_at_the_satisfaction_boundary() {
+        assert!(agm_min(&[3.0, 1e-6]).abs() < 0.01, "{}", agm_min(&[3.0, 1e-6]));
+        assert!(agm_min(&[3.0, 0.0]).abs() < 1e-12);
+        assert!(agm_min(&[3.0, -1e-6]).abs() < 0.01);
+        assert!(agm_max(&[-3.0, -1e-6]).abs() < 0.01);
+        assert!(agm_max(&[-3.0, 0.0]).abs() < 1e-12);
     }
 
     #[test]
