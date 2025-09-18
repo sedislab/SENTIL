@@ -277,9 +277,13 @@ impl Encoder {
                         feature: "the MILP backend supports only affine predicate terms; \
                                   a product of two state-dependent terms is nonlinear",
                     }),
-                    BinaryOp::Div | BinaryOp::Mod | BinaryOp::Pow => Err(Error::Unsupported {
+                    BinaryOp::Div => a.div(&b).ok_or(Error::Unsupported {
+                        feature: "the MILP backend divides an affine term only by a nonzero \
+                                  constant; a variable divisor is nonlinear",
+                    }),
+                    BinaryOp::Mod | BinaryOp::Pow => Err(Error::Unsupported {
                         feature: "the MILP backend supports only affine predicate terms; \
-                                  division, modulo, and power are nonlinear",
+                                  modulo and power are nonlinear",
                     }),
                 }
             }
@@ -503,6 +507,11 @@ impl Affine {
             (_, true) => Some(self.scaled(other.constant)),
             _ => None,
         }
+    }
+
+    /// The quotient, defined only when the divisor is a nonzero bare constant.
+    fn div(&self, other: &Self) -> Option<Self> {
+        (other.terms.is_empty() && other.constant != 0.0).then(|| self.scaled(1.0 / other.constant))
     }
 }
 
@@ -1024,6 +1033,18 @@ impl Margin {
         }
     }
 
+    /// The quotient, defined only when the divisor is a nonzero bare constant.
+    fn div(&self, other: &Self) -> Option<Self> {
+        (other.terms.is_empty() && other.constant != 0.0).then(|| Self {
+            terms: self
+                .terms
+                .iter()
+                .map(|(n, &c)| (n.clone(), c / other.constant))
+                .collect(),
+            constant: self.constant / other.constant,
+        })
+    }
+
     /// The largest `|margin|` over the reachable box.
     fn magnitude(&self, names: &[String], reach: &[f64]) -> f64 {
         let bound: f64 = self
@@ -1064,7 +1085,8 @@ fn margin_of(expr: &Expr) -> Option<Margin> {
                 BinaryOp::Add => Some(a.add(&b)),
                 BinaryOp::Sub => Some(a.sub(&b)),
                 BinaryOp::Mul => a.mul(&b),
-                BinaryOp::Div | BinaryOp::Mod | BinaryOp::Pow => None,
+                BinaryOp::Div => a.div(&b),
+                BinaryOp::Mod | BinaryOp::Pow => None,
             }
         }
         Expr::Call(..) => None,
@@ -1252,6 +1274,15 @@ mod tests {
         let model = integrator(5);
         let affine = model.affine_form().unwrap();
         let spec = Formula::parse("eventually[0, 5](2 * pos > 4)").unwrap();
+        let input = solve_milp(&affine, &spec, &box_bounds(5), 50_000).unwrap();
+        assert!(exact(&model, &spec, &input) >= 0.0, "input {input:?}");
+    }
+
+    #[test]
+    fn an_affine_predicate_with_a_constant_divisor_is_accepted() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("eventually[0, 5](pos / 2 > 1)").unwrap();
         let input = solve_milp(&affine, &spec, &box_bounds(5), 50_000).unwrap();
         assert!(exact(&model, &spec, &input) >= 0.0, "input {input:?}");
     }
