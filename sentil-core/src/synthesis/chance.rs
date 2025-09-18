@@ -1,11 +1,4 @@
 //! Validating a chance constraint by Monte Carlo.
-//!
-//! A chance constraint asks that a specification hold with at least some target
-//! probability over a stochastic system. This validates one the conservative way:
-//! it simulates the system, counts the runs the formula holds on, and requires the
-//! Wilson lower confidence bound, not the point estimate, to clear the target. An
-//! optional tightening raises the bar further, turning a probabilistic guarantee
-//! into a risk margin a synthesized controller can be checked against as it runs.
 
 #![allow(
     clippy::cast_precision_loss,
@@ -101,14 +94,7 @@ impl ChanceConstraint {
             )));
         }
 
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let mut successes = 0u64;
-        for _ in 0..samples {
-            let trace = system.simulate(&mut rng)?;
-            if self.formula.robustness(&trace)? >= 0.0 {
-                successes += 1;
-            }
-        }
+        let successes = self.count_successes(system, samples, seed)?;
         let interval = wilson_interval(successes, samples, self.level);
         Ok(ChanceReport {
             estimate: successes as f64 / samples as f64,
@@ -116,6 +102,35 @@ impl ChanceConstraint {
             samples,
             holds: interval.lower >= self.probability + self.tightening,
         })
+    }
+
+    /// Counts the trajectories the formula holds on; per-index seeding keeps the count thread-count independent.
+    #[cfg(feature = "parallel")]
+    fn count_successes(&self, system: &StochasticSystem, samples: u64, seed: u64) -> Result<u64> {
+        use rayon::prelude::*;
+        let hits: Vec<u64> = (0..samples)
+            .into_par_iter()
+            .map(|i| {
+                let mut rng = ChaCha8Rng::seed_from_u64(seed.wrapping_add(i));
+                let trace = system.simulate(&mut rng)?;
+                Ok::<u64, Error>(u64::from(self.formula.robustness(&trace)? >= 0.0))
+            })
+            .collect::<Result<Vec<u64>>>()?;
+        Ok(hits.iter().sum())
+    }
+
+    /// Single-threaded count, identical sample for sample.
+    #[cfg(not(feature = "parallel"))]
+    fn count_successes(&self, system: &StochasticSystem, samples: u64, seed: u64) -> Result<u64> {
+        let mut successes = 0u64;
+        for i in 0..samples {
+            let mut rng = ChaCha8Rng::seed_from_u64(seed.wrapping_add(i));
+            let trace = system.simulate(&mut rng)?;
+            if self.formula.robustness(&trace)? >= 0.0 {
+                successes += 1;
+            }
+        }
+        Ok(successes)
     }
 }
 

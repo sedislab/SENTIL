@@ -10,8 +10,8 @@ use crate::formula::Formula;
 use crate::signal::Trace;
 
 /// Draws an initial packed sample.
-type InitFn = Box<dyn Fn(&mut dyn RngCore) -> Vec<f64>>;
-type StepFn = Box<dyn Fn(&[f64], f64, &mut dyn RngCore) -> Vec<f64>>;
+type InitFn = Box<dyn Fn(&mut dyn RngCore) -> Vec<f64> + Sync>;
+type StepFn = Box<dyn Fn(&[f64], f64, &mut dyn RngCore) -> Vec<f64> + Sync>;
 
 /// A user-defined stochastic system the splitter can drive.
 pub struct StochasticSystem {
@@ -32,8 +32,8 @@ impl StochasticSystem {
         variables: impl IntoIterator<Item = impl Into<String>>,
         dt: f64,
         horizon: usize,
-        init: impl Fn(&mut dyn RngCore) -> Vec<f64> + 'static,
-        step: impl Fn(&[f64], f64, &mut dyn RngCore) -> Vec<f64> + 'static,
+        init: impl Fn(&mut dyn RngCore) -> Vec<f64> + Sync + 'static,
+        step: impl Fn(&[f64], f64, &mut dyn RngCore) -> Vec<f64> + Sync + 'static,
     ) -> Result<Self> {
         let variables: Vec<String> = variables.into_iter().map(Into::into).collect();
         if !(dt.is_finite() && dt > 0.0) {
