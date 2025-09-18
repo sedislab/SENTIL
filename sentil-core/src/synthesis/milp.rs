@@ -1093,6 +1093,25 @@ fn margin_of(expr: &Expr) -> Option<Margin> {
     }
 }
 
+/// Whether [`solve_milp`] can encode `spec`.
+pub(crate) fn supports(spec: &Formula) -> bool {
+    match spec {
+        Formula::Predicate(p) => margin_of(&p.lhs).is_some() && margin_of(&p.rhs).is_some(),
+        Formula::Not(a)
+        | Formula::Always(_, a)
+        | Formula::Eventually(_, a)
+        | Formula::Historically(_, a)
+        | Formula::Once(_, a)
+        | Formula::Next(a) => supports(a),
+        Formula::And(a, b)
+        | Formula::Or(a, b)
+        | Formula::Implies(a, b)
+        | Formula::Until(_, a, b)
+        | Formula::Since(_, a, b) => supports(a) && supports(b),
+        Formula::Probabilistic(..) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::float_cmp, reason = "the asserted LP vertices are exact")]

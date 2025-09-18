@@ -13,7 +13,8 @@ const MILP_MAX_NODES: usize = 200_000;
 /// The search backend a synthesis problem uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Backend {
-    /// Choose automatically; currently the gradient search.
+    /// MILP for an affine model with a finite input box and an encodable STL spec,
+    /// otherwise the gradient search.
     #[default]
     Auto,
     /// Projected gradient ascent on the smooth robustness.
@@ -130,7 +131,18 @@ impl Synthesizer {
         let spec = problem.spec;
         let initial = model.initial_state();
         let start = vec![0.0; model.input_dimension()];
-        let (input, backend) = if problem.backend == Backend::Milp {
+        let backend = if problem.backend == Backend::Auto {
+            let finite_box = problem.bounds.lower().iter().all(|b| b.is_finite())
+                && problem.bounds.upper().iter().all(|b| b.is_finite());
+            if finite_box && model.affine_form().is_some() && super::milp::supports(spec) {
+                Backend::Milp
+            } else {
+                Backend::Gradient
+            }
+        } else {
+            problem.backend
+        };
+        let (input, backend) = if backend == Backend::Milp {
             let affine = model.affine_form().ok_or(Error::Unsupported {
                 feature: "the MILP backend needs an affine model; use Gradient or CmaEs",
             })?;
@@ -138,7 +150,7 @@ impl Synthesizer {
                 solve_milp(&affine, spec, &problem.bounds, MILP_MAX_NODES)?,
                 Backend::Milp,
             )
-        } else if problem.backend == Backend::CmaEs {
+        } else if backend == Backend::CmaEs {
             let config = CmaConfig {
                 max_generations: problem.max_iters,
                 population: problem.population,
@@ -228,6 +240,26 @@ mod tests {
         let result = Synthesizer::solve(&problem).unwrap();
         assert!(result.holds, "robustness {}", result.robustness);
         assert_eq!(result.backend, Backend::CmaEs);
+    }
+
+    #[test]
+    fn auto_picks_milp_for_a_finite_box_affine_spec() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec)
+            .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5]).unwrap());
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert_eq!(result.backend, Backend::Milp);
+        assert!(result.holds);
+    }
+
+    #[test]
+    fn auto_falls_back_to_gradient_without_a_finite_box() {
+        let model = integrator(5);
+        let spec = Formula::parse("eventually[0, 5](pos > 2)").unwrap();
+        let problem = SynthesisProblem::new(&model, &spec);
+        let result = Synthesizer::solve(&problem).unwrap();
+        assert_eq!(result.backend, Backend::Gradient);
     }
 
     #[test]
