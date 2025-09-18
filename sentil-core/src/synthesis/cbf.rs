@@ -81,7 +81,21 @@ impl SafetyFilter {
             g.push(coefficients.iter().map(|&x| -x).collect());
             h.push(-bound);
         }
-        solve_qp(&p, &q, &g, &h, self.max_iters)
+        let u = solve_qp(&p, &q, &g, &h, self.max_iters)?;
+        // solve_qp can return a u satisfying no barrier when the primal is infeasible; reject rather
+        // than pass it through. Tolerance scales with magnitude so solver slack does not read as a violation.
+        for (k, (coefficients, bound)) in barriers.iter().enumerate() {
+            let value: f64 = coefficients.iter().zip(&u).map(|(a, x)| a * x).sum();
+            if value < bound - 1e-4 * (1.0 + bound.abs() + value.abs()) {
+                return Err(Error::InvalidConfig {
+                    context: "safety filter",
+                    message: format!(
+                        "barrier {k} cannot be met inside the bounds; the barriers and the actuator box have no common feasible input"
+                    ),
+                });
+            }
+        }
+        Ok(u)
     }
 }
 
@@ -108,6 +122,21 @@ mod tests {
         let filter = SafetyFilter::new(Bounds::new([-2.0], [2.0]).unwrap());
         let u = filter.filter(&[5.0], &[]).unwrap();
         assert!((u[0] - 2.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn infeasible_barriers_are_reported_not_silently_violated() {
+        let filter = SafetyFilter::new(Bounds::unbounded(1));
+        let err = filter
+            .filter(&[0.0], &[(vec![1.0], 1.0), (vec![-1.0], 1.0)])
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig {
+                context: "safety filter",
+                ..
+            }
+        ));
     }
 
     #[test]
