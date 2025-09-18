@@ -35,6 +35,14 @@ pub struct SmoothConfig {
 impl SmoothConfig {
     /// Builds a log-sum-exp configuration at the given temperature.
     ///
+    /// ```
+    /// use sentil::synthesis::SmoothConfig;
+    /// let config = SmoothConfig::new(50.0)?;
+    /// assert!(SmoothConfig::new(0.0).is_err());
+    /// # let _ = config;
+    /// # Ok::<(), sentil::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidConfig`] if `temperature` is not finite and

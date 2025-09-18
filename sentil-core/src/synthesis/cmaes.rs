@@ -245,6 +245,14 @@ fn update_covariance(
 /// Maximizes a black-box `objective` over the box `bounds`, starting from `start`,
 /// by CMA-ES, scoring one candidate at a time.
 ///
+/// ```
+/// use sentil::synthesis::{cma_es, Bounds, CmaConfig};
+/// let bounds = Bounds::new(vec![-5.0], vec![5.0])?;
+/// let (best, _) = cma_es(|x: &[f64]| Ok(-(x[0] - 2.0).powi(2)), &[0.0], &bounds, CmaConfig::default())?;
+/// assert!((best[0] - 2.0).abs() < 1e-2);
+/// # Ok::<(), sentil::Error>(())
+/// ```
+///
 /// # Errors
 ///
 /// Propagates any error the objective returns.

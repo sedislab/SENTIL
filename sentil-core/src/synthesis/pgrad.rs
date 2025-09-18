@@ -6,6 +6,19 @@ use crate::error::Result;
 /// Maximizes `objective` over the box `bounds`, starting from `start`, for at most
 /// `max_iters` steps.
 ///
+/// ```
+/// use sentil::synthesis::{maximize, Bounds};
+/// let bounds = Bounds::new(vec![-5.0], vec![5.0])?;
+/// let (best, _) = maximize(
+///     |x: &[f64]| Ok((-(x[0] - 2.0).powi(2), vec![-2.0 * (x[0] - 2.0)])),
+///     &[0.0],
+///     &bounds,
+///     200,
+/// )?;
+/// assert!((best[0] - 2.0).abs() < 1e-3);
+/// # Ok::<(), sentil::Error>(())
+/// ```
+///
 /// # Errors
 ///
 /// Propagates any error the objective returns.

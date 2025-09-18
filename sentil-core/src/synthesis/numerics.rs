@@ -8,6 +8,14 @@ const TOLERANCE: f64 = 1e-28;
 /// The eigendecomposition of a symmetric matrix by cyclic Jacobi rotations, as
 /// eigenvalues paired with orthonormal `eigenvectors[j]`.
 ///
+/// ```
+/// use sentil::synthesis::symmetric_eigen;
+/// let (mut values, _vectors) = symmetric_eigen(&[vec![2.0, 0.0], vec![0.0, 5.0]])?;
+/// values.sort_by(f64::total_cmp);
+/// assert!((values[0] - 2.0).abs() < 1e-9 && (values[1] - 5.0).abs() < 1e-9);
+/// # Ok::<(), sentil::Error>(())
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`Error::InvalidConfig`] if `matrix` is not square.
@@ -90,6 +98,13 @@ fn rotate(a: &mut [Vec<f64>], v: &mut [Vec<f64>], p: usize, q: usize, c: f64, s:
 
 /// Solves `A x = b` for a symmetric positive-definite `A` by Cholesky
 /// factorization (`A = L Lᵀ`, then forward and back substitution).
+///
+/// ```
+/// use sentil::synthesis::solve_spd;
+/// let x = solve_spd(&[vec![4.0, 1.0], vec![1.0, 3.0]], &[1.0, 2.0])?;
+/// assert!((x[0] - 1.0 / 11.0).abs() < 1e-9 && (x[1] - 7.0 / 11.0).abs() < 1e-9);
+/// # Ok::<(), sentil::Error>(())
+/// ```
 ///
 /// # Errors
 ///
