@@ -44,6 +44,8 @@ pub struct CmaConfig {
     pub max_generations: usize,
     /// The initial step size.
     pub initial_step: f64,
+    /// Stop early once the step size falls below this; `0` runs every generation.
+    pub tol_step: f64,
     /// The seed.
     pub seed: u64,
 }
@@ -54,6 +56,7 @@ impl Default for CmaConfig {
             population: 0,
             max_generations: 300,
             initial_step: 0.3,
+            tol_step: 1e-11,
             seed: 42,
         }
     }
@@ -71,7 +74,8 @@ impl Default for CmaConfig {
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "CMA-ES uses standard short notation and small exact integer-to-float casts"
+    clippy::too_many_lines,
+    reason = "CMA-ES is one cohesive routine: the setup constants and the generation loop read best together, with standard short notation and small exact integer-to-float casts"
 )]
 pub fn cma_es_batched<F>(
     batch_objective: F,
@@ -115,6 +119,12 @@ where
         context: "cma_es_batched",
         message: "the batch objective returned no score for the start point".into(),
     })?;
+    if !best_value.is_finite() {
+        return Err(Error::InvalidConfig {
+            context: "cma_es_batched",
+            message: "the objective is not finite at the start point".into(),
+        });
+    }
 
     for generation in 0..config.max_generations {
         let (eigenvalues, eigenvectors) = symmetric_eigen(&cov)?;
@@ -175,6 +185,9 @@ where
         }
         let ps_norm = path_sigma.iter().map(|x| x * x).sum::<f64>().sqrt();
         sigma *= ((c_sigma / d_sigma) * (ps_norm / chi_n - 1.0)).exp();
+        if config.tol_step > 0.0 && sigma < config.tol_step {
+            break;
+        }
 
         let decorrelated =
             ps_norm / (1.0 - (1.0 - c_sigma).powf(2.0 * (generation as f64 + 1.0))).sqrt();
@@ -267,6 +280,13 @@ fn transform(eigenvectors: &[Vec<f64>], scales: &[f64], vector: &[f64]) -> Vec<f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_non_finite_start_score_is_rejected() {
+        let bounds = Bounds::new(vec![-1.0], vec![1.0]).unwrap();
+        let result = cma_es(|_: &[f64]| Ok(f64::NAN), &[0.0], &bounds, CmaConfig::default());
+        assert!(matches!(result, Err(Error::InvalidConfig { .. })));
+    }
 
     #[test]
     fn recovers_the_sphere_optimum() {
