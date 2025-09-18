@@ -1,12 +1,4 @@
 //! Reverse-mode differentiation of the smooth robustness.
-//!
-//! A backward pass over the formula tree gives the exact gradient of the smooth
-//! robustness with respect to every trace value in one sweep over the trace per
-//! node, where finite differences would need a forward evaluation per value and
-//! carry a step-size error. This is the differentiable signal-temporal-logic
-//! primitive for learning and gradient-based trajectory optimization: a
-//! differentiable model that supplies its own Jacobian chains this to reach the
-//! gradient with respect to its own inputs.
 
 use std::collections::BTreeMap;
 
