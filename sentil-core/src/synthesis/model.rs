@@ -79,10 +79,11 @@ impl Bounds {
         Ok(Self { lower, upper })
     }
 
-    /// Projects `point` into the box in place, clamping each coordinate.
+    /// Projects `point` into the box in place. A NaN coordinate maps to the lower
+    /// bound.
     pub fn clamp(&self, point: &mut [f64]) {
         for ((value, &lo), &hi) in point.iter_mut().zip(&self.lower).zip(&self.upper) {
-            *value = value.clamp(lo, hi);
+            *value = if value.is_nan() { lo } else { value.clamp(lo, hi) };
         }
     }
 
