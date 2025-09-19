@@ -208,7 +208,9 @@ impl Node for OnceNode {
 ///
 /// Each matured candidate carries the value of `psi` at its time and the running
 /// minimum of `phi` from then to now; the robustness is the best such pair over
-/// the window. Dominated candidates are pruned so the list stays short.
+/// the window. Dominated candidates are pruned so the list stays short. Folding the
+/// best over the live candidates is O(window) per step, not the amortized O(1) the
+/// bounded operators reach.
 struct SinceNode {
     phi: Box<dyn Node>,
     psi: Box<dyn Node>,
@@ -581,9 +583,7 @@ impl StreamMonitor {
     }
 
     /// Builds a monitor that can decide a top-level probabilistic operator online,
-    /// lifting each reading into `config.samples` particles with `lifting`. A
-    /// deterministic formula builds as usual; a probabilistic one becomes a particle
-    /// ensemble whose share of satisfying members estimates the probability.
+    /// lifting each reading into `config.samples` particles with `lifting`.
     ///
     /// # Errors
     ///

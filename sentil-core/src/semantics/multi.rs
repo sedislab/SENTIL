@@ -70,10 +70,6 @@ impl MultiFormulaMonitor {
     /// Advances every monitor to `time` with the named `values` and returns each
     /// formula's robustness, in insertion order.
     ///
-    /// Every monitor is advanced even when one errors, so a failing formula never
-    /// leaves the others a step behind; if any fail, the first error is returned
-    /// and the partial results are dropped.
-    ///
     /// # Errors
     ///
     /// Returns the first error any monitor reports, for example
