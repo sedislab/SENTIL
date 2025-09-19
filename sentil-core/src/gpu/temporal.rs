@@ -43,6 +43,17 @@ fn validate_dims(trace_len: usize, num_vars: usize) -> Result<()> {
     Ok(())
 }
 
+fn check_node_footprint(node_count: usize, trace_len: usize) -> Result<()> {
+    if node_count.saturating_mul(trace_len) > MAX_TEMPORAL_CELLS {
+        return Err(Error::Transpilation {
+            message: format!(
+                "the formula lowers to {node_count} temporal nodes over {trace_len} samples, past the GPU private-memory budget; this runs on the CPU"
+            ),
+        });
+    }
+    Ok(())
+}
+
 struct Builder<'a> {
     symbols: &'a [String],
     trace_len: usize,
@@ -192,13 +203,13 @@ impl<'a> Builder<'a> {
         let (min_op, max_op) = self.ops();
         let upper_break = match interval.upper() {
             Some(b) => {
-                format!("            if ((*times)[j] > (*times)[i] + f32({b:?})) {{ break; }}\n")
+                format!("            if ((*times)[j] > (*times)[i] + f32({b:?}) + 1e-9) {{ break; }}\n")
             }
             None => String::new(),
         };
         let _ = write!(
             self.helpers,
-            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let ws = (*times)[i] + f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (ws <= (*times)[{l}u - 1u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var j = i; j < {l}u; j = j + 1u) {{\n                if (j > i) {{ min_phi = {min_op}(min_phi, (*lphi)[j - 1u]); }}\n{upper_break}                if ((*times)[j] >= ws) {{ best = {max_op}(best, {min_op}((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let ws = (*times)[i] + f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (ws <= (*times)[{l}u - 1u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var j = i; j < {l}u; j = j + 1u) {{\n                if (j > i) {{ min_phi = {min_op}(min_phi, (*lphi)[j - 1u]); }}\n{upper_break}                if ((*times)[j] >= ws - 1e-9) {{ best = {max_op}(best, {min_op}((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
         );
         let _ = write!(
             self.calls,
@@ -216,13 +227,13 @@ impl<'a> Builder<'a> {
         let (min_op, max_op) = self.ops();
         let lower_break = match interval.upper() {
             Some(b) => {
-                format!("            if ((*times)[j] < (*times)[i] - f32({b:?})) {{ break; }}\n")
+                format!("            if ((*times)[j] < (*times)[i] - f32({b:?}) - 1e-9) {{ break; }}\n")
             }
             None => String::new(),
         };
         let _ = write!(
             self.helpers,
-            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let we = (*times)[i] - f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (we >= (*times)[0u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var jj = 0u; jj <= i; jj = jj + 1u) {{\n                let j = i - jj;\n                if (jj > 0u) {{ min_phi = {min_op}(min_phi, (*lphi)[j + 1u]); }}\n{lower_break}                if ((*times)[j] <= we) {{ best = {max_op}(best, {min_op}((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
+            "fn node_{k}(times: ptr<function, array<f32, {l}>>, lphi: ptr<function, array<f32, {l}>>, rpsi: ptr<function, array<f32, {l}>>, out: ptr<function, array<f32, {l}>>) {{\n    for (var i = 0u; i < {l}u; i = i + 1u) {{\n        let we = (*times)[i] - f32({a:?});\n        var best = bitcast<f32>(0xff800000u);\n        if (we >= (*times)[0u]) {{\n            var min_phi = bitcast<f32>(0x7f800000u);\n            for (var jj = 0u; jj <= i; jj = jj + 1u) {{\n                let j = i - jj;\n                if (jj > 0u) {{ min_phi = {min_op}(min_phi, (*lphi)[j + 1u]); }}\n{lower_break}                if ((*times)[j] <= we + 1e-9) {{ best = {max_op}(best, {min_op}((*rpsi)[j], min_phi)); }}\n            }}\n        }}\n        (*out)[i] = best;\n    }}\n}}\n\n",
         );
         let _ = write!(
             self.calls,
@@ -316,16 +327,7 @@ pub(crate) fn transpile_temporal(
     symbols: &[String],
     trace_len: usize,
 ) -> Result<TemporalShader> {
-    validate_dims(trace_len, symbols.len())?;
-    let mut builder = Builder::new(symbols, trace_len);
-    let root = builder.emit(formula)?;
-    let source = builder.finish(&root);
-    validate(&source)?;
-    Ok(TemporalShader {
-        state_size: symbols.len(),
-        trace_len,
-        evaluate_temporal: source,
-    })
+    lower(Builder::new(symbols, trace_len), formula)
 }
 
 /// Transpiles a temporal `formula` into a soft `evaluate_temporal` whose reductions are log-sum-exp smoothed at `beta`.
@@ -348,6 +350,7 @@ fn lower(mut builder: Builder<'_>, formula: &Formula) -> Result<TemporalShader> 
     let state_size = builder.symbols.len();
     validate_dims(trace_len, state_size)?;
     let root = builder.emit(formula)?;
+    check_node_footprint(builder.next, trace_len)?;
     let source = builder.finish(&root);
     validate(&source)?;
     Ok(TemporalShader {
