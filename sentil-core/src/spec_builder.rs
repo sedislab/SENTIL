@@ -601,6 +601,31 @@ impl SpecBuilder {
         self.template.verification.as_ref()?.ams.as_ref()
     }
 
+    /// Builds a [`Monitor`](crate::Monitor) preloaded with the template's
+    /// recommended settings.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from instantiating the formula.
+    pub fn into_monitor(self) -> Result<crate::Monitor> {
+        let formula = self.build_formula()?;
+        let mut config = crate::MonitorConfig::new();
+        if let Some(smc) = self.smc_settings() {
+            config = config.smc(crate::SmcConfig {
+                samples: smc.sample_budget,
+                confidence: smc.confidence,
+                ..crate::SmcConfig::default()
+            });
+        }
+        if let Some(ams) = self.ams_settings() {
+            config = config.rare(crate::RareEventConfig {
+                particles: ams.num_particles,
+                ..crate::RareEventConfig::default()
+            });
+        }
+        Ok(crate::Monitor::from_formula(formula, config))
+    }
+
     /// The per-signal noise-fitting recipes, if the template carries any.
     #[must_use]
     pub fn noise_fit(&self) -> Option<&HashMap<String, NoiseFitDef>> {
@@ -760,7 +785,7 @@ pub fn noise_model_from_def(def: &NoiseDef) -> Result<NoiseModel> {
         "poisson" => NoiseModel::poisson(require_f64(params, "lambda", "Poisson")?),
         "binomial" => {
             let n = require_f64(params, "n", "Binomial")?;
-            if n < 0.0 || n.fract() != 0.0 || n > u64::MAX as f64 {
+            if n < 0.0 || n.fract() != 0.0 || n >= 2.0_f64.powi(64) {
                 return Err(spec_error(format!(
                     "binomial 'n' must be a non-negative integer that fits a u64, got {n}"
                 )));
@@ -1054,6 +1079,19 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
     fn noise_interaction_parses_case_insensitively() {
         assert!(parse_interaction("Multiplicative").is_ok());
         assert!(parse_interaction("sideways").is_err());
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp, reason = "the recommended confidence is an exact literal")]
+    fn into_monitor_preloads_the_recommended_settings() {
+        let monitor = SpecRegistry::default()
+            .builder("controls/overshoot")
+            .unwrap()
+            .into_monitor()
+            .unwrap();
+        let smc = monitor.config().smc_config();
+        assert_eq!(smc.samples, 1000);
+        assert_eq!(smc.confidence, 0.95);
     }
 
     #[test]
