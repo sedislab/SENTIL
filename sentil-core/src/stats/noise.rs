@@ -1135,7 +1135,8 @@ fn check_finite(method: &'static str, samples: &[f64]) -> Result<()> {
 mod tests {
     #![allow(
         clippy::float_cmp,
-        reason = "the degenerate cases produce exact values"
+        clippy::cast_precision_loss,
+        reason = "the degenerate cases produce exact values, and the sample counts are exact in f64"
     )]
 
     use rand::rngs::StdRng;
