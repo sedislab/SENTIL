@@ -1,9 +1,4 @@
 //! GPU acceleration over WebGPU.
-//!
-//! Large Monte Carlo and rare-event runs can be offloaded to a GPU through this
-//! module. Everything here is gated behind the `gpu` feature and degrades
-//! cleanly: when no compatible device is present, [`is_available`] returns
-//! `false` and callers stay on the CPU path.
 
 mod monte_carlo;
 mod splitting;
@@ -22,16 +17,15 @@ pub(crate) use synth_forward::{build_soft_forward_shader, SynthForwardContext};
 use pollster::FutureExt;
 
 /// Whether a usable GPU device is available, so the GPU statistical path can run.
-///
-/// Never fails loudly: a missing adapter, or one that cannot hand out a device,
-/// yields `false` so the caller stays on the CPU rather than crash. The three
-/// internal contexts acquire their own device when they run, so this only probes
-/// reachability.
 #[must_use]
 pub fn is_available() -> bool {
     let instance = wgpu::Instance::default();
     let Ok(adapter) = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: None,
+        })
         .block_on()
     else {
         return false;

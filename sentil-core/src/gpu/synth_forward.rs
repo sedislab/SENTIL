@@ -293,11 +293,8 @@ impl SynthForwardContext {
         }
         let data = slice.get_mapped_range();
         let mut values = Vec::with_capacity(n);
-        for chunk in data.chunks_exact(4).take(n) {
-            let bytes: [u8; 4] = chunk.try_into().map_err(|_| Error::Gpu {
-                message: "a robustness value was not four bytes".into(),
-            })?;
-            values.push(f32::from_le_bytes(bytes));
+        for c in data.chunks_exact(4).take(n) {
+            values.push(f32::from_le_bytes([c[0], c[1], c[2], c[3]]));
         }
         drop(data);
         readback.unmap();
