@@ -1,4 +1,4 @@
-//! GPU adaptive multilevel splitting for rare-event probabilities.
+//! GPU fixed-effort multilevel splitting for rare-event probabilities.
 
 use core::fmt::Write as _;
 
@@ -352,7 +352,8 @@ impl GpuSplittingContext {
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
-        reason = "the particle count and window length stay far below 2^24"
+        clippy::too_many_lines,
+        reason = "one GPU dispatch routine: buffer setup, the per-level loop, and readback read best together; counts stay far below 2^24"
     )]
     fn run_splitting(
         &self,
@@ -366,12 +367,21 @@ impl GpuSplittingContext {
         let cells = (n as u64)
             .checked_mul(window_len as u64)
             .and_then(|c| c.checked_mul(v as u64))
-            .filter(|&c| c <= u32::MAX as u64)
+            .filter(|&c| u32::try_from(c).is_ok())
             .ok_or_else(|| Error::Gpu {
                 message: format!(
                     "a splitting buffer of {n} particles by {window_len} steps by {v} variables exceeds the u32 index space the kernel addresses; reduce particles or the window"
                 ),
             })?;
+        let workgroups = (n as u64).div_ceil(256);
+        if workgroups > u64::from(super::monte_carlo::MAX_DISPATCH_PER_DIM) {
+            return Err(Error::Gpu {
+                message: format!(
+                    "a splitting run of {n} particles needs {workgroups} workgroups, past the {} the device dispatches per dimension; reduce particles",
+                    super::monte_carlo::MAX_DISPATCH_PER_DIM
+                ),
+            });
+        }
         let n_bytes = n as u64 * 4;
         let storage = |label: &str, size: u64, extra: wgpu::BufferUsages| {
             self.device.create_buffer(&wgpu::BufferDescriptor {

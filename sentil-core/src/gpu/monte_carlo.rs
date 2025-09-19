@@ -427,7 +427,7 @@ pub(crate) fn build_temporal_shader(
 const WORKGROUP_SIZE: u32 = 256;
 
 /// WebGPU caps one dispatch dimension at 65535 workgroups.
-const MAX_DISPATCH_PER_DIM: u32 = 65535;
+pub(crate) const MAX_DISPATCH_PER_DIM: u32 = 65535;
 
 /// The most samples one dispatch covers, one thread per sample.
 const MAX_GPU_SAMPLES: u64 = MAX_DISPATCH_PER_DIM as u64 * WORKGROUP_SIZE as u64;
@@ -744,11 +744,8 @@ impl GpuMcContext {
 
         let data = slice.get_mapped_range();
         let mut total = 0u64;
-        for chunk in data.chunks_exact(4).take(num_workgroups) {
-            let bytes: [u8; 4] = chunk
-                .try_into()
-                .map_err(|_| GpuMcError::Readback("a partial count was not four bytes".into()))?;
-            total += f32::from_le_bytes(bytes) as u64;
+        for c in data.chunks_exact(4).take(num_workgroups) {
+            total += f32::from_le_bytes([c[0], c[1], c[2], c[3]]) as u64;
         }
         drop(data);
         readback.unmap();
