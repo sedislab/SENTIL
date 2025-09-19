@@ -1,11 +1,4 @@
 //! Receding-horizon online controller.
-//!
-//! At each step the controller plans a short input sequence from the live state by
-//! climbing the smooth robustness, then hands back the first input to apply. The
-//! plant advances on its own and the next call observes the new state, closing the
-//! loop. The search is anytime: it runs gradient chunks until a wall-clock budget
-//! expires and returns the best plan found, warm-started from the previous step so
-//! a good plan is usually in hand long before the deadline.
 
 use std::time::{Duration, Instant};
 

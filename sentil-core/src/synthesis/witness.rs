@@ -1,10 +1,4 @@
 //! Counterexample synthesis: search for an input that violates a specification.
-//!
-//! Where the synthesizer climbs toward satisfaction, this descends toward
-//! violation, following the negated smooth-robustness gradient to the input that
-//! breaks the formula hardest. A returned robustness below zero is a genuine
-//! counterexample; otherwise it is the closest the search came over the bounded
-//! inputs, evidence the formula may hold there.
 
 use super::cmaes::{cma_es, CmaConfig};
 use super::model::{Bounds, SystemModel};
