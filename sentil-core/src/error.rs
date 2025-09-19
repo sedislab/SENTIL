@@ -18,7 +18,7 @@ pub enum Error {
     Parse(#[from] ParseError),
 
     /// A formula refers to a variable with no value available.
-    #[error("no value available for variable `{name}`")]
+    #[error("no value available for variable `{name}`; add a signal named `{name}` to the trace, or include it in the streaming update")]
     UnknownVariable {
         /// The variable as written in the formula.
         name: String,
@@ -84,7 +84,7 @@ pub enum Error {
     },
 
     /// Robustness was requested over a trace with no samples.
-    #[error("cannot evaluate robustness over an empty trace")]
+    #[error("cannot evaluate robustness over an empty trace; add at least one timed sample first")]
     EmptyTrace,
 
     /// A packed streaming update carried fewer values than the formula needs.

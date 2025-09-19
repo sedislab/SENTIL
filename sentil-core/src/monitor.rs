@@ -61,6 +61,26 @@ impl MonitorConfig {
         self.rare = rare;
         self
     }
+
+    /// The time mode this configuration selects.
+    #[must_use]
+    pub fn time_mode(&self) -> TimeMode {
+        self.time
+    }
+
+    /// The Monte Carlo settings.
+    #[cfg(feature = "statistical")]
+    #[must_use]
+    pub fn smc_config(&self) -> SmcConfig {
+        self.smc
+    }
+
+    /// The rare-event settings.
+    #[cfg(feature = "statistical")]
+    #[must_use]
+    pub fn rare_config(&self) -> RareEventConfig {
+        self.rare
+    }
 }
 
 /// A formula paired with how to check it.
@@ -178,8 +198,6 @@ impl Monitor {
         if self.stream.is_none() {
             self.stream = Some(StreamMonitor::from_formula(&self.formula)?);
         }
-        // Invariant: the branch above leaves `self.stream` as `Some`, so this unwrap
-        // is unreachable; only an internal bug could break it.
         Ok(self
             .stream
             .as_mut()
