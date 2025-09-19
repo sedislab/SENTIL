@@ -1201,6 +1201,25 @@ mod tests {
                 }
             }
         }
+
+        #[test]
+        fn every_arithmetic_function_streams_exactly_like_offline(
+            xs in prop::collection::vec(-5.0f64..5.0, 1..30),
+            ys in prop::collection::vec(-5.0f64..5.0, 1..30),
+        ) {
+            let n = xs.len().min(ys.len());
+            let times: Vec<f64> = (0..n).map(|i| i as f64).collect();
+            let x = &xs[..n];
+            let y = &ys[..n];
+            let f = "abs(x) + sqrt(abs(x) + 1) + exp(sin(x)) + ln(abs(y) + 2) + log(abs(y) + 3) + cos(x) + tan(x) + floor(x) + ceil(y) + min(x, y) + max(x, y) > 0";
+            let online = stream_values(f, &times, &[("x", x), ("y", y)]);
+            let offline = offline_values(f, &times, &[("x", x), ("y", y)]);
+            for (o, ofl) in online.iter().zip(&offline) {
+                if o.is_finite() && ofl.is_finite() {
+                    prop_assert_eq!(o.to_bits(), ofl.to_bits());
+                }
+            }
+        }
     }
 
     #[test]
