@@ -1,0 +1,23 @@
+[package]
+name = "sentil-ffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Stable C ABI for SENTIL, the runtime verification engine for STL and PrSTL"
+
+[lib]
+name = "sentil"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sentil = { path = "../sentil-core" }
+libc = "0.2"
+
+[build-dependencies]
+cc = "1.0"
+
+[dev-dependencies]
+cc = "1.0"
+tempfile = "3"

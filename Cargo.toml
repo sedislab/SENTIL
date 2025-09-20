@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["sentil-core", "benchmarks"]
+members = ["sentil-core", "sentil-ffi", "benchmarks"]
 
 [workspace.package]
 version = "1.0.0"
