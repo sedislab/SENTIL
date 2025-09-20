@@ -1191,6 +1191,47 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
     }
 
     #[test]
+    fn response_and_reach_specs_score_holding_and_violating_traces() {
+        use crate::{Formula, Trace};
+
+        let cases: &[(&str, &[(&str, f64)], &[(&str, f64)])] = &[
+            ("medical/hypoglycemia_recovery", &[("glucose", 100.0)], &[("glucose", 50.0)]),
+            ("medical/sustained_euglycemia", &[("glucose", 110.0)], &[("glucose", 40.0)]),
+            (
+                "industrial/pressure_relief_response",
+                &[("pressure", 0.0), ("relief_open", 0.0)],
+                &[("pressure", 1.0e6), ("relief_open", 0.0)],
+            ),
+            (
+                "financial/circuit_breaker_response",
+                &[("index_decline", 0.0), ("trading_halted", 0.0)],
+                &[("index_decline", 1.0), ("trading_halted", 0.0)],
+            ),
+        ];
+        let registry = SpecRegistry::default();
+        let times: Vec<f64> = (0..=120).map(f64::from).collect();
+        for (spec, holds, violates) in cases {
+            let text = registry.builder(spec).unwrap().build_deterministic().unwrap();
+            let formula = Formula::parse(&text).unwrap();
+            let build = |assignments: &[(&str, f64)]| {
+                let mut trace = Trace::new(times.clone()).unwrap();
+                for (signal, value) in assignments {
+                    trace.add_signal(signal, vec![*value; times.len()]).unwrap();
+                }
+                trace
+            };
+            assert!(
+                formula.robustness(&build(holds)).unwrap() > 0.0,
+                "{spec} should hold"
+            );
+            assert!(
+                formula.robustness(&build(violates)).unwrap() < 0.0,
+                "{spec} should fail"
+            );
+        }
+    }
+
+    #[test]
     fn time_to_collision_holds_without_dividing_on_a_non_closing_trace() {
         use crate::{Formula, Trace};
 
