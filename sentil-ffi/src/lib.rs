@@ -38,6 +38,27 @@ pub enum SentilError {
     Panic = 17,
 }
 
+mod conversions;
+
+use conversions::{last_error_code, last_error_message};
+use libc::{c_char, size_t};
+
+/// Returns the status code of the most recent failed call on this thread, or
+/// `SENTIL_OK` when the last call succeeded.
+#[no_mangle]
+pub extern "C" fn sentil_get_last_error_code() -> SentilError {
+    last_error_code()
+}
+
+/// Copies the most recent error message on this thread into `buffer`, writing at
+/// most `length` bytes and always null terminating when `length` is nonzero.
+/// Returns the length the message needs including the terminator, so a caller can
+/// pass a null buffer to size an allocation and then call again.
+#[no_mangle]
+pub extern "C" fn sentil_get_last_error_message(buffer: *mut c_char, length: size_t) -> size_t {
+    last_error_message(buffer, length)
+}
+
 const VERSION_MAJOR: u32 = 1;
 const VERSION_MINOR: u32 = 0;
 const VERSION_PATCH: u32 = 0;
