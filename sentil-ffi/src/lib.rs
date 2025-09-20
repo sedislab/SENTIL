@@ -11,6 +11,33 @@
     reason = "each export null-checks its pointers and the header states the contract; marking every C entry point unsafe adds noise a C caller cannot observe"
 )]
 
+/// Stable status code returned across the C ABI. `Ok` is zero; every other value
+/// signals a failure whose human-readable detail is retrievable through
+/// `sentil_get_last_error_message`. The integer values are part of the ABI and do
+/// not change between releases.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SentilError {
+    Ok = 0,
+    NullPointer = 1,
+    Utf8 = 2,
+    Parse = 3,
+    UnknownVariable = 4,
+    Evaluation = 5,
+    Trace = 6,
+    NotProbabilistic = 7,
+    InvalidNoiseModel = 8,
+    InvalidConfig = 9,
+    Fit = 10,
+    Ingest = 11,
+    Splitting = 12,
+    Unsupported = 13,
+    Transpilation = 14,
+    Gpu = 15,
+    Json = 16,
+    Panic = 17,
+}
+
 const VERSION_MAJOR: u32 = 1;
 const VERSION_MINOR: u32 = 0;
 const VERSION_PATCH: u32 = 0;
