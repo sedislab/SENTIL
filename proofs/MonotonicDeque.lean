@@ -54,12 +54,6 @@ theorem le_omin {a b c : α} (hca : le c a) (hcb : le c b) : le c (omin a b) := 
 theorem omin_eq_left {a b : α} (h : le a b) : omin a b = a := by
   unfold omin; exact if_pos h
 
-instance (priority := low) decEq : DecidableEq α := fun a b =>
-  if hab : le a b then
-    if hba : le b a then isTrue (le_antisymm hab hba)
-    else isFalse (by intro h; subst h; exact absurd (le_refl _) hba)
-  else isFalse (by intro h; subst h; exact absurd (le_refl _) hab)
-
 end VOrd
 
 open VOrd
@@ -345,15 +339,6 @@ structure DequeInv (deque stream : Deque α) (t w : Nat) : Prop where
             ∃ s' ∈ deque, s'.time > s.time ∧ s'.value ≤ᵥ s.value
   bound : ∀ s ∈ stream, s.time ≤ t
 
-theorem inv_empty (w : Nat) : DequeInv ([] : Deque α) [] 0 w := {
-  vnd   := ValueNonDecr.nil
-  ti    := TimeIncr.nil
-  sub   := fun _ h => nomatch h
-  inw   := fun _ h => nomatch h
-  cov   := fun _ h => nomatch h
-  bound := fun _ h => nomatch h
-}
-
 theorem step_vnd (D : Deque α) (s : Sample α) (w : Nat) (h : ValueNonDecr D) :
     ValueNonDecr (processStep D s w) := by
   unfold processStep
@@ -481,11 +466,6 @@ theorem foldl_min_eq_init (xs : List (Sample α)) (init : α)
     show List.foldl _ (omin init x.value) xs = init
     rw [omin_eq_left (h x (List.Mem.head _))]
     exact ih init (fun s hs => h s (List.Mem.tail _ hs))
-
-theorem vnd_head_sampleMin (x : Sample α) (xs : Deque α) (h : ValueNonDecr (x :: xs)) :
-    sampleMin (x :: xs) = some x.value := by
-  show some (xs.foldl (fun acc s => omin acc s.value) x.value) = some x.value
-  exact congrArg some (foldl_min_eq_init xs x.value (vnd_head_le x xs h))
 
 theorem front_eq_naiveMin (D S : Deque α) (t w : Nat) (h : DequeInv D S t w) :
     (D.head?.map (·.value)) = naiveWindowMin S t w := by
