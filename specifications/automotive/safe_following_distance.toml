@@ -21,8 +21,8 @@ v_f = { unit = "m/s", description = "Longitudinal speed of the front (lead) vehi
 T            = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
 rho          = { type = "float", default = 0.8,  unit = "seconds", description = "Follower response (reaction) time" }
 a_max_accel  = { type = "float", default = 3.5,  unit = "m/s^2", description = "Maximum acceleration the follower may apply during the reaction window" }
-a_min_brake  = { type = "float", default = 4.0,  unit = "m/s^2", description = "Minimum deceleration the follower guarantees after reacting" }
-a_max_brake  = { type = "float", default = 8.0,  unit = "m/s^2", description = "Maximum deceleration assumed of the lead vehicle" }
+a_min_brake  = { type = "float", default = 4.0,  unit = "m/s^2", range = [0.1, 20.0], description = "Minimum deceleration the follower guarantees after reacting" }
+a_max_brake  = { type = "float", default = 8.0,  unit = "m/s^2", range = [0.1, 20.0], description = "Maximum deceleration assumed of the lead vehicle" }
 p            = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a safety property)" }
 
 [formulas]

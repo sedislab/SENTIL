@@ -2,7 +2,7 @@
 name = "Speed Limit"
 domain = "automotive"
 description = """
-The speed stays below the applicable limit. The 33.3 m/s (120 km/h) default is a \
+The speed stays at or below the applicable limit. The 33.3 m/s (120 km/h) default is a \
 highway placeholder; set it per segment, or compare against a posted-limit signal \
 rather than a constant where the limit varies along the route."""
 references = [
@@ -18,8 +18,8 @@ speed_limit = { type = "float", default = 33.3, unit = "m/s", description = "App
 p           = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
 
 [formulas]
-deterministic = "always[0, {T}](speed < {speed_limit})"
-probabilistic = "P >= {p}(always[0, {T}](speed < {speed_limit}))"
+deterministic = "always[0, {T}](speed <= {speed_limit})"
+probabilistic = "P >= {p}(always[0, {T}](speed <= {speed_limit}))"
 
 [noise]
 speed = { model = "Gaussian", mean = 0.0, std_dev = 0.2, interaction = "additive" }

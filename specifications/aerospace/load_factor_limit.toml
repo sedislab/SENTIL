@@ -20,8 +20,8 @@ n_min_negative = { type = "float", default = -1.0, unit = "g", description = "Ne
 p              = { type = "float", default = 0.99, range = [0.0, 1.0], description = "PrSTL probability threshold (high, a structural-safety property)" }
 
 [formulas]
-deterministic = "always[0, {T}](load_factor < {n_max_positive} and load_factor > {n_min_negative})"
-probabilistic = "P >= {p}(always[0, {T}](load_factor < {n_max_positive} and load_factor > {n_min_negative}))"
+deterministic = "always[0, {T}](load_factor <= {n_max_positive} and load_factor >= {n_min_negative})"
+probabilistic = "P >= {p}(always[0, {T}](load_factor <= {n_max_positive} and load_factor >= {n_min_negative}))"
 
 [noise]
 load_factor = { model = "Gaussian", mean = 0.0, std_dev = 0.02, interaction = "additive" }
@@ -46,5 +46,5 @@ max_steps = 10000
 
 [variants.symmetric]
 description = "Bounds the load factor magnitude by the positive limit, ignoring the asymmetric negative bound."
-formulas.deterministic = "always[0, {T}](abs(load_factor) < {n_max_positive})"
-formulas.probabilistic = "P >= {p}(always[0, {T}](abs(load_factor) < {n_max_positive}))"
+formulas.deterministic = "always[0, {T}](abs(load_factor) <= {n_max_positive})"
+formulas.probabilistic = "P >= {p}(always[0, {T}](abs(load_factor) <= {n_max_positive}))"
