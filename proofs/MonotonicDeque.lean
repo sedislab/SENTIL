@@ -54,6 +54,12 @@ theorem le_omin {a b c : α} (hca : le c a) (hcb : le c b) : le c (omin a b) := 
 theorem omin_eq_left {a b : α} (h : le a b) : omin a b = a := by
   unfold omin; exact if_pos h
 
+instance (priority := low) decEq : DecidableEq α := fun a b =>
+  if hab : le a b then
+    if hba : le b a then isTrue (le_antisymm hab hba)
+    else isFalse (by intro h; subst h; exact absurd (le_refl _) hba)
+  else isFalse (by intro h; subst h; exact absurd (le_refl _) hab)
+
 end VOrd
 
 open VOrd
