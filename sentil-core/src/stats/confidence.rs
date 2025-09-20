@@ -457,6 +457,34 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss, reason = "batch and hit counts are small, exact in f64")]
+    fn wilson_and_clopper_pearson_cover_at_their_nominal_rate() {
+        use rand::{Rng, SeedableRng};
+        use rand_chacha::ChaCha8Rng;
+        let p = 0.3;
+        let n = 100u64;
+        let batches = 4000u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(7);
+        let mut wilson_hits = 0u64;
+        let mut cp_hits = 0u64;
+        for _ in 0..batches {
+            let successes = (0..n).filter(|_| rng.random::<f64>() < p).count() as u64;
+            let w = wilson_interval(successes, n, 0.95);
+            if w.lower <= p && p <= w.upper {
+                wilson_hits += 1;
+            }
+            let cp = clopper_pearson(successes, n, 0.95);
+            if cp.lower <= p && p <= cp.upper {
+                cp_hits += 1;
+            }
+        }
+        let wilson = wilson_hits as f64 / batches as f64;
+        let cp = cp_hits as f64 / batches as f64;
+        assert!((wilson - 0.95).abs() < 0.03, "wilson coverage {wilson}");
+        assert!(cp >= 0.94, "clopper-pearson coverage {cp}");
+    }
+
+    #[test]
     fn wilson_matches_known_intervals() {
         let half = wilson_interval(50, 100, 0.95);
         assert!(close(half.lower, 0.403_831) && close(half.upper, 0.596_169));

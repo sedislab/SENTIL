@@ -270,6 +270,34 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss, reason = "run counts are small, exact in f64")]
+    fn the_error_rates_stay_within_the_bounds() {
+        use rand::Rng;
+        let cfg = SprtConfig::new(0.3, 0.7, 0.05, 0.05, 5000).unwrap();
+        let runs = 400u64;
+        let mut type_i = 0u64;
+        let mut type_ii = 0u64;
+        for r in 0..runs {
+            let mut rng = ChaCha8Rng::seed_from_u64(r);
+            if let Ok(SprtResult::AcceptH1 { .. }) =
+                sequential_test(&cfg, || Ok(rng.random::<f64>() < 0.2))
+            {
+                type_i += 1;
+            }
+            let mut rng = ChaCha8Rng::seed_from_u64(1000 + r);
+            if let Ok(SprtResult::AcceptH0 { .. }) =
+                sequential_test(&cfg, || Ok(rng.random::<f64>() < 0.8))
+            {
+                type_ii += 1;
+            }
+        }
+        let type_i_rate = type_i as f64 / runs as f64;
+        let type_ii_rate = type_ii as f64 / runs as f64;
+        assert!(type_i_rate <= 0.1, "type I rate {type_i_rate}");
+        assert!(type_ii_rate <= 0.1, "type II rate {type_ii_rate}");
+    }
+
+    #[test]
     fn config_rejects_bad_parameters() {
         assert!(SprtConfig::new(0.6, 0.4, 0.05, 0.05, 100).is_err());
         assert!(SprtConfig::new(0.4, 0.6, 0.0, 0.05, 100).is_err());
