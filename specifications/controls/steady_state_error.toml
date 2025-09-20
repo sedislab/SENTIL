@@ -1,13 +1,3 @@
-# Once the transient has died out, the residual error between the output
-# and the reference must remain below a tolerance indefinitely. This is
-# distinct from settling time: settling time asks "when do you enter the
-# band?", while steady-state error asks "do you stay there?".
-#
-# The system type number determines whether steady-state error to a step,
-# ramp, or parabolic input is zero. A Type 0 system has nonzero error to
-# a step; a Type 1 system tracks a step perfectly but has nonzero error
-# to a ramp; and so on.
- 
 [metadata]
 name = "Steady-State Error"
 domain = "controls"
@@ -19,46 +9,45 @@ references = [
     "Dorf & Bishop, Modern Control Systems, 13th ed., Sec. 5.6 (steady-state error, system type number, error constants Kp/Kv/Ka)",
     "Ogata, Modern Control Engineering, 5th ed., Ch. 5",
 ]
- 
+
 [variables]
 output    = { description = "Measured plant output" }
 reference = { description = "Commanded setpoint or trajectory" }
- 
+
 [parameters]
 T_transient = { type = "float", default = 10.0, unit = "seconds", description = "Time allowed for transients to decay" }
 T_obs       = { type = "float", default = 50.0, unit = "seconds", description = "Observation window after transients" }
 epsilon     = { type = "float", default = 0.01, description = "Allowable steady-state error (0.01 = 1%)" }
-reference   = { type = "float", default = 1.0,  description = "Final value (for step input)" }
 p           = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
- 
+
 [formulas]
 deterministic = "eventually[0, {T_transient}](always[0, {T_obs}](abs(output - reference) < {epsilon}))"
 probabilistic = "P >= {p}(eventually[0, {T_transient}](always[0, {T_obs}](abs(output - reference) < {epsilon})))"
- 
+
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.005, interaction = "additive" }
- 
+
 [noise_fit]
 output = { algorithm = "fit_gaussian", interaction = "additive" }
- 
+
 [verification.smc]
 confidence = 0.95
 sample_budget = 1000
- 
+
 [verification.sprt]
 p0 = 0.90
 p1 = 0.95
 alpha = 0.05
 beta = 0.05
 max_samples = 5000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000
- 
+
 [variants.step_input]
 description = "Default. Evaluates steady-state error to a step command."
- 
+
 [variants.ramp_input]
 description = """
 Evaluates error to a ramp reference. The tolerance is typically larger \

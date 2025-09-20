@@ -1,10 +1,3 @@
-# Under a bounded external disturbance, the output deviation from its
-# nominal value must stay below a threshold. This captures the
-# sensitivity function's peak: a well-designed controller attenuates
-# disturbances so the output barely moves even when the input is
-# perturbed. The disturbance itself is modeled as noise on a separate
-# input channel.
- 
 [metadata]
 name = "Disturbance Rejection"
 domain = "controls"
@@ -16,11 +9,11 @@ references = [
     "Skogestad & Postlethwaite, Multivariable Feedback Control, 2nd ed., Ch. 6",
     "Astrom & Murray, Feedback Systems, 2nd ed., Ch. 12",
 ]
- 
+
 [variables]
 output      = { description = "Measured plant output" }
 disturbance = { description = "External disturbance signal" }
- 
+
 [parameters]
 T       = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
 y_max   = { type = "float", default = 0.5,  description = "Maximum allowable output deviation" }

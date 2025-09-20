@@ -1,14 +1,3 @@
-# The system must eventually reach a desired condition and then maintain
-# it permanently. The formula is eventually-always, the dual of
-# recurrence. Where recurrence says "keep coming back," persistence says
-# "arrive and stay forever."
-#
-# This encodes asymptotic stability in STL: the system eventually enters
-# an invariant set and never leaves. The settling_time spec is a special
-# case of this with a specific deadline; persistence is the more general
-# formulation that does not prescribe exactly when settling occurs, only
-# that it does occur and that the condition holds from then on.
- 
 [metadata]
 name = "Persistence"
 domain = "controls"
@@ -20,38 +9,38 @@ references = [
     "Donze & Maler, Robust Satisfaction of Temporal Logic over Real-Valued Signals, 2010",
     "Maler & Nickovic, Monitoring Temporal Properties of Continuous Signals, 2004",
 ]
- 
+
 [variables]
 output = { description = "Measured plant output" }
- 
+
 [parameters]
 t_reach = { type = "float", default = 10.0, unit = "seconds", description = "Maximum time to reach the invariant set" }
 T_hold  = { type = "float", default = 50.0, unit = "seconds", description = "Required holding duration once inside the set" }
 target  = { type = "float", default = 0.0,  description = "Target value (center of the invariant set)" }
 epsilon = { type = "float", default = 0.05, description = "Radius of the invariant set" }
 p       = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
- 
+
 [formulas]
 deterministic = "eventually[0, {t_reach}](always[0, {T_hold}](abs(output - {target}) < {epsilon}))"
 probabilistic = "P >= {p}(eventually[0, {t_reach}](always[0, {T_hold}](abs(output - {target}) < {epsilon})))"
- 
+
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
- 
+
 [noise_fit]
 output = { algorithm = "fit_gaussian", interaction = "additive" }
- 
+
 [verification.smc]
 confidence = 0.95
 sample_budget = 1000
- 
+
 [verification.sprt]
 p0 = 0.90
 p1 = 0.95
 alpha = 0.05
 beta = 0.05
 max_samples = 5000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000

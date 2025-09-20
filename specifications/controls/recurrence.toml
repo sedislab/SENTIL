@@ -1,12 +1,3 @@
-# The output must periodically revisit a target region. The formula is
-# always-eventually: at every point in time, the output will return to
-# the target within t_visit seconds. This is a liveness property. It
-# guarantees the system never gets permanently stuck outside the goal.
-#
-# Distinct from safety (which says "never leave a region"), recurrence
-# says "always come back." Useful for patrol robots, periodic sampling
-# systems, and oscillatory controllers that must maintain a duty cycle.
- 
 [metadata]
 name = "Recurrence"
 domain = "controls"
@@ -18,38 +9,38 @@ references = [
     "Baier & Katoen, Principles of Model Checking, Ch. 5 (liveness)",
     "Maler & Nickovic, Monitoring Temporal Properties of Continuous Signals, 2004",
 ]
- 
+
 [variables]
 output = { description = "Measured plant output" }
- 
+
 [parameters]
 T       = { type = "float", default = 60.0, unit = "seconds", description = "Total observation horizon" }
 t_visit = { type = "float", default = 10.0, unit = "seconds", description = "Maximum time between consecutive visits to the target" }
 target  = { type = "float", default = 0.0,  description = "Target value" }
 epsilon = { type = "float", default = 0.5,  description = "Proximity radius around the target" }
 p       = { type = "float", default = 0.90, range = [0.0, 1.0], description = "PrSTL probability threshold" }
- 
+
 [formulas]
 deterministic = "always[0, {T}](eventually[0, {t_visit}](abs(output - {target}) < {epsilon}))"
 probabilistic = "P >= {p}(always[0, {T}](eventually[0, {t_visit}](abs(output - {target}) < {epsilon})))"
- 
+
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
- 
+
 [noise_fit]
 output = { algorithm = "fit_gmm", k = 2, max_iters = 100, interaction = "additive" }
- 
+
 [verification.smc]
 confidence = 0.90
 sample_budget = 1000
- 
+
 [verification.sprt]
 p0 = 0.85
 p1 = 0.90
 alpha = 0.05
 beta = 0.05
 max_samples = 5000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000

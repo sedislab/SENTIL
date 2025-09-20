@@ -1,11 +1,3 @@
-# The control input signal must remain within the physical actuator limits
-# at all times. Violation means the controller is demanding more than the
-# actuator can deliver, which causes integrator windup, degraded transient
-# performance, and potential hardware damage.
-#
-# A higher probability threshold (default 0.99) is used here because
-# actuator limits are hard physical constraints, not performance targets.
- 
 [metadata]
 name = "Input Saturation Safety"
 domain = "controls"
@@ -17,37 +9,37 @@ references = [
     "Astrom & Murray, Feedback Systems, 2nd ed., Ch. 11 (anti-windup)",
     "Teel, Global stabilization and restricted tracking for multiple integrators with bounded controls, 1992",
 ]
- 
+
 [variables]
 u = { description = "Control input (e.g., voltage, torque command, valve position)" }
- 
+
 [parameters]
 T     = { type = "float", default = 30.0,  unit = "seconds", description = "Observation horizon" }
 u_min = { type = "float", default = -10.0, description = "Lower actuator limit" }
 u_max = { type = "float", default = 10.0,  description = "Upper actuator limit" }
 p     = { type = "float", default = 0.99,  range = [0.0, 1.0], description = "PrSTL probability threshold (high, because these are hard limits)" }
- 
+
 [formulas]
 deterministic = "always[0, {T}](u > {u_min} and u < {u_max})"
 probabilistic = "P >= {p}(always[0, {T}](u > {u_min} and u < {u_max}))"
- 
+
 [noise]
 u = { model = "Gaussian", mean = 0.0, std_dev = 0.1, interaction = "additive" }
- 
+
 [noise_fit]
 u = { algorithm = "fit_gaussian", interaction = "additive" }
- 
+
 [verification.smc]
 confidence = 0.99
 sample_budget = 2000
- 
+
 [verification.sprt]
 p0 = 0.95
 p1 = 0.99
 alpha = 0.01
 beta = 0.01
 max_samples = 10000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000

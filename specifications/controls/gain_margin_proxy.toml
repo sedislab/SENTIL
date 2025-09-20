@@ -1,22 +1,3 @@
-# Classical gain margin is a frequency-domain concept: how much can you
-# scale the loop gain before the closed-loop goes unstable? There is no
-# direct STL encoding of a frequency-domain quantity. But we can check
-# a time-domain proxy: under a multiplicative gain perturbation applied
-# to the plant, does the output stay bounded?
-#
-# The workflow is:
-#   1. Record a nominal trace.
-#   2. Use SENTIL's lifting with multiplicative noise to perturb the
-#      plant gain across Monte Carlo runs.
-#   3. Check whether the output stays bounded with high probability.
-#
-# The noise model here is multiplicative, not additive. This is critical:
-# multiplicative noise on the output models Y = X * (1 + epsilon), which
-# is the correct perturbation for gain uncertainty.
-#
-# For serious margin analysis, fit a noise model from your gain
-# uncertainty characterization and pass it as a JSON file.
- 
 [metadata]
 name = "Gain Margin Proxy"
 domain = "controls"
@@ -28,36 +9,36 @@ references = [
     "Zhou, Doyle & Glover, Robust and Optimal Control, Sec. 9.5 (gain margin and phase margin, and why they are not sufficient robustness indicators)",
     "Doyle, Francis & Tannenbaum, Feedback Control Theory, Ch. 11 (stability margin optimization)",
 ]
- 
+
 [variables]
 output = { description = "Measured plant output under gain-perturbed conditions" }
- 
+
 [parameters]
 T     = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
 bound = { type = "float", default = 2.0,  description = "Output magnitude bound (if exceeded, the system is effectively unstable)" }
 p     = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
- 
+
 [formulas]
 deterministic = "always[0, {T}](abs(output) < {bound})"
 probabilistic = "P >= {p}(always[0, {T}](abs(output) < {bound}))"
- 
+
 [noise]
 output = { model = "Gaussian", mean = 1.0, std_dev = 0.1, interaction = "multiplicative" }
- 
+
 [noise_fit]
 output = { algorithm = "fit_gmm", k = 2, max_iters = 100, interaction = "multiplicative" }
- 
+
 [verification.smc]
 confidence = 0.95
 sample_budget = 2000
- 
+
 [verification.sprt]
 p0 = 0.90
 p1 = 0.95
 alpha = 0.05
 beta = 0.05
 max_samples = 5000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000

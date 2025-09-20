@@ -1,11 +1,3 @@
-# The output must reach a specified fraction of its final value within
-# a bounded time. For underdamped systems the convention is 0% to 100%
-# (first crossing of the setpoint). For overdamped systems it is 10% to
-# 90%. Rise time is inversely proportional to closed-loop bandwidth, so
-# constraining it implicitly sets a lower bound on the system's speed.
-#
-# Approximate relation for a second-order system: t_r ~ 1.8 / omega_n.
- 
 [metadata]
 name = "Rise Time"
 domain = "controls"
@@ -17,45 +9,45 @@ references = [
     "Ogata, Modern Control Engineering, 5th ed., Ch. 5",
     "Nise, Control Systems Engineering, 8th ed., Ch. 4",
 ]
- 
+
 [variables]
 output    = { description = "Measured plant output" }
 reference = { description = "Step setpoint" }
- 
+
 [parameters]
 t_r           = { type = "float", default = 2.0, unit = "seconds", description = "Maximum allowable rise time" }
 rise_fraction = { type = "float", default = 0.9, range = [0.0, 1.0], description = "Target fraction of final value (0.9 = 90%)" }
 reference     = { type = "float", default = 1.0, description = "Final value" }
 p             = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
- 
+
 [formulas]
 deterministic = "eventually[0, {t_r}](output > {rise_fraction} * {reference})"
 probabilistic = "P >= {p}(eventually[0, {t_r}](output > {rise_fraction} * {reference}))"
- 
+
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additive" }
- 
+
 [noise_fit]
 output = { algorithm = "fit_gaussian", interaction = "additive" }
- 
+
 [verification.smc]
 confidence = 0.95
 sample_budget = 1000
- 
+
 [verification.sprt]
 p0 = 0.90
 p1 = 0.95
 alpha = 0.05
 beta = 0.05
 max_samples = 5000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000
- 
+
 [variants.overdamped]
 description = "10% to 90% convention for overdamped or first-order systems (default)."
- 
+
 [variants.underdamped]
 description = "0% to 100% convention for underdamped systems (first zero-crossing of the setpoint)."
 parameters.rise_fraction.default = 1.0

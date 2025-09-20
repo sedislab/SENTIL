@@ -1,21 +1,3 @@
-# How much additional time delay can the loop tolerate before going
-# unstable? Like gain margin, delay margin is a frequency-domain concept
-# (related to the phase margin via delay_margin = phase_margin / omega_gc).
-# The time-domain proxy works the same way as the gain margin proxy:
-# inject delay into the loop and check boundedness.
-#
-# SENTIL does not natively inject time delay into traces (that would
-# require modifying the time axis, which is a simulation concern). The
-# intended workflow is:
-#   1. Run your simulator with different injected delays.
-#   2. Export the resulting traces.
-#   3. Use SENTIL to check each trace against this spec.
-#   4. The fraction of traces that satisfy the spec gives you the
-#      probabilistic delay margin.
-#
-# The "delay" parameter is metadata for documentation; it does not affect
-# the formula. The formula itself just checks output boundedness.
- 
 [metadata]
 name = "Delay Margin Proxy"
 domain = "controls"
@@ -27,37 +9,37 @@ references = [
     "Sipahi, Niculescu, Gu, Michiels & Chen, Stability and Stabilization of Systems with Time Delay, 2011",
     "Astrom & Murray, Feedback Systems, 2nd ed., Ch. 10",
 ]
- 
+
 [variables]
 output = { description = "Measured plant output under delay-perturbed conditions" }
- 
+
 [parameters]
 T     = { type = "float", default = 30.0, unit = "seconds", description = "Observation horizon" }
 bound = { type = "float", default = 2.0,  description = "Output magnitude bound" }
 delay = { type = "float", default = 0.1,  unit = "seconds", description = "Injected loop delay (documentation only; does not affect the formula)" }
 p     = { type = "float", default = 0.95, range = [0.0, 1.0], description = "PrSTL probability threshold" }
- 
+
 [formulas]
 deterministic = "always[0, {T}](abs(output) < {bound})"
 probabilistic = "P >= {p}(always[0, {T}](abs(output) < {bound}))"
- 
+
 [noise]
 output = { model = "Gaussian", mean = 0.0, std_dev = 0.05, interaction = "additive" }
- 
+
 [noise_fit]
 output = { algorithm = "fit_gaussian", interaction = "additive" }
 
 [verification.smc]
 confidence = 0.95
 sample_budget = 1000
- 
+
 [verification.sprt]
 p0 = 0.90
 p1 = 0.95
 alpha = 0.05
 beta = 0.05
 max_samples = 5000
- 
+
 [verification.ams]
 num_particles = 1000
 max_steps = 10000
