@@ -4,7 +4,7 @@ domain = "industrial"
 description = "The process temperature stays below its safe limit for the whole run."
 references = [
     "IEC 61511-2:2003, Safety instrumented systems for the process industry sector, Part 2, Clause 10.3.1 a) (a safety instrumented function holds a process variable within safe limits; the action value sits outside the normal range and below the hazardous value). The numeric limit is plant specific",
-    "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
+    "V. Raman, A. Donze, M. Maasoumy, R. M. Murray, A. Sangiovanni-Vincentelli, S. A. Seshia, Model Predictive Control with Signal Temporal Logic Specifications, IEEE CDC 2014, pp. 81-87",
 ]
 
 [variables]

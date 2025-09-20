@@ -4,7 +4,7 @@ domain = "industrial"
 description = "The tank level stays between its low and high marks for the whole run."
 references = [
     "ANSI/ISA-18.2-2016 (IEC 62682), Management of Alarm Systems for the Process Industries, Clause 10.5.3 (alarm setpoints) and Clause 3.1.1 (absolute alarms: high, high-high, low, low-low). The low and high marks are plant specific",
-    "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
+    "V. Raman, A. Donze, M. Maasoumy, R. M. Murray, A. Sangiovanni-Vincentelli, S. A. Seshia, Model Predictive Control with Signal Temporal Logic Specifications, IEEE CDC 2014, pp. 81-87",
 ]
 
 [variables]

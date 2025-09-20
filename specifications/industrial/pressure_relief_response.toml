@@ -4,7 +4,7 @@ domain = "industrial"
 description = "Whenever pressure exceeds the trip point, the relief valve opens within the reaction time."
 references = [
     "IEC 61511-2:2003, Safety instrumented systems for the process industry sector, Part 2, Clause 3.2.71 (a SIF closes a valve within a set time when pressure reaches a setpoint) and Clause 10.3.1. The setpoint and deadline are plant specific and must be below the process safety time",
-    "Raman et al., Model Predictive Control for Signal Temporal Logic Specifications",
+    "V. Raman, A. Donze, M. Maasoumy, R. M. Murray, A. Sangiovanni-Vincentelli, S. A. Seshia, Model Predictive Control with Signal Temporal Logic Specifications, IEEE CDC 2014, pp. 81-87",
 ]
 
 [variables]
