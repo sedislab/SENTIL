@@ -111,6 +111,26 @@ theorem ti_head_le_time (x : Sample α) (xs : Deque α) (h : TimeIncr (x :: xs))
   | head => exact Nat.le_refl _
   | tail _ hs' => exact Nat.le_of_lt (ti_head_lt x xs h s hs')
 
+theorem ti_take (stream : Deque α) (n : Nat) (h : TimeIncr stream) :
+    TimeIncr (stream.take n) := by
+  induction h generalizing n with
+  | nil => rw [List.take_nil]; exact TimeIncr.nil
+  | one x =>
+    cases n with
+    | zero => exact TimeIncr.nil
+    | succ m =>
+      show TimeIncr (x :: ([] : Deque α).take m)
+      rw [List.take_nil]; exact TimeIncr.one x
+  | cons x y rest hlt _ ih =>
+    cases n with
+    | zero => exact TimeIncr.nil
+    | succ m =>
+      cases m with
+      | zero => exact TimeIncr.one x
+      | succ k =>
+        show TimeIncr (x :: y :: rest.take k)
+        exact TimeIncr.cons x y (rest.take k) hlt (ih (k + 1))
+
 theorem popFront_subset (xs : Deque α) (c : Nat) (s : Sample α) :
     s ∈ popFront xs c → s ∈ xs := by
   induction xs with
@@ -610,6 +630,13 @@ theorem deque_window_correct (stream : Deque α) (w : Nat)
         exact h_last_f _ (List.getLast?_eq_some_getLast (by simp))
     rw [← h_tf_eq]
     exact front_eq_naiveMin _ (s0 :: rest) t_f w h_inv_f
+
+/-- the front is correct after every nonempty prefix -/
+theorem deque_window_correct_prefix (stream : Deque α) (w n : Nat)
+    (h_ti : TimeIncr stream) (hne : stream.take n ≠ []) :
+    ((processN (stream.take n) w).head?.map (·.value))
+      = naiveWindowMin (stream.take n) ((stream.take n).getLast hne).time w :=
+  deque_window_correct (stream.take n) w (ti_take stream n h_ti) hne
 
 end Order
 
