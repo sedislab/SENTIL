@@ -34,6 +34,33 @@ pub(crate) fn last_error_code() -> SentilError {
     LAST_ERROR.with(|e| e.borrow().code)
 }
 
+/// Resets the thread's last error. Called at the entry of every export so a
+/// successful call leaves `Ok` behind.
+pub(crate) fn clear_error() {
+    LAST_ERROR.with(|e| {
+        let mut e = e.borrow_mut();
+        e.code = SentilError::Ok;
+        e.message.clear();
+    });
+}
+
+/// Runs `f`, turning a panic into `SentilError::Panic` and the `default` return
+/// rather than letting it unwind across the C boundary, which would be undefined.
+pub(crate) fn ffi_panic_boundary<T>(default: T, f: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(value) => value,
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("a panic crossed the C boundary");
+            set_error(SentilError::Panic, message);
+            default
+        }
+    }
+}
+
 pub(crate) fn last_error_message(buffer: *mut c_char, length: size_t) -> size_t {
     LAST_ERROR.with(|e| {
         let state = e.borrow();

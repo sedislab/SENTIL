@@ -40,7 +40,7 @@ pub enum SentilError {
 
 mod conversions;
 
-use conversions::{last_error_code, last_error_message};
+use conversions::{clear_error, ffi_panic_boundary, last_error_code, last_error_message};
 use libc::{c_char, size_t};
 
 /// Returns the status code of the most recent failed call on this thread, or
@@ -57,6 +57,20 @@ pub extern "C" fn sentil_get_last_error_code() -> SentilError {
 #[no_mangle]
 pub extern "C" fn sentil_get_last_error_message(buffer: *mut c_char, length: size_t) -> size_t {
     last_error_message(buffer, length)
+}
+
+/// Frees a string this library returned. Passing null is a no-op. Do not pass a
+/// pointer the library did not return, and do not free the same pointer twice.
+#[no_mangle]
+pub extern "C" fn sentil_free_string(s: *mut c_char) {
+    clear_error();
+    ffi_panic_boundary((), || {
+        if !s.is_null() {
+            unsafe {
+                drop(std::ffi::CString::from_raw(s));
+            }
+        }
+    });
 }
 
 const VERSION_MAJOR: u32 = 1;
