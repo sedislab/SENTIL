@@ -96,6 +96,18 @@ pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError
     }
 }
 
+/// Allocates a C string copy of `s`, returning null after setting an error if it
+/// holds an interior null byte.
+pub(crate) fn to_c_string(s: &str) -> *mut c_char {
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => {
+            set_error(SentilError::Evaluation, "a returned string held an interior null byte");
+            ptr::null_mut()
+        }
+    }
+}
+
 /// Moves a list of strings into a freshly allocated C array, writing the length
 /// to `out_count`. The result is freed with `sentil_free_string_array`. Returns
 /// null after setting an error if any string holds an interior null byte.

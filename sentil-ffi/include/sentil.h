@@ -90,6 +90,16 @@ sentil_formula_t *sentil_formula_parse(const char *input);
 /* Frees a formula handle. NULL is a no-op. */
 void sentil_formula_destroy(sentil_formula_t *formula);
 
+/*
+ * Serializes the formula to JSON, returning a string freed with
+ * sentil_free_string, or NULL on error. The shape round-trips through
+ * sentil_formula_from_json.
+ */
+char *sentil_formula_to_json(const sentil_formula_t *formula);
+
+/* Rebuilds a formula from sentil_formula_to_json output. NULL on error. */
+sentil_formula_t *sentil_formula_from_json(const char *json);
+
 /* The nesting depth: predicates are 1 and each operator adds a level. */
 size_t sentil_formula_depth(const sentil_formula_t *formula);
 

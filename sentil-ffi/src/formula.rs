@@ -1,4 +1,6 @@
-use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, into_string_array};
+use crate::conversions::{
+    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, to_c_string,
+};
 use crate::handles::{drop_handle, into_handle};
 use crate::SentilError;
 use libc::{c_char, c_void, size_t};
@@ -30,6 +32,43 @@ pub extern "C" fn sentil_formula_parse(input: *const c_char) -> *mut c_void {
 pub extern "C" fn sentil_formula_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<Formula>(handle) });
+}
+
+/// Serializes the formula to a JSON string the caller frees with
+/// `sentil_free_string`, or null on error. The shape round-trips through
+/// `sentil_formula_from_json`.
+#[no_mangle]
+pub extern "C" fn sentil_formula_to_json(handle: *mut c_void) -> *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let formula = borrow_handle!(handle, Formula, ptr::null_mut());
+        match serde_json::to_string(formula) {
+            Ok(text) => to_c_string(&text),
+            Err(e) => {
+                set_error(SentilError::Json, &e.to_string());
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Rebuilds a formula from the JSON `sentil_formula_to_json` produced. Returns a
+/// handle the caller frees with `sentil_formula_destroy`, or null on error.
+#[no_mangle]
+pub extern "C" fn sentil_formula_from_json(json: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(text) = c_char_to_string(json) else {
+            return ptr::null_mut();
+        };
+        match serde_json::from_str::<Formula>(&text) {
+            Ok(formula) => into_handle(formula),
+            Err(e) => {
+                set_error(SentilError::Json, &e.to_string());
+                ptr::null_mut()
+            }
+        }
+    })
 }
 
 /// The nesting depth of the formula: predicates are depth 1 and each operator
