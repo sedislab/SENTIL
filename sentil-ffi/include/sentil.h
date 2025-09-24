@@ -1,15 +1,4 @@
-/*
- * SENTIL: runtime verification for Signal Temporal Logic and its probabilistic
- * extension PrSTL. Stable C ABI.
- *
- * Authors: Paapa Kwesi Quansah, Ernest Bonnah, SEDIS Lab, Baylor University.
- * Dual licensed under MIT or Apache-2.0.
- *
- * Every function clears the calling thread's last error on entry. A failed call
- * returns a sentinel (a null handle, a NaN, or a nonzero sentil_error_t) and
- * leaves behind a code and message that sentil_get_last_error_code and
- * sentil_get_last_error_message read back. No call aborts the process.
- */
+/* SENTIL: runtime verification for STL and PrSTL. C ABI. */
 #ifndef SENTIL_H
 #define SENTIL_H
 
@@ -25,11 +14,6 @@ extern "C" {
 #define SENTIL_VERSION_MINOR 0
 #define SENTIL_VERSION_PATCH 0
 
-/*
- * Status codes. SENTIL_OK is zero; the rest signal failure, with the detail in
- * the thread's last error message. The integer values are part of the ABI and do
- * not change between releases.
- */
 typedef enum sentil_error {
     SENTIL_OK = 0,
     SENTIL_ERR_NULL_POINTER = 1,
@@ -51,31 +35,40 @@ typedef enum sentil_error {
     SENTIL_ERR_PANIC = 17
 } sentil_error_t;
 
-/* Writes the library version into the out-parameters. Null pointers are skipped. */
 void sentil_version(uint32_t *major, uint32_t *minor, uint32_t *patch);
 
-/* The status code of the most recent failed call on this thread, or SENTIL_OK. */
+/* Last error code on this thread. */
 sentil_error_t sentil_get_last_error_code(void);
 
-/*
- * Copies the thread's last error message into buffer, writing at most length
- * bytes and null terminating when length is nonzero. Returns the length the
- * message needs including the terminator, so a null buffer sizes the allocation.
- */
+/* Copies at most length bytes. Returns the length needed, terminator included. */
 size_t sentil_get_last_error_message(char *buffer, size_t length);
 
-/*
- * Frees a string returned by this library. Null is a no-op. Do not pass a
- * pointer the library did not return, and do not free the same one twice.
- */
+/* Every sentil_free_* and sentil_*_destroy takes NULL as a no-op. */
 void sentil_free_string(char *string);
-
-/* Frees a string array returned by this library. NULL is a no-op. */
 void sentil_free_string_array(char **array, size_t count);
 
 /* Formula */
 
-/* Comparison operator inside a predicate. */
+typedef struct sentil_formula sentil_formula_t;
+
+sentil_formula_t *sentil_formula_parse(const char *input);
+
+void sentil_formula_destroy(sentil_formula_t *formula);
+
+/* JSON form of a formula. Free with sentil_free_string. */
+char *sentil_formula_to_json(const sentil_formula_t *formula);
+
+sentil_formula_t *sentil_formula_from_json(const char *json);
+
+size_t sentil_formula_depth(const sentil_formula_t *formula);
+
+bool sentil_formula_has_temporal(const sentil_formula_t *formula);
+
+/* Variable names, sorted and unique. Free with sentil_free_string_array. */
+char **sentil_formula_variables(const sentil_formula_t *formula, size_t *out_count);
+
+/* Building formulas */
+
 typedef enum sentil_comparison_op {
     SENTIL_CMP_LT = 0,
     SENTIL_CMP_LE = 1,
@@ -85,7 +78,6 @@ typedef enum sentil_comparison_op {
     SENTIL_CMP_NE = 5
 } sentil_comparison_op_t;
 
-/* Arithmetic operator inside an expression. */
 typedef enum sentil_binary_op {
     SENTIL_BIN_ADD = 0,
     SENTIL_BIN_SUB = 1,
@@ -95,7 +87,6 @@ typedef enum sentil_binary_op {
     SENTIL_BIN_POW = 5
 } sentil_binary_op_t;
 
-/* Threshold direction of a probabilistic operator P. */
 typedef enum sentil_probability_op {
     SENTIL_PROB_GE = 0,
     SENTIL_PROB_GT = 1,
@@ -103,100 +94,26 @@ typedef enum sentil_probability_op {
     SENTIL_PROB_LT = 3
 } sentil_probability_op_t;
 
-/* An opaque, owned PrSTL syntax tree. Free it with sentil_formula_destroy. */
-typedef struct sentil_formula sentil_formula_t;
-
-/*
- * Parses a PrSTL formula. Returns a handle the caller owns, or NULL on a parse
- * error whose message names the line and column. The grammar accepts the word
- * operators (always, eventually, until, since, next, and, or, not, implies) and
- * their aliases (G, F, U, S, X, &&, ||, !, ->), arithmetic predicates, and the
- * probabilistic operator P.
- */
-sentil_formula_t *sentil_formula_parse(const char *input);
-
-/* Frees a formula handle. NULL is a no-op. */
-void sentil_formula_destroy(sentil_formula_t *formula);
-
-/*
- * Serializes the formula to JSON, returning a string freed with
- * sentil_free_string, or NULL on error. The shape round-trips through
- * sentil_formula_from_json.
- */
-char *sentil_formula_to_json(const sentil_formula_t *formula);
-
-/* Rebuilds a formula from sentil_formula_to_json output. NULL on error. */
-sentil_formula_t *sentil_formula_from_json(const char *json);
-
-/* The nesting depth: predicates are 1 and each operator adds a level. */
-size_t sentil_formula_depth(const sentil_formula_t *formula);
-
-/* Whether the formula contains any temporal operator. */
-bool sentil_formula_has_temporal(const sentil_formula_t *formula);
-
-/*
- * Writes the formula's variable names, sorted and deduplicated, into a freshly
- * allocated array and stores its length in out_count. Returns the array, freed
- * with sentil_free_string_array, or NULL on error.
- */
-char **sentil_formula_variables(const sentil_formula_t *formula, size_t *out_count);
-
-/* ---- Building formulas programmatically ----------------------------------- */
-
-/* An opaque, owned arithmetic expression used to build predicates. */
 typedef struct sentil_expr sentil_expr_t;
 
-/* Builds a reference to a named signal. NULL on error. */
+/* binary and call consume their operands; free an unused handle with sentil_expr_destroy. */
 sentil_expr_t *sentil_expr_variable(const char *name);
-
-/* Builds a constant. */
 sentil_expr_t *sentil_expr_literal(double value);
-
-/*
- * Builds (left op right), consuming both operands; do not use or free them after.
- * Returns NULL on error, in which case the operands are still consumed.
- */
 sentil_expr_t *sentil_expr_binary(sentil_binary_op_t op, sentil_expr_t *left,
                                   sentil_expr_t *right);
-
-/*
- * Builds name(args[0], ...), consuming every argument; do not use or free them
- * after. Supported names: abs, sqrt, exp, ln, log, sin, cos, tan, floor, ceil,
- * min, max. Returns NULL on error, with the arguments still consumed.
- */
 sentil_expr_t *sentil_expr_call(const char *name, sentil_expr_t **args, size_t count);
-
-/* Frees an expression handle. NULL is a no-op. */
 void sentil_expr_destroy(sentil_expr_t *expr);
 
-/*
- * Each builder below consumes the handles it is given, even when it returns NULL,
- * so the caller never frees an operand it passed in. The result is a new owned
- * formula handle, freed with sentil_formula_destroy.
- */
-
-/* Builds the predicate (lhs op rhs). */
+/* The formula builders below consume the handles passed to them. */
 sentil_formula_t *sentil_formula_predicate(sentil_expr_t *lhs, sentil_comparison_op_t op,
                                            sentil_expr_t *rhs);
-
-/* Builds NOT child. */
 sentil_formula_t *sentil_formula_not(sentil_formula_t *child);
-
-/* Builds (left AND right). */
 sentil_formula_t *sentil_formula_and(sentil_formula_t *left, sentil_formula_t *right);
-
-/* Builds (left OR right). */
 sentil_formula_t *sentil_formula_or(sentil_formula_t *left, sentil_formula_t *right);
-
-/* Builds (left IMPLIES right). */
 sentil_formula_t *sentil_formula_implies(sentil_formula_t *left, sentil_formula_t *right);
-
-/*
- * Temporal builders take an interval [lower, upper]; pass has_upper = false for an
- * interval unbounded above, in which case upper is ignored. Each consumes its
- * child, even on a NULL return.
- */
 sentil_formula_t *sentil_formula_next(sentil_formula_t *child);
+
+/* Temporal builders take [lower, upper]; has_upper = false means unbounded above. */
 sentil_formula_t *sentil_formula_always(double lower, double upper, bool has_upper,
                                         sentil_formula_t *child);
 sentil_formula_t *sentil_formula_eventually(double lower, double upper, bool has_upper,
@@ -205,6 +122,14 @@ sentil_formula_t *sentil_formula_historically(double lower, double upper, bool h
                                               sentil_formula_t *child);
 sentil_formula_t *sentil_formula_once(double lower, double upper, bool has_upper,
                                       sentil_formula_t *child);
+sentil_formula_t *sentil_formula_until(double lower, double upper, bool has_upper,
+                                       sentil_formula_t *left, sentil_formula_t *right);
+sentil_formula_t *sentil_formula_since(double lower, double upper, bool has_upper,
+                                       sentil_formula_t *left, sentil_formula_t *right);
+
+/* threshold in [0, 1]. */
+sentil_formula_t *sentil_formula_probabilistic(sentil_probability_op_t op, double threshold,
+                                               sentil_formula_t *child);
 
 #ifdef __cplusplus
 }
