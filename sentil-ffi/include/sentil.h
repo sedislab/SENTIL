@@ -141,6 +141,34 @@ bool sentil_formula_has_temporal(const sentil_formula_t *formula);
  */
 char **sentil_formula_variables(const sentil_formula_t *formula, size_t *out_count);
 
+/* ---- Building formulas programmatically ----------------------------------- */
+
+/* An opaque, owned arithmetic expression used to build predicates. */
+typedef struct sentil_expr sentil_expr_t;
+
+/* Builds a reference to a named signal. NULL on error. */
+sentil_expr_t *sentil_expr_variable(const char *name);
+
+/* Builds a constant. */
+sentil_expr_t *sentil_expr_literal(double value);
+
+/*
+ * Builds (left op right), consuming both operands; do not use or free them after.
+ * Returns NULL on error, in which case the operands are still consumed.
+ */
+sentil_expr_t *sentil_expr_binary(sentil_binary_op_t op, sentil_expr_t *left,
+                                  sentil_expr_t *right);
+
+/*
+ * Builds name(args[0], ...), consuming every argument; do not use or free them
+ * after. Supported names: abs, sqrt, exp, ln, log, sin, cos, tan, floor, ceil,
+ * min, max. Returns NULL on error, with the arguments still consumed.
+ */
+sentil_expr_t *sentil_expr_call(const char *name, sentil_expr_t **args, size_t count);
+
+/* Frees an expression handle. NULL is a no-op. */
+void sentil_expr_destroy(sentil_expr_t *expr);
+
 #ifdef __cplusplus
 }
 #endif
