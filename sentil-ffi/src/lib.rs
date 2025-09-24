@@ -77,6 +77,15 @@ pub extern "C" fn sentil_free_string(s: *mut c_char) {
     });
 }
 
+/// Frees a string array returned by this library. Passing null is a no-op.
+#[no_mangle]
+pub extern "C" fn sentil_free_string_array(array: *mut *mut c_char, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe {
+        free_boxed_array_owning(array, count, |&string| string)
+    });
+}
+
 const VERSION_MAJOR: u32 = 1;
 const VERSION_MINOR: u32 = 0;
 const VERSION_PATCH: u32 = 0;

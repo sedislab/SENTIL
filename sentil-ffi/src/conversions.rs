@@ -5,6 +5,7 @@
 use crate::SentilError;
 use libc::{c_char, size_t};
 use std::cell::RefCell;
+use std::ffi::CString;
 use std::ptr;
 
 struct ErrorState {
@@ -93,6 +94,33 @@ pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError
             Err(SentilError::Utf8)
         }
     }
+}
+
+/// Moves a list of strings into a freshly allocated C array, writing the length
+/// to `out_count`. The result is freed with `sentil_free_string_array`. Returns
+/// null after setting an error if any string holds an interior null byte.
+pub(crate) fn into_string_array(items: Vec<String>, out_count: *mut size_t) -> *mut *mut c_char {
+    let mut ptrs: Vec<*mut c_char> = Vec::with_capacity(items.len());
+    for item in &items {
+        match CString::new(item.as_str()) {
+            Ok(c) => ptrs.push(c.into_raw()),
+            Err(_) => {
+                for p in ptrs {
+                    unsafe { drop(CString::from_raw(p)) };
+                }
+                set_error(SentilError::Evaluation, "a name held an interior null byte");
+                return ptr::null_mut();
+            }
+        }
+    }
+    let len = ptrs.len();
+    let raw = Box::into_raw(ptrs.into_boxed_slice());
+    unsafe {
+        if let Some(c) = out_count.as_mut() {
+            *c = len;
+        }
+    }
+    raw.cast::<*mut c_char>()
 }
 
 impl From<sentil::Error> for SentilError {

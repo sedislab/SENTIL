@@ -70,6 +70,9 @@ size_t sentil_get_last_error_message(char *buffer, size_t length);
  */
 void sentil_free_string(char *string);
 
+/* Frees a string array returned by this library. NULL is a no-op. */
+void sentil_free_string_array(char **array, size_t count);
+
 /* Formula */
 
 /* An opaque, owned PrSTL syntax tree. Free it with sentil_formula_destroy. */
@@ -92,6 +95,13 @@ size_t sentil_formula_depth(const sentil_formula_t *formula);
 
 /* Whether the formula contains any temporal operator. */
 bool sentil_formula_has_temporal(const sentil_formula_t *formula);
+
+/*
+ * Writes the formula's variable names, sorted and deduplicated, into a freshly
+ * allocated array and stores its length in out_count. Returns the array, freed
+ * with sentil_free_string_array, or NULL on error.
+ */
+char **sentil_formula_variables(const sentil_formula_t *formula, size_t *out_count);
 
 #ifdef __cplusplus
 }

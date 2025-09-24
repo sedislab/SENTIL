@@ -1,4 +1,4 @@
-use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary};
+use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, into_string_array};
 use crate::handles::{drop_handle, into_handle};
 use crate::SentilError;
 use libc::{c_char, c_void, size_t};
@@ -51,5 +51,22 @@ pub extern "C" fn sentil_formula_has_temporal(handle: *mut c_void) -> bool {
     ffi_panic_boundary(false, || {
         let formula = borrow_handle!(handle, Formula, false);
         formula.has_temporal()
+    })
+}
+
+/// Writes the formula's variable names, sorted and deduplicated, into a freshly
+/// allocated array of C strings and stores the count in `out_count`. Returns the
+/// array, which the caller frees with `sentil_free_string_array`, or null on
+/// error. A formula with no variables yields a non-null zero-length array.
+#[no_mangle]
+pub extern "C" fn sentil_formula_variables(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let formula = borrow_handle!(handle, Formula, ptr::null_mut());
+        into_string_array(formula.variables(), out_count)
     })
 }
