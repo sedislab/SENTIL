@@ -87,6 +87,12 @@ sentil_formula_t *sentil_formula_parse(const char *input);
 /* Frees a formula handle. NULL is a no-op. */
 void sentil_formula_destroy(sentil_formula_t *formula);
 
+/* The nesting depth: predicates are 1 and each operator adds a level. */
+size_t sentil_formula_depth(const sentil_formula_t *formula);
+
+/* Whether the formula contains any temporal operator. */
+bool sentil_formula_has_temporal(const sentil_formula_t *formula);
+
 #ifdef __cplusplus
 }
 #endif

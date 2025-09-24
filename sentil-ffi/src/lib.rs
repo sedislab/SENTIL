@@ -38,6 +38,8 @@ pub enum SentilError {
     Panic = 17,
 }
 
+#[macro_use]
+mod macros;
 mod conversions;
 mod formula;
 mod handles;
