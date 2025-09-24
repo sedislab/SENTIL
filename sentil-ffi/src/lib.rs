@@ -86,6 +86,81 @@ pub extern "C" fn sentil_free_string_array(array: *mut *mut c_char, count: size_
     });
 }
 
+/// Comparison operator inside a predicate. Mirrors `sentil::formula::ComparisonOp`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilComparisonOp {
+    Less = 0,
+    LessEqual = 1,
+    Greater = 2,
+    GreaterEqual = 3,
+    Equal = 4,
+    NotEqual = 5,
+}
+
+impl From<SentilComparisonOp> for sentil::formula::ComparisonOp {
+    fn from(op: SentilComparisonOp) -> Self {
+        use sentil::formula::ComparisonOp as C;
+        match op {
+            SentilComparisonOp::Less => C::Less,
+            SentilComparisonOp::LessEqual => C::LessEqual,
+            SentilComparisonOp::Greater => C::Greater,
+            SentilComparisonOp::GreaterEqual => C::GreaterEqual,
+            SentilComparisonOp::Equal => C::Equal,
+            SentilComparisonOp::NotEqual => C::NotEqual,
+        }
+    }
+}
+
+/// Arithmetic operator inside an expression. Mirrors `sentil::formula::BinaryOp`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilBinaryOp {
+    Add = 0,
+    Sub = 1,
+    Mul = 2,
+    Div = 3,
+    Mod = 4,
+    Pow = 5,
+}
+
+impl From<SentilBinaryOp> for sentil::formula::BinaryOp {
+    fn from(op: SentilBinaryOp) -> Self {
+        use sentil::formula::BinaryOp as B;
+        match op {
+            SentilBinaryOp::Add => B::Add,
+            SentilBinaryOp::Sub => B::Sub,
+            SentilBinaryOp::Mul => B::Mul,
+            SentilBinaryOp::Div => B::Div,
+            SentilBinaryOp::Mod => B::Mod,
+            SentilBinaryOp::Pow => B::Pow,
+        }
+    }
+}
+
+/// Threshold direction of a probabilistic operator. Mirrors
+/// `sentil::formula::ProbabilityOp`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilProbabilityOp {
+    GreaterEqual = 0,
+    Greater = 1,
+    LessEqual = 2,
+    Less = 3,
+}
+
+impl From<SentilProbabilityOp> for sentil::formula::ProbabilityOp {
+    fn from(op: SentilProbabilityOp) -> Self {
+        use sentil::formula::ProbabilityOp as P;
+        match op {
+            SentilProbabilityOp::GreaterEqual => P::GreaterEqual,
+            SentilProbabilityOp::Greater => P::Greater,
+            SentilProbabilityOp::LessEqual => P::LessEqual,
+            SentilProbabilityOp::Less => P::Less,
+        }
+    }
+}
+
 const VERSION_MAJOR: u32 = 1;
 const VERSION_MINOR: u32 = 0;
 const VERSION_PATCH: u32 = 0;

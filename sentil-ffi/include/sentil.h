@@ -75,6 +75,34 @@ void sentil_free_string_array(char **array, size_t count);
 
 /* Formula */
 
+/* Comparison operator inside a predicate. */
+typedef enum sentil_comparison_op {
+    SENTIL_CMP_LT = 0,
+    SENTIL_CMP_LE = 1,
+    SENTIL_CMP_GT = 2,
+    SENTIL_CMP_GE = 3,
+    SENTIL_CMP_EQ = 4,
+    SENTIL_CMP_NE = 5
+} sentil_comparison_op_t;
+
+/* Arithmetic operator inside an expression. */
+typedef enum sentil_binary_op {
+    SENTIL_BIN_ADD = 0,
+    SENTIL_BIN_SUB = 1,
+    SENTIL_BIN_MUL = 2,
+    SENTIL_BIN_DIV = 3,
+    SENTIL_BIN_MOD = 4,
+    SENTIL_BIN_POW = 5
+} sentil_binary_op_t;
+
+/* Threshold direction of a probabilistic operator P. */
+typedef enum sentil_probability_op {
+    SENTIL_PROB_GE = 0,
+    SENTIL_PROB_GT = 1,
+    SENTIL_PROB_LE = 2,
+    SENTIL_PROB_LT = 3
+} sentil_probability_op_t;
+
 /* An opaque, owned PrSTL syntax tree. Free it with sentil_formula_destroy. */
 typedef struct sentil_formula sentil_formula_t;
 
