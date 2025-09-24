@@ -2,11 +2,38 @@ use crate::conversions::{
     c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, to_c_string,
 };
 use crate::handles::{drop_handle, into_handle, take_handle};
-use crate::{SentilBinaryOp, SentilError};
+use crate::{SentilBinaryOp, SentilComparisonOp, SentilError};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::formula::Expr;
+use sentil::formula::{Expr, Predicate};
 use sentil::Formula;
 use std::ptr;
+
+fn binary_formula(
+    left: *mut c_void,
+    right: *mut c_void,
+    build: fn(Box<Formula>, Box<Formula>) -> Formula,
+) -> *mut c_void {
+    if aliased(left, right) {
+        return ptr::null_mut();
+    }
+    let (Some(l), Some(r)) =
+        (unsafe { take_handle::<Formula>(left) }, unsafe { take_handle::<Formula>(right) })
+    else {
+        set_error(SentilError::NullPointer, "a child formula was null");
+        return ptr::null_mut();
+    };
+    into_handle(build(Box::new(l), Box::new(r)))
+}
+
+fn interval_from(lower: f64, upper: f64, has_upper: bool) -> Option<Interval> {
+    match Interval::new(lower, has_upper.then_some(upper)) {
+        Ok(i) => Some(i),
+        Err(e) => {
+            let _: SentilError = e.into();
+            None
+        }
+    }
+}
 
 /// Parses a PrSTL formula from a null-terminated UTF-8 string. Returns a handle
 /// the caller owns and frees with `sentil_formula_destroy`, or null on a parse
@@ -191,4 +218,61 @@ pub extern "C" fn sentil_expr_call(
 pub extern "C" fn sentil_expr_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<Expr>(handle) });
+}
+
+/// Builds the predicate `lhs op rhs`, consuming both expressions. They are
+/// consumed even when this returns null.
+#[no_mangle]
+pub extern "C" fn sentil_formula_predicate(
+    lhs: *mut c_void,
+    op: SentilComparisonOp,
+    rhs: *mut c_void,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        if aliased(lhs, rhs) {
+            return ptr::null_mut();
+        }
+        let (Some(l), Some(r)) =
+            (unsafe { take_handle::<Expr>(lhs) }, unsafe { take_handle::<Expr>(rhs) })
+        else {
+            set_error(SentilError::NullPointer, "a predicate operand was null");
+            return ptr::null_mut();
+        };
+        into_handle(Formula::Predicate(Predicate { lhs: l, op: op.into(), rhs: r }))
+    })
+}
+
+/// Builds the negation of `child`, consuming it. Consumed even on null return.
+#[no_mangle]
+pub extern "C" fn sentil_formula_not(child: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Some(inner) = (unsafe { take_handle::<Formula>(child) }) else {
+            set_error(SentilError::NullPointer, "the child formula was null");
+            return ptr::null_mut();
+        };
+        into_handle(Formula::Not(Box::new(inner)))
+    })
+}
+
+/// Builds `left and right`, consuming both. Consumed even on null return.
+#[no_mangle]
+pub extern "C" fn sentil_formula_and(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || binary_formula(left, right, Formula::And))
+}
+
+/// Builds `left or right`, consuming both. Consumed even on null return.
+#[no_mangle]
+pub extern "C" fn sentil_formula_or(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || binary_formula(left, right, Formula::Or))
+}
+
+/// Builds `left implies right`, consuming both. Consumed even on null return.
+#[no_mangle]
+pub extern "C" fn sentil_formula_implies(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || binary_formula(left, right, Formula::Implies))
 }

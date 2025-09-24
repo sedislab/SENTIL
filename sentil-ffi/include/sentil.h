@@ -169,6 +169,28 @@ sentil_expr_t *sentil_expr_call(const char *name, sentil_expr_t **args, size_t c
 /* Frees an expression handle. NULL is a no-op. */
 void sentil_expr_destroy(sentil_expr_t *expr);
 
+/*
+ * Each builder below consumes the handles it is given, even when it returns NULL,
+ * so the caller never frees an operand it passed in. The result is a new owned
+ * formula handle, freed with sentil_formula_destroy.
+ */
+
+/* Builds the predicate (lhs op rhs). */
+sentil_formula_t *sentil_formula_predicate(sentil_expr_t *lhs, sentil_comparison_op_t op,
+                                           sentil_expr_t *rhs);
+
+/* Builds NOT child. */
+sentil_formula_t *sentil_formula_not(sentil_formula_t *child);
+
+/* Builds (left AND right). */
+sentil_formula_t *sentil_formula_and(sentil_formula_t *left, sentil_formula_t *right);
+
+/* Builds (left OR right). */
+sentil_formula_t *sentil_formula_or(sentil_formula_t *left, sentil_formula_t *right);
+
+/* Builds (left IMPLIES right). */
+sentil_formula_t *sentil_formula_implies(sentil_formula_t *left, sentil_formula_t *right);
+
 #ifdef __cplusplus
 }
 #endif
