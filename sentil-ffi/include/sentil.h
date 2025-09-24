@@ -191,6 +191,21 @@ sentil_formula_t *sentil_formula_or(sentil_formula_t *left, sentil_formula_t *ri
 /* Builds (left IMPLIES right). */
 sentil_formula_t *sentil_formula_implies(sentil_formula_t *left, sentil_formula_t *right);
 
+/*
+ * Temporal builders take an interval [lower, upper]; pass has_upper = false for an
+ * interval unbounded above, in which case upper is ignored. Each consumes its
+ * child, even on a NULL return.
+ */
+sentil_formula_t *sentil_formula_next(sentil_formula_t *child);
+sentil_formula_t *sentil_formula_always(double lower, double upper, bool has_upper,
+                                        sentil_formula_t *child);
+sentil_formula_t *sentil_formula_eventually(double lower, double upper, bool has_upper,
+                                            sentil_formula_t *child);
+sentil_formula_t *sentil_formula_historically(double lower, double upper, bool has_upper,
+                                              sentil_formula_t *child);
+sentil_formula_t *sentil_formula_once(double lower, double upper, bool has_upper,
+                                      sentil_formula_t *child);
+
 #ifdef __cplusplus
 }
 #endif

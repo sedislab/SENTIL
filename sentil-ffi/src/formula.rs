@@ -4,9 +4,55 @@ use crate::conversions::{
 use crate::handles::{drop_handle, into_handle, take_handle};
 use crate::{SentilBinaryOp, SentilComparisonOp, SentilError};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::formula::{Expr, Predicate};
+use sentil::formula::{Expr, Interval, Predicate};
 use sentil::Formula;
 use std::ptr;
+
+fn unary_formula(child: *mut c_void, build: fn(Box<Formula>) -> Formula) -> *mut c_void {
+    let Some(inner) = (unsafe { take_handle::<Formula>(child) }) else {
+        set_error(SentilError::NullPointer, "the child formula was null");
+        return ptr::null_mut();
+    };
+    into_handle(build(Box::new(inner)))
+}
+
+/// Both operands of a combinator are consumed, so the same handle in both places
+/// would reclaim one allocation twice. Rejecting it keeps a caller mistake an
+/// error instead of a double free.
+pub(crate) fn aliased(left: *mut c_void, right: *mut c_void) -> bool {
+    if !left.is_null() && left == right {
+        set_error(
+            SentilError::InvalidConfig,
+            "the same handle was passed as both operands, and each one is consumed; \
+             build the operand twice so there are two handles",
+        );
+        return true;
+    }
+    false
+}
+
+/// The variadic builders consume every argument, so a handle repeated in the list
+/// would be reclaimed once per occurrence. Argument lists are function-arity short,
+/// so the pairwise scan is cheaper than allocating a set.
+pub(crate) unsafe fn repeated_arg(args: *mut *mut c_void, count: usize) -> bool {
+    for i in 0..count {
+        let a = unsafe { *args.add(i) };
+        if a.is_null() {
+            continue;
+        }
+        for j in (i + 1)..count {
+            if a == unsafe { *args.add(j) } {
+                set_error(
+                    SentilError::InvalidConfig,
+                    "the same handle appears twice in the argument list, and each one is \
+                     consumed; build the argument once per position",
+                );
+                return true;
+            }
+        }
+    }
+    false
+}
 
 fn binary_formula(
     left: *mut c_void,
@@ -33,6 +79,23 @@ fn interval_from(lower: f64, upper: f64, has_upper: bool) -> Option<Interval> {
             None
         }
     }
+}
+
+fn interval_formula(
+    lower: f64,
+    upper: f64,
+    has_upper: bool,
+    child: *mut c_void,
+    build: fn(Interval, Box<Formula>) -> Formula,
+) -> *mut c_void {
+    let Some(inner) = (unsafe { take_handle::<Formula>(child) }) else {
+        set_error(SentilError::NullPointer, "the child formula was null");
+        return ptr::null_mut();
+    };
+    let Some(interval) = interval_from(lower, upper, has_upper) else {
+        return ptr::null_mut();
+    };
+    into_handle(build(interval, Box::new(inner)))
 }
 
 /// Parses a PrSTL formula from a null-terminated UTF-8 string. Returns a handle
@@ -247,13 +310,7 @@ pub extern "C" fn sentil_formula_predicate(
 #[no_mangle]
 pub extern "C" fn sentil_formula_not(child: *mut c_void) -> *mut c_void {
     clear_error();
-    ffi_panic_boundary(ptr::null_mut(), || {
-        let Some(inner) = (unsafe { take_handle::<Formula>(child) }) else {
-            set_error(SentilError::NullPointer, "the child formula was null");
-            return ptr::null_mut();
-        };
-        into_handle(Formula::Not(Box::new(inner)))
-    })
+    ffi_panic_boundary(ptr::null_mut(), || unary_formula(child, Formula::Not))
 }
 
 /// Builds `left and right`, consuming both. Consumed even on null return.
@@ -275,4 +332,68 @@ pub extern "C" fn sentil_formula_or(left: *mut c_void, right: *mut c_void) -> *m
 pub extern "C" fn sentil_formula_implies(left: *mut c_void, right: *mut c_void) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || binary_formula(left, right, Formula::Implies))
+}
+
+/// Builds `next child`, consuming child. Consumed even on null return.
+#[no_mangle]
+pub extern "C" fn sentil_formula_next(child: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || unary_formula(child, Formula::Next))
+}
+
+/// Builds `always[lower, upper] child` over the interval (unbounded above when
+/// `has_upper` is false), consuming child. Consumed even on null return.
+#[no_mangle]
+pub extern "C" fn sentil_formula_always(
+    lower: c_double,
+    upper: c_double,
+    has_upper: bool,
+    child: *mut c_void,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        interval_formula(lower, upper, has_upper, child, Formula::Always)
+    })
+}
+
+/// Builds `eventually[lower, upper] child`. See `sentil_formula_always`.
+#[no_mangle]
+pub extern "C" fn sentil_formula_eventually(
+    lower: c_double,
+    upper: c_double,
+    has_upper: bool,
+    child: *mut c_void,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        interval_formula(lower, upper, has_upper, child, Formula::Eventually)
+    })
+}
+
+/// Builds `historically[lower, upper] child`, the past-time mirror of always.
+#[no_mangle]
+pub extern "C" fn sentil_formula_historically(
+    lower: c_double,
+    upper: c_double,
+    has_upper: bool,
+    child: *mut c_void,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        interval_formula(lower, upper, has_upper, child, Formula::Historically)
+    })
+}
+
+/// Builds `once[lower, upper] child`, the past-time mirror of eventually.
+#[no_mangle]
+pub extern "C" fn sentil_formula_once(
+    lower: c_double,
+    upper: c_double,
+    has_upper: bool,
+    child: *mut c_void,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        interval_formula(lower, upper, has_upper, child, Formula::Once)
+    })
 }
