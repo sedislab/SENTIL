@@ -79,6 +79,22 @@ pub(crate) fn last_error_message(buffer: *mut c_char, length: size_t) -> size_t 
     })
 }
 
+/// Borrows a C string as an owned Rust `String`, setting `NullPointer` for a
+/// null pointer and `Utf8` for invalid UTF-8.
+pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError> {
+    if ptr.is_null() {
+        set_error(SentilError::NullPointer, "a required string argument was null");
+        return Err(SentilError::NullPointer);
+    }
+    match unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str() {
+        Ok(s) => Ok(s.to_owned()),
+        Err(_) => {
+            set_error(SentilError::Utf8, "a string argument was not valid UTF-8");
+            Err(SentilError::Utf8)
+        }
+    }
+}
+
 impl From<sentil::Error> for SentilError {
     fn from(e: sentil::Error) -> Self {
         use sentil::Error as E;

@@ -39,6 +39,8 @@ pub enum SentilError {
 }
 
 mod conversions;
+mod formula;
+mod handles;
 
 use conversions::{clear_error, ffi_panic_boundary, last_error_code, last_error_message};
 use libc::{c_char, size_t};

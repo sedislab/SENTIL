@@ -70,6 +70,23 @@ size_t sentil_get_last_error_message(char *buffer, size_t length);
  */
 void sentil_free_string(char *string);
 
+/* Formula */
+
+/* An opaque, owned PrSTL syntax tree. Free it with sentil_formula_destroy. */
+typedef struct sentil_formula sentil_formula_t;
+
+/*
+ * Parses a PrSTL formula. Returns a handle the caller owns, or NULL on a parse
+ * error whose message names the line and column. The grammar accepts the word
+ * operators (always, eventually, until, since, next, and, or, not, implies) and
+ * their aliases (G, F, U, S, X, &&, ||, !, ->), arithmetic predicates, and the
+ * probabilistic operator P.
+ */
+sentil_formula_t *sentil_formula_parse(const char *input);
+
+/* Frees a formula handle. NULL is a no-op. */
+void sentil_formula_destroy(sentil_formula_t *formula);
+
 #ifdef __cplusplus
 }
 #endif
