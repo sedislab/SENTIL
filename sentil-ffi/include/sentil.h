@@ -376,6 +376,20 @@ bool sentil_multi_monitor_is_empty(const sentil_multi_monitor_t *monitor);
 /* Ids in insertion order. Free with sentil_free_string_array. */
 char **sentil_multi_monitor_ids(const sentil_multi_monitor_t *monitor, size_t *out_count);
 
+/* A formula id paired with its verdict. id is owned by the result array. */
+typedef struct sentil_named_robustness {
+    char *id;
+    sentil_robustness_t robustness;
+} sentil_named_robustness_t;
+
+/* Per-id verdicts in insertion order. Free with sentil_free_named_robustness. */
+sentil_named_robustness_t *sentil_multi_monitor_update(sentil_multi_monitor_t *monitor, double time,
+                                                       const char *const *names,
+                                                       const double *values, size_t n,
+                                                       size_t *out_count);
+
+void sentil_free_named_robustness(sentil_named_robustness_t *array, size_t count);
+
 void sentil_multi_monitor_destroy(sentil_multi_monitor_t *monitor);
 
 #ifdef __cplusplus

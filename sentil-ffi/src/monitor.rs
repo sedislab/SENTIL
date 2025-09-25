@@ -1,5 +1,6 @@
 use crate::conversions::{
     c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
+    to_c_string,
 };
 use crate::{SentilError, SentilTimeMode};
 use libc::{c_char, c_double, c_void, size_t};
@@ -581,6 +582,58 @@ pub extern "C" fn sentil_multi_monitor_ids(
         let ids = monitor.ids().map(String::from).collect();
         into_string_array(ids, out_count)
     })
+}
+
+/// A formula id paired with its verdict.
+#[repr(C)]
+pub struct SentilNamedRobustness {
+    pub id: *mut c_char,
+    pub robustness: SentilRobustness,
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_update(
+    handle: *mut c_void,
+    time: c_double,
+    names: *const *const c_char,
+    values: *const c_double,
+    n: size_t,
+    out_count: *mut size_t,
+) -> *mut SentilNamedRobustness {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let monitor = borrow_handle_mut!(handle, MultiFormulaMonitor, ptr::null_mut());
+        let pairs = match collect_named(names, values, n) {
+            Ok(p) => p,
+            Err(_) => return ptr::null_mut(),
+        };
+        let refs: Vec<(&str, f64)> = pairs.iter().map(|(name, v)| (name.as_str(), *v)).collect();
+        match monitor.update(time, &refs) {
+            Ok(results) => {
+                let verdicts = results
+                    .into_iter()
+                    .map(|(id, robustness)| SentilNamedRobustness {
+                        id: to_c_string(&id),
+                        robustness: SentilRobustness::from_core(robustness),
+                    })
+                    .collect();
+                into_boxed_array(verdicts, out_count)
+            }
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_free_named_robustness(array: *mut SentilNamedRobustness, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe {
+        free_boxed_array_owning(array, count, |verdict| verdict.id)
+    });
 }
 
 #[no_mangle]
