@@ -33,6 +33,7 @@ mod macros;
 mod conversions;
 mod formula;
 mod handles;
+mod monitor;
 mod signal;
 
 use conversions::{
@@ -145,6 +146,32 @@ impl From<SentilProbabilityOp> for sentil::formula::ProbabilityOp {
             SentilProbabilityOp::Greater => P::Greater,
             SentilProbabilityOp::LessEqual => P::LessEqual,
             SentilProbabilityOp::Less => P::Less,
+        }
+    }
+}
+
+/// How offline robustness treats time between samples.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilTimeMode {
+    Discrete = 0,
+    Dense = 1,
+}
+
+impl From<SentilTimeMode> for sentil::TimeMode {
+    fn from(m: SentilTimeMode) -> Self {
+        match m {
+            SentilTimeMode::Discrete => sentil::TimeMode::Discrete,
+            SentilTimeMode::Dense => sentil::TimeMode::Dense,
+        }
+    }
+}
+
+impl From<sentil::TimeMode> for SentilTimeMode {
+    fn from(m: sentil::TimeMode) -> Self {
+        match m {
+            sentil::TimeMode::Discrete => SentilTimeMode::Discrete,
+            sentil::TimeMode::Dense => SentilTimeMode::Dense,
         }
     }
 }

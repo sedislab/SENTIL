@@ -241,6 +241,24 @@ sentil_sample_t *sentil_ring_buffer_between(const sentil_ring_buffer_t *buffer, 
 void sentil_free_samples(sentil_sample_t *samples, size_t count);
 void sentil_ring_buffer_destroy(sentil_ring_buffer_t *buffer);
 
+/* Monitor configuration */
+
+typedef enum sentil_time_mode {
+    SENTIL_TIME_DISCRETE = 0,
+    SENTIL_TIME_DENSE = 1
+} sentil_time_mode_t;
+
+typedef struct sentil_monitor_config sentil_monitor_config_t;
+
+/* Default configuration: discrete time. */
+sentil_monitor_config_t *sentil_monitor_config_create(void);
+
+sentil_error_t sentil_monitor_config_set_time(sentil_monitor_config_t *config,
+                                              sentil_time_mode_t mode);
+sentil_time_mode_t sentil_monitor_config_time_mode(const sentil_monitor_config_t *config);
+
+void sentil_monitor_config_destroy(sentil_monitor_config_t *config);
+
 #ifdef __cplusplus
 }
 #endif
