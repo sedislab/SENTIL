@@ -1,7 +1,7 @@
 use crate::conversions::{
     c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
 };
-use crate::handles::{drop_handle, into_handle};
+use crate::handles::{drop_handle, free_boxed_array, into_boxed_array, into_handle, mutate_handle};
 use crate::{SentilError, SentilInterpolation};
 use libc::{c_char, c_double, c_void, size_t};
 use sentil::{RingBuffer, Trace};
@@ -457,22 +457,14 @@ pub extern "C" fn sentil_ring_buffer_between(
         let buffer = borrow_handle!(handle, RingBuffer, ptr::null_mut());
         let samples: Vec<SentilSample> =
             buffer.between(start, end).map(|(t, v)| SentilSample::present(t, v)).collect();
-        let len = samples.len();
-        let raw = Box::into_raw(samples.into_boxed_slice());
-        unsafe { *out_count = len };
-        raw.cast::<SentilSample>()
+        into_boxed_array(samples, out_count)
     })
 }
 
 #[no_mangle]
 pub extern "C" fn sentil_free_samples(samples: *mut SentilSample, count: size_t) {
     clear_error();
-    ffi_panic_boundary((), || {
-        if samples.is_null() {
-            return;
-        }
-        unsafe { drop(Box::from_raw(ptr::slice_from_raw_parts_mut(samples, count))) };
-    });
+    ffi_panic_boundary((), || unsafe { free_boxed_array(samples, count) });
 }
 
 #[no_mangle]
