@@ -172,6 +172,48 @@ pub extern "C" fn sentil_trace_resample(
     })
 }
 
+fn trace_from_text(text: *const c_char, parse: fn(&str) -> sentil::Result<Trace>) -> *mut c_void {
+    let Ok(text) = c_char_to_string(text) else {
+        return ptr::null_mut();
+    };
+    match parse(&text) {
+        Ok(trace) => into_handle(trace),
+        Err(e) => {
+            let _: SentilError = e.into();
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_from_csv(text: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || trace_from_text(text, Trace::from_csv_str))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_from_tsv(text: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || trace_from_text(text, Trace::from_tsv_str))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_from_path(path: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(path) = c_char_to_string(path) else {
+            return ptr::null_mut();
+        };
+        match Trace::from_path(&path) {
+            Ok(trace) => into_handle(trace),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn sentil_trace_destroy(handle: *mut c_void) {
     clear_error();

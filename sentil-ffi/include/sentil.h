@@ -173,6 +173,14 @@ typedef enum sentil_interpolation {
 sentil_trace_t *sentil_trace_resample(const sentil_trace_t *trace, const double *times, size_t n,
                                       sentil_interpolation_t interp);
 
+/* Parse a trace from CSV / TSV text: a header row, time column auto-detected. */
+sentil_trace_t *sentil_trace_from_csv(const char *text);
+sentil_trace_t *sentil_trace_from_tsv(const char *text);
+
+/* Read a trace from a file, dispatching on extension (csv, tsv, parquet, arrow,
+   sqlite, mat, and more). */
+sentil_trace_t *sentil_trace_from_path(const char *path);
+
 void sentil_trace_destroy(sentil_trace_t *trace);
 
 #ifdef __cplusplus
