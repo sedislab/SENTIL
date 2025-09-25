@@ -279,7 +279,7 @@ pub extern "C" fn sentil_ring_buffer_push(
 #[no_mangle]
 pub extern "C" fn sentil_ring_buffer_clear(handle: *mut c_void) {
     clear_error();
-    ffi_panic_boundary((), || borrow_handle_mut!(handle, RingBuffer, ()).clear());
+    ffi_panic_boundary((), || unsafe { mutate_handle(handle, RingBuffer::clear) });
 }
 
 #[no_mangle]
