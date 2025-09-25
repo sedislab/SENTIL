@@ -9,7 +9,8 @@ description = "Stable C ABI for SENTIL, the runtime verification engine for STL 
 
 [lib]
 name = "sentil"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "staticlib"]
+doctest = false
 
 [dependencies]
 sentil = { path = "../sentil-core", features = ["serde"] }
