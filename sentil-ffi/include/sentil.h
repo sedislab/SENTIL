@@ -475,6 +475,15 @@ sentil_noise_model_t *sentil_noise_log_normal(double mu, double sigma);
 sentil_noise_model_t *sentil_noise_exponential(double lambda);
 sentil_noise_model_t *sentil_noise_gamma(double shape, double scale);
 sentil_noise_model_t *sentil_noise_beta(double alpha, double beta);
+sentil_noise_model_t *sentil_noise_weibull(double shape, double scale);
+sentil_noise_model_t *sentil_noise_rayleigh(double scale);
+sentil_noise_model_t *sentil_noise_gumbel(double location, double scale);
+sentil_noise_model_t *sentil_noise_cauchy(double location, double scale);
+sentil_noise_model_t *sentil_noise_student_t(double df, double location, double scale);
+sentil_noise_model_t *sentil_noise_truncated_normal(double mean, double std_dev, double lower,
+                                                    double upper);
+sentil_noise_model_t *sentil_noise_poisson(double lambda);
+sentil_noise_model_t *sentil_noise_binomial(uint64_t n, double p);
 
 void sentil_noise_destroy(sentil_noise_model_t *model);
 

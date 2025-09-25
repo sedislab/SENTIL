@@ -171,6 +171,61 @@ pub extern "C" fn sentil_noise_beta(alpha: f64, beta: f64) -> *mut c_void {
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_noise_weibull(shape: f64, scale: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::weibull(shape, scale)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_rayleigh(scale: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::rayleigh(scale)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_gumbel(location: f64, scale: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::gumbel(location, scale)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_cauchy(location: f64, scale: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::cauchy(location, scale)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_student_t(df: f64, location: f64, scale: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::student_t(df, location, scale)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_truncated_normal(
+    mean: f64,
+    std_dev: f64,
+    lower: f64,
+    upper: f64,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        noise_handle(NoiseModel::truncated_normal(mean, std_dev, lower, upper))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_poisson(lambda: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::poisson(lambda)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_binomial(n: u64, p: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::binomial(n, p)))
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_noise_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<NoiseModel>(handle) });
