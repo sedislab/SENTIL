@@ -354,6 +354,30 @@ void sentil_free_robustness(sentil_robustness_t *array, size_t count);
 void sentil_stream_monitor_reset(sentil_stream_monitor_t *monitor);
 void sentil_stream_monitor_destroy(sentil_stream_monitor_t *monitor);
 
+/* Multi-formula monitor */
+
+typedef struct sentil_multi_monitor sentil_multi_monitor_t;
+
+sentil_multi_monitor_t *sentil_multi_monitor_create(void);
+
+/* Add a formula under an id, from a string or a borrowed formula handle. */
+sentil_error_t sentil_multi_monitor_add(sentil_multi_monitor_t *monitor, const char *id,
+                                        const char *formula);
+sentil_error_t sentil_multi_monitor_add_formula(sentil_multi_monitor_t *monitor, const char *id,
+                                                const sentil_formula_t *formula);
+
+/* Removes the first formula with the id. */
+bool sentil_multi_monitor_remove(sentil_multi_monitor_t *monitor, const char *id);
+
+void sentil_multi_monitor_reset(sentil_multi_monitor_t *monitor);
+size_t sentil_multi_monitor_len(const sentil_multi_monitor_t *monitor);
+bool sentil_multi_monitor_is_empty(const sentil_multi_monitor_t *monitor);
+
+/* Ids in insertion order. Free with sentil_free_string_array. */
+char **sentil_multi_monitor_ids(const sentil_multi_monitor_t *monitor, size_t *out_count);
+
+void sentil_multi_monitor_destroy(sentil_multi_monitor_t *monitor);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,7 +1,9 @@
-use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, set_error, slice_from};
+use crate::conversions::{
+    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
+};
 use crate::{SentilError, SentilTimeMode};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::{Formula, Monitor, MonitorConfig, StreamMonitor, Trace};
+use sentil::{Formula, Monitor, MonitorConfig, MultiFormulaMonitor, StreamMonitor, Trace};
 use std::ptr;
 
 /// A time span [start, end] where a property does not hold.
@@ -484,4 +486,105 @@ pub extern "C" fn sentil_stream_monitor_reset(handle: *mut c_void) {
 pub extern "C" fn sentil_stream_monitor_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<StreamMonitor>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_create() -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(MultiFormulaMonitor::new()))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_add(
+    handle: *mut c_void,
+    id: *const c_char,
+    formula: *const c_char,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        let monitor = borrow_handle_mut!(handle, MultiFormulaMonitor, SentilError::NullPointer);
+        let id = match c_char_to_string(id) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        let formula = match c_char_to_string(formula) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        match monitor.add(id, &formula) {
+            Ok(()) => SentilError::Ok,
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_add_formula(
+    handle: *mut c_void,
+    id: *const c_char,
+    formula: *mut c_void,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        let monitor = borrow_handle_mut!(handle, MultiFormulaMonitor, SentilError::NullPointer);
+        let id = match c_char_to_string(id) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        match monitor.add_formula(id, formula) {
+            Ok(()) => SentilError::Ok,
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_remove(handle: *mut c_void, id: *const c_char) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || {
+        let monitor = borrow_handle_mut!(handle, MultiFormulaMonitor, false);
+        let Ok(id) = c_char_to_string(id) else {
+            return false;
+        };
+        monitor.remove(&id)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_reset(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { mutate_handle(handle, MultiFormulaMonitor::reset) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_len(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, MultiFormulaMonitor, 0).len())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_is_empty(handle: *mut c_void) -> bool {
+    clear_error();
+    ffi_panic_boundary(true, || borrow_handle!(handle, MultiFormulaMonitor, true).is_empty())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_ids(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let monitor = borrow_handle!(handle, MultiFormulaMonitor, ptr::null_mut());
+        let ids = monitor.ids().map(String::from).collect();
+        into_string_array(ids, out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<MultiFormulaMonitor>(handle) });
 }
