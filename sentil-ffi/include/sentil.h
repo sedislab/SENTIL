@@ -314,6 +314,12 @@ double *sentil_monitor_robustness_signal(const sentil_monitor_t *monitor,
 sentil_interval_t *sentil_monitor_violations(const sentil_monitor_t *monitor,
                                              const sentil_trace_t *trace, size_t *out_count);
 
+/* Index in packed-update order; out_found is false if the formula does not use it. */
+sentil_error_t sentil_monitor_symbol_index(sentil_monitor_t *monitor, const char *name,
+                                           size_t *out_index, bool *out_found);
+
+void sentil_monitor_reset(sentil_monitor_t *monitor);
+
 sentil_interval_t *sentil_violation_intervals(const double *times, size_t n, const double *signal,
                                               size_t m, size_t *out_count);
 

@@ -285,6 +285,45 @@ pub extern "C" fn sentil_free_intervals(intervals: *mut SentilInterval, count: s
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_monitor_symbol_index(
+    handle: *mut c_void,
+    name: *const c_char,
+    out_index: *mut size_t,
+    out_found: *mut bool,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out_index, SentilError::NullPointer);
+        check_ptr!(out_found, SentilError::NullPointer);
+        let monitor = borrow_handle_mut!(handle, Monitor, SentilError::NullPointer);
+        let name = match c_char_to_string(name) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        match monitor.symbol_index(&name) {
+            Ok(Some(index)) => {
+                unsafe {
+                    *out_index = index;
+                    *out_found = true;
+                }
+                SentilError::Ok
+            }
+            Ok(None) => {
+                unsafe { *out_found = false };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_reset(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { mutate_handle(handle, Monitor::reset) });
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_monitor_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<Monitor>(handle) });
