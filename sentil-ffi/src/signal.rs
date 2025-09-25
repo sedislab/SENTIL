@@ -307,6 +307,58 @@ pub extern "C" fn sentil_ring_buffer_is_full(handle: *mut c_void) -> bool {
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_ring_buffer_front(handle: *mut c_void) -> SentilSample {
+    clear_error();
+    ffi_panic_boundary(SentilSample::absent(), || {
+        SentilSample::from_pair(borrow_handle!(handle, RingBuffer, SentilSample::absent()).front())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_back(handle: *mut c_void) -> SentilSample {
+    clear_error();
+    ffi_panic_boundary(SentilSample::absent(), || {
+        SentilSample::from_pair(borrow_handle!(handle, RingBuffer, SentilSample::absent()).back())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_get(handle: *mut c_void, index: size_t) -> SentilSample {
+    clear_error();
+    ffi_panic_boundary(SentilSample::absent(), || {
+        let buffer = borrow_handle!(handle, RingBuffer, SentilSample::absent());
+        SentilSample::from_pair(buffer.get(index))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_pop_front(handle: *mut c_void) -> SentilSample {
+    clear_error();
+    ffi_panic_boundary(SentilSample::absent(), || {
+        let buffer = borrow_handle_mut!(handle, RingBuffer, SentilSample::absent());
+        SentilSample::from_pair(buffer.pop_front())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_pop_back(handle: *mut c_void) -> SentilSample {
+    clear_error();
+    ffi_panic_boundary(SentilSample::absent(), || {
+        let buffer = borrow_handle_mut!(handle, RingBuffer, SentilSample::absent());
+        SentilSample::from_pair(buffer.pop_back())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_closest_to_time(handle: *mut c_void, time: c_double) -> SentilSample {
+    clear_error();
+    ffi_panic_boundary(SentilSample::absent(), || {
+        let buffer = borrow_handle!(handle, RingBuffer, SentilSample::absent());
+        SentilSample::from_pair(buffer.closest_to_time(time))
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_ring_buffer_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<RingBuffer>(handle) });

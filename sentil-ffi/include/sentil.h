@@ -207,6 +207,16 @@ size_t sentil_ring_buffer_len(const sentil_ring_buffer_t *buffer);
 size_t sentil_ring_buffer_capacity(const sentil_ring_buffer_t *buffer);
 bool sentil_ring_buffer_is_empty(const sentil_ring_buffer_t *buffer);
 bool sentil_ring_buffer_is_full(const sentil_ring_buffer_t *buffer);
+
+/* index 0 is the oldest. */
+sentil_sample_t sentil_ring_buffer_front(const sentil_ring_buffer_t *buffer);
+sentil_sample_t sentil_ring_buffer_back(const sentil_ring_buffer_t *buffer);
+sentil_sample_t sentil_ring_buffer_get(const sentil_ring_buffer_t *buffer, size_t index);
+
+sentil_sample_t sentil_ring_buffer_pop_front(sentil_ring_buffer_t *buffer);
+sentil_sample_t sentil_ring_buffer_pop_back(sentil_ring_buffer_t *buffer);
+
+sentil_sample_t sentil_ring_buffer_closest_to_time(const sentil_ring_buffer_t *buffer, double time);
 void sentil_ring_buffer_destroy(sentil_ring_buffer_t *buffer);
 
 #ifdef __cplusplus
