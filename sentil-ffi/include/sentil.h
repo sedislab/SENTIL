@@ -141,8 +141,15 @@ typedef struct sentil_trace sentil_trace_t;
 /* Trace over the given strictly increasing times. */
 sentil_trace_t *sentil_trace_create(const double *times, size_t n);
 
+sentil_trace_t *sentil_trace_from_signal(const double *times, size_t n, const char *name,
+                                         const double *values, size_t m);
+
 /* Trace with integer times 0, 1, ..., len - 1. */
 sentil_trace_t *sentil_trace_indexed(size_t len);
+
+/* Add or replace a named signal; its length must equal the trace length. */
+sentil_error_t sentil_trace_add_signal(sentil_trace_t *trace, const char *name,
+                                       const double *values, size_t n);
 
 void sentil_trace_destroy(sentil_trace_t *trace);
 

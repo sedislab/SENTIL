@@ -16,3 +16,10 @@ macro_rules! borrow_handle {
         unsafe { &*$h.cast::<$ty>() }
     }};
 }
+
+macro_rules! borrow_handle_mut {
+    ($h:expr, $ty:ty, $ret:expr) => {{
+        check_ptr!($h, $ret);
+        unsafe { &mut *$h.cast::<$ty>() }
+    }};
+}
