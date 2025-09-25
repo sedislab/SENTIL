@@ -358,6 +358,58 @@ pub extern "C" fn sentil_ring_buffer_closest_to_time(handle: *mut c_void, time: 
     })
 }
 
+fn optional_stat(
+    handle: *mut c_void,
+    get: impl FnOnce(&RingBuffer) -> Option<f64>,
+    out: *mut c_double,
+) -> bool {
+    check_ptr!(out, false);
+    let buffer = borrow_handle!(handle, RingBuffer, false);
+    match get(buffer) {
+        Some(v) => {
+            unsafe { *out = v };
+            true
+        }
+        None => false,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_mean(handle: *mut c_void, out: *mut c_double) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || optional_stat(handle, RingBuffer::mean, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_variance(handle: *mut c_void, out: *mut c_double) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || optional_stat(handle, RingBuffer::variance, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_std_dev(handle: *mut c_void, out: *mut c_double) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || optional_stat(handle, RingBuffer::std_dev, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_min(handle: *mut c_void, out: *mut c_double) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || optional_stat(handle, RingBuffer::min, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_max(handle: *mut c_void, out: *mut c_double) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || optional_stat(handle, RingBuffer::max, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_recompute_statistics(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { mutate_handle(handle, RingBuffer::recompute_statistics) });
+}
+
 #[no_mangle]
 pub extern "C" fn sentil_ring_buffer_destroy(handle: *mut c_void) {
     clear_error();

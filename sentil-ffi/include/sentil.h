@@ -217,6 +217,15 @@ sentil_sample_t sentil_ring_buffer_pop_front(sentil_ring_buffer_t *buffer);
 sentil_sample_t sentil_ring_buffer_pop_back(sentil_ring_buffer_t *buffer);
 
 sentil_sample_t sentil_ring_buffer_closest_to_time(const sentil_ring_buffer_t *buffer, double time);
+
+/* mean, min, and max need one sample; variance and std_dev need two. */
+bool sentil_ring_buffer_mean(const sentil_ring_buffer_t *buffer, double *out);
+bool sentil_ring_buffer_variance(const sentil_ring_buffer_t *buffer, double *out);
+bool sentil_ring_buffer_std_dev(const sentil_ring_buffer_t *buffer, double *out);
+bool sentil_ring_buffer_min(const sentil_ring_buffer_t *buffer, double *out);
+bool sentil_ring_buffer_max(const sentil_ring_buffer_t *buffer, double *out);
+
+void sentil_ring_buffer_recompute_statistics(sentil_ring_buffer_t *buffer);
 void sentil_ring_buffer_destroy(sentil_ring_buffer_t *buffer);
 
 #ifdef __cplusplus
