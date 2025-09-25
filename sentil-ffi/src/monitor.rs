@@ -16,6 +16,42 @@ fn pack_intervals(spans: Vec<(f64, f64)>, out_count: *mut size_t) -> *mut Sentil
     into_boxed_array(intervals, out_count)
 }
 
+/// A robustness verdict.
+#[repr(C)]
+pub struct SentilRobustness {
+    pub resolved: bool,
+    pub satisfied: bool,
+    pub value: f64,
+    pub lower: f64,
+    pub upper: f64,
+}
+
+impl SentilRobustness {
+    fn from_core(r: sentil::Robustness) -> Self {
+        Self {
+            resolved: r.is_resolved(),
+            satisfied: r.is_satisfied(),
+            value: r.value(),
+            lower: r.lower(),
+            upper: r.upper(),
+        }
+    }
+}
+
+fn collect_named(
+    names: *const *const c_char,
+    values: *const c_double,
+    n: size_t,
+) -> Result<Vec<(String, f64)>, SentilError> {
+    let names = slice_from(names, n)?;
+    let values = slice_from(values, n)?;
+    let mut pairs = Vec::with_capacity(n);
+    for (&name, &value) in names.iter().zip(values) {
+        pairs.push((c_char_to_string(name)?, value));
+    }
+    Ok(pairs)
+}
+
 fn config_or_default(config: *mut c_void) -> MonitorConfig {
     if config.is_null() {
         MonitorConfig::default()
@@ -101,6 +137,60 @@ pub extern "C" fn sentil_monitor_config(handle: *mut c_void) -> *mut c_void {
     ffi_panic_boundary(ptr::null_mut(), || {
         let monitor = borrow_handle!(handle, Monitor, ptr::null_mut());
         into_handle(monitor.config().clone())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_update(
+    handle: *mut c_void,
+    time: c_double,
+    names: *const *const c_char,
+    values: *const c_double,
+    n: size_t,
+    out: *mut SentilRobustness,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle_mut!(handle, Monitor, SentilError::NullPointer);
+        let pairs = match collect_named(names, values, n) {
+            Ok(p) => p,
+            Err(code) => return code,
+        };
+        let refs: Vec<(&str, f64)> = pairs.iter().map(|(name, v)| (name.as_str(), *v)).collect();
+        match monitor.update(time, &refs) {
+            Ok(robustness) => {
+                unsafe { *out = SentilRobustness::from_core(robustness) };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_update_packed(
+    handle: *mut c_void,
+    time: c_double,
+    values: *const c_double,
+    n: size_t,
+    out: *mut SentilRobustness,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle_mut!(handle, Monitor, SentilError::NullPointer);
+        let values = match slice_from(values, n) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        match monitor.update_packed(time, values) {
+            Ok(robustness) => {
+                unsafe { *out = SentilRobustness::from_core(robustness) };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
     })
 }
 

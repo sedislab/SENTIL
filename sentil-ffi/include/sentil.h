@@ -284,6 +284,24 @@ typedef struct sentil_interval {
     double end;
 } sentil_interval_t;
 
+/* A robustness verdict. */
+typedef struct sentil_robustness {
+    bool resolved;
+    bool satisfied;
+    double value;
+    double lower;
+    double upper;
+} sentil_robustness_t;
+
+sentil_error_t sentil_monitor_update(sentil_monitor_t *monitor, double time,
+                                     const char *const *names, const double *values, size_t n,
+                                     sentil_robustness_t *out);
+
+/* Values in sentil_monitor_symbol_index order. */
+sentil_error_t sentil_monitor_update_packed(sentil_monitor_t *monitor, double time,
+                                            const double *values, size_t n,
+                                            sentil_robustness_t *out);
+
 /* Robustness of the trace, honoring the config's time mode. */
 sentil_error_t sentil_monitor_robustness(const sentil_monitor_t *monitor,
                                          const sentil_trace_t *trace, double *out);
