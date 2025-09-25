@@ -259,6 +259,25 @@ sentil_time_mode_t sentil_monitor_config_time_mode(const sentil_monitor_config_t
 
 void sentil_monitor_config_destroy(sentil_monitor_config_t *config);
 
+/* Monitor */
+
+typedef struct sentil_monitor sentil_monitor_t;
+
+/* Consumes the formula, even on a NULL return. config may be NULL for the default. */
+sentil_monitor_t *sentil_monitor_create(sentil_formula_t *formula,
+                                        const sentil_monitor_config_t *config);
+
+/* config may be NULL for the default. */
+sentil_monitor_t *sentil_monitor_parse(const char *formula,
+                                       const sentil_monitor_config_t *config);
+
+/* An owned copy of the monitored formula. Free with sentil_formula_destroy. */
+sentil_formula_t *sentil_monitor_formula(const sentil_monitor_t *monitor);
+
+/* An owned copy of the config. Free with sentil_monitor_config_destroy. */
+sentil_monitor_config_t *sentil_monitor_config(const sentil_monitor_t *monitor);
+void sentil_monitor_destroy(sentil_monitor_t *monitor);
+
 #ifdef __cplusplus
 }
 #endif
