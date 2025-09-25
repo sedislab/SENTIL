@@ -1,9 +1,20 @@
-use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, set_error};
-use crate::handles::{drop_handle, into_handle, take_handle};
+use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, set_error, slice_from};
 use crate::{SentilError, SentilTimeMode};
-use libc::{c_char, c_void};
-use sentil::{Formula, Monitor, MonitorConfig};
+use libc::{c_char, c_double, c_void, size_t};
+use sentil::{Formula, Monitor, MonitorConfig, Trace};
 use std::ptr;
+
+/// A time span [start, end] where a property does not hold.
+#[repr(C)]
+pub struct SentilInterval {
+    pub start: f64,
+    pub end: f64,
+}
+
+fn pack_intervals(spans: Vec<(f64, f64)>, out_count: *mut size_t) -> *mut SentilInterval {
+    let intervals = spans.into_iter().map(|(start, end)| SentilInterval { start, end }).collect();
+    into_boxed_array(intervals, out_count)
+}
 
 fn config_or_default(config: *mut c_void) -> MonitorConfig {
     if config.is_null() {
@@ -91,6 +102,96 @@ pub extern "C" fn sentil_monitor_config(handle: *mut c_void) -> *mut c_void {
         let monitor = borrow_handle!(handle, Monitor, ptr::null_mut());
         into_handle(monitor.config().clone())
     })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_robustness(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    out: *mut c_double,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle!(handle, Monitor, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        match monitor.robustness(trace) {
+            Ok(value) => {
+                unsafe { *out = value };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_robustness_signal(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    out_len: *mut size_t,
+) -> *mut c_double {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_len, ptr::null_mut());
+        let monitor = borrow_handle!(handle, Monitor, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        match monitor.robustness_signal(trace) {
+            Ok(values) => into_boxed_array(values, out_len),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_violations(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut SentilInterval {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let monitor = borrow_handle!(handle, Monitor, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        match monitor.violations(trace) {
+            Ok(spans) => pack_intervals(spans, out_count),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_violation_intervals(
+    times: *const c_double,
+    n: size_t,
+    signal: *const c_double,
+    m: size_t,
+    out_count: *mut size_t,
+) -> *mut SentilInterval {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let Ok(times) = slice_from(times, n) else {
+            return ptr::null_mut();
+        };
+        let Ok(signal) = slice_from(signal, m) else {
+            return ptr::null_mut();
+        };
+        pack_intervals(sentil::violation_intervals(times, signal), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_free_intervals(intervals: *mut SentilInterval, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { free_boxed_array(intervals, count) });
 }
 
 #[no_mangle]

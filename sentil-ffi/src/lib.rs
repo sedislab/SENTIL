@@ -39,7 +39,8 @@ mod signal;
 use conversions::{
     clear_error, ffi_panic_boundary, last_error_code, last_error_message, last_error_ptr,
 };
-use libc::{c_char, size_t};
+use handles::{free_boxed_array, free_boxed_array_owning};
+use libc::{c_char, c_double, size_t};
 
 #[no_mangle]
 pub extern "C" fn sentil_get_last_error_code() -> SentilError {
@@ -66,6 +67,12 @@ pub extern "C" fn sentil_free_string(s: *mut c_char) {
             }
         }
     });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_free_doubles(array: *mut c_double, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { free_boxed_array(array, count) });
 }
 
 #[no_mangle]

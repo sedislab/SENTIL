@@ -49,6 +49,7 @@ size_t sentil_get_last_error_message(char *buffer, size_t length);
 /* Every sentil_free_* and sentil_*_destroy takes NULL as a no-op. */
 void sentil_free_string(char *string);
 void sentil_free_string_array(char **array, size_t count);
+void sentil_free_doubles(double *array, size_t count);
 
 /* Formula */
 
@@ -276,6 +277,29 @@ sentil_formula_t *sentil_monitor_formula(const sentil_monitor_t *monitor);
 
 /* An owned copy of the config. Free with sentil_monitor_config_destroy. */
 sentil_monitor_config_t *sentil_monitor_config(const sentil_monitor_t *monitor);
+
+/* A time span [start, end] where a property does not hold. */
+typedef struct sentil_interval {
+    double start;
+    double end;
+} sentil_interval_t;
+
+/* Robustness of the trace, honoring the config's time mode. */
+sentil_error_t sentil_monitor_robustness(const sentil_monitor_t *monitor,
+                                         const sentil_trace_t *trace, double *out);
+
+/* Robustness at every sample. Free with sentil_free_doubles. */
+double *sentil_monitor_robustness_signal(const sentil_monitor_t *monitor,
+                                         const sentil_trace_t *trace, size_t *out_len);
+
+/* Spans where robustness is negative. Free with sentil_free_intervals. */
+sentil_interval_t *sentil_monitor_violations(const sentil_monitor_t *monitor,
+                                             const sentil_trace_t *trace, size_t *out_count);
+
+sentil_interval_t *sentil_violation_intervals(const double *times, size_t n, const double *signal,
+                                              size_t m, size_t *out_count);
+
+void sentil_free_intervals(sentil_interval_t *intervals, size_t count);
 void sentil_monitor_destroy(sentil_monitor_t *monitor);
 
 #ifdef __cplusplus
