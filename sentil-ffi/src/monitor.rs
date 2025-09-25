@@ -391,6 +391,90 @@ pub extern "C" fn sentil_stream_monitor_symbol_index(
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_stream_monitor_update(
+    handle: *mut c_void,
+    time: c_double,
+    names: *const *const c_char,
+    values: *const c_double,
+    n: size_t,
+    out: *mut SentilRobustness,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle_mut!(handle, StreamMonitor, SentilError::NullPointer);
+        let pairs = match collect_named(names, values, n) {
+            Ok(p) => p,
+            Err(code) => return code,
+        };
+        let refs: Vec<(&str, f64)> = pairs.iter().map(|(name, v)| (name.as_str(), *v)).collect();
+        match monitor.update(time, &refs) {
+            Ok(robustness) => {
+                unsafe { *out = SentilRobustness::from_core(robustness) };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_update_packed(
+    handle: *mut c_void,
+    time: c_double,
+    values: *const c_double,
+    n: size_t,
+    out: *mut SentilRobustness,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle_mut!(handle, StreamMonitor, SentilError::NullPointer);
+        let values = match slice_from(values, n) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        match monitor.update_packed(time, values) {
+            Ok(robustness) => {
+                unsafe { *out = SentilRobustness::from_core(robustness) };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_run(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut SentilRobustness {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let monitor = borrow_handle_mut!(handle, StreamMonitor, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        match monitor.run(trace) {
+            Ok(steps) => {
+                let values = steps.into_iter().map(SentilRobustness::from_core).collect();
+                into_boxed_array(values, out_count)
+            }
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_free_robustness(array: *mut SentilRobustness, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { free_boxed_array(array, count) });
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_stream_monitor_reset(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { mutate_handle(handle, StreamMonitor::reset) });

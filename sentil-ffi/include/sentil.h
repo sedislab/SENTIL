@@ -338,6 +338,19 @@ size_t sentil_stream_monitor_variable_count(const sentil_stream_monitor_t *monit
 bool sentil_stream_monitor_symbol_index(const sentil_stream_monitor_t *monitor, const char *name,
                                         size_t *out_index);
 
+sentil_error_t sentil_stream_monitor_update(sentil_stream_monitor_t *monitor, double time,
+                                            const char *const *names, const double *values,
+                                            size_t n, sentil_robustness_t *out);
+sentil_error_t sentil_stream_monitor_update_packed(sentil_stream_monitor_t *monitor, double time,
+                                                   const double *values, size_t n,
+                                                   sentil_robustness_t *out);
+
+/* Per-step robustness. Free with sentil_free_robustness. */
+sentil_robustness_t *sentil_stream_monitor_run(sentil_stream_monitor_t *monitor,
+                                               const sentil_trace_t *trace, size_t *out_count);
+
+void sentil_free_robustness(sentil_robustness_t *array, size_t count);
+
 void sentil_stream_monitor_reset(sentil_stream_monitor_t *monitor);
 void sentil_stream_monitor_destroy(sentil_stream_monitor_t *monitor);
 
