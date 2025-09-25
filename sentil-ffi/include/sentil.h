@@ -40,6 +40,9 @@ void sentil_version(uint32_t *major, uint32_t *minor, uint32_t *patch);
 /* Last error code on this thread. */
 sentil_error_t sentil_get_last_error_code(void);
 
+/* Borrowed message, valid until the next SENTIL call on this thread. */
+const char *sentil_get_last_error(void);
+
 /* Copies at most length bytes. Returns the length needed, terminator included. */
 size_t sentil_get_last_error_message(char *buffer, size_t length);
 

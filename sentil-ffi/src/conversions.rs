@@ -6,24 +6,22 @@ use std::ptr;
 
 struct ErrorState {
     code: SentilError,
-    message: String,
+    message: CString,
 }
 
 thread_local! {
-    static LAST_ERROR: RefCell<ErrorState> = const {
-        RefCell::new(ErrorState {
-            code: SentilError::Ok,
-            message: String::new(),
-        })
-    };
+    static LAST_ERROR: RefCell<ErrorState> = RefCell::new(ErrorState {
+        code: SentilError::Ok,
+        message: CString::default(),
+    });
 }
 
 pub(crate) fn set_error(code: SentilError, message: &str) {
+    let text = CString::new(message.replace('\0', " ")).unwrap_or_default();
     LAST_ERROR.with(|e| {
         let mut e = e.borrow_mut();
         e.code = code;
-        e.message.clear();
-        e.message.push_str(message);
+        e.message = text;
     });
 }
 
@@ -31,11 +29,15 @@ pub(crate) fn last_error_code() -> SentilError {
     LAST_ERROR.with(|e| e.borrow().code)
 }
 
+pub(crate) fn last_error_ptr() -> *const c_char {
+    LAST_ERROR.with(|e| e.borrow().message.as_ptr())
+}
+
 pub(crate) fn clear_error() {
     LAST_ERROR.with(|e| {
         let mut e = e.borrow_mut();
         e.code = SentilError::Ok;
-        e.message.clear();
+        e.message = CString::default();
     });
 }
 
@@ -57,16 +59,15 @@ pub(crate) fn ffi_panic_boundary<T>(default: T, f: impl FnOnce() -> T) -> T {
 pub(crate) fn last_error_message(buffer: *mut c_char, length: size_t) -> size_t {
     LAST_ERROR.with(|e| {
         let state = e.borrow();
-        let bytes = state.message.as_bytes();
-        let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-        let needed = end + 1;
+        let bytes = state.message.as_bytes_with_nul();
+        let needed = bytes.len();
         if buffer.is_null() || length == 0 {
             return needed;
         }
-        let n = end.min(length - 1);
+        let n = needed.min(length);
         unsafe {
             ptr::copy_nonoverlapping(bytes.as_ptr().cast::<c_char>(), buffer, n);
-            *buffer.add(n) = 0;
+            *buffer.add(n - 1) = 0;
         }
         needed
     })

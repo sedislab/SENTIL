@@ -34,12 +34,19 @@ mod conversions;
 mod formula;
 mod handles;
 
-use conversions::{clear_error, ffi_panic_boundary, last_error_code, last_error_message};
+use conversions::{
+    clear_error, ffi_panic_boundary, last_error_code, last_error_message, last_error_ptr,
+};
 use libc::{c_char, size_t};
 
 #[no_mangle]
 pub extern "C" fn sentil_get_last_error_code() -> SentilError {
     last_error_code()
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_get_last_error() -> *const c_char {
+    last_error_ptr()
 }
 
 #[no_mangle]
