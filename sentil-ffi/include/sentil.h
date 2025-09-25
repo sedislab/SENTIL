@@ -392,6 +392,25 @@ void sentil_free_named_robustness(sentil_named_robustness_t *array, size_t count
 
 void sentil_multi_monitor_destroy(sentil_multi_monitor_t *monitor);
 
+/* Formula bank */
+
+typedef struct sentil_formula_bank sentil_formula_bank_t;
+
+sentil_formula_bank_t *sentil_formula_bank_create(void);
+
+/* Add a formula under an id, from a string or a borrowed formula handle. */
+sentil_error_t sentil_formula_bank_add(sentil_formula_bank_t *bank, const char *id,
+                                       const char *formula);
+sentil_error_t sentil_formula_bank_add_formula(sentil_formula_bank_t *bank, const char *id,
+                                               const sentil_formula_t *formula);
+
+/* Ids in insertion order. Free with sentil_free_string_array. */
+char **sentil_formula_bank_ids(const sentil_formula_bank_t *bank, size_t *out_count);
+size_t sentil_formula_bank_len(const sentil_formula_bank_t *bank);
+bool sentil_formula_bank_is_empty(const sentil_formula_bank_t *bank);
+
+void sentil_formula_bank_destroy(sentil_formula_bank_t *bank);
+
 #ifdef __cplusplus
 }
 #endif

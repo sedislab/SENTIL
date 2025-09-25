@@ -4,7 +4,7 @@ use crate::conversions::{
 };
 use crate::{SentilError, SentilTimeMode};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::{Formula, Monitor, MonitorConfig, MultiFormulaMonitor, StreamMonitor, Trace};
+use sentil::{Formula, FormulaBank, Monitor, MonitorConfig, MultiFormulaMonitor, StreamMonitor, Trace};
 use std::ptr;
 
 /// A time span [start, end] where a property does not hold.
@@ -640,4 +640,84 @@ pub extern "C" fn sentil_free_named_robustness(array: *mut SentilNamedRobustness
 pub extern "C" fn sentil_multi_monitor_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<MultiFormulaMonitor>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_create() -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(FormulaBank::new()))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_add(
+    handle: *mut c_void,
+    id: *const c_char,
+    formula: *const c_char,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        let bank = borrow_handle_mut!(handle, FormulaBank, SentilError::NullPointer);
+        let id = match c_char_to_string(id) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        let formula = match c_char_to_string(formula) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        match bank.add(id, &formula) {
+            Ok(()) => SentilError::Ok,
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_add_formula(
+    handle: *mut c_void,
+    id: *const c_char,
+    formula: *mut c_void,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        let bank = borrow_handle_mut!(handle, FormulaBank, SentilError::NullPointer);
+        let id = match c_char_to_string(id) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        bank.add_formula(id, formula);
+        SentilError::Ok
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_ids(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let bank = borrow_handle!(handle, FormulaBank, ptr::null_mut());
+        into_string_array(bank.ids().map(String::from).collect(), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_len(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, FormulaBank, 0).len())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_is_empty(handle: *mut c_void) -> bool {
+    clear_error();
+    ffi_panic_boundary(true, || borrow_handle!(handle, FormulaBank, true).is_empty())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<FormulaBank>(handle) });
 }
