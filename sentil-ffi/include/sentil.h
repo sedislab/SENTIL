@@ -226,6 +226,19 @@ bool sentil_ring_buffer_min(const sentil_ring_buffer_t *buffer, double *out);
 bool sentil_ring_buffer_max(const sentil_ring_buffer_t *buffer, double *out);
 
 void sentil_ring_buffer_recompute_statistics(sentil_ring_buffer_t *buffer);
+
+/* Value recorded at the query time, within a small tolerance. */
+bool sentil_ring_buffer_at_time(const sentil_ring_buffer_t *buffer, double time, double *out);
+
+/* False when empty. */
+bool sentil_ring_buffer_time_range(const sentil_ring_buffer_t *buffer, double *out_start,
+                                   double *out_end);
+
+/* Samples with time in [start, end]. Free with sentil_free_samples. */
+sentil_sample_t *sentil_ring_buffer_between(const sentil_ring_buffer_t *buffer, double start,
+                                            double end, size_t *out_count);
+
+void sentil_free_samples(sentil_sample_t *samples, size_t count);
 void sentil_ring_buffer_destroy(sentil_ring_buffer_t *buffer);
 
 #ifdef __cplusplus

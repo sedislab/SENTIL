@@ -411,6 +411,71 @@ pub extern "C" fn sentil_ring_buffer_recompute_statistics(handle: *mut c_void) {
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_ring_buffer_at_time(
+    handle: *mut c_void,
+    time: c_double,
+    out: *mut c_double,
+) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || optional_stat(handle, |b| b.at_time(time), out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_time_range(
+    handle: *mut c_void,
+    out_start: *mut c_double,
+    out_end: *mut c_double,
+) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || {
+        check_ptr!(out_start, false);
+        check_ptr!(out_end, false);
+        let buffer = borrow_handle!(handle, RingBuffer, false);
+        match buffer.time_range() {
+            Some((start, end)) => {
+                unsafe {
+                    *out_start = start;
+                    *out_end = end;
+                }
+                true
+            }
+            None => false,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_between(
+    handle: *mut c_void,
+    start: c_double,
+    end: c_double,
+    out_count: *mut size_t,
+) -> *mut SentilSample {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let buffer = borrow_handle!(handle, RingBuffer, ptr::null_mut());
+        let samples: Vec<SentilSample> =
+            buffer.between(start, end).map(|(t, v)| SentilSample::present(t, v)).collect();
+        let len = samples.len();
+        let raw = Box::into_raw(samples.into_boxed_slice());
+        unsafe { *out_count = len };
+        raw.cast::<SentilSample>()
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_free_samples(samples: *mut SentilSample, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || {
+        if samples.is_null() {
+            return;
+        }
+        unsafe { drop(Box::from_raw(ptr::slice_from_raw_parts_mut(samples, count))) };
+    });
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_ring_buffer_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<RingBuffer>(handle) });
