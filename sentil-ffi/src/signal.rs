@@ -4,8 +4,30 @@ use crate::conversions::{
 use crate::handles::{drop_handle, into_handle};
 use crate::{SentilError, SentilInterpolation};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::Trace;
+use sentil::{RingBuffer, Trace};
 use std::ptr;
+
+/// A timed sample.
+#[repr(C)]
+pub struct SentilSample {
+    pub found: bool,
+    pub time: f64,
+    pub value: f64,
+}
+
+impl SentilSample {
+    fn present(time: f64, value: f64) -> Self {
+        Self { found: true, time, value }
+    }
+
+    fn absent() -> Self {
+        Self { found: false, time: 0.0, value: 0.0 }
+    }
+
+    fn from_pair(pair: Option<(f64, f64)>) -> Self {
+        pair.map_or_else(Self::absent, |(t, v)| Self::present(t, v))
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn sentil_trace_create(times: *const c_double, n: size_t) -> *mut c_void {
@@ -218,4 +240,74 @@ pub extern "C" fn sentil_trace_from_path(path: *const c_char) -> *mut c_void {
 pub extern "C" fn sentil_trace_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<Trace>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_create(capacity: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || match RingBuffer::new(capacity) {
+        Ok(buffer) => into_handle(buffer),
+        Err(e) => {
+            let _: SentilError = e.into();
+            ptr::null_mut()
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_push(
+    handle: *mut c_void,
+    time: c_double,
+    value: c_double,
+    out_evicted: *mut SentilSample,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        let buffer = borrow_handle_mut!(handle, RingBuffer, SentilError::NullPointer);
+        match buffer.push(time, value) {
+            Ok(evicted) => {
+                if let Some(slot) = unsafe { out_evicted.as_mut() } {
+                    *slot = SentilSample::from_pair(evicted);
+                }
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_clear(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || borrow_handle_mut!(handle, RingBuffer, ()).clear());
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_len(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, RingBuffer, 0).len())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_capacity(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, RingBuffer, 0).capacity())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_is_empty(handle: *mut c_void) -> bool {
+    clear_error();
+    ffi_panic_boundary(true, || borrow_handle!(handle, RingBuffer, true).is_empty())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_is_full(handle: *mut c_void) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || borrow_handle!(handle, RingBuffer, false).is_full())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_ring_buffer_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<RingBuffer>(handle) });
 }

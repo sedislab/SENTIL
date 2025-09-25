@@ -183,6 +183,32 @@ sentil_trace_t *sentil_trace_from_path(const char *path);
 
 void sentil_trace_destroy(sentil_trace_t *trace);
 
+/* Ring buffer */
+
+/* A timed sample. */
+typedef struct sentil_sample {
+    bool found;
+    double time;
+    double value;
+} sentil_sample_t;
+
+typedef struct sentil_ring_buffer sentil_ring_buffer_t;
+
+/* Fixed-capacity ring buffer with running statistics. */
+sentil_ring_buffer_t *sentil_ring_buffer_create(size_t capacity);
+
+/* On overflow the oldest is evicted into out_evicted, which may be NULL. Times
+   must not move backward. */
+sentil_error_t sentil_ring_buffer_push(sentil_ring_buffer_t *buffer, double time, double value,
+                                       sentil_sample_t *out_evicted);
+
+void sentil_ring_buffer_clear(sentil_ring_buffer_t *buffer);
+size_t sentil_ring_buffer_len(const sentil_ring_buffer_t *buffer);
+size_t sentil_ring_buffer_capacity(const sentil_ring_buffer_t *buffer);
+bool sentil_ring_buffer_is_empty(const sentil_ring_buffer_t *buffer);
+bool sentil_ring_buffer_is_full(const sentil_ring_buffer_t *buffer);
+void sentil_ring_buffer_destroy(sentil_ring_buffer_t *buffer);
+
 #ifdef __cplusplus
 }
 #endif
