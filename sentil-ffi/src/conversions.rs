@@ -1,7 +1,3 @@
-//! The error boundary. Each export reports failure through a per-thread last
-//! error in the style of `errno`: a stable code plus the core's message, which a
-//! C caller reads back with the two query functions in `lib.rs`.
-
 use crate::SentilError;
 use libc::{c_char, size_t};
 use std::cell::RefCell;
@@ -35,8 +31,6 @@ pub(crate) fn last_error_code() -> SentilError {
     LAST_ERROR.with(|e| e.borrow().code)
 }
 
-/// Resets the thread's last error. Called at the entry of every export so a
-/// successful call leaves `Ok` behind.
 pub(crate) fn clear_error() {
     LAST_ERROR.with(|e| {
         let mut e = e.borrow_mut();
@@ -45,8 +39,6 @@ pub(crate) fn clear_error() {
     });
 }
 
-/// Runs `f`, turning a panic into `SentilError::Panic` and the `default` return
-/// rather than letting it unwind across the C boundary, which would be undefined.
 pub(crate) fn ffi_panic_boundary<T>(default: T, f: impl FnOnce() -> T) -> T {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(value) => value,
@@ -80,8 +72,6 @@ pub(crate) fn last_error_message(buffer: *mut c_char, length: size_t) -> size_t 
     })
 }
 
-/// Borrows a C string as an owned Rust `String`, setting `NullPointer` for a
-/// null pointer and `Utf8` for invalid UTF-8.
 pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError> {
     if ptr.is_null() {
         set_error(SentilError::NullPointer, "a required string argument was null");
@@ -96,8 +86,6 @@ pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError
     }
 }
 
-/// Allocates a C string copy of `s`, returning null after setting an error if it
-/// holds an interior null byte.
 pub(crate) fn to_c_string(s: &str) -> *mut c_char {
     match CString::new(s) {
         Ok(c) => c.into_raw(),
@@ -108,9 +96,6 @@ pub(crate) fn to_c_string(s: &str) -> *mut c_char {
     }
 }
 
-/// Moves a list of strings into a freshly allocated C array, writing the length
-/// to `out_count`. The result is freed with `sentil_free_string_array`. Returns
-/// null after setting an error if any string holds an interior null byte.
 pub(crate) fn into_string_array(items: Vec<String>, out_count: *mut size_t) -> *mut *mut c_char {
     let mut ptrs: Vec<*mut c_char> = Vec::with_capacity(items.len());
     for item in &items {
