@@ -326,6 +326,21 @@ sentil_interval_t *sentil_violation_intervals(const double *times, size_t n, con
 void sentil_free_intervals(sentil_interval_t *intervals, size_t count);
 void sentil_monitor_destroy(sentil_monitor_t *monitor);
 
+/* Streaming monitor */
+
+typedef struct sentil_stream_monitor sentil_stream_monitor_t;
+
+sentil_stream_monitor_t *sentil_stream_monitor_create(const char *formula);
+sentil_stream_monitor_t *sentil_stream_monitor_from_formula(const sentil_formula_t *formula);
+size_t sentil_stream_monitor_variable_count(const sentil_stream_monitor_t *monitor);
+
+/* Index of a variable in packed-update order; false if the formula does not use it. */
+bool sentil_stream_monitor_symbol_index(const sentil_stream_monitor_t *monitor, const char *name,
+                                        size_t *out_index);
+
+void sentil_stream_monitor_reset(sentil_stream_monitor_t *monitor);
+void sentil_stream_monitor_destroy(sentil_stream_monitor_t *monitor);
+
 #ifdef __cplusplus
 }
 #endif

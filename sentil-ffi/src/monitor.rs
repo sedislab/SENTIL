@@ -1,7 +1,7 @@
 use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, set_error, slice_from};
 use crate::{SentilError, SentilTimeMode};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::{Formula, Monitor, MonitorConfig, Trace};
+use sentil::{Formula, Monitor, MonitorConfig, StreamMonitor, Trace};
 use std::ptr;
 
 /// A time span [start, end] where a property does not hold.
@@ -327,4 +327,77 @@ pub extern "C" fn sentil_monitor_reset(handle: *mut c_void) {
 pub extern "C" fn sentil_monitor_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<Monitor>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_create(formula: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(text) = c_char_to_string(formula) else {
+            return ptr::null_mut();
+        };
+        match StreamMonitor::new(&text) {
+            Ok(monitor) => into_handle(monitor),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_from_formula(formula: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let formula = borrow_handle!(formula, Formula, ptr::null_mut());
+        match StreamMonitor::from_formula(formula) {
+            Ok(monitor) => into_handle(monitor),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_variable_count(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, StreamMonitor, 0).variable_count())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_symbol_index(
+    handle: *mut c_void,
+    name: *const c_char,
+    out_index: *mut size_t,
+) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || {
+        check_ptr!(out_index, false);
+        let monitor = borrow_handle!(handle, StreamMonitor, false);
+        let Ok(name) = c_char_to_string(name) else {
+            return false;
+        };
+        match monitor.symbol_index(&name) {
+            Some(index) => {
+                unsafe { *out_index = index };
+                true
+            }
+            None => false,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_reset(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { mutate_handle(handle, StreamMonitor::reset) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<StreamMonitor>(handle) });
 }
