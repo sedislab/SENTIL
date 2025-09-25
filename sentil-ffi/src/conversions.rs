@@ -132,30 +132,34 @@ pub(crate) fn into_string_array(items: Vec<String>, out_count: *mut size_t) -> *
     raw.cast::<*mut c_char>()
 }
 
+pub(crate) fn code_of(e: &sentil::Error) -> SentilError {
+    use sentil::Error as E;
+    match e {
+        E::Parse(_) => SentilError::Parse,
+        E::UnknownVariable { .. } => SentilError::UnknownVariable,
+        E::DivisionByZero { .. }
+        | E::UnknownFunction { .. }
+        | E::ArityMismatch { .. }
+        | E::ProbabilisticOperator => SentilError::Evaluation,
+        E::NonMonotonicTime { .. }
+        | E::NonFiniteSample { .. }
+        | E::SignalLengthMismatch { .. }
+        | E::EmptyTrace
+        | E::PackedLength { .. } => SentilError::Trace,
+        E::NotProbabilistic => SentilError::NotProbabilistic,
+        E::InvalidNoiseModel { .. } => SentilError::InvalidNoiseModel,
+        E::InvalidConfig { .. } => SentilError::InvalidConfig,
+        E::Fit { .. } => SentilError::Fit,
+        E::Ingest { .. } => SentilError::Ingest,
+        E::Splitting { .. } => SentilError::Splitting,
+        E::Unsupported { .. } => SentilError::Unsupported,
+        _ => SentilError::Evaluation,
+    }
+}
+
 impl From<sentil::Error> for SentilError {
     fn from(e: sentil::Error) -> Self {
-        use sentil::Error as E;
-        let code = match &e {
-            E::Parse(_) => SentilError::Parse,
-            E::UnknownVariable { .. } => SentilError::UnknownVariable,
-            E::DivisionByZero { .. }
-            | E::UnknownFunction { .. }
-            | E::ArityMismatch { .. }
-            | E::ProbabilisticOperator => SentilError::Evaluation,
-            E::NonMonotonicTime { .. }
-            | E::NonFiniteSample { .. }
-            | E::SignalLengthMismatch { .. }
-            | E::EmptyTrace
-            | E::PackedLength { .. } => SentilError::Trace,
-            E::NotProbabilistic => SentilError::NotProbabilistic,
-            E::InvalidNoiseModel { .. } => SentilError::InvalidNoiseModel,
-            E::InvalidConfig { .. } => SentilError::InvalidConfig,
-            E::Fit { .. } => SentilError::Fit,
-            E::Ingest { .. } => SentilError::Ingest,
-            E::Splitting { .. } => SentilError::Splitting,
-            E::Unsupported { .. } => SentilError::Unsupported,
-            _ => SentilError::Evaluation,
-        };
+        let code = code_of(&e);
         set_error(code, &e.to_string());
         code
     }

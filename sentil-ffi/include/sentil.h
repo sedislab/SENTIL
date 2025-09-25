@@ -409,6 +409,23 @@ char **sentil_formula_bank_ids(const sentil_formula_bank_t *bank, size_t *out_co
 size_t sentil_formula_bank_len(const sentil_formula_bank_t *bank);
 bool sentil_formula_bank_is_empty(const sentil_formula_bank_t *bank);
 
+/* Per-formula robustness. id is owned by the array. */
+typedef struct sentil_bank_result {
+    char *id;
+    bool ok;
+    double value;
+    sentil_error_t code;
+} sentil_bank_result_t;
+
+/* Free with sentil_free_bank_results. */
+sentil_bank_result_t *sentil_formula_bank_robustness(const sentil_formula_bank_t *bank,
+                                                     const sentil_trace_t *trace, size_t *out_count);
+sentil_bank_result_t *sentil_formula_bank_robustness_dense(const sentil_formula_bank_t *bank,
+                                                           const sentil_trace_t *trace,
+                                                           size_t *out_count);
+
+void sentil_free_bank_results(sentil_bank_result_t *array, size_t count);
+
 void sentil_formula_bank_destroy(sentil_formula_bank_t *bank);
 
 #ifdef __cplusplus

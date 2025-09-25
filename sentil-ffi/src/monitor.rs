@@ -1,6 +1,6 @@
 use crate::conversions::{
-    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
-    to_c_string,
+    c_char_to_string, clear_error, code_of, ffi_panic_boundary, into_string_array, set_error,
+    slice_from, to_c_string,
 };
 use crate::{SentilError, SentilTimeMode};
 use libc::{c_char, c_double, c_void, size_t};
@@ -714,6 +714,72 @@ pub extern "C" fn sentil_formula_bank_len(handle: *mut c_void) -> size_t {
 pub extern "C" fn sentil_formula_bank_is_empty(handle: *mut c_void) -> bool {
     clear_error();
     ffi_panic_boundary(true, || borrow_handle!(handle, FormulaBank, true).is_empty())
+}
+
+/// Per-formula robustness.
+#[repr(C)]
+pub struct SentilBankResult {
+    pub id: *mut c_char,
+    pub ok: bool,
+    pub value: f64,
+    pub code: SentilError,
+}
+
+fn pack_bank(
+    results: Vec<(String, sentil::Result<f64>)>,
+    out_count: *mut size_t,
+) -> *mut SentilBankResult {
+    let packed = results
+        .into_iter()
+        .map(|(id, result)| match result {
+            Ok(value) => SentilBankResult { id: to_c_string(&id), ok: true, value, code: SentilError::Ok },
+            Err(e) => SentilBankResult {
+                id: to_c_string(&id),
+                ok: false,
+                value: f64::NAN,
+                code: code_of(&e),
+            },
+        })
+        .collect();
+    into_boxed_array(packed, out_count)
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_robustness(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut SentilBankResult {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let bank = borrow_handle!(handle, FormulaBank, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        pack_bank(bank.robustness(trace), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_bank_robustness_dense(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut SentilBankResult {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let bank = borrow_handle!(handle, FormulaBank, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        pack_bank(bank.robustness_dense(trace), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_free_bank_results(array: *mut SentilBankResult, count: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe {
+        free_boxed_array_owning(array, count, |result| result.id)
+    });
 }
 
 #[no_mangle]
