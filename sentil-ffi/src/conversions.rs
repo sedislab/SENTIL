@@ -73,6 +73,17 @@ pub(crate) fn last_error_message(buffer: *mut c_char, length: size_t) -> size_t 
     })
 }
 
+pub(crate) fn slice_from<'a, T>(ptr: *const T, len: usize) -> Result<&'a [T], SentilError> {
+    if len == 0 {
+        Ok(&[])
+    } else if ptr.is_null() {
+        set_error(SentilError::NullPointer, "a required array argument was null");
+        Err(SentilError::NullPointer)
+    } else {
+        Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
+    }
+}
+
 pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError> {
     if ptr.is_null() {
         set_error(SentilError::NullPointer, "a required string argument was null");

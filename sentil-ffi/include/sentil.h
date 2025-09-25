@@ -134,6 +134,18 @@ sentil_formula_t *sentil_formula_since(double lower, double upper, bool has_uppe
 sentil_formula_t *sentil_formula_probabilistic(sentil_probability_op_t op, double threshold,
                                                sentil_formula_t *child);
 
+/* Trace */
+
+typedef struct sentil_trace sentil_trace_t;
+
+/* Trace over the given strictly increasing times. */
+sentil_trace_t *sentil_trace_create(const double *times, size_t n);
+
+/* Trace with integer times 0, 1, ..., len - 1. */
+sentil_trace_t *sentil_trace_indexed(size_t len);
+
+void sentil_trace_destroy(sentil_trace_t *trace);
+
 #ifdef __cplusplus
 }
 #endif

@@ -33,6 +33,7 @@ mod macros;
 mod conversions;
 mod formula;
 mod handles;
+mod signal;
 
 use conversions::{
     clear_error, ffi_panic_boundary, last_error_code, last_error_message, last_error_ptr,
