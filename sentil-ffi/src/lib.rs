@@ -35,6 +35,7 @@ mod formula;
 mod handles;
 mod monitor;
 mod signal;
+mod stats;
 
 use conversions::{
     clear_error, ffi_panic_boundary, last_error_code, last_error_message, last_error_ptr,
@@ -153,6 +154,27 @@ impl From<SentilProbabilityOp> for sentil::formula::ProbabilityOp {
             SentilProbabilityOp::Greater => P::Greater,
             SentilProbabilityOp::LessEqual => P::LessEqual,
             SentilProbabilityOp::Less => P::Less,
+        }
+    }
+}
+
+/// Which confidence interval to report around an estimate.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilIntervalMethod {
+    Wilson = 0,
+    ClopperPearson = 1,
+    Jeffreys = 2,
+    AgrestiCoull = 3,
+}
+
+impl From<SentilIntervalMethod> for sentil::IntervalMethod {
+    fn from(m: SentilIntervalMethod) -> Self {
+        match m {
+            SentilIntervalMethod::Wilson => sentil::IntervalMethod::Wilson,
+            SentilIntervalMethod::ClopperPearson => sentil::IntervalMethod::ClopperPearson,
+            SentilIntervalMethod::Jeffreys => sentil::IntervalMethod::Jeffreys,
+            SentilIntervalMethod::AgrestiCoull => sentil::IntervalMethod::AgrestiCoull,
         }
     }
 }

@@ -428,6 +428,36 @@ void sentil_free_bank_results(sentil_bank_result_t *array, size_t count);
 
 void sentil_formula_bank_destroy(sentil_formula_bank_t *bank);
 
+/* Statistics */
+
+typedef enum sentil_interval_method {
+    SENTIL_WILSON = 0,
+    SENTIL_CLOPPER_PEARSON = 1,
+    SENTIL_JEFFREYS = 2,
+    SENTIL_AGRESTI_COULL = 3
+} sentil_interval_method_t;
+
+typedef struct sentil_confidence_interval {
+    double lower;
+    double upper;
+    double level;
+} sentil_confidence_interval_t;
+
+sentil_confidence_interval_t sentil_wilson_interval(uint64_t successes, uint64_t trials, double level);
+sentil_confidence_interval_t sentil_clopper_pearson(uint64_t successes, uint64_t trials, double level);
+sentil_confidence_interval_t sentil_jeffreys_interval(uint64_t successes, uint64_t trials,
+                                                      double level);
+sentil_confidence_interval_t sentil_agresti_coull(uint64_t successes, uint64_t trials, double level);
+sentil_confidence_interval_t sentil_interval(sentil_interval_method_t method, uint64_t successes,
+                                             uint64_t trials, double level);
+
+/* Two-sided z critical value for a confidence level in (0, 1). */
+double sentil_z_score(double level);
+
+/* Sample count for a target error and confidence. */
+sentil_error_t sentil_chernoff_hoeffding_samples(double epsilon, double delta, uint64_t *out);
+sentil_error_t sentil_wilson_samples(double epsilon, double level, uint64_t *out);
+
 #ifdef __cplusplus
 }
 #endif
