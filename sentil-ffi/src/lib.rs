@@ -158,6 +158,23 @@ impl From<SentilProbabilityOp> for sentil::formula::ProbabilityOp {
     }
 }
 
+/// How a noise draw combines with a sensor reading.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilNoiseInteraction {
+    Additive = 0,
+    Multiplicative = 1,
+}
+
+impl From<SentilNoiseInteraction> for sentil::NoiseInteraction {
+    fn from(i: SentilNoiseInteraction) -> Self {
+        match i {
+            SentilNoiseInteraction::Additive => sentil::NoiseInteraction::Additive,
+            SentilNoiseInteraction::Multiplicative => sentil::NoiseInteraction::Multiplicative,
+        }
+    }
+}
+
 /// Which confidence interval to report around an estimate.
 #[repr(C)]
 #[derive(Clone, Copy)]

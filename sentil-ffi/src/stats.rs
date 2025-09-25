@@ -1,9 +1,22 @@
 use crate::conversions::{clear_error, ffi_panic_boundary};
+use crate::handles::{drop_handle, into_handle};
 use crate::{SentilError, SentilIntervalMethod};
+use libc::c_void;
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
-    wilson_samples, z_score, ConfidenceInterval, IntervalMethod,
+    wilson_samples, z_score, ConfidenceInterval, IntervalMethod, NoiseModel,
 };
+use std::ptr;
+
+fn noise_handle(result: sentil::Result<NoiseModel>) -> *mut c_void {
+    match result {
+        Ok(model) => into_handle(model),
+        Err(e) => {
+            let _: SentilError = e.into();
+            ptr::null_mut()
+        }
+    }
+}
 
 /// A confidence interval `[lower, upper]` built for `level`.
 #[repr(C)]
@@ -113,4 +126,52 @@ pub extern "C" fn sentil_wilson_samples(epsilon: f64, level: f64, out: *mut u64)
             Err(e) => e.into(),
         }
     })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_dirac(value: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::dirac(value)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_gaussian(mean: f64, std_dev: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::gaussian(mean, std_dev)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_uniform(low: f64, high: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::uniform(low, high)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_log_normal(mu: f64, sigma: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::log_normal(mu, sigma)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_exponential(lambda: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::exponential(lambda)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_gamma(shape: f64, scale: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::gamma(shape, scale)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_beta(alpha: f64, beta: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::beta(alpha, beta)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<NoiseModel>(handle) });
 }

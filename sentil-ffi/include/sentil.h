@@ -458,6 +458,26 @@ double sentil_z_score(double level);
 sentil_error_t sentil_chernoff_hoeffding_samples(double epsilon, double delta, uint64_t *out);
 sentil_error_t sentil_wilson_samples(double epsilon, double level, uint64_t *out);
 
+/* Noise models */
+
+typedef enum sentil_noise_interaction {
+    SENTIL_NOISE_ADDITIVE = 0,
+    SENTIL_NOISE_MULTIPLICATIVE = 1
+} sentil_noise_interaction_t;
+
+typedef struct sentil_noise_model sentil_noise_model_t;
+
+/* Free a model with sentil_noise_destroy. */
+sentil_noise_model_t *sentil_noise_dirac(double value);
+sentil_noise_model_t *sentil_noise_gaussian(double mean, double std_dev);
+sentil_noise_model_t *sentil_noise_uniform(double low, double high);
+sentil_noise_model_t *sentil_noise_log_normal(double mu, double sigma);
+sentil_noise_model_t *sentil_noise_exponential(double lambda);
+sentil_noise_model_t *sentil_noise_gamma(double shape, double scale);
+sentil_noise_model_t *sentil_noise_beta(double alpha, double beta);
+
+void sentil_noise_destroy(sentil_noise_model_t *model);
+
 #ifdef __cplusplus
 }
 #endif
