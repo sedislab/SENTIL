@@ -149,6 +149,25 @@ impl From<SentilProbabilityOp> for sentil::formula::ProbabilityOp {
     }
 }
 
+/// Interpolation mode for resampling and dense-time reading.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilInterpolation {
+    Linear = 0,
+    ZeroOrderHold = 1,
+    CubicSpline = 2,
+}
+
+impl From<SentilInterpolation> for sentil::Interpolation {
+    fn from(i: SentilInterpolation) -> Self {
+        match i {
+            SentilInterpolation::Linear => sentil::Interpolation::Linear,
+            SentilInterpolation::ZeroOrderHold => sentil::Interpolation::ZeroOrderHold,
+            SentilInterpolation::CubicSpline => sentil::Interpolation::CubicSpline,
+        }
+    }
+}
+
 const VERSION_MAJOR: u32 = 1;
 const VERSION_MINOR: u32 = 0;
 const VERSION_PATCH: u32 = 0;

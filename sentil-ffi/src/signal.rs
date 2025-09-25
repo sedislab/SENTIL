@@ -2,7 +2,7 @@ use crate::conversions::{
     c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
 };
 use crate::handles::{drop_handle, into_handle};
-use crate::SentilError;
+use crate::{SentilError, SentilInterpolation};
 use libc::{c_char, c_double, c_void, size_t};
 use sentil::Trace;
 use std::ptr;
@@ -144,6 +144,29 @@ pub extern "C" fn sentil_trace_signal(
                 unsafe { *out_len = 0 };
                 set_error(SentilError::UnknownVariable, &format!("trace has no signal named `{name}`"));
                 ptr::null()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_resample(
+    handle: *mut c_void,
+    times: *const c_double,
+    n: size_t,
+    interp: SentilInterpolation,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let trace = borrow_handle!(handle, Trace, ptr::null_mut());
+        let Ok(times) = slice_from(times, n) else {
+            return ptr::null_mut();
+        };
+        match trace.resample(times.to_vec(), interp.into()) {
+            Ok(resampled) => into_handle(resampled),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
             }
         }
     })

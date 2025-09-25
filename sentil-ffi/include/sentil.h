@@ -164,6 +164,15 @@ char **sentil_trace_variables(const sentil_trace_t *trace, size_t *out_count);
 /* Borrowed view of a named signal, valid until the trace changes or is freed. */
 const double *sentil_trace_signal(const sentil_trace_t *trace, const char *name, size_t *out_len);
 
+typedef enum sentil_interpolation {
+    SENTIL_INTERP_LINEAR = 0,
+    SENTIL_INTERP_HOLD = 1,
+    SENTIL_INTERP_CUBIC = 2
+} sentil_interpolation_t;
+
+sentil_trace_t *sentil_trace_resample(const sentil_trace_t *trace, const double *times, size_t n,
+                                      sentil_interpolation_t interp);
+
 void sentil_trace_destroy(sentil_trace_t *trace);
 
 #ifdef __cplusplus
