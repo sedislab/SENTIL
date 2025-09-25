@@ -1,7 +1,7 @@
-use crate::conversions::{clear_error, ffi_panic_boundary};
-use crate::handles::{drop_handle, into_handle};
+use crate::conversions::{clear_error, ffi_panic_boundary, set_error, slice_from};
+use crate::handles::{drop_handle, into_handle, take_handle};
 use crate::{SentilError, SentilIntervalMethod};
-use libc::c_void;
+use libc::{c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
     wilson_samples, z_score, ConfidenceInterval, IntervalMethod, NoiseModel,
@@ -223,6 +223,70 @@ pub extern "C" fn sentil_noise_poisson(lambda: f64) -> *mut c_void {
 pub extern "C" fn sentil_noise_binomial(n: u64, p: f64) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || noise_handle(NoiseModel::binomial(n, p)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_bootstrap(residuals: *const f64, n: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(residuals) = slice_from(residuals, n) else {
+            return ptr::null_mut();
+        };
+        noise_handle(NoiseModel::bootstrap(residuals.to_vec()))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_mixture(
+    weights: *const f64,
+    models: *mut *mut c_void,
+    n: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(weights) = slice_from(weights, n) else {
+            return ptr::null_mut();
+        };
+        if n > 0 {
+            check_ptr!(models, ptr::null_mut());
+        }
+        if unsafe { repeated_handle(&[("models", models, n)]) } {
+            return ptr::null_mut();
+        }
+        let mut components: Vec<Option<NoiseModel>> = Vec::with_capacity(n);
+        for i in 0..n {
+            components.push(unsafe { take_handle::<NoiseModel>(*models.add(i)) });
+        }
+        if components.iter().any(Option::is_none) {
+            set_error(SentilError::NullPointer, "a mixture component was null");
+            return ptr::null_mut();
+        }
+        let components = components.into_iter().flatten().collect();
+        noise_handle(NoiseModel::mixture(weights.to_vec(), components))
+    })
+}
+
+fn noise_moment(handle: *mut c_void, get: fn(&NoiseModel) -> Option<f64>, out: *mut f64) -> bool {
+    check_ptr!(out, false);
+    match get(borrow_handle!(handle, NoiseModel, false)) {
+        Some(v) => {
+            unsafe { *out = v };
+            true
+        }
+        None => false,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_mean(handle: *mut c_void, out: *mut f64) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || noise_moment(handle, NoiseModel::mean, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_variance(handle: *mut c_void, out: *mut f64) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || noise_moment(handle, NoiseModel::variance, out))
 }
 
 #[no_mangle]

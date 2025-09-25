@@ -485,6 +485,18 @@ sentil_noise_model_t *sentil_noise_truncated_normal(double mean, double std_dev,
 sentil_noise_model_t *sentil_noise_poisson(double lambda);
 sentil_noise_model_t *sentil_noise_binomial(uint64_t n, double p);
 
+/* Empirical model resampled from residuals (at least one, all finite). */
+sentil_noise_model_t *sentil_noise_bootstrap(const double *residuals, size_t n);
+
+/* Consumes the component handles, except when the call is rejected before reading
+   them, where you still own them. */
+sentil_noise_model_t *sentil_noise_mixture(const double *weights, sentil_noise_model_t **models,
+                                           size_t n);
+
+/* Analytic mean and variance; false when undefined (e.g. Cauchy). */
+bool sentil_noise_mean(const sentil_noise_model_t *model, double *out);
+bool sentil_noise_variance(const sentil_noise_model_t *model, double *out);
+
 void sentil_noise_destroy(sentil_noise_model_t *model);
 
 #ifdef __cplusplus
