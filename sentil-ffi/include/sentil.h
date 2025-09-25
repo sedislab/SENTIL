@@ -151,6 +151,19 @@ sentil_trace_t *sentil_trace_indexed(size_t len);
 sentil_error_t sentil_trace_add_signal(sentil_trace_t *trace, const char *name,
                                        const double *values, size_t n);
 
+size_t sentil_trace_len(const sentil_trace_t *trace);
+
+bool sentil_trace_is_empty(const sentil_trace_t *trace);
+
+/* Borrowed view of the times, valid until the trace changes or is freed. */
+const double *sentil_trace_times(const sentil_trace_t *trace, size_t *out_len);
+
+/* Signal names, sorted. Free with sentil_free_string_array. */
+char **sentil_trace_variables(const sentil_trace_t *trace, size_t *out_count);
+
+/* Borrowed view of a named signal, valid until the trace changes or is freed. */
+const double *sentil_trace_signal(const sentil_trace_t *trace, const char *name, size_t *out_len);
+
 void sentil_trace_destroy(sentil_trace_t *trace);
 
 #ifdef __cplusplus

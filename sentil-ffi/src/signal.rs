@@ -1,4 +1,6 @@
-use crate::conversions::{c_char_to_string, clear_error, ffi_panic_boundary, slice_from};
+use crate::conversions::{
+    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
+};
 use crate::handles::{drop_handle, into_handle};
 use crate::SentilError;
 use libc::{c_char, c_double, c_void, size_t};
@@ -78,6 +80,71 @@ pub extern "C" fn sentil_trace_add_signal(
         match trace.add_signal(&name, values.to_vec()) {
             Ok(()) => SentilError::Ok,
             Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_len(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, Trace, 0).len())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_is_empty(handle: *mut c_void) -> bool {
+    clear_error();
+    ffi_panic_boundary(true, || borrow_handle!(handle, Trace, true).is_empty())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_times(handle: *mut c_void, out_len: *mut size_t) -> *const c_double {
+    clear_error();
+    ffi_panic_boundary(ptr::null(), || {
+        check_ptr!(out_len, ptr::null());
+        let trace = borrow_handle!(handle, Trace, ptr::null());
+        let times = trace.times();
+        unsafe { *out_len = times.len() };
+        times.as_ptr()
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_variables(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let trace = borrow_handle!(handle, Trace, ptr::null_mut());
+        let names = trace.variables().into_iter().map(String::from).collect();
+        into_string_array(names, out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_signal(
+    handle: *mut c_void,
+    name: *const c_char,
+    out_len: *mut size_t,
+) -> *const c_double {
+    clear_error();
+    ffi_panic_boundary(ptr::null(), || {
+        check_ptr!(out_len, ptr::null());
+        let trace = borrow_handle!(handle, Trace, ptr::null());
+        let Ok(name) = c_char_to_string(name) else {
+            return ptr::null();
+        };
+        match trace.signal(&name) {
+            Some(values) => {
+                unsafe { *out_len = values.len() };
+                values.as_ptr()
+            }
+            None => {
+                unsafe { *out_len = 0 };
+                set_error(SentilError::UnknownVariable, &format!("trace has no signal named `{name}`"));
+                ptr::null()
+            }
         }
     })
 }
