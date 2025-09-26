@@ -8,9 +8,64 @@ use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
     wilson_samples, z_score, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
+    SmcConfig, SmcResult,
 };
-use sentil::Trace;
+use sentil::{Formula, Trace};
 use std::ptr;
+
+/// Monte Carlo settings.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilSmcConfig {
+    pub samples: u64,
+    pub confidence: f64,
+    pub seed: u64,
+    pub interval_method: SentilIntervalMethod,
+}
+
+impl From<SentilSmcConfig> for SmcConfig {
+    fn from(c: SentilSmcConfig) -> Self {
+        SmcConfig {
+            samples: c.samples,
+            confidence: c.confidence,
+            seed: c.seed,
+            interval_method: c.interval_method.into(),
+        }
+    }
+}
+
+/// The outcome of a statistical check.
+#[repr(C)]
+pub struct SentilSmcResult {
+    pub probability: f64,
+    pub interval: SentilConfidenceInterval,
+    pub satisfactions: u64,
+    pub samples: u64,
+    pub holds: bool,
+}
+
+impl From<SmcResult> for SentilSmcResult {
+    fn from(r: SmcResult) -> Self {
+        Self {
+            probability: r.probability,
+            interval: r.interval.into(),
+            satisfactions: r.satisfactions,
+            samples: r.samples,
+            holds: r.holds,
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_smc_config_default() -> SentilSmcConfig {
+    let d = SmcConfig::default();
+    SentilSmcConfig {
+        samples: d.samples,
+        confidence: d.confidence,
+        seed: d.seed,
+        interval_method: d.interval_method.into(),
+    }
+}
 
 fn noise_handle(result: sentil::Result<NoiseModel>) -> *mut c_void {
     match result {
@@ -504,4 +559,60 @@ pub extern "C" fn sentil_lifting_registry_lift(
 pub extern "C" fn sentil_lifting_registry_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<LiftingRegistry>(handle) });
+}
+
+fn run_check(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSmcConfig,
+    out: *mut SentilSmcResult,
+    conservative: bool,
+) -> SentilError {
+    check_ptr!(config, SentilError::NullPointer);
+    check_ptr!(out, SentilError::NullPointer);
+    let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+    let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+    let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+    let config: SmcConfig = unsafe { *config }.into();
+    let result = if conservative {
+        formula.check_conservative(trace, lifting, &config)
+    } else {
+        formula.check(trace, lifting, &config)
+    };
+    match result {
+        Ok(result) => {
+            unsafe { *out = result.into() };
+            SentilError::Ok
+        }
+        Err(e) => e.into(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_check(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSmcConfig,
+    out: *mut SentilSmcResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        run_check(formula, trace, lifting, config, out, false)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_check_conservative(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSmcConfig,
+    out: *mut SentilSmcResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        run_check(formula, trace, lifting, config, out, true)
+    })
 }

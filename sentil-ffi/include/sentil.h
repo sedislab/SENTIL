@@ -538,6 +538,36 @@ sentil_trace_t *sentil_lifting_registry_lift(const sentil_lifting_registry_t *re
 
 void sentil_lifting_registry_destroy(sentil_lifting_registry_t *registry);
 
+/* Statistical model checking */
+
+typedef struct sentil_smc_config {
+    uint64_t samples;
+    double confidence;
+    uint64_t seed;
+    sentil_interval_method_t interval_method;
+} sentil_smc_config_t;
+
+/* The defaults: 10000 samples, 0.95 confidence, seed 42, Wilson interval. */
+sentil_smc_config_t sentil_smc_config_default(void);
+
+typedef struct sentil_smc_result {
+    double probability;
+    sentil_confidence_interval_t interval;
+    uint64_t satisfactions;
+    uint64_t samples;
+    bool holds;
+} sentil_smc_result_t;
+
+/* check_conservative always uses the Clopper-Pearson interval. */
+sentil_error_t sentil_formula_check(const sentil_formula_t *formula, const sentil_trace_t *trace,
+                                    const sentil_lifting_registry_t *lifting,
+                                    const sentil_smc_config_t *config, sentil_smc_result_t *out);
+sentil_error_t sentil_formula_check_conservative(const sentil_formula_t *formula,
+                                                 const sentil_trace_t *trace,
+                                                 const sentil_lifting_registry_t *lifting,
+                                                 const sentil_smc_config_t *config,
+                                                 sentil_smc_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

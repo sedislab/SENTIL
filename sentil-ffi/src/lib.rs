@@ -196,6 +196,17 @@ impl From<SentilIntervalMethod> for sentil::IntervalMethod {
     }
 }
 
+impl From<sentil::IntervalMethod> for SentilIntervalMethod {
+    fn from(m: sentil::IntervalMethod) -> Self {
+        match m {
+            sentil::IntervalMethod::Wilson => SentilIntervalMethod::Wilson,
+            sentil::IntervalMethod::ClopperPearson => SentilIntervalMethod::ClopperPearson,
+            sentil::IntervalMethod::Jeffreys => SentilIntervalMethod::Jeffreys,
+            sentil::IntervalMethod::AgrestiCoull => SentilIntervalMethod::AgrestiCoull,
+        }
+    }
+}
+
 /// How offline robustness treats time between samples.
 #[repr(C)]
 #[derive(Clone, Copy)]
