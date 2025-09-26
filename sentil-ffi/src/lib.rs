@@ -158,6 +158,15 @@ impl From<SentilProbabilityOp> for sentil::formula::ProbabilityOp {
     }
 }
 
+/// The verdict of a sequential probability ratio test.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilSprtVerdict {
+    AcceptH0 = 0,
+    AcceptH1 = 1,
+    Inconclusive = 2,
+}
+
 /// How a noise draw combines with a sensor reading.
 #[repr(C)]
 #[derive(Clone, Copy)]

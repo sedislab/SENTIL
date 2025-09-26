@@ -3,15 +3,58 @@ use crate::conversions::{
     to_c_string,
 };
 use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
-use crate::{SentilError, SentilIntervalMethod, SentilNoiseInteraction};
+use crate::{SentilError, SentilIntervalMethod, SentilNoiseInteraction, SentilSprtVerdict};
 use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
     wilson_samples, z_score, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
-    RobustnessDistribution, SmcConfig, SmcResult,
+    RobustnessDistribution, SmcConfig, SmcResult, SprtConfig, SprtResult,
 };
 use sentil::{Formula, Monitor, Trace};
 use std::ptr;
+
+/// SPRT settings.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilSprtConfig {
+    pub p0: f64,
+    pub p1: f64,
+    pub alpha: f64,
+    pub beta: f64,
+    pub max_samples: u64,
+    pub seed: u64,
+}
+
+impl SentilSprtConfig {
+    fn to_core(self) -> sentil::Result<SprtConfig> {
+        Ok(SprtConfig::new(self.p0, self.p1, self.alpha, self.beta, self.max_samples)?
+            .with_seed(self.seed))
+    }
+}
+
+/// The result of a sequential test.
+#[repr(C)]
+pub struct SentilSprtResult {
+    pub verdict: SentilSprtVerdict,
+    pub samples: u64,
+    pub log_likelihood: f64,
+}
+
+impl From<SprtResult> for SentilSprtResult {
+    fn from(r: SprtResult) -> Self {
+        match r {
+            SprtResult::AcceptH0 { samples } => {
+                Self { verdict: SentilSprtVerdict::AcceptH0, samples, log_likelihood: 0.0 }
+            }
+            SprtResult::AcceptH1 { samples } => {
+                Self { verdict: SentilSprtVerdict::AcceptH1, samples, log_likelihood: 0.0 }
+            }
+            SprtResult::Inconclusive { samples, log_likelihood } => {
+                Self { verdict: SentilSprtVerdict::Inconclusive, samples, log_likelihood }
+            }
+        }
+    }
+}
 
 /// Spread of robustness across the sampled ensemble.
 #[repr(C)]
@@ -686,6 +729,64 @@ pub extern "C" fn sentil_monitor_check(
         let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
         let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
         match monitor.check(trace, lifting) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_check_sequential(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSprtConfig,
+    out: *mut SentilSprtResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match formula.check_sequential(trace, lifting, &config) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_check_sequential(
+    monitor: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSprtConfig,
+    out: *mut SentilSprtResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle!(monitor, Monitor, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match monitor.check_sequential(trace, lifting, &config) {
             Ok(result) => {
                 unsafe { *out = result.into() };
                 SentilError::Ok

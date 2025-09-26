@@ -589,6 +589,41 @@ sentil_error_t sentil_monitor_check(const sentil_monitor_t *monitor, const senti
                                     const sentil_lifting_registry_t *lifting,
                                     sentil_smc_result_t *out);
 
+/* Sequential testing (SPRT) */
+
+typedef enum sentil_sprt_verdict {
+    SENTIL_SPRT_ACCEPT_H0 = 0,
+    SENTIL_SPRT_ACCEPT_H1 = 1,
+    SENTIL_SPRT_INCONCLUSIVE = 2
+} sentil_sprt_verdict_t;
+
+/* Requires 0 < p0 < p1 < 1, both error rates in (0, 1), and max_samples > 0. */
+typedef struct sentil_sprt_config {
+    double p0;
+    double p1;
+    double alpha;
+    double beta;
+    uint64_t max_samples;
+    uint64_t seed;
+} sentil_sprt_config_t;
+
+typedef struct sentil_sprt_result {
+    sentil_sprt_verdict_t verdict;
+    uint64_t samples;
+    double log_likelihood;
+} sentil_sprt_result_t;
+
+sentil_error_t sentil_formula_check_sequential(const sentil_formula_t *formula,
+                                               const sentil_trace_t *trace,
+                                               const sentil_lifting_registry_t *lifting,
+                                               const sentil_sprt_config_t *config,
+                                               sentil_sprt_result_t *out);
+sentil_error_t sentil_monitor_check_sequential(const sentil_monitor_t *monitor,
+                                               const sentil_trace_t *trace,
+                                               const sentil_lifting_registry_t *lifting,
+                                               const sentil_sprt_config_t *config,
+                                               sentil_sprt_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif
