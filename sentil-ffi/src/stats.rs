@@ -3,15 +3,59 @@ use crate::conversions::{
     to_c_string,
 };
 use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
-use crate::{SentilError, SentilIntervalMethod, SentilNoiseInteraction, SentilSprtVerdict};
+use crate::{
+    SentilBayesVerdict, SentilError, SentilIntervalMethod, SentilNoiseInteraction, SentilSprtVerdict,
+};
 use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
-    wilson_samples, z_score, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
-    RobustnessDistribution, SmcConfig, SmcResult, SprtConfig, SprtResult,
+    wilson_samples, z_score, BayesConfig, BayesResult, ConfidenceInterval, IntervalMethod,
+    LiftingRegistry, NoiseModel, RobustnessDistribution, SmcConfig, SmcResult, SprtConfig,
+    SprtResult,
 };
 use sentil::{Formula, Monitor, Trace};
 use std::ptr;
+
+/// Bayesian SMC settings.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilBayesConfig {
+    pub threshold: f64,
+    pub bayes_factor: f64,
+    pub max_samples: u64,
+    pub seed: u64,
+}
+
+impl SentilBayesConfig {
+    fn to_core(self) -> sentil::Result<BayesConfig> {
+        Ok(BayesConfig::new(self.threshold, self.bayes_factor, self.max_samples)?
+            .with_seed(self.seed))
+    }
+}
+
+/// The result of a Bayesian test.
+#[repr(C)]
+pub struct SentilBayesResult {
+    pub verdict: SentilBayesVerdict,
+    pub samples: u64,
+    pub posterior: f64,
+}
+
+impl From<BayesResult> for SentilBayesResult {
+    fn from(r: BayesResult) -> Self {
+        match r {
+            BayesResult::Holds { samples, posterior } => {
+                Self { verdict: SentilBayesVerdict::Holds, samples, posterior }
+            }
+            BayesResult::Fails { samples, posterior } => {
+                Self { verdict: SentilBayesVerdict::Fails, samples, posterior }
+            }
+            BayesResult::Inconclusive { samples, posterior } => {
+                Self { verdict: SentilBayesVerdict::Inconclusive, samples, posterior }
+            }
+        }
+    }
+}
 
 /// SPRT settings.
 #[repr(C)]
@@ -787,6 +831,35 @@ pub extern "C" fn sentil_monitor_check_sequential(
             Err(e) => return e.into(),
         };
         match monitor.check_sequential(trace, lifting, &config) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_check_bayesian(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilBayesConfig,
+    out: *mut SentilBayesResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match formula.check_bayesian(trace, lifting, &config) {
             Ok(result) => {
                 unsafe { *out = result.into() };
                 SentilError::Ok

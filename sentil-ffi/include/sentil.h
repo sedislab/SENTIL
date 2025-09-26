@@ -624,6 +624,34 @@ sentil_error_t sentil_monitor_check_sequential(const sentil_monitor_t *monitor,
                                                const sentil_sprt_config_t *config,
                                                sentil_sprt_result_t *out);
 
+/* Bayesian sequential testing */
+
+typedef enum sentil_bayes_verdict {
+    SENTIL_BAYES_HOLDS = 0,
+    SENTIL_BAYES_FAILS = 1,
+    SENTIL_BAYES_INCONCLUSIVE = 2
+} sentil_bayes_verdict_t;
+
+/* Requires threshold in (0, 1), bayes_factor > 1, and max_samples > 0. */
+typedef struct sentil_bayes_config {
+    double threshold;
+    double bayes_factor;
+    uint64_t max_samples;
+    uint64_t seed;
+} sentil_bayes_config_t;
+
+typedef struct sentil_bayes_result {
+    sentil_bayes_verdict_t verdict;
+    uint64_t samples;
+    double posterior;
+} sentil_bayes_result_t;
+
+sentil_error_t sentil_formula_check_bayesian(const sentil_formula_t *formula,
+                                             const sentil_trace_t *trace,
+                                             const sentil_lifting_registry_t *lifting,
+                                             const sentil_bayes_config_t *config,
+                                             sentil_bayes_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -167,6 +167,15 @@ pub enum SentilSprtVerdict {
     Inconclusive = 2,
 }
 
+/// The verdict of a Bayesian sequential test.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilBayesVerdict {
+    Holds = 0,
+    Fails = 1,
+    Inconclusive = 2,
+}
+
 /// How a noise draw combines with a sensor reading.
 #[repr(C)]
 #[derive(Clone, Copy)]
