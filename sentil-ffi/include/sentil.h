@@ -497,6 +497,17 @@ sentil_noise_model_t *sentil_noise_mixture(const double *weights, sentil_noise_m
 bool sentil_noise_mean(const sentil_noise_model_t *model, double *out);
 bool sentil_noise_variance(const sentil_noise_model_t *model, double *out);
 
+/* Free the result with sentil_free_doubles. */
+double *sentil_noise_residuals(const double *ground_truth, size_t n, const double *sensor, size_t m,
+                               sentil_noise_interaction_t interaction, size_t *out_len);
+
+sentil_noise_model_t *sentil_noise_fit_gaussian(const double *samples, size_t n);
+sentil_noise_model_t *sentil_noise_fit_bootstrap(const double *samples, size_t n);
+sentil_noise_model_t *sentil_noise_fit_bootstrap_reservoir(const double *samples, size_t n,
+                                                           size_t max_samples);
+sentil_noise_model_t *sentil_noise_fit_gaussian_mixture(const double *samples, size_t n,
+                                                        size_t components, size_t max_iters);
+
 void sentil_noise_destroy(sentil_noise_model_t *model);
 
 #ifdef __cplusplus

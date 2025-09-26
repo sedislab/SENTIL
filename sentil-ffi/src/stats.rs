@@ -1,6 +1,6 @@
 use crate::conversions::{clear_error, ffi_panic_boundary, set_error, slice_from};
-use crate::handles::{drop_handle, into_handle, take_handle};
-use crate::{SentilError, SentilIntervalMethod};
+use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
+use crate::{SentilError, SentilIntervalMethod, SentilNoiseInteraction};
 use libc::{c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
@@ -287,6 +287,87 @@ pub extern "C" fn sentil_noise_mean(handle: *mut c_void, out: *mut f64) -> bool 
 pub extern "C" fn sentil_noise_variance(handle: *mut c_void, out: *mut f64) -> bool {
     clear_error();
     ffi_panic_boundary(false, || noise_moment(handle, NoiseModel::variance, out))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_residuals(
+    ground_truth: *const f64,
+    n: size_t,
+    sensor: *const f64,
+    m: size_t,
+    interaction: SentilNoiseInteraction,
+    out_len: *mut size_t,
+) -> *mut f64 {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_len, ptr::null_mut());
+        let Ok(truth) = slice_from(ground_truth, n) else {
+            return ptr::null_mut();
+        };
+        let Ok(sensor) = slice_from(sensor, m) else {
+            return ptr::null_mut();
+        };
+        match NoiseModel::residuals(truth, sensor, interaction.into()) {
+            Ok(residuals) => into_boxed_array(residuals, out_len),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_fit_gaussian(samples: *const f64, n: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(samples) = slice_from(samples, n) else {
+            return ptr::null_mut();
+        };
+        noise_handle(NoiseModel::fit_gaussian(samples))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_fit_bootstrap(samples: *const f64, n: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(samples) = slice_from(samples, n) else {
+            return ptr::null_mut();
+        };
+        noise_handle(NoiseModel::fit_bootstrap(samples))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_fit_bootstrap_reservoir(
+    samples: *const f64,
+    n: size_t,
+    max_samples: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(samples) = slice_from(samples, n) else {
+            return ptr::null_mut();
+        };
+        noise_handle(NoiseModel::fit_bootstrap_reservoir(samples, max_samples))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_fit_gaussian_mixture(
+    samples: *const f64,
+    n: size_t,
+    components: size_t,
+    max_iters: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(samples) = slice_from(samples, n) else {
+            return ptr::null_mut();
+        };
+        noise_handle(NoiseModel::fit_gaussian_mixture(samples, components, max_iters))
+    })
 }
 
 #[no_mangle]
