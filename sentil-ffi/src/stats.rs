@@ -8,10 +8,34 @@ use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
     wilson_samples, z_score, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
-    SmcConfig, SmcResult,
+    RobustnessDistribution, SmcConfig, SmcResult,
 };
-use sentil::{Formula, Trace};
+use sentil::{Formula, Monitor, Trace};
 use std::ptr;
+
+/// Spread of robustness across the sampled ensemble.
+#[repr(C)]
+pub struct SentilRobustnessDistribution {
+    pub count: u64,
+    pub mean: f64,
+    pub variance: f64,
+    pub std_dev: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+impl From<RobustnessDistribution> for SentilRobustnessDistribution {
+    fn from(d: RobustnessDistribution) -> Self {
+        Self {
+            count: d.count,
+            mean: d.mean,
+            variance: d.variance,
+            std_dev: d.std_dev(),
+            min: d.min,
+            max: d.max,
+        }
+    }
+}
 
 /// Monte Carlo settings.
 #[repr(C)]
@@ -614,5 +638,59 @@ pub extern "C" fn sentil_formula_check_conservative(
     clear_error();
     ffi_panic_boundary(SentilError::Panic, || {
         run_check(formula, trace, lifting, config, out, true)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_check_distribution(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSmcConfig,
+    out_result: *mut SentilSmcResult,
+    out_distribution: *mut SentilRobustnessDistribution,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out_result, SentilError::NullPointer);
+        check_ptr!(out_distribution, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+        let config: SmcConfig = unsafe { *config }.into();
+        match formula.check_distribution(trace, lifting, &config) {
+            Ok((result, distribution)) => {
+                unsafe {
+                    *out_result = result.into();
+                    *out_distribution = distribution.into();
+                }
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_check(
+    monitor: *mut c_void,
+    trace: *mut c_void,
+    lifting: *mut c_void,
+    out: *mut SentilSmcResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle!(monitor, Monitor, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+        match monitor.check(trace, lifting) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
     })
 }

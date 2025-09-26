@@ -568,6 +568,27 @@ sentil_error_t sentil_formula_check_conservative(const sentil_formula_t *formula
                                                  const sentil_smc_config_t *config,
                                                  sentil_smc_result_t *out);
 
+typedef struct sentil_robustness_distribution {
+    uint64_t count;
+    double mean;
+    double variance;
+    double std_dev;
+    double min;
+    double max;
+} sentil_robustness_distribution_t;
+
+sentil_error_t sentil_formula_check_distribution(const sentil_formula_t *formula,
+                                                 const sentil_trace_t *trace,
+                                                 const sentil_lifting_registry_t *lifting,
+                                                 const sentil_smc_config_t *config,
+                                                 sentil_smc_result_t *out_result,
+                                                 sentil_robustness_distribution_t *out_distribution);
+
+/* Uses the monitor's configured SMC settings. */
+sentil_error_t sentil_monitor_check(const sentil_monitor_t *monitor, const sentil_trace_t *trace,
+                                    const sentil_lifting_registry_t *lifting,
+                                    sentil_smc_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif
