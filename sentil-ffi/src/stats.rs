@@ -1,7 +1,9 @@
-use crate::conversions::{clear_error, ffi_panic_boundary, set_error, slice_from};
+use crate::conversions::{
+    c_char_to_string, clear_error, ffi_panic_boundary, set_error, slice_from, to_c_string,
+};
 use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
 use crate::{SentilError, SentilIntervalMethod, SentilNoiseInteraction};
-use libc::{c_void, size_t};
+use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
     wilson_samples, z_score, ConfidenceInterval, IntervalMethod, NoiseModel,
@@ -367,6 +369,59 @@ pub extern "C" fn sentil_noise_fit_gaussian_mixture(
             return ptr::null_mut();
         };
         noise_handle(NoiseModel::fit_gaussian_mixture(samples, components, max_iters))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_to_json(handle: *mut c_void) -> *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let model = borrow_handle!(handle, NoiseModel, ptr::null_mut());
+        match serde_json::to_string(model) {
+            Ok(text) => to_c_string(&text),
+            Err(e) => {
+                set_error(SentilError::Json, &e.to_string());
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+fn noise_from_str(text: &str) -> *mut c_void {
+    match serde_json::from_str::<NoiseModel>(text) {
+        Ok(model) => into_handle(model),
+        Err(e) => {
+            set_error(SentilError::Json, &e.to_string());
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_from_json(json: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(text) = c_char_to_string(json) else {
+            return ptr::null_mut();
+        };
+        noise_from_str(&text)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_noise_from_file(path: *const c_char) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(path) = c_char_to_string(path) else {
+            return ptr::null_mut();
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(text) => noise_from_str(&text),
+            Err(e) => {
+                set_error(SentilError::Ingest, &format!("could not read {path}: {e}"));
+                ptr::null_mut()
+            }
+        }
     })
 }
 

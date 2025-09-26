@@ -508,6 +508,12 @@ sentil_noise_model_t *sentil_noise_fit_bootstrap_reservoir(const double *samples
 sentil_noise_model_t *sentil_noise_fit_gaussian_mixture(const double *samples, size_t n,
                                                         size_t components, size_t max_iters);
 
+/* JSON form of a model. Free the string with sentil_free_string. */
+char *sentil_noise_to_json(const sentil_noise_model_t *model);
+sentil_noise_model_t *sentil_noise_from_json(const char *json);
+
+sentil_noise_model_t *sentil_noise_from_file(const char *path);
+
 void sentil_noise_destroy(sentil_noise_model_t *model);
 
 #ifdef __cplusplus
