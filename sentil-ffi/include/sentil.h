@@ -516,6 +516,28 @@ sentil_noise_model_t *sentil_noise_from_file(const char *path);
 
 void sentil_noise_destroy(sentil_noise_model_t *model);
 
+/* Lifting registry */
+
+typedef struct sentil_lifting_registry sentil_lifting_registry_t;
+
+sentil_lifting_registry_t *sentil_lifting_registry_create(void);
+
+/* Attach a noise model to a signal; the model handle is consumed. */
+sentil_error_t sentil_lifting_registry_register(sentil_lifting_registry_t *registry,
+                                                const char *variable, sentil_noise_model_t *model,
+                                                sentil_noise_interaction_t interaction);
+
+/* Signals with a noise model, sorted. Free with sentil_free_string_array. */
+char **sentil_lifting_registry_variables(const sentil_lifting_registry_t *registry,
+                                         size_t *out_count);
+bool sentil_lifting_registry_is_empty(const sentil_lifting_registry_t *registry);
+
+/* One seeded noisy realization of the trace. */
+sentil_trace_t *sentil_lifting_registry_lift(const sentil_lifting_registry_t *registry,
+                                             const sentil_trace_t *trace, uint64_t seed);
+
+void sentil_lifting_registry_destroy(sentil_lifting_registry_t *registry);
+
 #ifdef __cplusplus
 }
 #endif

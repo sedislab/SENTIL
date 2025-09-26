@@ -1,13 +1,15 @@
 use crate::conversions::{
-    c_char_to_string, clear_error, ffi_panic_boundary, set_error, slice_from, to_c_string,
+    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
+    to_c_string,
 };
 use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
 use crate::{SentilError, SentilIntervalMethod, SentilNoiseInteraction};
 use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
-    wilson_samples, z_score, ConfidenceInterval, IntervalMethod, NoiseModel,
+    wilson_samples, z_score, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
 };
+use sentil::Trace;
 use std::ptr;
 
 fn noise_handle(result: sentil::Result<NoiseModel>) -> *mut c_void {
@@ -429,4 +431,77 @@ pub extern "C" fn sentil_noise_from_file(path: *const c_char) -> *mut c_void {
 pub extern "C" fn sentil_noise_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<NoiseModel>(handle) });
+}
+#[no_mangle]
+pub extern "C" fn sentil_lifting_registry_create() -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(LiftingRegistry::new()))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_lifting_registry_register(
+    handle: *mut c_void,
+    variable: *const c_char,
+    model: *mut c_void,
+    interaction: SentilNoiseInteraction,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        let registry = borrow_handle_mut!(handle, LiftingRegistry, SentilError::NullPointer);
+        let variable = match c_char_to_string(variable) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        let Some(model) = (unsafe { take_handle::<NoiseModel>(model) }) else {
+            set_error(SentilError::NullPointer, "the noise model handle was null");
+            return SentilError::NullPointer;
+        };
+        registry.register(&variable, model, interaction.into());
+        SentilError::Ok
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_lifting_registry_variables(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let registry = borrow_handle!(handle, LiftingRegistry, ptr::null_mut());
+        into_string_array(registry.variables().into_iter().map(String::from).collect(), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_lifting_registry_is_empty(handle: *mut c_void) -> bool {
+    clear_error();
+    ffi_panic_boundary(true, || borrow_handle!(handle, LiftingRegistry, true).is_empty())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_lifting_registry_lift(
+    handle: *mut c_void,
+    trace: *mut c_void,
+    seed: u64,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let registry = borrow_handle!(handle, LiftingRegistry, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        match registry.lift(trace, seed) {
+            Ok(lifted) => into_handle(lifted),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_lifting_registry_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<LiftingRegistry>(handle) });
 }
