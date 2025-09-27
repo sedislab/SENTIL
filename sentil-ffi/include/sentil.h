@@ -687,6 +687,15 @@ sentil_sim_model_t *sentil_sim_model_create(const char *const *variables, size_t
                                             sentil_sim_expr_t **advance, size_t n_advance,
                                             sentil_noise_model_t **noise, size_t n_noise);
 
+typedef struct sentil_stochastic_system sentil_stochastic_system_t;
+
+sentil_trace_t *sentil_sim_model_simulate(const sentil_sim_model_t *model, uint64_t seed);
+char **sentil_sim_model_variables(const sentil_sim_model_t *model, size_t *out_count);
+double sentil_sim_model_dt(const sentil_sim_model_t *model);
+size_t sentil_sim_model_horizon(const sentil_sim_model_t *model);
+
+sentil_stochastic_system_t *sentil_sim_model_to_stochastic_system(const sentil_sim_model_t *model);
+
 void sentil_sim_model_destroy(sentil_sim_model_t *model);
 
 #ifdef __cplusplus

@@ -14,7 +14,13 @@ use sentil::stats::{
     RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult,
 };
 use sentil::{Formula, Monitor, Trace};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::ptr;
+
+fn rng_from(seed: u64) -> ChaCha8Rng {
+    ChaCha8Rng::seed_from_u64(seed)
+}
 
 /// Bayesian SMC settings.
 #[repr(C)]
@@ -1066,6 +1072,61 @@ pub extern "C" fn sentil_sim_model_create(
         };
         match SimModel::new(variables, dt, horizon, init, advance, noise) {
             Ok(model) => into_handle(model),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_simulate(handle: *mut c_void, seed: u64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let model = borrow_handle!(handle, SimModel, ptr::null_mut());
+        match model.simulate(&mut rng_from(seed)) {
+            Ok(trace) => into_handle(trace),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_variables(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let model = borrow_handle!(handle, SimModel, ptr::null_mut());
+        into_string_array(model.variables().iter().map(String::from).collect(), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_dt(handle: *mut c_void) -> f64 {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || borrow_handle!(handle, SimModel, f64::NAN).dt())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_horizon(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, SimModel, 0).horizon())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_to_stochastic_system(handle: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let model = borrow_handle!(handle, SimModel, ptr::null_mut());
+        match model.to_stochastic_system() {
+            Ok(system) => into_handle(system),
             Err(e) => {
                 let _: SentilError = e.into();
                 ptr::null_mut()
