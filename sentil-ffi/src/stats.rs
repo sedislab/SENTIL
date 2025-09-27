@@ -12,6 +12,7 @@ use sentil::stats::{
     jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
     BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
     RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult,
+    StochasticSystem,
 };
 use sentil::{Formula, Monitor, Trace};
 use rand::SeedableRng;
@@ -1139,4 +1140,50 @@ pub extern "C" fn sentil_sim_model_to_stochastic_system(handle: *mut c_void) -> 
 pub extern "C" fn sentil_sim_model_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<SimModel>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stochastic_system_simulate(handle: *mut c_void, seed: u64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let system = borrow_handle!(handle, StochasticSystem, ptr::null_mut());
+        match system.simulate(&mut rng_from(seed)) {
+            Ok(trace) => into_handle(trace),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stochastic_system_variables(
+    handle: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let system = borrow_handle!(handle, StochasticSystem, ptr::null_mut());
+        into_string_array(system.variables().iter().map(String::from).collect(), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stochastic_system_dt(handle: *mut c_void) -> f64 {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || borrow_handle!(handle, StochasticSystem, f64::NAN).dt())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stochastic_system_horizon(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, StochasticSystem, 0).horizon())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stochastic_system_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<StochasticSystem>(handle) });
 }

@@ -698,6 +698,14 @@ sentil_stochastic_system_t *sentil_sim_model_to_stochastic_system(const sentil_s
 
 void sentil_sim_model_destroy(sentil_sim_model_t *model);
 
+sentil_trace_t *sentil_stochastic_system_simulate(const sentil_stochastic_system_t *system,
+                                                  uint64_t seed);
+char **sentil_stochastic_system_variables(const sentil_stochastic_system_t *system,
+                                          size_t *out_count);
+double sentil_stochastic_system_dt(const sentil_stochastic_system_t *system);
+size_t sentil_stochastic_system_horizon(const sentil_stochastic_system_t *system);
+void sentil_stochastic_system_destroy(sentil_stochastic_system_t *system);
+
 #ifdef __cplusplus
 }
 #endif
