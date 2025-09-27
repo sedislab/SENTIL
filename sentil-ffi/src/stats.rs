@@ -1,8 +1,8 @@
 use crate::conversions::{
-    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, slice_from,
-    to_c_string,
+    c_char_to_string, clear_error, collect_strings, ffi_panic_boundary, into_string_array,
+    set_error, slice_from, to_c_string,
 };
-use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
+use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle, take_handle_array};
 use crate::{
     SentilBayesVerdict, SentilError, SentilIntervalMethod, SentilNoiseInteraction, SentilSprtVerdict,
 };
@@ -11,7 +11,7 @@ use sentil::stats::{
     agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples, clopper_pearson,
     jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
     BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
-    RobustnessDistribution, SimExpr, SmcConfig, SmcResult, SprtConfig, SprtResult,
+    RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult,
 };
 use sentil::{Formula, Monitor, Trace};
 use std::ptr;
@@ -1028,4 +1028,54 @@ pub extern "C" fn sentil_sim_expr_call(
 pub extern "C" fn sentil_sim_expr_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<SimExpr>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_create(
+    variables: *const *const c_char,
+    n_vars: size_t,
+    dt: f64,
+    horizon: size_t,
+    init: *mut *mut c_void,
+    n_init: size_t,
+    advance: *mut *mut c_void,
+    n_advance: size_t,
+    noise: *mut *mut c_void,
+    n_noise: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        if unsafe {
+            repeated_handle(&[
+                ("init", init, n_init),
+                ("advance", advance, n_advance),
+                ("noise", noise, n_noise),
+            ])
+        } {
+            return ptr::null_mut();
+        }
+        let init = unsafe { take_handle_array::<SimExpr>("init", init, n_init) };
+        let advance = unsafe { take_handle_array::<SimExpr>("advance", advance, n_advance) };
+        let noise = unsafe { take_handle_array::<NoiseModel>("noise", noise, n_noise) };
+        let (Some(init), Some(advance), Some(noise)) = (init, advance, noise) else {
+            return ptr::null_mut();
+        };
+        let variables = match collect_strings(variables, n_vars) {
+            Ok(v) => v,
+            Err(_) => return ptr::null_mut(),
+        };
+        match SimModel::new(variables, dt, horizon, init, advance, noise) {
+            Ok(model) => into_handle(model),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_model_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<SimModel>(handle) });
 }

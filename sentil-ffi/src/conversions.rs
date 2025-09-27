@@ -73,6 +73,18 @@ pub(crate) fn last_error_message(buffer: *mut c_char, length: size_t) -> size_t 
     })
 }
 
+pub(crate) fn collect_strings(
+    names: *const *const c_char,
+    n: usize,
+) -> Result<Vec<String>, SentilError> {
+    let names = slice_from(names, n)?;
+    let mut out = Vec::with_capacity(n);
+    for &name in names {
+        out.push(c_char_to_string(name)?);
+    }
+    Ok(out)
+}
+
 pub(crate) fn slice_from<'a, T>(ptr: *const T, len: usize) -> Result<&'a [T], SentilError> {
     if len == 0 {
         Ok(&[])

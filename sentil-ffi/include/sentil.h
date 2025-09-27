@@ -677,6 +677,18 @@ sentil_sim_expr_t *sentil_sim_expr_div(sentil_sim_expr_t *left, sentil_sim_expr_
 sentil_sim_expr_t *sentil_sim_expr_call(const char *name, sentil_sim_expr_t **args, size_t count);
 void sentil_sim_expr_destroy(sentil_sim_expr_t *expr);
 
+typedef struct sentil_sim_model sentil_sim_model_t;
+
+/* Build a declarative stochastic model: one init and one advance expression per
+   variable, drawing from the given noise sources. The init, advance, and noise
+   handles are all consumed. NULL on error. */
+sentil_sim_model_t *sentil_sim_model_create(const char *const *variables, size_t n_vars, double dt,
+                                            size_t horizon, sentil_sim_expr_t **init, size_t n_init,
+                                            sentil_sim_expr_t **advance, size_t n_advance,
+                                            sentil_noise_model_t **noise, size_t n_noise);
+
+void sentil_sim_model_destroy(sentil_sim_model_t *model);
+
 #ifdef __cplusplus
 }
 #endif
