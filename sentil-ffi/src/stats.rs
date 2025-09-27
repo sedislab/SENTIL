@@ -11,7 +11,7 @@ use sentil::stats::{
     agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples, clopper_pearson,
     jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
     BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
-    RobustnessDistribution, SmcConfig, SmcResult, SprtConfig, SprtResult,
+    RobustnessDistribution, SimExpr, SmcConfig, SmcResult, SprtConfig, SprtResult,
 };
 use sentil::{Formula, Monitor, Trace};
 use std::ptr;
@@ -928,4 +928,104 @@ pub extern "C" fn sentil_bayes_sequential_test(
             Err(e) => e.into(),
         }
     })
+}
+
+fn sim_binary(
+    left: *mut c_void,
+    right: *mut c_void,
+    build: fn(Box<SimExpr>, Box<SimExpr>) -> SimExpr,
+) -> *mut c_void {
+    if crate::formula::aliased(left, right) {
+        return ptr::null_mut();
+    }
+    let (Some(l), Some(r)) =
+        (unsafe { take_handle::<SimExpr>(left) }, unsafe { take_handle::<SimExpr>(right) })
+    else {
+        set_error(SentilError::NullPointer, "a child expression was null");
+        return ptr::null_mut();
+    };
+    into_handle(build(Box::new(l), Box::new(r)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_prev(variable: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Prev(variable)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_time() -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Time))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_const(value: f64) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Const(value)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_noise(source: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Noise(source)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_add(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Add))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_sub(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Sub))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_mul(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Mul))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_div(left: *mut c_void, right: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Div))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_call(
+    name: *const c_char,
+    args: *mut *mut c_void,
+    count: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Ok(name) = c_char_to_string(name) else {
+            return ptr::null_mut();
+        };
+        if count > 0 {
+            check_ptr!(args, ptr::null_mut());
+        }
+        if unsafe { crate::formula::repeated_arg(args, count) } {
+            return ptr::null_mut();
+        }
+        let mut taken: Vec<Option<SimExpr>> = Vec::with_capacity(count);
+        for i in 0..count {
+            taken.push(unsafe { take_handle::<SimExpr>(*args.add(i)) });
+        }
+        if taken.iter().any(Option::is_none) {
+            set_error(SentilError::NullPointer, "an argument expression was null");
+            return ptr::null_mut();
+        }
+        into_handle(SimExpr::Call(name, taken.into_iter().flatten().collect()))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_sim_expr_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<SimExpr>(handle) });
 }

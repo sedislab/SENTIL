@@ -660,6 +660,23 @@ sentil_error_t sentil_bayes_sequential_test(const sentil_bayes_config_t *config,
                                             sentil_bernoulli_fn draw, void *userdata,
                                             sentil_bayes_result_t *out);
 
+/* Simulation model (data form) */
+
+typedef struct sentil_sim_expr sentil_sim_expr_t;
+
+/* The binary builders and call consume their operands. prev reads the previous
+   step's value of a variable; noise draws from a noise source. */
+sentil_sim_expr_t *sentil_sim_expr_prev(size_t variable);
+sentil_sim_expr_t *sentil_sim_expr_time(void);
+sentil_sim_expr_t *sentil_sim_expr_const(double value);
+sentil_sim_expr_t *sentil_sim_expr_noise(size_t source);
+sentil_sim_expr_t *sentil_sim_expr_add(sentil_sim_expr_t *left, sentil_sim_expr_t *right);
+sentil_sim_expr_t *sentil_sim_expr_sub(sentil_sim_expr_t *left, sentil_sim_expr_t *right);
+sentil_sim_expr_t *sentil_sim_expr_mul(sentil_sim_expr_t *left, sentil_sim_expr_t *right);
+sentil_sim_expr_t *sentil_sim_expr_div(sentil_sim_expr_t *left, sentil_sim_expr_t *right);
+sentil_sim_expr_t *sentil_sim_expr_call(const char *name, sentil_sim_expr_t **args, size_t count);
+void sentil_sim_expr_destroy(sentil_sim_expr_t *expr);
+
 #ifdef __cplusplus
 }
 #endif
