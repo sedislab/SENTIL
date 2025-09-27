@@ -652,6 +652,14 @@ sentil_error_t sentil_formula_check_bayesian(const sentil_formula_t *formula,
                                              const sentil_bayes_config_t *config,
                                              sentil_bayes_result_t *out);
 
+/* draw returns the next sample given userdata. */
+typedef bool (*sentil_bernoulli_fn)(void *userdata);
+sentil_error_t sentil_sequential_test(const sentil_sprt_config_t *config, sentil_bernoulli_fn draw,
+                                      void *userdata, sentil_sprt_result_t *out);
+sentil_error_t sentil_bayes_sequential_test(const sentil_bayes_config_t *config,
+                                            sentil_bernoulli_fn draw, void *userdata,
+                                            sentil_bayes_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

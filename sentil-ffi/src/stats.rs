@@ -8,10 +8,10 @@ use crate::{
 };
 use libc::{c_char, c_void, size_t};
 use sentil::stats::{
-    agresti_coull, chernoff_hoeffding_samples, clopper_pearson, jeffreys_interval, wilson_interval,
-    wilson_samples, z_score, BayesConfig, BayesResult, ConfidenceInterval, IntervalMethod,
-    LiftingRegistry, NoiseModel, RobustnessDistribution, SmcConfig, SmcResult, SprtConfig,
-    SprtResult,
+    agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples, clopper_pearson,
+    jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
+    BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
+    RobustnessDistribution, SmcConfig, SmcResult, SprtConfig, SprtResult,
 };
 use sentil::{Formula, Monitor, Trace};
 use std::ptr;
@@ -860,6 +860,67 @@ pub extern "C" fn sentil_formula_check_bayesian(
             Err(e) => return e.into(),
         };
         match formula.check_bayesian(trace, lifting, &config) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+/// A Bernoulli source.
+pub type SentilBernoulliFn = unsafe extern "C" fn(userdata: *mut c_void) -> bool;
+
+#[no_mangle]
+pub extern "C" fn sentil_sequential_test(
+    config: *const SentilSprtConfig,
+    draw: Option<SentilBernoulliFn>,
+    userdata: *mut c_void,
+    out: *mut SentilSprtResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let Some(draw) = draw else {
+            set_error(SentilError::NullPointer, "the draw callback was null");
+            return SentilError::NullPointer;
+        };
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match sequential_test(&config, || Ok(unsafe { draw(userdata) })) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bayes_sequential_test(
+    config: *const SentilBayesConfig,
+    draw: Option<SentilBernoulliFn>,
+    userdata: *mut c_void,
+    out: *mut SentilBayesResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let Some(draw) = draw else {
+            set_error(SentilError::NullPointer, "the draw callback was null");
+            return SentilError::NullPointer;
+        };
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match bayes_sequential_test(&config, || Ok(unsafe { draw(userdata) })) {
             Ok(result) => {
                 unsafe { *out = result.into() };
                 SentilError::Ok
