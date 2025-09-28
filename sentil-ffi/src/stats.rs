@@ -15,9 +15,18 @@ use sentil::stats::{
     SprtResult, StochasticSystem,
 };
 use sentil::{Formula, Monitor, Trace};
-use rand::SeedableRng;
+use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::ptr;
+
+/// Callbacks defining a stochastic system.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilSystemCallbacks {
+    pub userdata: *mut c_void,
+    pub init: Option<unsafe extern "C" fn(*mut c_void, u64, *mut f64, size_t)>,
+    pub step: Option<unsafe extern "C" fn(*mut c_void, *const f64, size_t, f64, u64, *mut f64)>,
+}
 
 fn rng_from(seed: u64) -> ChaCha8Rng {
     ChaCha8Rng::seed_from_u64(seed)
@@ -1180,6 +1189,49 @@ pub extern "C" fn sentil_stochastic_system_dt(handle: *mut c_void) -> f64 {
 pub extern "C" fn sentil_stochastic_system_horizon(handle: *mut c_void) -> size_t {
     clear_error();
     ffi_panic_boundary(0, || borrow_handle!(handle, StochasticSystem, 0).horizon())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stochastic_system_create(
+    variables: *const *const c_char,
+    n_vars: size_t,
+    dt: f64,
+    horizon: size_t,
+    callbacks: SentilSystemCallbacks,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let variables = match collect_strings(variables, n_vars) {
+            Ok(v) => v,
+            Err(_) => return ptr::null_mut(),
+        };
+        let (Some(init_fn), Some(step_fn)) = (callbacks.init, callbacks.step) else {
+            set_error(SentilError::NullPointer, "the init or step callback was null");
+            return ptr::null_mut();
+        };
+        let userdata = callbacks.userdata as usize;
+        let init = move |rng: &mut dyn RngCore| {
+            let seed = rng.next_u64();
+            let mut state = vec![0.0_f64; n_vars];
+            unsafe { init_fn(userdata as *mut c_void, seed, state.as_mut_ptr(), n_vars) };
+            state
+        };
+        let step = move |prev: &[f64], time: f64, rng: &mut dyn RngCore| {
+            let seed = rng.next_u64();
+            let mut state = vec![0.0_f64; n_vars];
+            unsafe {
+                step_fn(userdata as *mut c_void, prev.as_ptr(), prev.len(), time, seed, state.as_mut_ptr())
+            };
+            state
+        };
+        match StochasticSystem::new(variables, dt, horizon, init, step) {
+            Ok(system) => into_handle(system),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
 }
 
 #[no_mangle]

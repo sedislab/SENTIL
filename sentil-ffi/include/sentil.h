@@ -698,6 +698,18 @@ sentil_stochastic_system_t *sentil_sim_model_to_stochastic_system(const sentil_s
 
 void sentil_sim_model_destroy(sentil_sim_model_t *model);
 
+/* The callbacks must be thread-safe. */
+typedef struct sentil_system_callbacks {
+    void *userdata;
+    void (*init)(void *userdata, uint64_t seed, double *out_state, size_t n);
+    void (*step)(void *userdata, const double *prev, size_t n, double time, uint64_t seed,
+                 double *out_state);
+} sentil_system_callbacks_t;
+
+sentil_stochastic_system_t *sentil_stochastic_system_create(const char *const *variables,
+                                                            size_t n_vars, double dt, size_t horizon,
+                                                            sentil_system_callbacks_t callbacks);
+
 sentil_trace_t *sentil_stochastic_system_simulate(const sentil_stochastic_system_t *system,
                                                   uint64_t seed);
 char **sentil_stochastic_system_variables(const sentil_stochastic_system_t *system,
