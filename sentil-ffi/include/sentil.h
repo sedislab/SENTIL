@@ -745,6 +745,27 @@ sentil_error_t sentil_monitor_check_rare(const sentil_monitor_t *monitor,
                                          const sentil_stochastic_system_t *system,
                                          sentil_rare_event_result_t *out);
 
+/* is_terminal returns whether the run ended and sets out_in_rare_event. The
+   callbacks must be thread-safe. */
+typedef struct sentil_ams_interface {
+    size_t state_size;
+    void *userdata;
+    void (*initial_state)(void *userdata, uint64_t seed, void *out_state);
+    void (*step)(void *userdata, const void *state, uint64_t seed, void *out_state);
+    bool (*is_terminal)(void *userdata, const void *state, bool *out_in_rare_event);
+    double (*score)(void *userdata, const void *state);
+} sentil_ams_interface_t;
+
+typedef struct sentil_rare_event_estimate {
+    double probability;
+    uint64_t simulations;
+} sentil_rare_event_estimate_t;
+
+sentil_error_t sentil_adaptive_multilevel_splitting(sentil_ams_interface_t simulator,
+                                                    size_t particles, double target_score,
+                                                    uint64_t max_steps, uint64_t seed,
+                                                    sentil_rare_event_estimate_t *out);
+
 #ifdef __cplusplus
 }
 #endif

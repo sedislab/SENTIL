@@ -10,9 +10,10 @@ use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples, clopper_pearson,
     jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
-    BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel, RareEventConfig,
-    RareEventResult, RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig,
-    SprtResult, StochasticSystem,
+    adaptive_multilevel_splitting, BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry,
+    NoiseModel, RareEventConfig, RareEventEstimate, RareEventResult, RareEventSimulator,
+    RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult,
+    StochasticSystem,
 };
 use sentil::{Formula, Monitor, Trace};
 use rand::{RngCore, SeedableRng};
@@ -1324,4 +1325,169 @@ pub extern "C" fn sentil_monitor_check_rare(
             Err(e) => e.into(),
         }
     })
+}
+
+/// A simulator defined by C callbacks over an opaque, fixed-size state.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilAmsInterface {
+    pub state_size: size_t,
+    pub userdata: *mut c_void,
+    pub initial_state: Option<unsafe extern "C" fn(*mut c_void, u64, *mut c_void)>,
+    pub step: Option<unsafe extern "C" fn(*mut c_void, *const c_void, u64, *mut c_void)>,
+    pub is_terminal: Option<unsafe extern "C" fn(*mut c_void, *const c_void, *mut bool) -> bool>,
+    pub score: Option<unsafe extern "C" fn(*mut c_void, *const c_void) -> f64>,
+}
+
+struct AmsBridge {
+    state_size: usize,
+    userdata: usize,
+    initial_state: unsafe extern "C" fn(*mut c_void, u64, *mut c_void),
+    step: unsafe extern "C" fn(*mut c_void, *const c_void, u64, *mut c_void),
+    is_terminal: unsafe extern "C" fn(*mut c_void, *const c_void, *mut bool) -> bool,
+    score: unsafe extern "C" fn(*mut c_void, *const c_void) -> f64,
+}
+
+impl RareEventSimulator for AmsBridge {
+    type State = Vec<u8>;
+
+    fn initial_state(&self, rng: &mut dyn RngCore) -> Vec<u8> {
+        let mut state = vec![0u8; self.state_size];
+        let seed = rng.next_u64();
+        unsafe { (self.initial_state)(self.userdata as *mut c_void, seed, state.as_mut_ptr().cast()) };
+        state
+    }
+
+    fn step(&self, state: &Vec<u8>, rng: &mut dyn RngCore) -> Vec<u8> {
+        let mut next = vec![0u8; self.state_size];
+        let seed = rng.next_u64();
+        unsafe {
+            (self.step)(self.userdata as *mut c_void, state.as_ptr().cast(), seed, next.as_mut_ptr().cast())
+        };
+        next
+    }
+
+    fn is_terminal(&self, state: &Vec<u8>) -> (bool, bool) {
+        let mut in_rare_event = false;
+        let ended = unsafe {
+            (self.is_terminal)(self.userdata as *mut c_void, state.as_ptr().cast(), &mut in_rare_event)
+        };
+        (ended, in_rare_event)
+    }
+
+    fn score(&self, state: &Vec<u8>) -> f64 {
+        unsafe { (self.score)(self.userdata as *mut c_void, state.as_ptr().cast()) }
+    }
+}
+
+/// A rare-event estimate from a custom simulator.
+#[repr(C)]
+pub struct SentilRareEventEstimate {
+    pub probability: f64,
+    pub simulations: u64,
+}
+
+impl From<RareEventEstimate> for SentilRareEventEstimate {
+    fn from(e: RareEventEstimate) -> Self {
+        Self { probability: e.probability, simulations: e.simulations }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_adaptive_multilevel_splitting(
+    simulator: SentilAmsInterface,
+    particles: size_t,
+    target_score: f64,
+    max_steps: u64,
+    seed: u64,
+    out: *mut SentilRareEventEstimate,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let (Some(initial_state), Some(step), Some(is_terminal), Some(score)) =
+            (simulator.initial_state, simulator.step, simulator.is_terminal, simulator.score)
+        else {
+            set_error(SentilError::NullPointer, "an AMS callback was null");
+            return SentilError::NullPointer;
+        };
+        let bridge = AmsBridge {
+            state_size: simulator.state_size,
+            userdata: simulator.userdata as usize,
+            initial_state,
+            step,
+            is_terminal,
+            score,
+        };
+        match adaptive_multilevel_splitting(&bridge, particles, target_score, max_steps, seed) {
+            Ok(estimate) => {
+                unsafe { *out = estimate.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::conversions::last_error_ptr;
+    use std::ffi::CStr;
+
+    fn message() -> String {
+        unsafe { CStr::from_ptr(last_error_ptr()) }.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_mixture_component_passed_twice_is_rejected_and_stays_live() {
+        let component = sentil_noise_gaussian(0.0, 1.0);
+        let weights = [0.5, 0.5];
+        let mut models = [component, component];
+        assert!(sentil_noise_mixture(weights.as_ptr(), models.as_mut_ptr(), 2).is_null());
+        assert_eq!(crate::sentil_get_last_error_code(), SentilError::InvalidConfig);
+        assert!(message().contains("`models[0]` and `models[1]`"), "{}", message());
+        let mut mean = f64::NAN;
+        assert!(sentil_noise_mean(component, &mut mean));
+        assert_eq!(mean, 0.0);
+        sentil_noise_destroy(component);
+    }
+
+    #[test]
+    fn distinct_mixture_components_are_all_kept() {
+        let weights = [0.5, 0.5];
+        let mut models = [sentil_noise_gaussian(0.0, 1.0), sentil_noise_gaussian(4.0, 1.0)];
+        let mixture = sentil_noise_mixture(weights.as_ptr(), models.as_mut_ptr(), 2);
+        assert!(!mixture.is_null());
+        let mut mean = f64::NAN;
+        assert!(sentil_noise_mean(mixture, &mut mean));
+        assert_eq!(mean, 2.0);
+        sentil_noise_destroy(mixture);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn an_expression_shared_by_init_and_advance_is_rejected() {
+        let shared = sentil_sim_expr_const(0.0);
+        let name = std::ffi::CString::new("x").unwrap();
+        let vars = [name.as_ptr()];
+        let mut init = [shared];
+        let mut advance = [shared];
+        let model = sentil_sim_model_create(
+            vars.as_ptr(),
+            1,
+            0.1,
+            8,
+            init.as_mut_ptr(),
+            1,
+            advance.as_mut_ptr(),
+            1,
+            ptr::null_mut(),
+            0,
+        );
+        assert!(model.is_null());
+        assert_eq!(crate::sentil_get_last_error_code(), SentilError::InvalidConfig);
+        assert!(message().contains("`init[0]` and `advance[0]`"), "{}", message());
+        sentil_sim_expr_destroy(shared);
+    }
 }
