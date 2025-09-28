@@ -706,6 +706,33 @@ double sentil_stochastic_system_dt(const sentil_stochastic_system_t *system);
 size_t sentil_stochastic_system_horizon(const sentil_stochastic_system_t *system);
 void sentil_stochastic_system_destroy(sentil_stochastic_system_t *system);
 
+/* Rare-event splitting */
+
+typedef struct sentil_rare_event_config {
+    size_t particles;
+    double margin;
+    uint64_t seed;
+} sentil_rare_event_config_t;
+
+/* The defaults: 4096 particles, margin 0, seed 42. */
+sentil_rare_event_config_t sentil_rare_event_config_default(void);
+
+typedef struct sentil_rare_event_result {
+    double probability;
+    double violation_probability;
+    bool holds;
+    uint64_t simulations;
+} sentil_rare_event_result_t;
+
+/* Adaptive multilevel splitting over a stochastic system. */
+sentil_error_t sentil_formula_check_rare_event(const sentil_formula_t *formula,
+                                               const sentil_stochastic_system_t *system,
+                                               const sentil_rare_event_config_t *config,
+                                               sentil_rare_event_result_t *out);
+sentil_error_t sentil_monitor_check_rare(const sentil_monitor_t *monitor,
+                                         const sentil_stochastic_system_t *system,
+                                         sentil_rare_event_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

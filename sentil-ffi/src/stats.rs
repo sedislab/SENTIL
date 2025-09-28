@@ -10,9 +10,9 @@ use libc::{c_char, c_void, size_t};
 use sentil::stats::{
     agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples, clopper_pearson,
     jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
-    BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
-    RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult,
-    StochasticSystem,
+    BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel, RareEventConfig,
+    RareEventResult, RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig,
+    SprtResult, StochasticSystem,
 };
 use sentil::{Formula, Monitor, Trace};
 use rand::SeedableRng;
@@ -1186,4 +1186,90 @@ pub extern "C" fn sentil_stochastic_system_horizon(handle: *mut c_void) -> size_
 pub extern "C" fn sentil_stochastic_system_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<StochasticSystem>(handle) });
+}
+
+/// Rare-event settings.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilRareEventConfig {
+    pub particles: size_t,
+    pub margin: f64,
+    pub seed: u64,
+}
+
+impl From<SentilRareEventConfig> for RareEventConfig {
+    fn from(c: SentilRareEventConfig) -> Self {
+        RareEventConfig { particles: c.particles, margin: c.margin, seed: c.seed }
+    }
+}
+
+/// A rare-event estimate.
+#[repr(C)]
+pub struct SentilRareEventResult {
+    pub probability: f64,
+    pub violation_probability: f64,
+    pub holds: bool,
+    pub simulations: u64,
+}
+
+impl From<RareEventResult> for SentilRareEventResult {
+    fn from(r: RareEventResult) -> Self {
+        Self {
+            probability: r.probability,
+            violation_probability: r.violation_probability,
+            holds: r.holds,
+            simulations: r.simulations,
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_rare_event_config_default() -> SentilRareEventConfig {
+    let d = RareEventConfig::default();
+    SentilRareEventConfig { particles: d.particles, margin: d.margin, seed: d.seed }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_check_rare_event(
+    formula: *mut c_void,
+    system: *mut c_void,
+    config: *const SentilRareEventConfig,
+    out: *mut SentilRareEventResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let system = borrow_handle!(system, StochasticSystem, SentilError::NullPointer);
+        let config: RareEventConfig = unsafe { *config }.into();
+        match formula.check_rare_event(system, &config) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_monitor_check_rare(
+    monitor: *mut c_void,
+    system: *mut c_void,
+    out: *mut SentilRareEventResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let monitor = borrow_handle!(monitor, Monitor, SentilError::NullPointer);
+        let system = borrow_handle!(system, StochasticSystem, SentilError::NullPointer);
+        match monitor.check_rare(system) {
+            Ok(result) => {
+                unsafe { *out = result.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
 }
