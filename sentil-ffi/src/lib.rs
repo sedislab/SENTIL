@@ -271,6 +271,38 @@ impl From<SentilInterpolation> for sentil::Interpolation {
     }
 }
 
+/// Which search backend open-loop synthesis uses.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilBackend {
+    Auto = 0,
+    Gradient = 1,
+    CmaEs = 2,
+    Milp = 3,
+}
+
+impl From<SentilBackend> for sentil::Backend {
+    fn from(b: SentilBackend) -> Self {
+        match b {
+            SentilBackend::Auto => sentil::Backend::Auto,
+            SentilBackend::Gradient => sentil::Backend::Gradient,
+            SentilBackend::CmaEs => sentil::Backend::CmaEs,
+            SentilBackend::Milp => sentil::Backend::Milp,
+        }
+    }
+}
+
+impl From<sentil::Backend> for SentilBackend {
+    fn from(b: sentil::Backend) -> Self {
+        match b {
+            sentil::Backend::Auto => SentilBackend::Auto,
+            sentil::Backend::Gradient => SentilBackend::Gradient,
+            sentil::Backend::CmaEs => SentilBackend::CmaEs,
+            sentil::Backend::Milp => SentilBackend::Milp,
+        }
+    }
+}
+
 /// Which smoothing the soft robustness uses.
 #[repr(C)]
 #[derive(Clone, Copy)]

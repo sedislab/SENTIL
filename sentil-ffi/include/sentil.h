@@ -853,6 +853,31 @@ sentil_system_model_t *sentil_system_model_create_custom(const char *const *vari
 size_t sentil_system_model_input_dimension(const sentil_system_model_t *model);
 void sentil_system_model_destroy(sentil_system_model_t *model);
 
+/* Open-loop synthesis */
+
+typedef enum sentil_backend {
+    SENTIL_BACKEND_AUTO = 0,
+    SENTIL_BACKEND_GRADIENT = 1,
+    SENTIL_BACKEND_CMA_ES = 2,
+    SENTIL_BACKEND_MILP = 3
+} sentil_backend_t;
+
+/* input is owned; free it with sentil_free_doubles. */
+typedef struct sentil_synthesis_result {
+    double *input;
+    size_t input_len;
+    double robustness;
+    bool holds;
+    sentil_backend_t backend;
+} sentil_synthesis_result_t;
+
+/* bounds and smooth may be NULL; max_iters and population 0 take the defaults. */
+sentil_error_t sentil_synthesize(const sentil_system_model_t *model, const sentil_formula_t *spec,
+                                 const sentil_bounds_t *bounds,
+                                 const sentil_smooth_config_t *smooth, size_t max_iters,
+                                 sentil_backend_t backend, size_t population,
+                                 sentil_synthesis_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,16 +1,36 @@
 //! Synthesis: smooth robustness, models, the solver, controllers, and numerics.
 
 use crate::conversions::{clear_error, collect_strings, ffi_panic_boundary, set_error, slice_from};
-use crate::handles::{drop_handle, into_handle};
-use crate::{SentilError, SentilSoftKind};
+use crate::handles::{drop_handle, into_boxed_array, into_handle};
+use crate::{SentilBackend, SentilError, SentilSoftKind};
 use libc::{c_char, c_void, size_t};
 use sentil::synthesis::{
-    soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Bounds, LinearModel, SmoothConfig,
-    SystemModel,
+    soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, AffineForm, Bounds, LinearModel,
+    SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
 };
 use sentil::{Formula, Trace};
 
 type ModelHandle = Box<dyn SystemModel>;
+
+struct DynModel<'a>(&'a dyn SystemModel);
+
+impl SystemModel for DynModel<'_> {
+    fn input_dimension(&self) -> usize {
+        self.0.input_dimension()
+    }
+
+    fn initial_state(&self) -> &[f64] {
+        self.0.initial_state()
+    }
+
+    fn rollout_from(&self, initial: &[f64], input: &[f64]) -> sentil::Result<Trace> {
+        self.0.rollout_from(initial, input)
+    }
+
+    fn affine_form(&self) -> Option<AffineForm> {
+        self.0.affine_form()
+    }
+}
 
 struct CustomModel {
     variables: Vec<String>,
@@ -389,4 +409,73 @@ pub extern "C" fn sentil_system_model_input_dimension(handle: *mut c_void) -> si
 pub extern "C" fn sentil_system_model_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<ModelHandle>(handle) });
+}
+
+/// The synthesized input and how well it does.
+#[repr(C)]
+pub struct SentilSynthesisResult {
+    pub input: *mut f64,
+    pub input_len: size_t,
+    pub robustness: f64,
+    pub holds: bool,
+    pub backend: SentilBackend,
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_synthesize(
+    model: *mut c_void,
+    spec: *mut c_void,
+    bounds: *mut c_void,
+    smooth: *const SentilSmoothConfig,
+    max_iters: size_t,
+    backend: SentilBackend,
+    population: size_t,
+    out: *mut SentilSynthesisResult,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let model = borrow_handle!(model, ModelHandle, SentilError::NullPointer);
+        let spec = borrow_handle!(spec, Formula, SentilError::NullPointer);
+        let model = DynModel(&**model);
+        let mut problem = SynthesisProblem::new(&model, spec).with_backend(backend.into());
+        if max_iters != 0 {
+            problem = problem.with_budget(max_iters);
+        }
+        if population != 0 {
+            problem = problem.with_population(population);
+        }
+        if !bounds.is_null() {
+            let b = unsafe { &*bounds.cast::<Bounds>() };
+            let rebuilt = match Bounds::new(b.lower().to_vec(), b.upper().to_vec()) {
+                Ok(x) => x,
+                Err(e) => return e.into(),
+            };
+            problem = problem.with_bounds(rebuilt);
+        }
+        if let Some(smooth) = unsafe { smooth.as_ref() } {
+            let smooth = match smooth.to_core() {
+                Ok(x) => x,
+                Err(e) => return e.into(),
+            };
+            problem = problem.with_smooth(smooth);
+        }
+        match Synthesizer::solve(&problem) {
+            Ok(result) => {
+                let mut input_len = 0;
+                let input = into_boxed_array(result.input, &mut input_len);
+                unsafe {
+                    *out = SentilSynthesisResult {
+                        input,
+                        input_len,
+                        robustness: result.robustness,
+                        holds: result.holds,
+                        backend: result.backend.into(),
+                    };
+                }
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
 }
