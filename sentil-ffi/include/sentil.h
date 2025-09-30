@@ -806,6 +806,25 @@ sentil_error_t sentil_formula_smooth_robustness(const sentil_formula_t *formula,
                                                 const sentil_trace_t *trace,
                                                 const sentil_smooth_config_t *config, double *out);
 
+/* Bounds */
+
+typedef struct sentil_bounds sentil_bounds_t;
+
+/* Box bounds per coordinate. */
+sentil_bounds_t *sentil_bounds_create(const double *lower, const double *upper, size_t n);
+
+sentil_bounds_t *sentil_bounds_unbounded(size_t dimension);
+
+/* In place; n must equal the bounds dimension. */
+void sentil_bounds_clamp(const sentil_bounds_t *bounds, double *point, size_t n);
+size_t sentil_bounds_dimension(const sentil_bounds_t *bounds);
+
+/* out has length dimension. */
+void sentil_bounds_lower(const sentil_bounds_t *bounds, double *out);
+void sentil_bounds_upper(const sentil_bounds_t *bounds, double *out);
+
+void sentil_bounds_destroy(sentil_bounds_t *bounds);
+
 #ifdef __cplusplus
 }
 #endif

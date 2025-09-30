@@ -1,9 +1,12 @@
 //! Synthesis: smooth robustness, models, the solver, controllers, and numerics.
 
-use crate::conversions::{clear_error, ffi_panic_boundary, slice_from};
+use crate::conversions::{clear_error, ffi_panic_boundary, set_error, slice_from};
+use crate::handles::{drop_handle, into_handle};
 use crate::{SentilError, SentilSoftKind};
 use libc::{c_void, size_t};
-use sentil::synthesis::{soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, SmoothConfig};
+use sentil::synthesis::{
+    soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Bounds, SmoothConfig,
+};
 use sentil::{Formula, Trace};
 
 /// Smoothing settings.
@@ -170,4 +173,79 @@ pub extern "C" fn sentil_symmetric_eigen(
             Err(e) => e.into(),
         }
     })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_create(
+    lower: *const f64,
+    upper: *const f64,
+    n: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || {
+        let (Ok(lower), Ok(upper)) = (slice_from(lower, n), slice_from(upper, n)) else {
+            return std::ptr::null_mut();
+        };
+        match Bounds::new(lower.to_vec(), upper.to_vec()) {
+            Ok(bounds) => into_handle(bounds),
+            Err(e) => {
+                let _: SentilError = e.into();
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_unbounded(dimension: size_t) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || into_handle(Bounds::unbounded(dimension)))
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_clamp(handle: *mut c_void, point: *mut f64, n: size_t) {
+    clear_error();
+    ffi_panic_boundary((), || {
+        if handle.is_null() || point.is_null() {
+            set_error(SentilError::NullPointer, "a bounds or point argument was null");
+            return;
+        }
+        let bounds = unsafe { &*handle.cast::<Bounds>() };
+        let slice = unsafe { std::slice::from_raw_parts_mut(point, n) };
+        bounds.clamp(slice);
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_dimension(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, Bounds, 0).dimension())
+}
+
+fn copy_bounds_limit(handle: *mut c_void, out: *mut f64, upper: bool) {
+    if handle.is_null() || out.is_null() {
+        set_error(SentilError::NullPointer, "a bounds or output argument was null");
+        return;
+    }
+    let bounds = unsafe { &*handle.cast::<Bounds>() };
+    let limits = if upper { bounds.upper() } else { bounds.lower() };
+    unsafe { std::ptr::copy_nonoverlapping(limits.as_ptr(), out, limits.len()) };
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_lower(handle: *mut c_void, out: *mut f64) {
+    clear_error();
+    ffi_panic_boundary((), || copy_bounds_limit(handle, out, false));
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_upper(handle: *mut c_void, out: *mut f64) {
+    clear_error();
+    ffi_panic_boundary((), || copy_bounds_limit(handle, out, true));
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_bounds_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<Bounds>(handle) });
 }
