@@ -766,6 +766,22 @@ sentil_error_t sentil_adaptive_multilevel_splitting(sentil_ams_interface_t simul
                                                     uint64_t max_steps, uint64_t seed,
                                                     sentil_rare_event_estimate_t *out);
 
+/* Synthesis numerics */
+
+/* Matrices are row-major and output buffers are caller-allocated. eigen fills n
+   eigenvalues and an n-by-n matrix whose row j is the eigenvector for eigenvalue j. */
+
+/* Minimize 1/2 u'Pu + q'u subject to Gu <= h, P symmetric positive-definite, G is
+   m-by-n. */
+sentil_error_t sentil_solve_qp(const double *p, size_t n, const double *q, const double *g,
+                               size_t m, const double *h, size_t max_iters, double *out);
+
+/* Solve Ax = b for symmetric positive-definite A (n-by-n). */
+sentil_error_t sentil_solve_spd(const double *matrix, size_t n, const double *rhs, double *out);
+
+sentil_error_t sentil_symmetric_eigen(const double *matrix, size_t n, double *out_values,
+                                      double *out_vectors);
+
 #ifdef __cplusplus
 }
 #endif

@@ -36,6 +36,7 @@ mod handles;
 mod monitor;
 mod signal;
 mod stats;
+mod synthesis;
 
 use conversions::{
     clear_error, ffi_panic_boundary, last_error_code, last_error_message, last_error_ptr,
