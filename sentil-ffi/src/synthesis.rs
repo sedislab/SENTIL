@@ -1,9 +1,79 @@
 //! Synthesis: smooth robustness, models, the solver, controllers, and numerics.
 
 use crate::conversions::{clear_error, ffi_panic_boundary, slice_from};
-use crate::SentilError;
-use libc::size_t;
-use sentil::synthesis::{solve_qp, solve_spd, symmetric_eigen};
+use crate::{SentilError, SentilSoftKind};
+use libc::{c_void, size_t};
+use sentil::synthesis::{soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, SmoothConfig};
+use sentil::{Formula, Trace};
+
+/// Smoothing settings.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilSmoothConfig {
+    pub temperature: f64,
+    pub kind: SentilSoftKind,
+}
+
+impl SentilSmoothConfig {
+    fn to_core(self) -> sentil::Result<SmoothConfig> {
+        Ok(SmoothConfig::new(self.temperature)?.with_kind(self.kind.into()))
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_smooth_config_default() -> SentilSmoothConfig {
+    let d = SmoothConfig::default();
+    SentilSmoothConfig { temperature: d.temperature(), kind: d.kind().into() }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_soft_min(values: *const f64, n: size_t, temperature: f64) -> f64 {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || {
+        let Ok(values) = slice_from(values, n) else {
+            return f64::NAN;
+        };
+        soft_min(values, temperature)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_soft_max(values: *const f64, n: size_t, temperature: f64) -> f64 {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || {
+        let Ok(values) = slice_from(values, n) else {
+            return f64::NAN;
+        };
+        soft_max(values, temperature)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_smooth_robustness(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    config: *const SentilSmoothConfig,
+    out: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match formula.smooth_robustness(trace, config) {
+            Ok(value) => {
+                unsafe { *out = value };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
 
 fn matrix_from(data: *const f64, rows: usize, cols: usize) -> Result<Vec<Vec<f64>>, SentilError> {
     let flat = slice_from(data, rows.saturating_mul(cols))?;

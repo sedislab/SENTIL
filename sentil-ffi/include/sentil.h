@@ -782,6 +782,30 @@ sentil_error_t sentil_solve_spd(const double *matrix, size_t n, const double *rh
 sentil_error_t sentil_symmetric_eigen(const double *matrix, size_t n, double *out_values,
                                       double *out_vectors);
 
+/* Smooth robustness */
+
+typedef enum sentil_soft_kind {
+    SENTIL_SOFT_LOG_SUM_EXP = 0,
+    SENTIL_SOFT_ARITHMETIC_GEOMETRIC_MEAN = 1
+} sentil_soft_kind_t;
+
+/* temperature must be finite and positive; the arithmetic-geometric-mean kind ignores it. */
+typedef struct sentil_smooth_config {
+    double temperature;
+    sentil_soft_kind_t kind;
+} sentil_smooth_config_t;
+
+/* The defaults: temperature 10, log-sum-exp. */
+sentil_smooth_config_t sentil_smooth_config_default(void);
+
+double sentil_soft_min(const double *values, size_t n, double temperature);
+double sentil_soft_max(const double *values, size_t n, double temperature);
+
+/* Differentiable surrogate for robustness. */
+sentil_error_t sentil_formula_smooth_robustness(const sentil_formula_t *formula,
+                                                const sentil_trace_t *trace,
+                                                const sentil_smooth_config_t *config, double *out);
+
 #ifdef __cplusplus
 }
 #endif

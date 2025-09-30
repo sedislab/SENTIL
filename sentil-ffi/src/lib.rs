@@ -271,6 +271,32 @@ impl From<SentilInterpolation> for sentil::Interpolation {
     }
 }
 
+/// Which smoothing the soft robustness uses.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum SentilSoftKind {
+    LogSumExp = 0,
+    ArithmeticGeometricMean = 1,
+}
+
+impl From<SentilSoftKind> for sentil::SoftKind {
+    fn from(k: SentilSoftKind) -> Self {
+        match k {
+            SentilSoftKind::LogSumExp => sentil::SoftKind::LogSumExp,
+            SentilSoftKind::ArithmeticGeometricMean => sentil::SoftKind::ArithmeticGeometricMean,
+        }
+    }
+}
+
+impl From<sentil::SoftKind> for SentilSoftKind {
+    fn from(k: sentil::SoftKind) -> Self {
+        match k {
+            sentil::SoftKind::LogSumExp => SentilSoftKind::LogSumExp,
+            sentil::SoftKind::ArithmeticGeometricMean => SentilSoftKind::ArithmeticGeometricMean,
+        }
+    }
+}
+
 const VERSION_MAJOR: u32 = 1;
 const VERSION_MINOR: u32 = 0;
 const VERSION_PATCH: u32 = 0;
