@@ -825,6 +825,34 @@ void sentil_bounds_upper(const sentil_bounds_t *bounds, double *out);
 
 void sentil_bounds_destroy(sentil_bounds_t *bounds);
 
+/* System models */
+
+typedef struct sentil_system_model sentil_system_model_t;
+
+/* x_{t+1} = A x_t + B u_t. A is n-by-n, B is n-by-b_cols, x0 and variables have
+   length n. */
+sentil_system_model_t *sentil_linear_model_create(const double *a, size_t n, const double *b,
+                                                  size_t b_cols, const double *x0,
+                                                  const char *const *variables, size_t n_vars,
+                                                  double dt, size_t horizon);
+
+/* rollout fills out_signals with one row of horizon + 1 samples per variable and
+   must be thread-safe. initial_state has length n_vars. */
+typedef struct sentil_model_vtable {
+    void *userdata;
+    size_t input_dimension;
+    const double *initial_state;
+    void (*rollout)(void *userdata, const double *initial, size_t n_state, const double *input,
+                    size_t n_input, double *out_signals);
+} sentil_model_vtable_t;
+
+sentil_system_model_t *sentil_system_model_create_custom(const char *const *variables,
+                                                         size_t n_vars, double dt, size_t horizon,
+                                                         sentil_model_vtable_t vtable);
+
+size_t sentil_system_model_input_dimension(const sentil_system_model_t *model);
+void sentil_system_model_destroy(sentil_system_model_t *model);
+
 #ifdef __cplusplus
 }
 #endif

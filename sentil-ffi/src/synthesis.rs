@@ -1,13 +1,69 @@
 //! Synthesis: smooth robustness, models, the solver, controllers, and numerics.
 
-use crate::conversions::{clear_error, ffi_panic_boundary, set_error, slice_from};
+use crate::conversions::{clear_error, collect_strings, ffi_panic_boundary, set_error, slice_from};
 use crate::handles::{drop_handle, into_handle};
 use crate::{SentilError, SentilSoftKind};
-use libc::{c_void, size_t};
+use libc::{c_char, c_void, size_t};
 use sentil::synthesis::{
-    soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Bounds, SmoothConfig,
+    soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, Bounds, LinearModel, SmoothConfig,
+    SystemModel,
 };
 use sentil::{Formula, Trace};
+
+type ModelHandle = Box<dyn SystemModel>;
+
+struct CustomModel {
+    variables: Vec<String>,
+    dt: f64,
+    horizon: usize,
+    initial: Vec<f64>,
+    input_dim: usize,
+    userdata: usize,
+    rollout: unsafe extern "C" fn(*mut c_void, *const f64, size_t, *const f64, size_t, *mut f64),
+}
+
+impl SystemModel for CustomModel {
+    fn input_dimension(&self) -> usize {
+        self.input_dim
+    }
+
+    fn initial_state(&self) -> &[f64] {
+        &self.initial
+    }
+
+    fn rollout_from(&self, initial: &[f64], input: &[f64]) -> sentil::Result<Trace> {
+        let samples = self.horizon + 1;
+        let n_vars = self.variables.len();
+        let mut signals = vec![0.0_f64; n_vars * samples];
+        unsafe {
+            (self.rollout)(
+                self.userdata as *mut c_void,
+                initial.as_ptr(),
+                initial.len(),
+                input.as_ptr(),
+                input.len(),
+                signals.as_mut_ptr(),
+            );
+        }
+        let times: Vec<f64> = (0..samples).map(|i| i as f64 * self.dt).collect();
+        let mut trace = Trace::new(times)?;
+        for (v, name) in self.variables.iter().enumerate() {
+            trace.add_signal(name, signals[v * samples..(v + 1) * samples].to_vec())?;
+        }
+        Ok(trace)
+    }
+}
+
+/// Callbacks defining a custom system model.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilModelVtable {
+    pub userdata: *mut c_void,
+    pub input_dimension: size_t,
+    pub initial_state: *const f64,
+    pub rollout:
+        Option<unsafe extern "C" fn(*mut c_void, *const f64, size_t, *const f64, size_t, *mut f64)>,
+}
 
 /// Smoothing settings.
 #[repr(C)]
@@ -248,4 +304,89 @@ pub extern "C" fn sentil_bounds_upper(handle: *mut c_void, out: *mut f64) {
 pub extern "C" fn sentil_bounds_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<Bounds>(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_linear_model_create(
+    a: *const f64,
+    n: size_t,
+    b: *const f64,
+    b_cols: size_t,
+    x0: *const f64,
+    variables: *const *const c_char,
+    n_vars: size_t,
+    dt: f64,
+    horizon: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || {
+        let a = match matrix_from(a, n, n) {
+            Ok(v) => v,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let b = match matrix_from(b, n, b_cols) {
+            Ok(v) => v,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let Ok(x0) = slice_from(x0, n) else {
+            return std::ptr::null_mut();
+        };
+        let variables = match collect_strings(variables, n_vars) {
+            Ok(v) => v,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        match LinearModel::new(a, b, x0.to_vec(), variables, dt, horizon) {
+            Ok(model) => into_handle(Box::new(model) as ModelHandle),
+            Err(e) => {
+                let _: SentilError = e.into();
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_system_model_create_custom(
+    variables: *const *const c_char,
+    n_vars: size_t,
+    dt: f64,
+    horizon: size_t,
+    vtable: SentilModelVtable,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || {
+        let variables = match collect_strings(variables, n_vars) {
+            Ok(v) => v,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let Some(rollout) = vtable.rollout else {
+            set_error(SentilError::NullPointer, "the rollout callback was null");
+            return std::ptr::null_mut();
+        };
+        let Ok(initial) = slice_from(vtable.initial_state, n_vars) else {
+            return std::ptr::null_mut();
+        };
+        let model: ModelHandle = Box::new(CustomModel {
+            variables,
+            dt,
+            horizon,
+            initial: initial.to_vec(),
+            input_dim: vtable.input_dimension,
+            userdata: vtable.userdata as usize,
+            rollout,
+        });
+        into_handle(model)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_system_model_input_dimension(handle: *mut c_void) -> size_t {
+    clear_error();
+    ffi_panic_boundary(0, || borrow_handle!(handle, ModelHandle, 0).input_dimension())
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_system_model_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<ModelHandle>(handle) });
 }
