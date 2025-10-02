@@ -35,6 +35,7 @@ mod formula;
 mod handles;
 mod monitor;
 mod signal;
+mod specs;
 mod stats;
 mod synthesis;
 

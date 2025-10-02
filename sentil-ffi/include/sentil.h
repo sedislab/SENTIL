@@ -1019,6 +1019,28 @@ sentil_error_t sentil_formula_smooth_gradient(const sentil_formula_t *formula,
                                               const sentil_smooth_config_t *config,
                                               double *out_value, double *out_gradient);
 
+/* Specification library */
+
+typedef struct sentil_spec_builder sentil_spec_builder_t;
+
+/* Names of the embedded specifications, sorted. Free with sentil_free_string_array. */
+char **sentil_spec_registry_available(size_t *out_count);
+
+sentil_spec_builder_t *sentil_spec_builder_create(const char *name);
+sentil_spec_builder_t *sentil_spec_builder_from_file(const char *path);
+
+/* Each consumes the builder and returns a new one, even on a NULL return. */
+sentil_spec_builder_t *sentil_spec_builder_with_variant(sentil_spec_builder_t *builder,
+                                                        const char *variant);
+sentil_spec_builder_t *sentil_spec_builder_with_param(sentil_spec_builder_t *builder,
+                                                      const char *name, double value);
+
+/* Variant names, sorted. Free with sentil_free_string_array. */
+char **sentil_spec_builder_available_variants(const sentil_spec_builder_t *builder,
+                                              size_t *out_count);
+
+void sentil_spec_builder_destroy(sentil_spec_builder_t *builder);
+
 #ifdef __cplusplus
 }
 #endif
