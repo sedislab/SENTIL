@@ -991,6 +991,34 @@ sentil_error_t sentil_formula_falsify(const sentil_formula_t *formula,
                                       const sentil_bounds_t *bounds, sentil_cma_config_t config,
                                       size_t restarts, sentil_witness_t *out);
 
+/* Parameter mining */
+
+/* Returns an owned formula handle for a parameter value. */
+typedef sentil_formula_t *(*sentil_formula_fn)(void *userdata, double param);
+
+/* Tightest parameter for which make(param) holds on every trace. */
+sentil_error_t sentil_mine_tightest_parameter(sentil_formula_fn make, void *userdata,
+                                              const sentil_trace_t *const *traces, size_t n_traces,
+                                              double lower, double upper, double *out);
+
+/* Smooth gradients */
+
+/* out_gradient is row-major [n_vars * n_samples] in sorted variable order.
+   Log-sum-exp smoothing only. */
+sentil_error_t sentil_formula_smooth_value_and_gradient(const sentil_formula_t *formula,
+                                                        const sentil_trace_t *trace,
+                                                        const sentil_smooth_config_t *config,
+                                                        double *out_value, double *out_gradient,
+                                                        size_t n_vars, size_t n_samples);
+
+/* Gradient per input coordinate (length n_input). */
+sentil_error_t sentil_formula_smooth_gradient(const sentil_formula_t *formula,
+                                              const sentil_system_model_t *model,
+                                              const double *initial, size_t n_initial,
+                                              const double *input, size_t n_input,
+                                              const sentil_smooth_config_t *config,
+                                              double *out_value, double *out_gradient);
+
 #ifdef __cplusplus
 }
 #endif

@@ -4,9 +4,10 @@ use crate::{SentilBackend, SentilError, SentilSoftKind};
 use libc::{c_char, c_void, size_t};
 use sentil::stats::StochasticSystem;
 use sentil::synthesis::{
-    cma_es, cma_es_batched, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen,
-    AffineForm, Bounds, ChanceConstraint, ChanceReport, CmaConfig, Controller, LinearModel,
-    SafetyFilter, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel, Witness,
+    cma_es, cma_es_batched, maximize, mine_tightest_parameter, soft_max, soft_min, solve_qp,
+    solve_spd, symmetric_eigen, AffineForm, Bounds, ChanceConstraint, ChanceReport, CmaConfig,
+    Controller, LinearModel, SafetyFilter, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
+    Witness,
 };
 use sentil::{Formula, Trace};
 use std::time::Duration;
@@ -968,6 +969,149 @@ pub extern "C" fn sentil_formula_falsify(
         match formula.falsify(&model, bounds, config.into(), restarts) {
             Ok(witness) => {
                 pack_witness(witness, out);
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+/// A spec builder.
+pub type SentilFormulaFn = unsafe extern "C" fn(*mut c_void, f64) -> *mut c_void;
+
+#[no_mangle]
+pub extern "C" fn sentil_mine_tightest_parameter(
+    make: Option<SentilFormulaFn>,
+    userdata: *mut c_void,
+    traces: *const *mut c_void,
+    n_traces: size_t,
+    lower: f64,
+    upper: f64,
+    out: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let Some(make) = make else {
+            set_error(SentilError::NullPointer, "the make callback was null");
+            return SentilError::NullPointer;
+        };
+        if n_traces > 0 {
+            check_ptr!(traces, SentilError::NullPointer);
+        }
+        let mut collected = Vec::with_capacity(n_traces);
+        for i in 0..n_traces {
+            let handle = unsafe { *traces.add(i) };
+            if handle.is_null() {
+                set_error(SentilError::NullPointer, "a trace handle was null");
+                return SentilError::NullPointer;
+            }
+            collected.push(unsafe { (*handle.cast::<Trace>()).clone() });
+        }
+        let placeholder = match Formula::parse("0 > 1") {
+            Ok(f) => f,
+            Err(e) => return e.into(),
+        };
+        let failed = std::cell::Cell::new(false);
+        let build = |param: f64| -> sentil::Result<Formula> {
+            match unsafe { take_handle::<Formula>(make(userdata, param)) } {
+                Some(f) => Ok(f),
+                None => {
+                    failed.set(true);
+                    Ok(placeholder.clone())
+                }
+            }
+        };
+        let result = mine_tightest_parameter(build, &collected, lower, upper);
+        if failed.get() {
+            set_error(SentilError::NullPointer, "the make callback returned null");
+            return SentilError::NullPointer;
+        }
+        match result {
+            Ok(param) => {
+                unsafe { *out = param };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_smooth_value_and_gradient(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    config: *const SentilSmoothConfig,
+    out_value: *mut f64,
+    out_gradient: *mut f64,
+    n_vars: size_t,
+    n_samples: size_t,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out_value, SentilError::NullPointer);
+        check_ptr!(out_gradient, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match formula.smooth_value_and_gradient(trace, config) {
+            Ok((value, gradients)) => {
+                unsafe { *out_value = value };
+                for (v, gradient) in gradients.values().take(n_vars).enumerate() {
+                    let count = gradient.len().min(n_samples);
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            gradient.as_ptr(),
+                            out_gradient.add(v * n_samples),
+                            count,
+                        );
+                    }
+                }
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_smooth_gradient(
+    formula: *mut c_void,
+    model: *mut c_void,
+    initial: *const f64,
+    n_initial: size_t,
+    input: *const f64,
+    n_input: size_t,
+    config: *const SentilSmoothConfig,
+    out_value: *mut f64,
+    out_gradient: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        check_ptr!(out_value, SentilError::NullPointer);
+        check_ptr!(out_gradient, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let model = borrow_handle!(model, ModelHandle, SentilError::NullPointer);
+        let model = DynModel(&**model);
+        let (Ok(initial), Ok(input)) = (slice_from(initial, n_initial), slice_from(input, n_input))
+        else {
+            return SentilError::NullPointer;
+        };
+        let config = match unsafe { *config }.to_core() {
+            Ok(c) => c,
+            Err(e) => return e.into(),
+        };
+        match formula.smooth_gradient(&model, initial, input, config) {
+            Ok((value, gradient)) => {
+                unsafe {
+                    *out_value = value;
+                    std::ptr::copy_nonoverlapping(gradient.as_ptr(), out_gradient, gradient.len());
+                }
                 SentilError::Ok
             }
             Err(e) => e.into(),
