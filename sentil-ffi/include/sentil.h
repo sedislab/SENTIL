@@ -914,6 +914,22 @@ sentil_error_t sentil_cma_es_batched(sentil_batch_objective_fn objective, void *
                                      sentil_cma_config_t config, double *out_point,
                                      double *out_value);
 
+/* Receding-horizon controller */
+
+typedef struct sentil_controller sentil_controller_t;
+
+/* Online controller over the model and spec, both consumed. budget_ns is the
+   per-step wall-clock budget; bounds and smooth may be NULL. NULL on error. */
+sentil_controller_t *sentil_controller_create(sentil_system_model_t *model,
+                                              sentil_formula_t *spec, size_t input_width,
+                                              uint64_t budget_ns, const sentil_bounds_t *bounds,
+                                              const sentil_smooth_config_t *smooth);
+
+/* Writes the first input (length input_width) to out. */
+sentil_error_t sentil_controller_control(sentil_controller_t *controller, const double *state,
+                                         size_t n, double *out);
+void sentil_controller_destroy(sentil_controller_t *controller);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,15 +1,14 @@
-//! Synthesis: smooth robustness, models, the solver, controllers, and numerics.
-
 use crate::conversions::{clear_error, collect_strings, ffi_panic_boundary, set_error, slice_from};
-use crate::handles::{drop_handle, into_boxed_array, into_handle};
+use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
 use crate::{SentilBackend, SentilError, SentilSoftKind};
 use libc::{c_char, c_void, size_t};
 use sentil::synthesis::{
     cma_es, cma_es_batched, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen,
-    AffineForm, Bounds, CmaConfig, LinearModel, SmoothConfig, Synthesizer, SynthesisProblem,
-    SystemModel,
+    AffineForm, Bounds, CmaConfig, Controller, LinearModel, SmoothConfig, Synthesizer,
+    SynthesisProblem, SystemModel,
 };
 use sentil::{Formula, Trace};
+use std::time::Duration;
 
 type ModelHandle = Box<dyn SystemModel>;
 
@@ -658,4 +657,112 @@ pub extern "C" fn sentil_cma_es_batched(
         );
         write_optimum(result, out_point, out_value)
     })
+}
+
+struct ControllerState {
+    controller: Controller<'static, DynModel<'static>>,
+    model: *mut DynModel<'static>,
+    spec: *mut Formula,
+    owned: *mut dyn SystemModel,
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_controller_create(
+    model: *mut c_void,
+    spec: *mut c_void,
+    input_width: size_t,
+    budget_ns: u64,
+    bounds: *mut c_void,
+    smooth: *const SentilSmoothConfig,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || {
+        let (Some(owned), Some(spec)) =
+            (unsafe { take_handle::<ModelHandle>(model) }, unsafe { take_handle::<Formula>(spec) })
+        else {
+            set_error(SentilError::NullPointer, "the model or spec handle was null");
+            return std::ptr::null_mut();
+        };
+        let bounds = if bounds.is_null() {
+            None
+        } else {
+            let b = unsafe { &*bounds.cast::<Bounds>() };
+            match Bounds::new(b.lower().to_vec(), b.upper().to_vec()) {
+                Ok(rebuilt) => Some(rebuilt),
+                Err(e) => {
+                    let _: SentilError = e.into();
+                    return std::ptr::null_mut();
+                }
+            }
+        };
+        let smooth = match unsafe { smooth.as_ref() } {
+            Some(s) => match s.to_core() {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    let _: SentilError = e.into();
+                    return std::ptr::null_mut();
+                }
+            },
+            None => None,
+        };
+        let owned = Box::into_raw(owned);
+        let model = Box::into_raw(Box::new(DynModel(unsafe { &*owned })));
+        let spec = Box::into_raw(Box::new(spec));
+        let mut controller = Controller::new(
+            unsafe { &*model },
+            unsafe { &*spec },
+            input_width,
+            Duration::from_nanos(budget_ns),
+        );
+        if let Some(b) = bounds {
+            controller = controller.with_bounds(b);
+        }
+        if let Some(s) = smooth {
+            controller = controller.with_smooth(s);
+        }
+        into_handle(ControllerState { controller, model, spec, owned })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_controller_control(
+    handle: *mut c_void,
+    state: *const f64,
+    n: size_t,
+    out: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let controller = borrow_handle_mut!(handle, ControllerState, SentilError::NullPointer);
+        let state = match slice_from(state, n) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        match controller.controller.control(state) {
+            Ok(input) => {
+                unsafe { std::ptr::copy_nonoverlapping(input.as_ptr(), out, input.len()) };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_controller_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || {
+        if handle.is_null() {
+            return;
+        }
+        let ControllerState { controller, model, spec, owned } =
+            unsafe { *Box::from_raw(handle.cast::<ControllerState>()) };
+        drop(controller);
+        unsafe {
+            drop(Box::from_raw(model));
+            drop(Box::from_raw(spec));
+            drop(Box::from_raw(owned));
+        }
+    });
 }
