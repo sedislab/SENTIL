@@ -1083,6 +1083,23 @@ bool sentil_spec_builder_ams_settings(const sentil_spec_builder_t *builder,
 
 void sentil_spec_builder_destroy(sentil_spec_builder_t *builder);
 
+/* GPU */
+
+bool sentil_gpu_is_available(void);
+
+typedef struct sentil_gpu_splitting_estimate {
+    double violation_probability;
+    size_t particles;
+    uint32_t levels;
+} sentil_gpu_splitting_estimate_t;
+
+/* Fixed-effort multilevel splitting on the GPU for P >= p (always[0, b] psi) over a
+   sim model with GPU-transpilable dynamics. */
+sentil_error_t sentil_formula_check_rare_event_gpu(const sentil_formula_t *formula,
+                                                   const sentil_sim_model_t *model,
+                                                   const sentil_rare_event_config_t *config,
+                                                   sentil_gpu_splitting_estimate_t *out);
+
 #ifdef __cplusplus
 }
 #endif
