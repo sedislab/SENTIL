@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: sentil
+Description: Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL
+URL: https://github.com/sedislab/SENTIL
+Version: 1.0.0
+Libs: -L${libdir} -lsentil
+Cflags: -I${includedir}

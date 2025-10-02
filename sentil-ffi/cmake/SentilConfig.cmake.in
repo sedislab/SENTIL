@@ -1,0 +1,12 @@
+set(SENTIL_VERSION 1.0.0)
+
+get_filename_component(SENTIL_PREFIX "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(SENTIL_INCLUDE_DIR "${SENTIL_PREFIX}/include")
+set(SENTIL_LIBRARY "${SENTIL_PREFIX}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}sentil${CMAKE_SHARED_LIBRARY_SUFFIX}")
+
+if(NOT TARGET Sentil::sentil)
+    add_library(Sentil::sentil SHARED IMPORTED)
+    set_target_properties(Sentil::sentil PROPERTIES
+        IMPORTED_LOCATION "${SENTIL_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${SENTIL_INCLUDE_DIR}")
+endif()
