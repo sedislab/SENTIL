@@ -19,20 +19,20 @@ build:
 test-ffi: build
 	@for t in $(CPU_TESTS); do \
 		echo "  cc $$t"; out=$$(mktemp); \
-		$(CC) $(CFLAGS) -I$(INCLUDE) $$t $(LINK) -o $$out || exit 1; \
+		$(CC) $(CFLAGS) -I$(INCLUDE) -Itests/support $$t $(LINK) -o $$out || exit 1; \
 		$$out || exit 1; rm -f $$out; \
 	done
 	@echo "all C tests passed"
 
 test-ffi-gpu: build
 	@out=$$(mktemp); \
-	$(CC) $(CFLAGS) -I$(INCLUDE) $(GPU_TEST) $(LINK) -o $$out || exit 1; \
+	$(CC) $(CFLAGS) -I$(INCLUDE) -Itests/support $(GPU_TEST) $(LINK) -o $$out || exit 1; \
 	$$out || exit 1; rm -f $$out
 
 leakcheck: build
 	@for t in $(CPU_TESTS); do \
 		out=$$(mktemp); \
-		$(CC) $(CFLAGS) -I$(INCLUDE) $$t $(LINK) -o $$out || exit 1; \
+		$(CC) $(CFLAGS) -I$(INCLUDE) -Itests/support $$t $(LINK) -o $$out || exit 1; \
 		valgrind --leak-check=full --errors-for-leak-kinds=definite,indirect \
 			--error-exitcode=99 -q $$out || exit 1; \
 		rm -f $$out; \
