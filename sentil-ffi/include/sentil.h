@@ -1058,6 +1058,29 @@ char *sentil_spec_builder_parameters_json(const sentil_spec_builder_t *builder);
 /* Monitor preloaded with the spec's recommended settings; consumes the builder. */
 sentil_monitor_t *sentil_spec_builder_into_monitor(sentil_spec_builder_t *builder);
 
+/* Each returns false if the spec carries no settings of that kind. */
+typedef struct sentil_spec_smc_settings {
+    double confidence;
+    uint64_t sample_budget;
+} sentil_spec_smc_settings_t;
+typedef struct sentil_spec_sprt_settings {
+    double p0;
+    double p1;
+    double alpha;
+    double beta;
+    size_t max_samples;
+} sentil_spec_sprt_settings_t;
+typedef struct sentil_spec_ams_settings {
+    size_t num_particles;
+    size_t max_steps;
+} sentil_spec_ams_settings_t;
+bool sentil_spec_builder_smc_settings(const sentil_spec_builder_t *builder,
+                                      sentil_spec_smc_settings_t *out);
+bool sentil_spec_builder_sprt_settings(const sentil_spec_builder_t *builder,
+                                       sentil_spec_sprt_settings_t *out);
+bool sentil_spec_builder_ams_settings(const sentil_spec_builder_t *builder,
+                                      sentil_spec_ams_settings_t *out);
+
 void sentil_spec_builder_destroy(sentil_spec_builder_t *builder);
 
 #ifdef __cplusplus

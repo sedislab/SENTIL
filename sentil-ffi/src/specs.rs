@@ -220,6 +220,100 @@ pub extern "C" fn sentil_spec_builder_into_monitor(handle: *mut c_void) -> *mut 
     })
 }
 
+/// Recommended Monte Carlo settings a spec carries.
+#[repr(C)]
+pub struct SentilSpecSmcSettings {
+    pub confidence: f64,
+    pub sample_budget: u64,
+}
+
+/// Recommended sequential-test settings a spec carries.
+#[repr(C)]
+pub struct SentilSpecSprtSettings {
+    pub p0: f64,
+    pub p1: f64,
+    pub alpha: f64,
+    pub beta: f64,
+    pub max_samples: size_t,
+}
+
+/// Recommended rare-event settings a spec carries.
+#[repr(C)]
+pub struct SentilSpecAmsSettings {
+    pub num_particles: size_t,
+    pub max_steps: size_t,
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_smc_settings(
+    handle: *mut c_void,
+    out: *mut SentilSpecSmcSettings,
+) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || {
+        check_ptr!(out, false);
+        match borrow_handle!(handle, SpecBuilder, false).smc_settings() {
+            Some(s) => {
+                unsafe {
+                    *out = SentilSpecSmcSettings {
+                        confidence: s.confidence,
+                        sample_budget: s.sample_budget,
+                    };
+                }
+                true
+            }
+            None => false,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_sprt_settings(
+    handle: *mut c_void,
+    out: *mut SentilSpecSprtSettings,
+) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || {
+        check_ptr!(out, false);
+        match borrow_handle!(handle, SpecBuilder, false).sprt_settings() {
+            Some(s) => {
+                unsafe {
+                    *out = SentilSpecSprtSettings {
+                        p0: s.p0,
+                        p1: s.p1,
+                        alpha: s.alpha,
+                        beta: s.beta,
+                        max_samples: s.max_samples,
+                    };
+                }
+                true
+            }
+            None => false,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_ams_settings(
+    handle: *mut c_void,
+    out: *mut SentilSpecAmsSettings,
+) -> bool {
+    clear_error();
+    ffi_panic_boundary(false, || {
+        check_ptr!(out, false);
+        match borrow_handle!(handle, SpecBuilder, false).ams_settings() {
+            Some(s) => {
+                unsafe {
+                    *out =
+                        SentilSpecAmsSettings { num_particles: s.num_particles, max_steps: s.max_steps };
+                }
+                true
+            }
+            None => false,
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn sentil_spec_builder_destroy(handle: *mut c_void) {
     clear_error();
