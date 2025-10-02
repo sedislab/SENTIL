@@ -906,6 +906,14 @@ sentil_error_t sentil_cma_es(sentil_objective_fn objective, void *userdata, cons
                              size_t n, const sentil_bounds_t *bounds, sentil_cma_config_t config,
                              double *out_point, double *out_value);
 
+/* Scores population points, row-major points[population*n], into out_scores[population]. */
+typedef void (*sentil_batch_objective_fn)(void *userdata, const double *points, size_t population,
+                                          size_t dim, double *out_scores);
+sentil_error_t sentil_cma_es_batched(sentil_batch_objective_fn objective, void *userdata,
+                                     const double *start, size_t n, const sentil_bounds_t *bounds,
+                                     sentil_cma_config_t config, double *out_point,
+                                     double *out_value);
+
 #ifdef __cplusplus
 }
 #endif

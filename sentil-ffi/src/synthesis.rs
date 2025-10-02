@@ -5,8 +5,9 @@ use crate::handles::{drop_handle, into_boxed_array, into_handle};
 use crate::{SentilBackend, SentilError, SentilSoftKind};
 use libc::{c_char, c_void, size_t};
 use sentil::synthesis::{
-    cma_es, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, AffineForm, Bounds,
-    CmaConfig, LinearModel, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
+    cma_es, cma_es_batched, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen,
+    AffineForm, Bounds, CmaConfig, LinearModel, SmoothConfig, Synthesizer, SynthesisProblem,
+    SystemModel,
 };
 use sentil::{Formula, Trace};
 
@@ -602,6 +603,55 @@ pub extern "C" fn sentil_cma_es(
         let bounds = borrow_handle!(bounds, Bounds, SentilError::NullPointer);
         let result = cma_es(
             |x: &[f64]| Ok(unsafe { objective(userdata, x.as_ptr(), x.len()) }),
+            start,
+            bounds,
+            config.into(),
+        );
+        write_optimum(result, out_point, out_value)
+    })
+}
+
+/// A batch objective.
+pub type SentilBatchObjectiveFn =
+    unsafe extern "C" fn(*mut c_void, *const f64, size_t, size_t, *mut f64);
+
+#[no_mangle]
+pub extern "C" fn sentil_cma_es_batched(
+    objective: Option<SentilBatchObjectiveFn>,
+    userdata: *mut c_void,
+    start: *const f64,
+    n: size_t,
+    bounds: *mut c_void,
+    config: SentilCmaConfig,
+    out_point: *mut f64,
+    out_value: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out_point, SentilError::NullPointer);
+        check_ptr!(out_value, SentilError::NullPointer);
+        let Some(objective) = objective else {
+            set_error(SentilError::NullPointer, "the objective callback was null");
+            return SentilError::NullPointer;
+        };
+        let Ok(start) = slice_from(start, n) else {
+            return SentilError::NullPointer;
+        };
+        let bounds = borrow_handle!(bounds, Bounds, SentilError::NullPointer);
+        let result = cma_es_batched(
+            |points: &[Vec<f64>]| {
+                let population = points.len();
+                let dim = points.first().map_or(0, Vec::len);
+                let mut flat = Vec::with_capacity(population * dim);
+                for point in points {
+                    flat.extend_from_slice(point);
+                }
+                let mut scores = vec![0.0_f64; population];
+                unsafe {
+                    objective(userdata, flat.as_ptr(), population, dim, scores.as_mut_ptr());
+                }
+                Ok(scores)
+            },
             start,
             bounds,
             config.into(),
