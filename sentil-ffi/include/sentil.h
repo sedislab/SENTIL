@@ -930,6 +930,44 @@ sentil_error_t sentil_controller_control(sentil_controller_t *controller, const 
                                          size_t n, double *out);
 void sentil_controller_destroy(sentil_controller_t *controller);
 
+/* Safety filter */
+
+typedef struct sentil_safety_filter sentil_safety_filter_t;
+
+/* Consumes bounds. Use sentil_bounds_unbounded for barrier-only enforcement. */
+sentil_safety_filter_t *sentil_safety_filter_create(sentil_bounds_t *bounds);
+
+/* Input closest to nominal satisfying each barrier a_i . u >= b_i and the bounds.
+   barrier_a is m-by-n row-major, barrier_b has length m. */
+sentil_error_t sentil_safety_filter_filter(const sentil_safety_filter_t *filter,
+                                           const double *nominal, size_t n,
+                                           const double *barrier_a, const double *barrier_b,
+                                           size_t m, double *out);
+void sentil_safety_filter_destroy(sentil_safety_filter_t *filter);
+
+/* Chance constraints */
+
+typedef struct sentil_chance_constraint sentil_chance_constraint_t;
+
+typedef struct sentil_chance_report {
+    double estimate;
+    double lower_bound;
+    uint64_t samples;
+    bool holds;
+} sentil_chance_report_t;
+
+/* Consumes spec. confidence > 0 sets the bound's level (default 0.95); a nonzero
+   tightening adds a conservative margin. */
+sentil_chance_constraint_t *sentil_chance_constraint_create(sentil_formula_t *spec,
+                                                            double probability, double confidence,
+                                                            double tightening);
+
+sentil_error_t sentil_chance_constraint_validate(const sentil_chance_constraint_t *constraint,
+                                                 const sentil_stochastic_system_t *system,
+                                                 uint64_t samples, uint64_t seed,
+                                                 sentil_chance_report_t *out);
+void sentil_chance_constraint_destroy(sentil_chance_constraint_t *constraint);
+
 #ifdef __cplusplus
 }
 #endif

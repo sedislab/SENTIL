@@ -2,10 +2,11 @@ use crate::conversions::{clear_error, collect_strings, ffi_panic_boundary, set_e
 use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle};
 use crate::{SentilBackend, SentilError, SentilSoftKind};
 use libc::{c_char, c_void, size_t};
+use sentil::stats::StochasticSystem;
 use sentil::synthesis::{
     cma_es, cma_es_batched, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen,
-    AffineForm, Bounds, CmaConfig, Controller, LinearModel, SmoothConfig, Synthesizer,
-    SynthesisProblem, SystemModel,
+    AffineForm, Bounds, ChanceConstraint, ChanceReport, CmaConfig, Controller, LinearModel,
+    SafetyFilter, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
 };
 use sentil::{Formula, Trace};
 use std::time::Duration;
@@ -765,4 +766,134 @@ pub extern "C" fn sentil_controller_destroy(handle: *mut c_void) {
             drop(Box::from_raw(owned));
         }
     });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_safety_filter_create(bounds: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || {
+        let Some(bounds) = (unsafe { take_handle::<Bounds>(bounds) }) else {
+            set_error(SentilError::NullPointer, "the bounds handle was null");
+            return std::ptr::null_mut();
+        };
+        into_handle(SafetyFilter::new(bounds))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_safety_filter_filter(
+    handle: *mut c_void,
+    nominal: *const f64,
+    n: size_t,
+    barrier_a: *const f64,
+    barrier_b: *const f64,
+    m: size_t,
+    out: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let filter = borrow_handle!(handle, SafetyFilter, SentilError::NullPointer);
+        let nominal = match slice_from(nominal, n) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let rows = match matrix_from(barrier_a, m, n) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let scalars = match slice_from(barrier_b, m) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let barriers: Vec<(Vec<f64>, f64)> =
+            rows.into_iter().zip(scalars).map(|(a, &b)| (a, b)).collect();
+        match filter.filter(nominal, &barriers) {
+            Ok(input) => {
+                unsafe { std::ptr::copy_nonoverlapping(input.as_ptr(), out, input.len()) };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_safety_filter_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<SafetyFilter>(handle) });
+}
+
+/// A chance-constraint report.
+#[repr(C)]
+pub struct SentilChanceReport {
+    pub estimate: f64,
+    pub lower_bound: f64,
+    pub samples: u64,
+    pub holds: bool,
+}
+
+impl From<ChanceReport> for SentilChanceReport {
+    fn from(r: ChanceReport) -> Self {
+        Self { estimate: r.estimate, lower_bound: r.lower_bound, samples: r.samples, holds: r.holds }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_chance_constraint_create(
+    spec: *mut c_void,
+    probability: f64,
+    confidence: f64,
+    tightening: f64,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(std::ptr::null_mut(), || {
+        let Some(spec) = (unsafe { take_handle::<Formula>(spec) }) else {
+            set_error(SentilError::NullPointer, "the spec handle was null");
+            return std::ptr::null_mut();
+        };
+        let mut constraint = match ChanceConstraint::new(spec, probability) {
+            Ok(c) => c,
+            Err(e) => {
+                let _: SentilError = e.into();
+                return std::ptr::null_mut();
+            }
+        };
+        if confidence > 0.0 {
+            constraint = constraint.with_confidence(confidence);
+        }
+        if tightening != 0.0 {
+            constraint = constraint.with_tightening(tightening);
+        }
+        into_handle(constraint)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_chance_constraint_validate(
+    handle: *mut c_void,
+    system: *mut c_void,
+    samples: u64,
+    seed: u64,
+    out: *mut SentilChanceReport,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let constraint = borrow_handle!(handle, ChanceConstraint, SentilError::NullPointer);
+        let system = borrow_handle!(system, StochasticSystem, SentilError::NullPointer);
+        match constraint.validate(system, samples, seed) {
+            Ok(report) => {
+                unsafe { *out = report.into() };
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_chance_constraint_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<ChanceConstraint>(handle) });
 }
