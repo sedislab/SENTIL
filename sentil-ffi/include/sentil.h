@@ -1039,6 +1039,25 @@ sentil_spec_builder_t *sentil_spec_builder_with_param(sentil_spec_builder_t *bui
 char **sentil_spec_builder_available_variants(const sentil_spec_builder_t *builder,
                                               size_t *out_count);
 
+/* Formula text with parameters filled in. Free with sentil_free_string. */
+char *sentil_spec_builder_build_deterministic(const sentil_spec_builder_t *builder);
+char *sentil_spec_builder_build_probabilistic(const sentil_spec_builder_t *builder);
+
+/* Free with sentil_formula_destroy. */
+sentil_formula_t *sentil_spec_builder_build_formula(const sentil_spec_builder_t *builder);
+sentil_formula_t *sentil_spec_builder_build_probabilistic_formula(
+    const sentil_spec_builder_t *builder);
+
+/* Free with sentil_lifting_registry_destroy. */
+sentil_lifting_registry_t *sentil_spec_builder_build_lifting_registry(
+    const sentil_spec_builder_t *builder);
+
+/* Resolved parameters as a JSON object. Free with sentil_free_string. */
+char *sentil_spec_builder_parameters_json(const sentil_spec_builder_t *builder);
+
+/* Monitor preloaded with the spec's recommended settings; consumes the builder. */
+sentil_monitor_t *sentil_spec_builder_into_monitor(sentil_spec_builder_t *builder);
+
 void sentil_spec_builder_destroy(sentil_spec_builder_t *builder);
 
 #ifdef __cplusplus

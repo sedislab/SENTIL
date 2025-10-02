@@ -1,5 +1,5 @@
 use crate::conversions::{
-    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error,
+    c_char_to_string, clear_error, ffi_panic_boundary, into_string_array, set_error, to_c_string,
 };
 use crate::handles::{drop_handle, into_handle, take_handle};
 use crate::SentilError;
@@ -109,6 +109,114 @@ pub extern "C" fn sentil_spec_builder_available_variants(
         check_ptr!(out_count, ptr::null_mut());
         let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
         into_string_array(builder.available_variants().into_iter().map(String::from).collect(), out_count)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_build_deterministic(handle: *mut c_void) -> *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
+        match builder.build_deterministic() {
+            Ok(text) => to_c_string(&text),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_build_probabilistic(handle: *mut c_void) -> *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
+        match builder.build_probabilistic() {
+            Ok(text) => to_c_string(&text),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_build_formula(handle: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
+        match builder.build_formula() {
+            Ok(formula) => into_handle(formula),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_build_probabilistic_formula(handle: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
+        match builder.build_probabilistic_formula() {
+            Ok(formula) => into_handle(formula),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_build_lifting_registry(handle: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
+        match builder.build_lifting_registry() {
+            Ok(registry) => into_handle(registry),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_parameters_json(handle: *mut c_void) -> *mut c_char {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let builder = borrow_handle!(handle, SpecBuilder, ptr::null_mut());
+        match serde_json::to_string(&builder.parameters()) {
+            Ok(text) => to_c_string(&text),
+            Err(e) => {
+                set_error(SentilError::Json, &e.to_string());
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_spec_builder_into_monitor(handle: *mut c_void) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let Some(builder) = (unsafe { take_handle::<SpecBuilder>(handle) }) else {
+            set_error(SentilError::NullPointer, "the builder handle was null");
+            return ptr::null_mut();
+        };
+        match builder.into_monitor() {
+            Ok(monitor) => into_handle(monitor),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
     })
 }
 
