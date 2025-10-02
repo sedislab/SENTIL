@@ -5,8 +5,8 @@ use crate::handles::{drop_handle, into_boxed_array, into_handle};
 use crate::{SentilBackend, SentilError, SentilSoftKind};
 use libc::{c_char, c_void, size_t};
 use sentil::synthesis::{
-    soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, AffineForm, Bounds, LinearModel,
-    SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
+    cma_es, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen, AffineForm, Bounds,
+    CmaConfig, LinearModel, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
 };
 use sentil::{Formula, Trace};
 
@@ -477,5 +477,135 @@ pub extern "C" fn sentil_synthesize(
             }
             Err(e) => e.into(),
         }
+    })
+}
+
+/// A gradient objective.
+pub type SentilGradientFn = unsafe extern "C" fn(*mut c_void, *const f64, size_t, *mut f64, *mut f64);
+/// A scalar objective for the point `x`.
+pub type SentilObjectiveFn = unsafe extern "C" fn(*mut c_void, *const f64, size_t) -> f64;
+
+fn write_optimum(
+    result: sentil::Result<(Vec<f64>, f64)>,
+    out_point: *mut f64,
+    out_value: *mut f64,
+) -> SentilError {
+    match result {
+        Ok((point, value)) => {
+            unsafe {
+                std::ptr::copy_nonoverlapping(point.as_ptr(), out_point, point.len());
+                *out_value = value;
+            }
+            SentilError::Ok
+        }
+        Err(e) => e.into(),
+    }
+}
+
+/// CMA-ES settings.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SentilCmaConfig {
+    pub population: size_t,
+    pub max_generations: size_t,
+    pub initial_step: f64,
+    pub tol_step: f64,
+    pub seed: u64,
+}
+
+impl From<SentilCmaConfig> for CmaConfig {
+    fn from(c: SentilCmaConfig) -> Self {
+        CmaConfig {
+            population: c.population,
+            max_generations: c.max_generations,
+            initial_step: c.initial_step,
+            tol_step: c.tol_step,
+            seed: c.seed,
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_cma_config_default() -> SentilCmaConfig {
+    let d = CmaConfig::default();
+    SentilCmaConfig {
+        population: d.population,
+        max_generations: d.max_generations,
+        initial_step: d.initial_step,
+        tol_step: d.tol_step,
+        seed: d.seed,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_maximize(
+    objective: Option<SentilGradientFn>,
+    userdata: *mut c_void,
+    start: *const f64,
+    n: size_t,
+    bounds: *mut c_void,
+    max_iters: size_t,
+    out_point: *mut f64,
+    out_value: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out_point, SentilError::NullPointer);
+        check_ptr!(out_value, SentilError::NullPointer);
+        let Some(objective) = objective else {
+            set_error(SentilError::NullPointer, "the objective callback was null");
+            return SentilError::NullPointer;
+        };
+        let Ok(start) = slice_from(start, n) else {
+            return SentilError::NullPointer;
+        };
+        let bounds = borrow_handle!(bounds, Bounds, SentilError::NullPointer);
+        let result = maximize(
+            |x: &[f64]| {
+                let mut value = 0.0_f64;
+                let mut gradient = vec![0.0_f64; x.len()];
+                unsafe {
+                    objective(userdata, x.as_ptr(), x.len(), &mut value, gradient.as_mut_ptr());
+                }
+                Ok((value, gradient))
+            },
+            start,
+            bounds,
+            max_iters,
+        );
+        write_optimum(result, out_point, out_value)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_cma_es(
+    objective: Option<SentilObjectiveFn>,
+    userdata: *mut c_void,
+    start: *const f64,
+    n: size_t,
+    bounds: *mut c_void,
+    config: SentilCmaConfig,
+    out_point: *mut f64,
+    out_value: *mut f64,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out_point, SentilError::NullPointer);
+        check_ptr!(out_value, SentilError::NullPointer);
+        let Some(objective) = objective else {
+            set_error(SentilError::NullPointer, "the objective callback was null");
+            return SentilError::NullPointer;
+        };
+        let Ok(start) = slice_from(start, n) else {
+            return SentilError::NullPointer;
+        };
+        let bounds = borrow_handle!(bounds, Bounds, SentilError::NullPointer);
+        let result = cma_es(
+            |x: &[f64]| Ok(unsafe { objective(userdata, x.as_ptr(), x.len()) }),
+            start,
+            bounds,
+            config.into(),
+        );
+        write_optimum(result, out_point, out_value)
     })
 }

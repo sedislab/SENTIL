@@ -878,6 +878,34 @@ sentil_error_t sentil_synthesize(const sentil_system_model_t *model, const senti
                                  sentil_backend_t backend, size_t population,
                                  sentil_synthesis_result_t *out);
 
+/* Optimizers */
+
+/* Fills out_value and out_gradient (length n) for the point x. */
+typedef void (*sentil_gradient_fn)(void *userdata, const double *x, size_t n, double *out_value,
+                                   double *out_gradient);
+
+typedef double (*sentil_objective_fn)(void *userdata, const double *x, size_t n);
+
+typedef struct sentil_cma_config {
+    size_t population;
+    size_t max_generations;
+    double initial_step;
+    double tol_step;
+    uint64_t seed;
+} sentil_cma_config_t;
+
+/* The defaults: population from dimension, 300 generations, step 0.3, seed 42. */
+sentil_cma_config_t sentil_cma_config_default(void);
+
+/* out_point (length n) and out_value receive the best found. maximize climbs a
+   gradient; cma_es is gradient-free. */
+sentil_error_t sentil_maximize(sentil_gradient_fn objective, void *userdata, const double *start,
+                               size_t n, const sentil_bounds_t *bounds, size_t max_iters,
+                               double *out_point, double *out_value);
+sentil_error_t sentil_cma_es(sentil_objective_fn objective, void *userdata, const double *start,
+                             size_t n, const sentil_bounds_t *bounds, sentil_cma_config_t config,
+                             double *out_point, double *out_value);
+
 #ifdef __cplusplus
 }
 #endif
