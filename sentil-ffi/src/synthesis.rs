@@ -6,7 +6,7 @@ use sentil::stats::StochasticSystem;
 use sentil::synthesis::{
     cma_es, cma_es_batched, maximize, soft_max, soft_min, solve_qp, solve_spd, symmetric_eigen,
     AffineForm, Bounds, ChanceConstraint, ChanceReport, CmaConfig, Controller, LinearModel,
-    SafetyFilter, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel,
+    SafetyFilter, SmoothConfig, Synthesizer, SynthesisProblem, SystemModel, Witness,
 };
 use sentil::{Formula, Trace};
 use std::time::Duration;
@@ -896,4 +896,81 @@ pub extern "C" fn sentil_chance_constraint_validate(
 pub extern "C" fn sentil_chance_constraint_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<ChanceConstraint>(handle) });
+}
+
+/// A witnessing run.
+#[repr(C)]
+pub struct SentilWitness {
+    pub input: *mut f64,
+    pub input_len: size_t,
+    pub robustness: f64,
+    pub trace: *mut c_void,
+}
+
+fn pack_witness(witness: Witness, out: *mut SentilWitness) {
+    let mut input_len = 0;
+    let input = into_boxed_array(witness.input, &mut input_len);
+    let trace = into_handle(witness.trace);
+    unsafe {
+        *out = SentilWitness { input, input_len, robustness: witness.robustness, trace };
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_find_counterexample(
+    formula: *mut c_void,
+    model: *mut c_void,
+    bounds: *mut c_void,
+    max_iters: size_t,
+    smooth: *const SentilSmoothConfig,
+    out: *mut SentilWitness,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let model = borrow_handle!(model, ModelHandle, SentilError::NullPointer);
+        let model = DynModel(&**model);
+        let bounds = borrow_handle!(bounds, Bounds, SentilError::NullPointer);
+        let smooth = match unsafe { smooth.as_ref() } {
+            Some(s) => match s.to_core() {
+                Ok(c) => c,
+                Err(e) => return e.into(),
+            },
+            None => SmoothConfig::default(),
+        };
+        match formula.find_counterexample(&model, bounds, max_iters, smooth) {
+            Ok(witness) => {
+                pack_witness(witness, out);
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_falsify(
+    formula: *mut c_void,
+    model: *mut c_void,
+    bounds: *mut c_void,
+    config: SentilCmaConfig,
+    restarts: size_t,
+    out: *mut SentilWitness,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out, SentilError::NullPointer);
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let model = borrow_handle!(model, ModelHandle, SentilError::NullPointer);
+        let model = DynModel(&**model);
+        let bounds = borrow_handle!(bounds, Bounds, SentilError::NullPointer);
+        match formula.falsify(&model, bounds, config.into(), restarts) {
+            Ok(witness) => {
+                pack_witness(witness, out);
+                SentilError::Ok
+            }
+            Err(e) => e.into(),
+        }
+    })
 }

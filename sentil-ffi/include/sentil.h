@@ -968,6 +968,29 @@ sentil_error_t sentil_chance_constraint_validate(const sentil_chance_constraint_
                                                  sentil_chance_report_t *out);
 void sentil_chance_constraint_destroy(sentil_chance_constraint_t *constraint);
 
+/* Witnesses and falsification */
+
+/* input is owned (free with sentil_free_doubles), trace is an owned handle (free
+   with sentil_trace_destroy). */
+typedef struct sentil_witness {
+    double *input;
+    size_t input_len;
+    double robustness;
+    sentil_trace_t *trace;
+} sentil_witness_t;
+
+/* smooth may be NULL for the default. */
+sentil_error_t sentil_formula_find_counterexample(const sentil_formula_t *formula,
+                                                  const sentil_system_model_t *model,
+                                                  const sentil_bounds_t *bounds, size_t max_iters,
+                                                  const sentil_smooth_config_t *smooth,
+                                                  sentil_witness_t *out);
+
+sentil_error_t sentil_formula_falsify(const sentil_formula_t *formula,
+                                      const sentil_system_model_t *model,
+                                      const sentil_bounds_t *bounds, sentil_cma_config_t config,
+                                      size_t restarts, sentil_witness_t *out);
+
 #ifdef __cplusplus
 }
 #endif
