@@ -6,12 +6,23 @@ PREFIX ?= /usr/local
 ROOT := $(abspath ..)
 LIBDIR := $(ROOT)/target/release
 INCLUDE := include
+VERSION := 1.0.0
+ARCH := $(shell uname -m)
+ifeq ($(shell uname -s),Darwin)
+	OSNAME := macos
+	SHARED := libsentil.dylib
+else
+	OSNAME := linux
+	SHARED := libsentil.so
+endif
+BUNDLE := sentil-$(VERSION)-$(OSNAME)-$(ARCH)
+DIST := $(ROOT)/target/dist
 TESTS := $(wildcard tests/*.c)
 GPU_TEST := tests/gpu_test.c
 CPU_TESTS := $(filter-out $(GPU_TEST),$(TESTS))
 LINK := -L$(LIBDIR) -lsentil -Wl,-rpath,$(LIBDIR) -lm
 
-.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-py install clean
+.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-py dist install clean
 
 build:
 	$(CARGO) build --release -p sentil-ffi
@@ -45,6 +56,18 @@ bench-c: build
 
 bench-py: build
 	cd ../benchmarks && python runners/sentil_runner.py
+
+dist: build
+	rm -rf $(DIST)/$(BUNDLE)
+	mkdir -p $(DIST)/$(BUNDLE)/lib/pkgconfig $(DIST)/$(BUNDLE)/lib/cmake/Sentil \
+		$(DIST)/$(BUNDLE)/include
+	cp $(LIBDIR)/$(SHARED) $(LIBDIR)/libsentil.a $(DIST)/$(BUNDLE)/lib/
+	cp $(INCLUDE)/sentil.h $(DIST)/$(BUNDLE)/include/
+	cp README.md $(DIST)/$(BUNDLE)/
+	sed 's|@PREFIX@|/usr/local|' sentil.pc.in > $(DIST)/$(BUNDLE)/lib/pkgconfig/sentil.pc
+	cp cmake/SentilConfig.cmake.in $(DIST)/$(BUNDLE)/lib/cmake/Sentil/SentilConfig.cmake
+	tar -C $(DIST) -czf $(DIST)/$(BUNDLE).tar.gz $(BUNDLE)
+	@echo "bundle: $(DIST)/$(BUNDLE).tar.gz"
 
 install: build
 	install -d $(PREFIX)/lib $(PREFIX)/include $(PREFIX)/lib/pkgconfig $(PREFIX)/lib/cmake/Sentil
