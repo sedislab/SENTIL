@@ -1,0 +1,91 @@
+name: release-ffi
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: bundle ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: macos-14, name: macos-arm64 }
+          - { os: windows-latest, name: windows-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p sentil-ffi
+      - name: stage bundle
+        shell: bash
+        run: |
+          stage="sentil-1.0.0-${{ matrix.name }}"
+          mkdir -p "$stage/lib/pkgconfig" "$stage/lib/cmake/Sentil" "$stage/include" "$stage/share/sentil"
+          cp sentil-ffi/include/sentil.h "$stage/include/"
+          # The C++ wrapper is header-only, so the same bundle carries it and the
+          # vcpkg port and Conan recipe can offer sentil.hpp instead of the C ABI alone.
+          cp -r sentil-cpp/include/sentil "$stage/include/"
+          cp benchmarks/deterministic/oracle.json "$stage/share/sentil/"
+          cp sentil-ffi/cmake/SentilConfig.cmake.in "$stage/lib/cmake/Sentil/SentilConfig.cmake"
+          sed 's|@PREFIX@|/usr/local|' sentil-ffi/sentil.pc.in > "$stage/lib/pkgconfig/sentil.pc"
+          for f in libsentil.so libsentil.dylib libsentil.a sentil.dll sentil.dll.lib; do
+            cp "target/release/$f" "$stage/lib/" 2>/dev/null || true
+          done
+          tar -czf "$stage.tar.gz" "$stage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.name }}
+          path: sentil-1.0.0-*.tar.gz
+
+  packages:
+    name: deb and rpm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-deb cargo-generate-rpm
+      - run: cargo build --release -p sentil-ffi
+      - name: pkg-config for /usr
+        run: sed 's|@PREFIX@|/usr|' sentil-ffi/sentil.pc.in > sentil-ffi/sentil.pc
+      - run: cargo deb -p sentil-ffi --no-build --output target/debian/
+      - run: cargo generate-rpm -p sentil-ffi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+
+  release:
+    name: attach assets
+    needs: [bundle, packages]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+      - name: checksum the assets
+        # Consumers that fetch a bundle instead of building it have nothing else to
+        # authenticate it with, so the sums ship as their own asset.
+        working-directory: assets
+        run: |
+          find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | while read -r f; do
+            printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f")"
+          done > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          draft: true
+          files: |
+            assets/**/*
+            assets/SHA256SUMS
