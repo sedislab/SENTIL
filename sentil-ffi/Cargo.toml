@@ -25,3 +25,30 @@ cc = "1.0"
 [dev-dependencies]
 cc = "1.0"
 tempfile = "3"
+
+[package.metadata.deb]
+name = "libsentil-dev"
+maintainer = "Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab <paapa_quansah1@baylor.edu>"
+copyright = "2025 Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab"
+license-file = ["../LICENSE-MIT", "0"]
+section = "libdevel"
+priority = "optional"
+assets = [
+    ["../target/release/libsentil.so", "usr/lib/", "644"],
+    ["../target/release/libsentil.a", "usr/lib/", "644"],
+    ["include/sentil.h", "usr/include/", "644"],
+    ["sentil.pc", "usr/lib/pkgconfig/", "644"],
+    ["cmake/SentilConfig.cmake.in", "usr/lib/cmake/Sentil/SentilConfig.cmake", "644"],
+    ["cmake/SentilConfigVersion.cmake.in", "usr/lib/cmake/Sentil/SentilConfigVersion.cmake", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "libsentil-devel"
+assets = [
+    { source = "../target/release/libsentil.so", dest = "/usr/lib/libsentil.so", mode = "644" },
+    { source = "../target/release/libsentil.a", dest = "/usr/lib/libsentil.a", mode = "644" },
+    { source = "include/sentil.h", dest = "/usr/include/sentil.h", mode = "644" },
+    { source = "sentil.pc", dest = "/usr/lib/pkgconfig/sentil.pc", mode = "644" },
+    { source = "cmake/SentilConfig.cmake.in", dest = "/usr/lib/cmake/Sentil/SentilConfig.cmake", mode = "644" },
+    { source = "cmake/SentilConfigVersion.cmake.in", dest = "/usr/lib/cmake/Sentil/SentilConfigVersion.cmake", mode = "644" },
+]
