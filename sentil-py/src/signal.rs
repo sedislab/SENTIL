@@ -1,7 +1,8 @@
 //! Traces, prepared traces, and the streaming ring buffer.
 
-use crate::errors::{pyerr, SemanticError};
+use crate::errors::pyerr;
 use numpy::{IntoPyArray, PyArray1};
+use pyo3::exceptions::{PyIndexError, PyKeyError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sentil::{
@@ -110,11 +111,25 @@ impl Trace {
         self.inner.variables().into_iter().map(String::from).collect()
     }
 
-    /// The value array for one variable, or a SemanticError if the trace has none.
-    fn signal<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    /// The value array for one variable.
+    fn __getitem__<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyArray1<f64>>> {
         match self.inner.signal(name) {
             Some(values) => Ok(values.to_vec().into_pyarray(py)),
-            None => Err(SemanticError::new_err(format!("trace has no signal named '{name}'"))),
+            None => Err(PyKeyError::new_err(name.to_owned())),
+        }
+    }
+
+    /// The value array for one variable, or `default`.
+    #[pyo3(signature = (name, default=None))]
+    fn get<'py>(
+        &self,
+        py: Python<'py>,
+        name: &str,
+        default: Option<Bound<'py, PyAny>>,
+    ) -> Option<Bound<'py, PyAny>> {
+        match self.inner.signal(name) {
+            Some(values) => Some(values.to_vec().into_pyarray(py).into_any()),
+            None => default,
         }
     }
 
@@ -189,6 +204,15 @@ impl RingBuffer {
 
     fn clear(&mut self) {
         self.inner.clear();
+    }
+
+    /// The sample at `index`, counting from the oldest, with negative indexing.
+    fn __getitem__(&self, index: isize) -> PyResult<(f64, f64)> {
+        let resolved = if index < 0 { index + self.inner.len() as isize } else { index };
+        usize::try_from(resolved)
+            .ok()
+            .and_then(|i| self.inner.get(i))
+            .ok_or_else(|| PyIndexError::new_err("ring buffer index out of range"))
     }
 
     fn get(&self, index: usize) -> Option<(f64, f64)> {
