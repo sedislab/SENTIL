@@ -4,9 +4,11 @@ use pyo3::prelude::*;
 
 mod config;
 mod errors;
+mod signal;
 
 use config::{Config, Interval, Robustness, TimeMode};
 use errors::{EvaluationError, ParseError, SemanticError, SentilError};
+use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
 
 #[pymodule]
 fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -20,5 +22,10 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Config>()?;
     m.add_class::<Robustness>()?;
     m.add_class::<Interval>()?;
+
+    m.add_class::<Interpolation>()?;
+    m.add_class::<Trace>()?;
+    m.add_class::<PreparedTrace>()?;
+    m.add_class::<RingBuffer>()?;
     Ok(())
 }
