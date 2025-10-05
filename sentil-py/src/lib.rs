@@ -21,7 +21,10 @@ use stats::{
     NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, RobustnessDistribution,
     SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult, SprtVerdict, StochasticSystem,
 };
-use synthesis::{SmoothConfig, SoftKind};
+use synthesis::{
+    Backend, Bounds, ChanceConstraint, ChanceReport, CmaConfig, Controller, SafetyFilter,
+    SmoothConfig, SoftKind, SynthesisResult, SystemModel, Witness,
+};
 
 fn register_synthesis(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let module = PyModule::new(m.py(), "synthesis")?;
@@ -30,6 +33,7 @@ fn register_synthesis(m: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(synthesis::solve_qp, &module)?)?;
     module.add_function(wrap_pyfunction!(synthesis::solve_spd, &module)?)?;
     module.add_function(wrap_pyfunction!(synthesis::symmetric_eigen, &module)?)?;
+    module.add_function(wrap_pyfunction!(synthesis::synthesize, &module)?)?;
     m.add_submodule(&module)
 }
 
@@ -95,6 +99,16 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<SoftKind>()?;
     m.add_class::<SmoothConfig>()?;
+    m.add_class::<Backend>()?;
+    m.add_class::<Bounds>()?;
+    m.add_class::<SystemModel>()?;
+    m.add_class::<SynthesisResult>()?;
+    m.add_class::<SafetyFilter>()?;
+    m.add_class::<ChanceConstraint>()?;
+    m.add_class::<ChanceReport>()?;
+    m.add_class::<Witness>()?;
+    m.add_class::<CmaConfig>()?;
+    m.add_class::<Controller>()?;
     register_synthesis(m)?;
     Ok(())
 }
