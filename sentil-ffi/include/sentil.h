@@ -715,9 +715,9 @@ void sentil_sim_expr_destroy(sentil_sim_expr_t *expr);
 
 typedef struct sentil_sim_model sentil_sim_model_t;
 
-/* Build a declarative stochastic model: one init and one advance expression per
-   variable, drawing from the given noise sources. The init, advance, and noise
-   handles are all consumed. NULL on error. */
+/* The init, advance, and noise handles are consumed, even on a NULL return. The one
+   exception is SENTIL_ERR_INVALID_CONFIG for the same handle in two positions, which
+   is refused before anything is read, so you still own every handle. */
 sentil_sim_model_t *sentil_sim_model_create(const char *const *variables, size_t n_vars, double dt,
                                             size_t horizon, sentil_sim_expr_t **init, size_t n_init,
                                             sentil_sim_expr_t **advance, size_t n_advance,
@@ -954,8 +954,8 @@ sentil_error_t sentil_cma_es_batched(sentil_batch_objective_fn objective, void *
 
 typedef struct sentil_controller sentil_controller_t;
 
-/* Online controller over the model and spec, both consumed. budget_ns is the
-   per-step wall-clock budget; bounds and smooth may be NULL. NULL on error. */
+/* Consumes the model and spec, even on a NULL return. budget_ns is the per-step
+   wall-clock budget; bounds and smooth may be NULL. */
 sentil_controller_t *sentil_controller_create(sentil_system_model_t *model,
                                               sentil_formula_t *spec, size_t input_width,
                                               uint64_t budget_ns, const sentil_bounds_t *bounds,
