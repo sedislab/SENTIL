@@ -5,11 +5,13 @@ use pyo3::prelude::*;
 mod config;
 mod errors;
 mod formula;
+mod monitor;
 mod signal;
 
 use config::{Config, Interval, Robustness, TimeMode};
 use errors::{EvaluationError, ParseError, SemanticError, SentilError};
 use formula::{Expr, Formula};
+use monitor::{FormulaBank, Monitor, MultiMonitor, OnlineMonitor};
 use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
 
 #[pymodule]
@@ -32,5 +34,10 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<Expr>()?;
     m.add_class::<Formula>()?;
+
+    m.add_class::<Monitor>()?;
+    m.add_class::<OnlineMonitor>()?;
+    m.add_class::<MultiMonitor>()?;
+    m.add_class::<FormulaBank>()?;
     Ok(())
 }

@@ -69,6 +69,18 @@ pub struct Robustness {
     pub upper: f64,
 }
 
+impl Robustness {
+    pub(crate) fn from_core(r: sentil::Robustness) -> Self {
+        Self {
+            resolved: r.is_resolved(),
+            satisfied: r.is_satisfied(),
+            value: r.value(),
+            lower: r.lower(),
+            upper: r.upper(),
+        }
+    }
+}
+
 #[pymethods]
 impl Robustness {
     fn __float__(&self) -> f64 {
