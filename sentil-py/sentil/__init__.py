@@ -3,6 +3,9 @@
 from ._sentil import (
     __version__,
     stats,
+    BayesConfig,
+    BayesResult,
+    BayesVerdict,
     Config,
     ConfidenceInterval,
     EvaluationError,
@@ -27,12 +30,18 @@ from ._sentil import (
     SentilError,
     SmcConfig,
     SmcResult,
+    SprtConfig,
+    SprtResult,
+    SprtVerdict,
     TimeMode,
     Trace,
 )
 
 __all__ = [
     "stats",
+    "BayesConfig",
+    "BayesResult",
+    "BayesVerdict",
     "Config",
     "ConfidenceInterval",
     "EvaluationError",
@@ -57,6 +66,9 @@ __all__ = [
     "SentilError",
     "SmcConfig",
     "SmcResult",
+    "SprtConfig",
+    "SprtResult",
+    "SprtVerdict",
     "TimeMode",
     "Trace",
 ]

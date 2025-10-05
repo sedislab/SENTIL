@@ -16,8 +16,9 @@ use monitor::{FormulaBank, Monitor, MultiMonitor, OnlineMonitor};
 use pyo3::wrap_pyfunction;
 use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
 use stats::{
-    ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseInteraction, NoiseModel,
-    RobustnessDistribution, SmcConfig, SmcResult,
+    BayesConfig, BayesResult, BayesVerdict, ConfidenceInterval, IntervalMethod, LiftingRegistry,
+    NoiseInteraction, NoiseModel, RobustnessDistribution, SmcConfig, SmcResult, SprtConfig,
+    SprtResult, SprtVerdict,
 };
 
 fn register_stats(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -67,6 +68,12 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SmcConfig>()?;
     m.add_class::<SmcResult>()?;
     m.add_class::<RobustnessDistribution>()?;
+    m.add_class::<SprtConfig>()?;
+    m.add_class::<SprtResult>()?;
+    m.add_class::<SprtVerdict>()?;
+    m.add_class::<BayesConfig>()?;
+    m.add_class::<BayesResult>()?;
+    m.add_class::<BayesVerdict>()?;
     register_stats(m)?;
     Ok(())
 }

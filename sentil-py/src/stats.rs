@@ -10,9 +10,10 @@ use sentil::stats::{
     agresti_coull as core_agresti, chernoff_hoeffding_samples as core_chernoff,
     clopper_pearson as core_clopper, jeffreys_interval as core_jeffreys,
     wilson_interval as core_wilson, wilson_samples as core_wilson_samples, z_score as core_z,
-    ConfidenceInterval as CoreInterval, IntervalMethod as CoreMethod, LiftingRegistry as CoreLifting,
-    NoiseInteraction as CoreInteraction, NoiseModel as CoreNoise, RobustnessDistribution as CoreDist,
-    SmcConfig as CoreSmc, SmcResult as CoreSmcResult,
+    BayesConfig as CoreBayes, BayesResult as CoreBayesResult, ConfidenceInterval as CoreInterval,
+    IntervalMethod as CoreMethod, LiftingRegistry as CoreLifting, NoiseInteraction as CoreInteraction,
+    NoiseModel as CoreNoise, RobustnessDistribution as CoreDist, SmcConfig as CoreSmc,
+    SmcResult as CoreSmcResult, SprtConfig as CoreSprt, SprtResult as CoreSprtResult,
 };
 
 /// A binomial proportion confidence interval at a stated level.
@@ -515,5 +516,195 @@ impl Monitor {
     fn check(&self, py: Python<'_>, trace: &Trace, lifting: &LiftingRegistry) -> PyResult<SmcResult> {
         let result = self.inner.check(&trace.inner, &lifting.inner).map_err(pyerr)?;
         SmcResult::from_core(py, result)
+    }
+}
+/// The verdict of a sequential probability ratio test.
+#[pyclass(eq, eq_int)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SprtVerdict {
+    AcceptH0,
+    AcceptH1,
+    Inconclusive,
+}
+
+/// SPRT settings.
+#[pyclass]
+#[derive(Clone)]
+pub struct SprtConfig {
+    #[pyo3(get, set)]
+    pub p0: f64,
+    #[pyo3(get, set)]
+    pub p1: f64,
+    #[pyo3(get, set)]
+    pub alpha: f64,
+    #[pyo3(get, set)]
+    pub beta: f64,
+    #[pyo3(get, set)]
+    pub max_samples: u64,
+    #[pyo3(get, set)]
+    pub seed: u64,
+}
+
+impl SprtConfig {
+    fn to_core(&self) -> PyResult<CoreSprt> {
+        Ok(CoreSprt::new(self.p0, self.p1, self.alpha, self.beta, self.max_samples)
+            .map_err(pyerr)?
+            .with_seed(self.seed))
+    }
+}
+
+#[pymethods]
+impl SprtConfig {
+    #[new]
+    #[pyo3(signature = (p0, p1, alpha=0.05, beta=0.05, max_samples=100000, seed=42))]
+    fn new(p0: f64, p1: f64, alpha: f64, beta: f64, max_samples: u64, seed: u64) -> Self {
+        Self { p0, p1, alpha, beta, max_samples, seed }
+    }
+}
+
+/// The result of a sequential test.
+#[pyclass(frozen)]
+pub struct SprtResult {
+    #[pyo3(get)]
+    pub verdict: SprtVerdict,
+    #[pyo3(get)]
+    pub samples: u64,
+    #[pyo3(get)]
+    pub log_likelihood: f64,
+}
+
+impl SprtResult {
+    fn from_core(result: CoreSprtResult) -> Self {
+        match result {
+            CoreSprtResult::AcceptH0 { samples } => {
+                Self { verdict: SprtVerdict::AcceptH0, samples, log_likelihood: 0.0 }
+            }
+            CoreSprtResult::AcceptH1 { samples } => {
+                Self { verdict: SprtVerdict::AcceptH1, samples, log_likelihood: 0.0 }
+            }
+            CoreSprtResult::Inconclusive { samples, log_likelihood } => {
+                Self { verdict: SprtVerdict::Inconclusive, samples, log_likelihood }
+            }
+        }
+    }
+}
+
+#[pymethods]
+impl SprtResult {
+    fn __repr__(&self) -> String {
+        format!("SprtResult(verdict=SprtVerdict.{:?}, samples={})", self.verdict, self.samples)
+    }
+}
+
+/// The verdict of a Bayesian sequential test.
+#[pyclass(eq, eq_int)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BayesVerdict {
+    Holds,
+    Fails,
+    Inconclusive,
+}
+
+/// Bayesian sequential test settings.
+#[pyclass]
+#[derive(Clone)]
+pub struct BayesConfig {
+    #[pyo3(get, set)]
+    pub threshold: f64,
+    #[pyo3(get, set)]
+    pub bayes_factor: f64,
+    #[pyo3(get, set)]
+    pub max_samples: u64,
+    #[pyo3(get, set)]
+    pub seed: u64,
+}
+
+impl BayesConfig {
+    fn to_core(&self) -> PyResult<CoreBayes> {
+        Ok(CoreBayes::new(self.threshold, self.bayes_factor, self.max_samples)
+            .map_err(pyerr)?
+            .with_seed(self.seed))
+    }
+}
+
+#[pymethods]
+impl BayesConfig {
+    #[new]
+    #[pyo3(signature = (threshold, bayes_factor=100.0, max_samples=100000, seed=42))]
+    fn new(threshold: f64, bayes_factor: f64, max_samples: u64, seed: u64) -> Self {
+        Self { threshold, bayes_factor, max_samples, seed }
+    }
+}
+
+/// The result of a Bayesian test.
+#[pyclass(frozen)]
+pub struct BayesResult {
+    #[pyo3(get)]
+    pub verdict: BayesVerdict,
+    #[pyo3(get)]
+    pub samples: u64,
+    #[pyo3(get)]
+    pub posterior: f64,
+}
+
+impl BayesResult {
+    fn from_core(result: CoreBayesResult) -> Self {
+        match result {
+            CoreBayesResult::Holds { samples, posterior } => {
+                Self { verdict: BayesVerdict::Holds, samples, posterior }
+            }
+            CoreBayesResult::Fails { samples, posterior } => {
+                Self { verdict: BayesVerdict::Fails, samples, posterior }
+            }
+            CoreBayesResult::Inconclusive { samples, posterior } => {
+                Self { verdict: BayesVerdict::Inconclusive, samples, posterior }
+            }
+        }
+    }
+}
+
+#[pymethods]
+impl BayesResult {
+    fn __repr__(&self) -> String {
+        format!("BayesResult(verdict=BayesVerdict.{:?}, samples={})", self.verdict, self.samples)
+    }
+}
+
+#[pymethods]
+impl Formula {
+    /// Decide a probabilistic formula by Wald's sequential probability ratio test.
+    fn check_sequential(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &SprtConfig,
+    ) -> PyResult<SprtResult> {
+        let result = self.inner.check_sequential(&trace.inner, &lifting.inner, &config.to_core()?);
+        Ok(SprtResult::from_core(result.map_err(pyerr)?))
+    }
+
+    /// Decide a probabilistic formula by a Bayesian sequential test.
+    fn check_bayesian(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &BayesConfig,
+    ) -> PyResult<BayesResult> {
+        let result = self.inner.check_bayesian(&trace.inner, &lifting.inner, &config.to_core()?);
+        Ok(BayesResult::from_core(result.map_err(pyerr)?))
+    }
+}
+
+#[pymethods]
+impl Monitor {
+    /// Decide the monitored formula by Wald's sequential probability ratio test.
+    fn check_sequential(
+        &self,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: &SprtConfig,
+    ) -> PyResult<SprtResult> {
+        let result = self.inner.check_sequential(&trace.inner, &lifting.inner, &config.to_core()?);
+        Ok(SprtResult::from_core(result.map_err(pyerr)?))
     }
 }
