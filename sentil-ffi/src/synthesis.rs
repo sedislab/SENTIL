@@ -157,7 +157,11 @@ pub extern "C" fn sentil_formula_smooth_robustness(
 }
 
 fn matrix_from(data: *const f64, rows: usize, cols: usize) -> Result<Vec<Vec<f64>>, SentilError> {
-    let flat = slice_from(data, rows.saturating_mul(cols))?;
+    let Some(total) = rows.checked_mul(cols) else {
+        set_error(SentilError::InvalidConfig, "matrix dimensions overflow when multiplied");
+        return Err(SentilError::InvalidConfig);
+    };
+    let flat = slice_from(data, total)?;
     Ok((0..rows).map(|r| flat[r * cols..(r + 1) * cols].to_vec()).collect())
 }
 
