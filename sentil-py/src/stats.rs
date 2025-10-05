@@ -808,7 +808,7 @@ impl SimExpr {
 /// A declarative stochastic model.
 #[pyclass]
 pub struct SimModel {
-    inner: CoreSimModel,
+    pub(crate) inner: CoreSimModel,
 }
 
 #[pymethods]
@@ -909,7 +909,7 @@ pub struct RareEventConfig {
 }
 
 impl RareEventConfig {
-    fn to_core(&self) -> CoreRare {
+    pub(crate) fn to_core(&self) -> CoreRare {
         CoreRare { particles: self.particles, margin: self.margin, seed: self.seed }
     }
 }

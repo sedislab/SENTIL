@@ -2,6 +2,7 @@
 
 from ._sentil import (
     __version__,
+    gpu,
     stats,
     synthesis,
     Backend,
@@ -19,6 +20,7 @@ from ._sentil import (
     Expr,
     Formula,
     FormulaBank,
+    GpuSplittingEstimate,
     Interpolation,
     Interval,
     IntervalMethod,
@@ -46,6 +48,7 @@ from ._sentil import (
     SoftKind,
     SprtConfig,
     SprtResult,
+    SpecBuilder,
     SprtVerdict,
     StochasticSystem,
     SynthesisResult,
@@ -56,6 +59,7 @@ from ._sentil import (
 )
 
 __all__ = [
+    "gpu",
     "stats",
     "synthesis",
     "Backend",
@@ -73,6 +77,7 @@ __all__ = [
     "Expr",
     "Formula",
     "FormulaBank",
+    "GpuSplittingEstimate",
     "Interpolation",
     "Interval",
     "IntervalMethod",
@@ -100,6 +105,7 @@ __all__ = [
     "SoftKind",
     "SprtConfig",
     "SprtResult",
+    "SpecBuilder",
     "SprtVerdict",
     "StochasticSystem",
     "SynthesisResult",

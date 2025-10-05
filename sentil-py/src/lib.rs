@@ -5,8 +5,10 @@ use pyo3::prelude::*;
 mod config;
 mod errors;
 mod formula;
+mod gpu;
 mod monitor;
 mod signal;
+mod specs;
 mod stats;
 mod synthesis;
 
@@ -21,10 +23,18 @@ use stats::{
     NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, RobustnessDistribution,
     SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult, SprtVerdict, StochasticSystem,
 };
+use gpu::GpuSplittingEstimate;
+use specs::SpecBuilder;
 use synthesis::{
     Backend, Bounds, ChanceConstraint, ChanceReport, CmaConfig, Controller, SafetyFilter,
     SmoothConfig, SoftKind, SynthesisResult, SystemModel, Witness,
 };
+
+fn register_gpu(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let module = PyModule::new(m.py(), "gpu")?;
+    module.add_function(wrap_pyfunction!(gpu::is_available, &module)?)?;
+    m.add_submodule(&module)
+}
 
 fn register_synthesis(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let module = PyModule::new(m.py(), "synthesis")?;
@@ -110,5 +120,9 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CmaConfig>()?;
     m.add_class::<Controller>()?;
     register_synthesis(m)?;
+
+    m.add_class::<SpecBuilder>()?;
+    m.add_class::<GpuSplittingEstimate>()?;
+    register_gpu(m)?;
     Ok(())
 }
