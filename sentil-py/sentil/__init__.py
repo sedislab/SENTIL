@@ -4,6 +4,8 @@ from ._sentil import (
     __version__,
     Config,
     EvaluationError,
+    Expr,
+    Formula,
     Interpolation,
     Interval,
     ParseError,
@@ -19,6 +21,8 @@ from ._sentil import (
 __all__ = [
     "Config",
     "EvaluationError",
+    "Expr",
+    "Formula",
     "Interpolation",
     "Interval",
     "ParseError",
