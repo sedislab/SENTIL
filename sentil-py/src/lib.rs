@@ -2,8 +2,10 @@
 
 use pyo3::prelude::*;
 
+mod config;
 mod errors;
 
+use config::{Config, Interval, Robustness, TimeMode};
 use errors::{EvaluationError, ParseError, SemanticError, SentilError};
 
 #[pymodule]
@@ -13,5 +15,10 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ParseError", m.py().get_type::<ParseError>())?;
     m.add("SemanticError", m.py().get_type::<SemanticError>())?;
     m.add("EvaluationError", m.py().get_type::<EvaluationError>())?;
+
+    m.add_class::<TimeMode>()?;
+    m.add_class::<Config>()?;
+    m.add_class::<Robustness>()?;
+    m.add_class::<Interval>()?;
     Ok(())
 }
