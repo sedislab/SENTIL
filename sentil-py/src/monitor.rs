@@ -38,7 +38,7 @@ fn refs(pairs: &[(String, f64)]) -> Vec<(&str, f64)> {
 /// A monitor over one formula.
 #[pyclass(unsendable)]
 pub struct Monitor {
-    inner: CoreMonitor,
+    pub(crate) inner: CoreMonitor,
 }
 
 #[pymethods]

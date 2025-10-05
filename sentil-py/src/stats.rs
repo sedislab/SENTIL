@@ -1,6 +1,8 @@
 //! Statistical model checking.
 
 use crate::errors::{pyerr, EvaluationError};
+use crate::formula::Formula;
+use crate::monitor::Monitor;
 use crate::signal::Trace;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::prelude::*;
@@ -9,7 +11,8 @@ use sentil::stats::{
     clopper_pearson as core_clopper, jeffreys_interval as core_jeffreys,
     wilson_interval as core_wilson, wilson_samples as core_wilson_samples, z_score as core_z,
     ConfidenceInterval as CoreInterval, IntervalMethod as CoreMethod, LiftingRegistry as CoreLifting,
-    NoiseInteraction as CoreInteraction, NoiseModel as CoreNoise,
+    NoiseInteraction as CoreInteraction, NoiseModel as CoreNoise, RobustnessDistribution as CoreDist,
+    SmcConfig as CoreSmc, SmcResult as CoreSmcResult,
 };
 
 /// A binomial proportion confidence interval at a stated level.
@@ -345,5 +348,172 @@ impl LiftingRegistry {
 
     fn __repr__(&self) -> String {
         format!("LiftingRegistry(variables={:?})", self.inner.variables())
+    }
+}
+
+/// Settings for statistical model checking by sampling.
+#[pyclass]
+#[derive(Clone)]
+pub struct SmcConfig {
+    #[pyo3(get, set)]
+    pub samples: u64,
+    #[pyo3(get, set)]
+    pub confidence: f64,
+    #[pyo3(get, set)]
+    pub seed: u64,
+    #[pyo3(get, set)]
+    pub method: IntervalMethod,
+}
+
+impl SmcConfig {
+    fn to_core(&self) -> CoreSmc {
+        CoreSmc {
+            samples: self.samples,
+            confidence: self.confidence,
+            seed: self.seed,
+            interval_method: self.method.into(),
+        }
+    }
+}
+
+#[pymethods]
+impl SmcConfig {
+    #[new]
+    #[pyo3(signature = (samples=10000, confidence=0.95, seed=42, method=IntervalMethod::Wilson))]
+    fn new(samples: u64, confidence: f64, seed: u64, method: IntervalMethod) -> Self {
+        Self { samples, confidence, seed, method }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("SmcConfig(samples={}, confidence={}, seed={})", self.samples, self.confidence, self.seed)
+    }
+}
+
+/// The outcome of a statistical check.
+#[pyclass(frozen)]
+pub struct SmcResult {
+    #[pyo3(get)]
+    pub probability: f64,
+    #[pyo3(get)]
+    pub interval: Py<ConfidenceInterval>,
+    #[pyo3(get)]
+    pub satisfactions: u64,
+    #[pyo3(get)]
+    pub samples: u64,
+    #[pyo3(get)]
+    pub holds: bool,
+}
+
+impl SmcResult {
+    fn from_core(py: Python<'_>, result: CoreSmcResult) -> PyResult<Self> {
+        Ok(Self {
+            probability: result.probability,
+            interval: Py::new(py, ConfidenceInterval::from_core(result.interval))?,
+            satisfactions: result.satisfactions,
+            samples: result.samples,
+            holds: result.holds,
+        })
+    }
+}
+
+#[pymethods]
+impl SmcResult {
+    fn __repr__(&self) -> String {
+        format!("SmcResult(probability={}, holds={})", self.probability, self.holds)
+    }
+}
+
+/// Summary statistics of the robustness values across the sampled ensemble.
+#[pyclass(frozen)]
+pub struct RobustnessDistribution {
+    #[pyo3(get)]
+    pub count: u64,
+    #[pyo3(get)]
+    pub mean: f64,
+    #[pyo3(get)]
+    pub variance: f64,
+    #[pyo3(get)]
+    pub min: f64,
+    #[pyo3(get)]
+    pub max: f64,
+}
+
+impl RobustnessDistribution {
+    fn from_core(distribution: CoreDist) -> Self {
+        Self {
+            count: distribution.count,
+            mean: distribution.mean,
+            variance: distribution.variance,
+            min: distribution.min,
+            max: distribution.max,
+        }
+    }
+}
+
+#[pymethods]
+impl RobustnessDistribution {
+    #[getter]
+    fn std_dev(&self) -> f64 {
+        self.variance.sqrt()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("RobustnessDistribution(count={}, mean={}, std_dev={})", self.count, self.mean, self.variance.sqrt())
+    }
+}
+
+#[pymethods]
+impl Formula {
+    /// Estimate the satisfaction probability by sampling the lifted trace ensemble.
+    #[pyo3(signature = (trace, lifting, config=None))]
+    fn check(
+        &self,
+        py: Python<'_>,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: Option<SmcConfig>,
+    ) -> PyResult<SmcResult> {
+        let config = config.map(|c| c.to_core()).unwrap_or_default();
+        let result = self.inner.check(&trace.inner, &lifting.inner, &config).map_err(pyerr)?;
+        SmcResult::from_core(py, result)
+    }
+
+    /// The same estimate with the Clopper-Pearson interval.
+    #[pyo3(signature = (trace, lifting, config=None))]
+    fn check_conservative(
+        &self,
+        py: Python<'_>,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: Option<SmcConfig>,
+    ) -> PyResult<SmcResult> {
+        let config = config.map(|c| c.to_core()).unwrap_or_default();
+        let result =
+            self.inner.check_conservative(&trace.inner, &lifting.inner, &config).map_err(pyerr)?;
+        SmcResult::from_core(py, result)
+    }
+
+    /// The estimate together with the robustness distribution across the ensemble.
+    #[pyo3(signature = (trace, lifting, config=None))]
+    fn check_distribution(
+        &self,
+        py: Python<'_>,
+        trace: &Trace,
+        lifting: &LiftingRegistry,
+        config: Option<SmcConfig>,
+    ) -> PyResult<(SmcResult, RobustnessDistribution)> {
+        let config = config.map(|c| c.to_core()).unwrap_or_default();
+        let (result, distribution) =
+            self.inner.check_distribution(&trace.inner, &lifting.inner, &config).map_err(pyerr)?;
+        Ok((SmcResult::from_core(py, result)?, RobustnessDistribution::from_core(distribution)))
+    }
+}
+
+#[pymethods]
+impl Monitor {
+    /// Statistically check the monitored formula against the lifted ensemble.
+    fn check(&self, py: Python<'_>, trace: &Trace, lifting: &LiftingRegistry) -> PyResult<SmcResult> {
+        let result = self.inner.check(&trace.inner, &lifting.inner).map_err(pyerr)?;
+        SmcResult::from_core(py, result)
     }
 }

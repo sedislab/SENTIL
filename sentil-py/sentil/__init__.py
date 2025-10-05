@@ -22,8 +22,11 @@ from ._sentil import (
     PreparedTrace,
     RingBuffer,
     Robustness,
+    RobustnessDistribution,
     SemanticError,
     SentilError,
+    SmcConfig,
+    SmcResult,
     TimeMode,
     Trace,
 )
@@ -49,8 +52,11 @@ __all__ = [
     "PreparedTrace",
     "RingBuffer",
     "Robustness",
+    "RobustnessDistribution",
     "SemanticError",
     "SentilError",
+    "SmcConfig",
+    "SmcResult",
     "TimeMode",
     "Trace",
 ]
