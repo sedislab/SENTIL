@@ -2,13 +2,16 @@
 
 from ._sentil import (
     __version__,
+    stats,
     Config,
+    ConfidenceInterval,
     EvaluationError,
     Expr,
     Formula,
     FormulaBank,
     Interpolation,
     Interval,
+    IntervalMethod,
     Monitor,
     MultiMonitor,
     OnlineMonitor,
@@ -23,13 +26,16 @@ from ._sentil import (
 )
 
 __all__ = [
+    "stats",
     "Config",
+    "ConfidenceInterval",
     "EvaluationError",
     "Expr",
     "Formula",
     "FormulaBank",
     "Interpolation",
     "Interval",
+    "IntervalMethod",
     "Monitor",
     "MultiMonitor",
     "OnlineMonitor",

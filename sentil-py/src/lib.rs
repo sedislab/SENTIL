@@ -7,12 +7,28 @@ mod errors;
 mod formula;
 mod monitor;
 mod signal;
+mod stats;
 
 use config::{Config, Interval, Robustness, TimeMode};
 use errors::{EvaluationError, ParseError, SemanticError, SentilError};
 use formula::{Expr, Formula};
 use monitor::{FormulaBank, Monitor, MultiMonitor, OnlineMonitor};
+use pyo3::wrap_pyfunction;
 use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
+use stats::{ConfidenceInterval, IntervalMethod};
+
+fn register_stats(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let module = PyModule::new(m.py(), "stats")?;
+    module.add_function(wrap_pyfunction!(stats::wilson_interval, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::clopper_pearson, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::jeffreys_interval, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::agresti_coull, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::interval, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::z_score, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::chernoff_hoeffding_samples, &module)?)?;
+    module.add_function(wrap_pyfunction!(stats::wilson_samples, &module)?)?;
+    m.add_submodule(&module)
+}
 
 #[pymodule]
 fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -39,5 +55,9 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<OnlineMonitor>()?;
     m.add_class::<MultiMonitor>()?;
     m.add_class::<FormulaBank>()?;
+
+    m.add_class::<ConfidenceInterval>()?;
+    m.add_class::<IntervalMethod>()?;
+    register_stats(m)?;
     Ok(())
 }
