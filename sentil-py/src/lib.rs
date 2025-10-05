@@ -8,6 +8,7 @@ mod formula;
 mod monitor;
 mod signal;
 mod stats;
+mod synthesis;
 
 use config::{Config, Interval, Robustness, TimeMode};
 use errors::{EvaluationError, ParseError, SemanticError, SentilError};
@@ -20,6 +21,17 @@ use stats::{
     NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, RobustnessDistribution,
     SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult, SprtVerdict, StochasticSystem,
 };
+use synthesis::{SmoothConfig, SoftKind};
+
+fn register_synthesis(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let module = PyModule::new(m.py(), "synthesis")?;
+    module.add_function(wrap_pyfunction!(synthesis::soft_min, &module)?)?;
+    module.add_function(wrap_pyfunction!(synthesis::soft_max, &module)?)?;
+    module.add_function(wrap_pyfunction!(synthesis::solve_qp, &module)?)?;
+    module.add_function(wrap_pyfunction!(synthesis::solve_spd, &module)?)?;
+    module.add_function(wrap_pyfunction!(synthesis::symmetric_eigen, &module)?)?;
+    m.add_submodule(&module)
+}
 
 fn register_stats(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let module = PyModule::new(m.py(), "stats")?;
@@ -80,5 +92,9 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RareEventConfig>()?;
     m.add_class::<RareEventResult>()?;
     register_stats(m)?;
+
+    m.add_class::<SoftKind>()?;
+    m.add_class::<SmoothConfig>()?;
+    register_synthesis(m)?;
     Ok(())
 }

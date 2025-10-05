@@ -3,6 +3,7 @@
 from ._sentil import (
     __version__,
     stats,
+    synthesis,
     BayesConfig,
     BayesResult,
     BayesVerdict,
@@ -34,6 +35,8 @@ from ._sentil import (
     SimModel,
     SmcConfig,
     SmcResult,
+    SmoothConfig,
+    SoftKind,
     SprtConfig,
     SprtResult,
     SprtVerdict,
@@ -44,6 +47,7 @@ from ._sentil import (
 
 __all__ = [
     "stats",
+    "synthesis",
     "BayesConfig",
     "BayesResult",
     "BayesVerdict",
@@ -75,6 +79,8 @@ __all__ = [
     "SimModel",
     "SmcConfig",
     "SmcResult",
+    "SmoothConfig",
+    "SoftKind",
     "SprtConfig",
     "SprtResult",
     "SprtVerdict",
