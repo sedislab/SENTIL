@@ -6,14 +6,18 @@ use crate::monitor::Monitor;
 use crate::signal::Trace;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::prelude::*;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use sentil::stats::{
     agresti_coull as core_agresti, chernoff_hoeffding_samples as core_chernoff,
     clopper_pearson as core_clopper, jeffreys_interval as core_jeffreys,
     wilson_interval as core_wilson, wilson_samples as core_wilson_samples, z_score as core_z,
     BayesConfig as CoreBayes, BayesResult as CoreBayesResult, ConfidenceInterval as CoreInterval,
     IntervalMethod as CoreMethod, LiftingRegistry as CoreLifting, NoiseInteraction as CoreInteraction,
-    NoiseModel as CoreNoise, RobustnessDistribution as CoreDist, SmcConfig as CoreSmc,
-    SmcResult as CoreSmcResult, SprtConfig as CoreSprt, SprtResult as CoreSprtResult,
+    NoiseModel as CoreNoise, RareEventConfig as CoreRare, RareEventResult as CoreRareResult,
+    RobustnessDistribution as CoreDist, SimExpr as CoreSimExpr, SimModel as CoreSimModel,
+    SmcConfig as CoreSmc, SmcResult as CoreSmcResult, SprtConfig as CoreSprt,
+    SprtResult as CoreSprtResult, StochasticSystem as CoreSystem,
 };
 
 /// A binomial proportion confidence interval at a stated level.
@@ -706,5 +710,269 @@ impl Monitor {
     ) -> PyResult<SprtResult> {
         let result = self.inner.check_sequential(&trace.inner, &lifting.inner, &config.to_core()?);
         Ok(SprtResult::from_core(result.map_err(pyerr)?))
+    }
+}
+fn to_sim_expr(value: &Bound<'_, PyAny>) -> PyResult<CoreSimExpr> {
+    if let Ok(expr) = value.extract::<PyRef<SimExpr>>() {
+        Ok(expr.inner.clone())
+    } else if let Ok(number) = value.extract::<f64>() {
+        Ok(CoreSimExpr::Const(number))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err("expected a sim expression or a number"))
+    }
+}
+
+/// A term in a declarative stochastic update.
+#[pyclass]
+#[derive(Clone)]
+pub struct SimExpr {
+    pub(crate) inner: CoreSimExpr,
+}
+
+impl SimExpr {
+    fn combine(
+        &self,
+        op: fn(Box<CoreSimExpr>, Box<CoreSimExpr>) -> CoreSimExpr,
+        other: &Bound<'_, PyAny>,
+        reflected: bool,
+    ) -> PyResult<SimExpr> {
+        let rhs = to_sim_expr(other)?;
+        let (left, right) =
+            if reflected { (rhs, self.inner.clone()) } else { (self.inner.clone(), rhs) };
+        Ok(SimExpr { inner: op(Box::new(left), Box::new(right)) })
+    }
+}
+
+#[pymethods]
+impl SimExpr {
+    /// The previous value of the variable at `index`.
+    #[staticmethod]
+    fn prev(index: usize) -> Self {
+        Self { inner: CoreSimExpr::Prev(index) }
+    }
+
+    /// The current time.
+    #[staticmethod]
+    fn time() -> Self {
+        Self { inner: CoreSimExpr::Time }
+    }
+
+    #[staticmethod]
+    fn constant(value: f64) -> Self {
+        Self { inner: CoreSimExpr::Const(value) }
+    }
+
+    /// A draw from the noise source at `index`.
+    #[staticmethod]
+    fn noise(index: usize) -> Self {
+        Self { inner: CoreSimExpr::Noise(index) }
+    }
+
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Add, other, false)
+    }
+
+    fn __radd__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Add, other, true)
+    }
+
+    fn __sub__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Sub, other, false)
+    }
+
+    fn __rsub__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Sub, other, true)
+    }
+
+    fn __mul__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Mul, other, false)
+    }
+
+    fn __rmul__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Mul, other, true)
+    }
+
+    fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Div, other, false)
+    }
+
+    fn __rtruediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        self.combine(CoreSimExpr::Div, other, true)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("SimExpr({:?})", self.inner)
+    }
+}
+
+/// A declarative stochastic model.
+#[pyclass]
+pub struct SimModel {
+    inner: CoreSimModel,
+}
+
+#[pymethods]
+impl SimModel {
+    #[new]
+    fn new(
+        py: Python<'_>,
+        variables: Vec<String>,
+        dt: f64,
+        horizon: usize,
+        init: Vec<Py<SimExpr>>,
+        advance: Vec<Py<SimExpr>>,
+        noise: Vec<Py<NoiseModel>>,
+    ) -> PyResult<Self> {
+        let init = init.iter().map(|e| e.borrow(py).inner.clone()).collect();
+        let advance = advance.iter().map(|e| e.borrow(py).inner.clone()).collect();
+        let noise = noise.iter().map(|n| n.borrow(py).inner.clone()).collect();
+        let inner =
+            CoreSimModel::new(variables, dt, horizon, init, advance, noise).map_err(pyerr)?;
+        Ok(Self { inner })
+    }
+
+    /// Draw one realization of the model as a trace.
+    #[pyo3(signature = (seed=42))]
+    fn simulate(&self, seed: u64) -> PyResult<Trace> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        Ok(Trace { inner: self.inner.simulate(&mut rng).map_err(pyerr)? })
+    }
+
+    fn to_stochastic_system(&self) -> PyResult<StochasticSystem> {
+        Ok(StochasticSystem { inner: self.inner.to_stochastic_system().map_err(pyerr)? })
+    }
+
+    #[getter]
+    fn variables(&self) -> Vec<String> {
+        self.inner.variables().to_vec()
+    }
+
+    #[getter]
+    fn dt(&self) -> f64 {
+        self.inner.dt()
+    }
+
+    #[getter]
+    fn horizon(&self) -> usize {
+        self.inner.horizon()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("SimModel(variables={:?}, horizon={})", self.inner.variables(), self.inner.horizon())
+    }
+}
+
+/// A stochastic system ready for sampling.
+#[pyclass(unsendable)]
+pub struct StochasticSystem {
+    pub(crate) inner: CoreSystem,
+}
+
+#[pymethods]
+impl StochasticSystem {
+    #[pyo3(signature = (seed=42))]
+    fn simulate(&self, seed: u64) -> PyResult<Trace> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        Ok(Trace { inner: self.inner.simulate(&mut rng).map_err(pyerr)? })
+    }
+
+    #[getter]
+    fn variables(&self) -> Vec<String> {
+        self.inner.variables().to_vec()
+    }
+
+    #[getter]
+    fn dt(&self) -> f64 {
+        self.inner.dt()
+    }
+
+    #[getter]
+    fn horizon(&self) -> usize {
+        self.inner.horizon()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("StochasticSystem(variables={:?})", self.inner.variables())
+    }
+}
+
+/// Adaptive multilevel splitting settings for rare-event estimation.
+#[pyclass]
+#[derive(Clone)]
+pub struct RareEventConfig {
+    #[pyo3(get, set)]
+    pub particles: usize,
+    #[pyo3(get, set)]
+    pub margin: f64,
+    #[pyo3(get, set)]
+    pub seed: u64,
+}
+
+impl RareEventConfig {
+    fn to_core(&self) -> CoreRare {
+        CoreRare { particles: self.particles, margin: self.margin, seed: self.seed }
+    }
+}
+
+#[pymethods]
+impl RareEventConfig {
+    #[new]
+    #[pyo3(signature = (particles=4096, margin=0.0, seed=42))]
+    fn new(particles: usize, margin: f64, seed: u64) -> Self {
+        Self { particles, margin, seed }
+    }
+}
+
+/// The outcome of a rare-event estimate.
+#[pyclass(frozen)]
+pub struct RareEventResult {
+    #[pyo3(get)]
+    pub probability: f64,
+    #[pyo3(get)]
+    pub violation_probability: f64,
+    #[pyo3(get)]
+    pub holds: bool,
+    #[pyo3(get)]
+    pub simulations: u64,
+}
+
+impl RareEventResult {
+    fn from_core(result: CoreRareResult) -> Self {
+        Self {
+            probability: result.probability,
+            violation_probability: result.violation_probability,
+            holds: result.holds,
+            simulations: result.simulations,
+        }
+    }
+}
+
+#[pymethods]
+impl RareEventResult {
+    fn __repr__(&self) -> String {
+        format!("RareEventResult(probability={}, holds={})", self.probability, self.holds)
+    }
+}
+
+#[pymethods]
+impl Formula {
+    /// Estimate a rare violation probability by adaptive multilevel splitting.
+    #[pyo3(signature = (system, config=None))]
+    fn check_rare_event(
+        &self,
+        system: &StochasticSystem,
+        config: Option<RareEventConfig>,
+    ) -> PyResult<RareEventResult> {
+        let config = config.map(|c| c.to_core()).unwrap_or_default();
+        let result = self.inner.check_rare_event(&system.inner, &config).map_err(pyerr)?;
+        Ok(RareEventResult::from_core(result))
+    }
+}
+
+#[pymethods]
+impl Monitor {
+    /// The rare-event estimate under the monitor's splitting settings.
+    fn check_rare(&self, system: &StochasticSystem) -> PyResult<RareEventResult> {
+        Ok(RareEventResult::from_core(self.inner.check_rare(&system.inner).map_err(pyerr)?))
     }
 }

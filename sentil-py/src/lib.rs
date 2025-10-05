@@ -17,8 +17,8 @@ use pyo3::wrap_pyfunction;
 use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
 use stats::{
     BayesConfig, BayesResult, BayesVerdict, ConfidenceInterval, IntervalMethod, LiftingRegistry,
-    NoiseInteraction, NoiseModel, RobustnessDistribution, SmcConfig, SmcResult, SprtConfig,
-    SprtResult, SprtVerdict,
+    NoiseInteraction, NoiseModel, RareEventConfig, RareEventResult, RobustnessDistribution,
+    SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult, SprtVerdict, StochasticSystem,
 };
 
 fn register_stats(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -74,6 +74,11 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BayesConfig>()?;
     m.add_class::<BayesResult>()?;
     m.add_class::<BayesVerdict>()?;
+    m.add_class::<SimExpr>()?;
+    m.add_class::<SimModel>()?;
+    m.add_class::<StochasticSystem>()?;
+    m.add_class::<RareEventConfig>()?;
+    m.add_class::<RareEventResult>()?;
     register_stats(m)?;
     Ok(())
 }
