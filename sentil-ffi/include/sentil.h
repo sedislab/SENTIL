@@ -174,6 +174,13 @@ typedef enum sentil_interpolation {
 sentil_trace_t *sentil_trace_resample(const sentil_trace_t *trace, const double *times, size_t n,
                                       sentil_interpolation_t interp);
 
+typedef struct sentil_prepared_trace sentil_prepared_trace_t;
+sentil_prepared_trace_t *sentil_trace_prepare(const sentil_trace_t *trace,
+                                              sentil_interpolation_t interp);
+sentil_trace_t *sentil_prepared_trace_resample(const sentil_prepared_trace_t *prepared,
+                                               const double *times, size_t n);
+void sentil_prepared_trace_destroy(sentil_prepared_trace_t *prepared);
+
 /* Parse a trace from CSV / TSV text: a header row, time column auto-detected. */
 sentil_trace_t *sentil_trace_from_csv(const char *text);
 sentil_trace_t *sentil_trace_from_tsv(const char *text);

@@ -27,6 +27,17 @@ int main(void) {
     sentil_trace_t *rs = sentil_trace_resample(t, grid, 3, SENTIL_INTERP_LINEAR);
     CHECK(rs != NULL && sentil_trace_len(rs) == 3);
     sentil_trace_destroy(rs);
+
+    sentil_prepared_trace_t *prep = sentil_trace_prepare(t, SENTIL_INTERP_CUBIC);
+    CHECK(prep != NULL);
+    double other[] = {0.25, 2.75};
+    sentil_trace_t *r1 = sentil_prepared_trace_resample(prep, grid, 3);
+    sentil_trace_t *r2 = sentil_prepared_trace_resample(prep, other, 2);
+    CHECK(r1 != NULL && sentil_trace_len(r1) == 3);
+    CHECK(r2 != NULL && sentil_trace_len(r2) == 2);
+    sentil_trace_destroy(r1);
+    sentil_trace_destroy(r2);
+    sentil_prepared_trace_destroy(prep);
     sentil_trace_destroy(t);
 
     sentil_trace_t *csv = sentil_trace_from_csv("time,x\n0,1\n1,2\n2,3\n");

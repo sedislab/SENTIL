@@ -4,7 +4,7 @@ use crate::conversions::{
 use crate::handles::{drop_handle, free_boxed_array, into_boxed_array, into_handle, mutate_handle};
 use crate::{SentilError, SentilInterpolation};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::{RingBuffer, Trace};
+use sentil::{PreparedTrace, RingBuffer, Trace};
 use std::ptr;
 
 /// A timed sample.
@@ -192,6 +192,46 @@ pub extern "C" fn sentil_trace_resample(
             }
         }
     })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_trace_prepare(
+    handle: *mut c_void,
+    interp: SentilInterpolation,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let trace = borrow_handle!(handle, Trace, ptr::null_mut());
+        into_handle(trace.prepare(interp.into()))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_prepared_trace_resample(
+    handle: *mut c_void,
+    times: *const c_double,
+    n: size_t,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let prepared = borrow_handle!(handle, PreparedTrace, ptr::null_mut());
+        let Ok(times) = slice_from(times, n) else {
+            return ptr::null_mut();
+        };
+        match prepared.resample(times.to_vec()) {
+            Ok(resampled) => into_handle(resampled),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_prepared_trace_destroy(handle: *mut c_void) {
+    clear_error();
+    ffi_panic_boundary((), || unsafe { drop_handle::<PreparedTrace>(handle) });
 }
 
 fn trace_from_text(text: *const c_char, parse: fn(&str) -> sentil::Result<Trace>) -> *mut c_void {
