@@ -571,6 +571,14 @@ typedef struct sentil_smc_config {
 /* The defaults: 10000 samples, 0.95 confidence, seed 42, Wilson interval. */
 sentil_smc_config_t sentil_smc_config_default(void);
 
+/* Track a P~p(phi) formula with a particle ensemble lifted through the registry. */
+sentil_stream_monitor_t *sentil_stream_monitor_with_lifting(
+    const sentil_formula_t *formula, const sentil_lifting_registry_t *lifting,
+    const sentil_smc_config_t *config);
+sentil_error_t sentil_multi_monitor_add_probabilistic(
+    sentil_multi_monitor_t *monitor, const char *id, const sentil_formula_t *formula,
+    const sentil_lifting_registry_t *lifting, const sentil_smc_config_t *config);
+
 typedef struct sentil_smc_result {
     double probability;
     sentil_confidence_interval_t interval;

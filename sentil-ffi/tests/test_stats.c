@@ -48,6 +48,39 @@ int main(void) {
     CHECK(sentil_formula_check(det, tr, reg, &scfg, &res) != SENTIL_OK);
     CHECK(sentil_get_last_error_code() == SENTIL_ERR_NOT_PROBABILISTIC);
     sentil_formula_destroy(det);
+
+    sentil_smc_config_t small = sentil_smc_config_default();
+    small.samples = 200;
+    sentil_stream_monitor_t *psm = sentil_stream_monitor_with_lifting(phi, reg, &small);
+    CHECK(psm != NULL);
+    const char *xname[] = {"x"};
+    double xval[] = {0.5};
+    sentil_robustness_t pout;
+    CHECK(sentil_stream_monitor_update(psm, 0.0, xname, xval, 1, &pout) == SENTIL_OK);
+    sentil_stream_monitor_destroy(psm);
+
+    sentil_lifting_registry_t *narrow = sentil_lifting_registry_create();
+    CHECK(sentil_lifting_registry_register(narrow, "x", sentil_noise_gaussian(0.0, 0.05),
+                                           SENTIL_NOISE_ADDITIVE) == SENTIL_OK);
+    sentil_formula_t *bounded = sentil_formula_parse("P>=0.95(always[0, 2](x > 0.35))");
+    CHECK(bounded != NULL);
+    sentil_stream_monitor_t *bsm = sentil_stream_monitor_with_lifting(bounded, narrow, &small);
+    CHECK(bsm != NULL);
+    double one[] = {1.0};
+    sentil_robustness_t bout;
+    CHECK(sentil_stream_monitor_update(bsm, 0.0, xname, one, 1, &bout) == SENTIL_OK && !bout.resolved);
+    CHECK(sentil_stream_monitor_update(bsm, 1.0, xname, one, 1, &bout) == SENTIL_OK && !bout.resolved);
+    CHECK(sentil_stream_monitor_update(bsm, 2.0, xname, one, 1, &bout) == SENTIL_OK && bout.resolved &&
+          bout.satisfied);
+    sentil_stream_monitor_destroy(bsm);
+    sentil_formula_destroy(bounded);
+    sentil_lifting_registry_destroy(narrow);
+
+    sentil_multi_monitor_t *pmm = sentil_multi_monitor_create();
+    CHECK(sentil_multi_monitor_add_probabilistic(pmm, "p", phi, reg, &small) == SENTIL_OK);
+    CHECK(sentil_multi_monitor_len(pmm) == 1);
+    sentil_multi_monitor_destroy(pmm);
+
     sentil_formula_destroy(phi);
     sentil_lifting_registry_destroy(reg);
     sentil_trace_destroy(tr);

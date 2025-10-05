@@ -2,9 +2,13 @@ use crate::conversions::{
     c_char_to_string, clear_error, code_of, ffi_panic_boundary, into_string_array, set_error,
     slice_from, to_c_string,
 };
+use crate::stats::SentilSmcConfig;
 use crate::{SentilError, SentilTimeMode};
 use libc::{c_char, c_double, c_void, size_t};
-use sentil::{Formula, FormulaBank, Monitor, MonitorConfig, MultiFormulaMonitor, StreamMonitor, Trace};
+use sentil::{
+    Formula, FormulaBank, LiftingRegistry, Monitor, MonitorConfig, MultiFormulaMonitor, SmcConfig,
+    StreamMonitor, Trace,
+};
 use std::ptr;
 
 /// A time span [start, end] where a property does not hold.
@@ -470,6 +474,31 @@ pub extern "C" fn sentil_stream_monitor_from_formula(formula: *mut c_void) -> *m
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_stream_monitor_with_lifting(
+    formula: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSmcConfig,
+) -> *mut c_void {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        let formula = borrow_handle!(formula, Formula, ptr::null_mut());
+        let lifting = borrow_handle!(lifting, LiftingRegistry, ptr::null_mut());
+        let Some(config) = (unsafe { config.as_ref() }) else {
+            set_error(SentilError::NullPointer, "the smc config was null");
+            return ptr::null_mut();
+        };
+        let config: SmcConfig = (*config).into();
+        match StreamMonitor::with_lifting(formula, lifting, &config) {
+            Ok(monitor) => into_handle(monitor),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_stream_monitor_variable_count(handle: *mut c_void) -> size_t {
     clear_error();
     ffi_panic_boundary(0, || borrow_handle!(handle, StreamMonitor, 0).variable_count())
@@ -648,6 +677,32 @@ pub extern "C" fn sentil_multi_monitor_add_formula(
         };
         let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
         match monitor.add_formula(id, formula) {
+            Ok(()) => SentilError::Ok,
+            Err(e) => e.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_multi_monitor_add_probabilistic(
+    handle: *mut c_void,
+    id: *const c_char,
+    formula: *mut c_void,
+    lifting: *mut c_void,
+    config: *const SentilSmcConfig,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(config, SentilError::NullPointer);
+        let monitor = borrow_handle_mut!(handle, MultiFormulaMonitor, SentilError::NullPointer);
+        let id = match c_char_to_string(id) {
+            Ok(s) => s,
+            Err(code) => return code,
+        };
+        let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+        let lifting = borrow_handle!(lifting, LiftingRegistry, SentilError::NullPointer);
+        let config: SmcConfig = unsafe { *config }.into();
+        match monitor.add_probabilistic(id, formula, lifting, &config) {
             Ok(()) => SentilError::Ok,
             Err(e) => e.into(),
         }
