@@ -480,20 +480,29 @@ pub extern "C" fn sentil_stream_monitor_symbol_index(
     handle: *mut c_void,
     name: *const c_char,
     out_index: *mut size_t,
-) -> bool {
+    out_found: *mut bool,
+) -> SentilError {
     clear_error();
-    ffi_panic_boundary(false, || {
-        check_ptr!(out_index, false);
-        let monitor = borrow_handle!(handle, StreamMonitor, false);
-        let Ok(name) = c_char_to_string(name) else {
-            return false;
+    ffi_panic_boundary(SentilError::Panic, || {
+        check_ptr!(out_index, SentilError::NullPointer);
+        check_ptr!(out_found, SentilError::NullPointer);
+        let monitor = borrow_handle!(handle, StreamMonitor, SentilError::NullPointer);
+        let name = match c_char_to_string(name) {
+            Ok(s) => s,
+            Err(code) => return code,
         };
         match monitor.symbol_index(&name) {
             Some(index) => {
-                unsafe { *out_index = index };
-                true
+                unsafe {
+                    *out_index = index;
+                    *out_found = true;
+                }
+                SentilError::Ok
             }
-            None => false,
+            None => {
+                unsafe { *out_found = false };
+                SentilError::Ok
+            }
         }
     })
 }

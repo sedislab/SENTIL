@@ -61,6 +61,9 @@ int main(void) {
 
     sentil_stream_monitor_t *str = sentil_stream_monitor_create("eventually (x > 2)");
     CHECK(str != NULL);
+    size_t sidx = 0;
+    bool sfound = false;
+    CHECK(sentil_stream_monitor_symbol_index(str, "x", &sidx, &sfound) == SENTIL_OK && sfound);
     size_t steps = 0;
     sentil_robustness_t *run = sentil_stream_monitor_run(str, tr, &steps);
     CHECK(run != NULL && steps == 4);

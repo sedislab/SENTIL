@@ -354,9 +354,10 @@ sentil_stream_monitor_t *sentil_stream_monitor_create(const char *formula);
 sentil_stream_monitor_t *sentil_stream_monitor_from_formula(const sentil_formula_t *formula);
 size_t sentil_stream_monitor_variable_count(const sentil_stream_monitor_t *monitor);
 
-/* Index of a variable in packed-update order; false if the formula does not use it. */
-bool sentil_stream_monitor_symbol_index(const sentil_stream_monitor_t *monitor, const char *name,
-                                        size_t *out_index);
+/* Index in packed-update order; out_found is false if the formula does not use it. */
+sentil_error_t sentil_stream_monitor_symbol_index(const sentil_stream_monitor_t *monitor,
+                                                  const char *name, size_t *out_index,
+                                                  bool *out_found);
 
 sentil_error_t sentil_stream_monitor_update(sentil_stream_monitor_t *monitor, double time,
                                             const char *const *names, const double *values,

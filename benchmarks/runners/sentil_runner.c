@@ -162,7 +162,8 @@ static void scalability(void) {
 static void streaming(void) {
     sentil_stream_monitor_t *m = sentil_stream_monitor_create(FORMULA);
     size_t idx = 0;
-    sentil_stream_monitor_symbol_index(m, "x", &idx);
+    bool found = false;
+    sentil_stream_monitor_symbol_index(m, "x", &idx, &found);
     size_t n = 1000000;
     double *latencies = malloc(n * sizeof(double));
     double packed[1] = {0.0};
