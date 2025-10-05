@@ -58,8 +58,31 @@ from ._sentil import (
     Witness,
 )
 
+from .builder import (
+    always,
+    eventually,
+    historically,
+    lit,
+    nxt,
+    once,
+    parse,
+    since,
+    until,
+    var,
+)
+
 __all__ = [
+    "always",
+    "eventually",
     "gpu",
+    "historically",
+    "lit",
+    "nxt",
+    "once",
+    "parse",
+    "since",
+    "until",
+    "var",
     "stats",
     "synthesis",
     "Backend",
