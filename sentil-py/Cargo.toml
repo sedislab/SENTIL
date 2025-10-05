@@ -1,0 +1,23 @@
+[package]
+name = "sentil-py"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python bindings for SENTIL, the runtime verification engine for STL and PrSTL"
+
+[lib]
+name = "_sentil"
+crate-type = ["cdylib"]
+
+[features]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+sentil = { path = "../sentil-core", features = ["serde", "gpu"] }
+pyo3 = { version = "0.27.1", features = ["extension-module", "abi3-py38"] }
+numpy = "0.27"
+serde_json = "1.0"
+rand = { workspace = true }
+rand_chacha = { workspace = true }

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "sentil"
+version = "1.0.0"
+description = "Runtime verification for signal temporal logic and its probabilistic extension"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT OR Apache-2.0" }
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [
+    { name = "Paapa Kwesi Quansah", email = "paapa_quansah1@baylor.edu" },
+    { name = "Ernest Bonnah" },
+    { name = "SEDIS Lab, Baylor University" },
+]
+keywords = ["verification", "temporal-logic", "monitoring", "stl", "prstl"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy>=1.20",
+    "typing-extensions>=4.0; python_version<'3.10'",
+]
+
+[project.optional-dependencies]
+pandas = ["pandas>=1.3"]
+plotting = ["matplotlib>=3.3"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "mypy>=1.0", "pandas-stubs>=1.5", "ruff>=0.1"]
+
+[project.urls]
+Homepage = "https://github.com/sedislab/SENTIL"
+Documentation = "https://github.com/sedislab/SENTIL"
+Source = "https://github.com/sedislab/SENTIL"
+
+[tool.maturin]
+python-source = "."
+module-name = "sentil._sentil"
+binding = "pyo3"
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+strict = true
+warn_unused_configs = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
