@@ -15,7 +15,7 @@ use formula::{Expr, Formula};
 use monitor::{FormulaBank, Monitor, MultiMonitor, OnlineMonitor};
 use pyo3::wrap_pyfunction;
 use signal::{Interpolation, PreparedTrace, RingBuffer, Trace};
-use stats::{ConfidenceInterval, IntervalMethod};
+use stats::{ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseInteraction, NoiseModel};
 
 fn register_stats(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let module = PyModule::new(m.py(), "stats")?;
@@ -58,6 +58,9 @@ fn _sentil(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<ConfidenceInterval>()?;
     m.add_class::<IntervalMethod>()?;
+    m.add_class::<NoiseModel>()?;
+    m.add_class::<NoiseInteraction>()?;
+    m.add_class::<LiftingRegistry>()?;
     register_stats(m)?;
     Ok(())
 }
