@@ -326,6 +326,26 @@ sentil_interval_t *sentil_violation_intervals(const double *times, size_t n, con
 void sentil_free_intervals(sentil_interval_t *intervals, size_t count);
 void sentil_monitor_destroy(sentil_monitor_t *monitor);
 
+/* Formula evaluation */
+
+/* The dense forms catch threshold crossings between samples; the plain forms read
+   the grid. */
+
+sentil_error_t sentil_formula_robustness(const sentil_formula_t *formula,
+                                         const sentil_trace_t *trace, double *out_value);
+sentil_error_t sentil_formula_robustness_dense(const sentil_formula_t *formula,
+                                               const sentil_trace_t *trace, double *out_value);
+
+/* Free with sentil_free_doubles. */
+double *sentil_formula_robustness_signal(const sentil_formula_t *formula,
+                                         const sentil_trace_t *trace, size_t *out_len);
+double *sentil_formula_robustness_dense_signal(const sentil_formula_t *formula,
+                                               const sentil_trace_t *trace, size_t *out_len);
+
+/* Free with sentil_free_intervals. */
+sentil_interval_t *sentil_formula_violations(const sentil_formula_t *formula,
+                                             const sentil_trace_t *trace, size_t *out_count);
+
 /* Streaming monitor */
 
 typedef struct sentil_stream_monitor sentil_stream_monitor_t;

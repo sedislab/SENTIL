@@ -260,6 +260,111 @@ pub extern "C" fn sentil_monitor_violations(
     })
 }
 
+fn formula_scalar(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out: *mut c_double,
+    eval: impl Fn(&Formula, &Trace) -> Result<f64, sentil::Error>,
+) -> SentilError {
+    check_ptr!(out, SentilError::NullPointer);
+    let formula = borrow_handle!(formula, Formula, SentilError::NullPointer);
+    let trace = borrow_handle!(trace, Trace, SentilError::NullPointer);
+    match eval(formula, trace) {
+        Ok(value) => {
+            unsafe { *out = value };
+            SentilError::Ok
+        }
+        Err(e) => e.into(),
+    }
+}
+
+fn formula_signal(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out_len: *mut size_t,
+    eval: impl Fn(&Formula, &Trace) -> Result<Vec<f64>, sentil::Error>,
+) -> *mut c_double {
+    check_ptr!(out_len, ptr::null_mut());
+    let formula = borrow_handle!(formula, Formula, ptr::null_mut());
+    let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+    match eval(formula, trace) {
+        Ok(values) => into_boxed_array(values, out_len),
+        Err(e) => {
+            let _: SentilError = e.into();
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_robustness(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out: *mut c_double,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        formula_scalar(formula, trace, out, |f, t| f.robustness(t))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_robustness_dense(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out: *mut c_double,
+) -> SentilError {
+    clear_error();
+    ffi_panic_boundary(SentilError::Panic, || {
+        formula_scalar(formula, trace, out, |f, t| f.robustness_dense(t))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_robustness_signal(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out_len: *mut size_t,
+) -> *mut c_double {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        formula_signal(formula, trace, out_len, |f, t| f.robustness_signal(t))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_robustness_dense_signal(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out_len: *mut size_t,
+) -> *mut c_double {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        formula_signal(formula, trace, out_len, |f, t| f.robustness_dense_signal(t))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_formula_violations(
+    formula: *mut c_void,
+    trace: *mut c_void,
+    out_count: *mut size_t,
+) -> *mut SentilInterval {
+    clear_error();
+    ffi_panic_boundary(ptr::null_mut(), || {
+        check_ptr!(out_count, ptr::null_mut());
+        let formula = borrow_handle!(formula, Formula, ptr::null_mut());
+        let trace = borrow_handle!(trace, Trace, ptr::null_mut());
+        match formula.violations(trace) {
+            Ok(spans) => pack_intervals(spans, out_count),
+            Err(e) => {
+                let _: SentilError = e.into();
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn sentil_violation_intervals(
     times: *const c_double,

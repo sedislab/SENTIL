@@ -6,6 +6,25 @@ int main(void) {
     sentil_trace_t *tr = sentil_trace_create(times, 4);
     sentil_trace_add_signal(tr, "x", xs, 4);
 
+    sentil_formula_t *phi = sentil_formula_parse("always (x > 0)");
+    double frob = 0.0;
+    CHECK(sentil_formula_robustness(phi, tr, &frob) == SENTIL_OK);
+    CHECK_CLOSE(frob, -4.0, 1e-9);
+    double fdense = 0.0;
+    CHECK(sentil_formula_robustness_dense(phi, tr, &fdense) == SENTIL_OK);
+    size_t fl = 0;
+    double *fsig = sentil_formula_robustness_signal(phi, tr, &fl);
+    CHECK(fsig != NULL && fl == 4);
+    sentil_free_doubles(fsig, fl);
+    double *fdsig = sentil_formula_robustness_dense_signal(phi, tr, &fl);
+    CHECK(fdsig != NULL && fl == 4);
+    sentil_free_doubles(fdsig, fl);
+    size_t fvc = 0;
+    sentil_interval_t *fviol = sentil_formula_violations(phi, tr, &fvc);
+    CHECK(fviol != NULL);
+    sentil_free_intervals(fviol, fvc);
+    sentil_formula_destroy(phi);
+
     sentil_monitor_t *m = sentil_monitor_parse("always (x > 0)", NULL);
     CHECK(m != NULL);
     double rob = 0.0;
