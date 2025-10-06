@@ -446,7 +446,7 @@ impl CmaConfig {
 #[pymethods]
 impl CmaConfig {
     #[new]
-    #[pyo3(signature = (population=32, max_generations=200, initial_step=0.3, tol_step=1e-9, seed=42))]
+    #[pyo3(signature = (population=0, max_generations=300, initial_step=0.3, tol_step=1e-11, seed=42))]
     fn new(
         population: usize,
         max_generations: usize,
