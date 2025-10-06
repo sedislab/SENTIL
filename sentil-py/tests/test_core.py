@@ -39,6 +39,7 @@ def test_trace_is_a_mapping():
     assert "x" in t and "y" not in t
     assert isinstance(t["x"], np.ndarray) and t["x"][3] == -4.0
     assert t.get("missing") is None
+    assert list(t) == ["x"]
     with pytest.raises(KeyError):
         t["nope"]
 

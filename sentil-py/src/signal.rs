@@ -4,7 +4,7 @@ use crate::errors::pyerr;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::exceptions::{PyIndexError, PyKeyError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 use sentil::{
     Interpolation as CoreInterp, PreparedTrace as CorePrepared, RingBuffer as CoreRing,
     Trace as CoreTrace,
@@ -135,6 +135,12 @@ impl Trace {
 
     fn __contains__(&self, name: &str) -> bool {
         self.inner.signal(name).is_some()
+    }
+
+    /// Iterate the variable names.
+    fn __iter__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let names: Vec<String> = self.inner.variables().into_iter().map(String::from).collect();
+        Ok(PyList::new(py, names)?.into_any().call_method0("__iter__")?.unbind())
     }
 
     fn resample(&self, times: Vec<f64>, interp: Interpolation) -> PyResult<Trace> {
