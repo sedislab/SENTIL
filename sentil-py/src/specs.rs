@@ -4,29 +4,29 @@ use crate::errors::pyerr;
 use crate::formula::Formula;
 use crate::monitor::Monitor;
 use crate::stats::LiftingRegistry;
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use sentil::spec_builder::{SpecBuilder as CoreBuilder, SpecRegistry};
+use sentil::spec_builder::{SpecBuilder as CoreBuilder, SpecRegistry, SpecTemplate};
 use std::collections::HashMap;
 
-/// A premade specification, customized by variant and parameter, then built into a
-/// formula, a lifting registry, or a monitor.
+/// A premade specification, customized by variant and parameter.
 #[pyclass]
+#[derive(Clone)]
 pub struct SpecBuilder {
-    inner: Option<CoreBuilder>,
+    template: SpecTemplate,
+    variants: Vec<String>,
+    params: Vec<(String, f64)>,
 }
 
 impl SpecBuilder {
-    fn get(&self) -> PyResult<&CoreBuilder> {
-        self.inner
-            .as_ref()
-            .ok_or_else(|| PyRuntimeError::new_err("this spec builder has been turned into a monitor"))
-    }
-
-    fn take(&mut self) -> PyResult<CoreBuilder> {
-        self.inner
-            .take()
-            .ok_or_else(|| PyRuntimeError::new_err("this spec builder has been turned into a monitor"))
+    fn resolved(&self) -> PyResult<CoreBuilder> {
+        let mut builder = CoreBuilder::new(self.template.clone());
+        for variant in &self.variants {
+            builder = builder.with_variant(variant).map_err(pyerr)?;
+        }
+        for (name, value) in &self.params {
+            builder = builder.with_param(name, *value).map_err(pyerr)?;
+        }
+        Ok(builder)
     }
 }
 
@@ -34,7 +34,8 @@ impl SpecBuilder {
 impl SpecBuilder {
     #[new]
     fn new(name: &str) -> PyResult<SpecBuilder> {
-        Ok(SpecBuilder { inner: Some(SpecRegistry::global().builder(name).map_err(pyerr)?) })
+        let builder = SpecRegistry::global().builder(name).map_err(pyerr)?;
+        Ok(SpecBuilder { template: builder.template().clone(), variants: Vec::new(), params: Vec::new() })
     }
 
     /// The names of every specification in the library.
@@ -47,60 +48,61 @@ impl SpecBuilder {
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<SpecBuilder> {
         let template = SpecRegistry::global().load_file(path).map_err(pyerr)?;
-        Ok(SpecBuilder { inner: Some(CoreBuilder::new(template)) })
+        Ok(SpecBuilder { template, variants: Vec::new(), params: Vec::new() })
     }
 
-    /// Select a named variant.
-    fn with_variant(&mut self, variant: &str) -> PyResult<()> {
-        self.inner = Some(self.take()?.with_variant(variant).map_err(pyerr)?);
-        Ok(())
+    /// Select a named variant, returning the customized builder.
+    fn with_variant(&self, variant: &str) -> PyResult<SpecBuilder> {
+        let mut next = self.clone();
+        next.variants.push(variant.to_owned());
+        next.resolved()?;
+        Ok(next)
     }
 
-    /// Set a parameter value.
-    fn with_param(&mut self, name: &str, value: f64) -> PyResult<()> {
-        self.inner = Some(self.take()?.with_param(name, value).map_err(pyerr)?);
-        Ok(())
+    /// Set a parameter value, returning the customized builder.
+    fn with_param(&self, name: &str, value: f64) -> PyResult<SpecBuilder> {
+        let mut next = self.clone();
+        next.params.push((name.to_owned(), value));
+        next.resolved()?;
+        Ok(next)
     }
 
     #[getter]
     fn available_variants(&self) -> PyResult<Vec<String>> {
-        Ok(self.get()?.available_variants().iter().map(|v| (*v).to_owned()).collect())
+        Ok(self.resolved()?.available_variants().iter().map(|v| (*v).to_owned()).collect())
     }
 
     /// The resolved parameter values.
     fn parameters(&self) -> PyResult<HashMap<String, f64>> {
-        Ok(self.get()?.parameters())
+        Ok(self.resolved()?.parameters())
     }
 
     fn build_deterministic(&self) -> PyResult<String> {
-        self.get()?.build_deterministic().map_err(pyerr)
+        self.resolved()?.build_deterministic().map_err(pyerr)
     }
 
     fn build_probabilistic(&self) -> PyResult<String> {
-        self.get()?.build_probabilistic().map_err(pyerr)
+        self.resolved()?.build_probabilistic().map_err(pyerr)
     }
 
     fn build_formula(&self) -> PyResult<Formula> {
-        Ok(Formula { inner: self.get()?.build_formula().map_err(pyerr)? })
+        Ok(Formula { inner: self.resolved()?.build_formula().map_err(pyerr)? })
     }
 
     fn build_probabilistic_formula(&self) -> PyResult<Formula> {
-        Ok(Formula { inner: self.get()?.build_probabilistic_formula().map_err(pyerr)? })
+        Ok(Formula { inner: self.resolved()?.build_probabilistic_formula().map_err(pyerr)? })
     }
 
     fn build_lifting_registry(&self) -> PyResult<LiftingRegistry> {
-        Ok(LiftingRegistry { inner: self.get()?.build_lifting_registry().map_err(pyerr)? })
+        Ok(LiftingRegistry { inner: self.resolved()?.build_lifting_registry().map_err(pyerr)? })
     }
 
-    /// Build a monitor from the customized specification, consuming the builder.
-    fn build_monitor(&mut self) -> PyResult<Monitor> {
-        Ok(Monitor { inner: self.take()?.into_monitor().map_err(pyerr)? })
+    /// Build a monitor from the customized specification.
+    fn build_monitor(&self) -> PyResult<Monitor> {
+        Ok(Monitor { inner: self.resolved()?.into_monitor().map_err(pyerr)? })
     }
 
     fn __repr__(&self) -> String {
-        match &self.inner {
-            Some(builder) => format!("SpecBuilder(variants={:?})", builder.available_variants()),
-            None => "SpecBuilder(consumed)".to_owned(),
-        }
+        format!("SpecBuilder(variants={:?}, params={:?})", self.variants, self.params)
     }
 }
