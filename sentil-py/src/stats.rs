@@ -152,76 +152,91 @@ fn built(result: sentil::Result<CoreNoise>) -> PyResult<NoiseModel> {
 
 #[pymethods]
 impl NoiseModel {
+    /// A point mass at `value`.
     #[staticmethod]
     fn dirac(value: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::dirac(value))
     }
 
+    /// A normal distribution with the given mean and standard deviation.
     #[staticmethod]
     fn gaussian(mean: f64, std_dev: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::gaussian(mean, std_dev))
     }
 
+    /// A uniform distribution over [low, high].
     #[staticmethod]
     fn uniform(low: f64, high: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::uniform(low, high))
     }
 
+    /// A log-normal distribution from the underlying normal's mu and sigma.
     #[staticmethod]
     fn log_normal(mu: f64, sigma: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::log_normal(mu, sigma))
     }
 
+    /// An exponential distribution with the given rate.
     #[staticmethod]
     fn exponential(rate: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::exponential(rate))
     }
 
+    /// A gamma distribution with the given shape and scale.
     #[staticmethod]
     fn gamma(shape: f64, scale: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::gamma(shape, scale))
     }
 
+    /// A beta distribution with the given alpha and beta shape parameters.
     #[staticmethod]
     fn beta(alpha: f64, beta: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::beta(alpha, beta))
     }
 
+    /// A Weibull distribution with the given shape and scale.
     #[staticmethod]
     fn weibull(shape: f64, scale: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::weibull(shape, scale))
     }
 
+    /// A Rayleigh distribution with the given scale.
     #[staticmethod]
     fn rayleigh(scale: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::rayleigh(scale))
     }
 
+    /// A Gumbel distribution with the given location and scale.
     #[staticmethod]
     fn gumbel(location: f64, scale: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::gumbel(location, scale))
     }
 
+    /// A Cauchy distribution.
     #[staticmethod]
     fn cauchy(location: f64, scale: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::cauchy(location, scale))
     }
 
+    /// A Student's t distribution with `df` degrees of freedom, location, and scale.
     #[staticmethod]
     fn student_t(df: f64, location: f64, scale: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::student_t(df, location, scale))
     }
 
+    /// A normal distribution restricted to [lower, upper].
     #[staticmethod]
     fn truncated_normal(mean: f64, std_dev: f64, lower: f64, upper: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::truncated_normal(mean, std_dev, lower, upper))
     }
 
+    /// A Poisson distribution with the given rate.
     #[staticmethod]
     fn poisson(rate: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::poisson(rate))
     }
 
+    /// A binomial distribution over `trials` with success probability `probability`.
     #[staticmethod]
     fn binomial(trials: u64, probability: f64) -> PyResult<NoiseModel> {
         built(CoreNoise::binomial(trials, probability))
@@ -307,7 +322,7 @@ impl NoiseModel {
     }
 
     fn __repr__(&self) -> String {
-        format!("NoiseModel({:?})", self.inner)
+        format!("{:?}", self.inner)
     }
 }
 

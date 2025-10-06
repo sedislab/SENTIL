@@ -188,12 +188,14 @@ impl Formula {
         Ok(Formula { inner: CoreFormula::Eventually(interval, Box::new(self.inner.clone())) })
     }
 
+    /// Held at every past point of [lower, upper].
     #[pyo3(signature = (lower=0.0, upper=None))]
     fn historically(&self, lower: f64, upper: Option<f64>) -> PyResult<Formula> {
         let interval = make_interval(lower, upper)?;
         Ok(Formula { inner: CoreFormula::Historically(interval, Box::new(self.inner.clone())) })
     }
 
+    /// Held at some past point of [lower, upper].
     #[pyo3(signature = (lower=0.0, upper=None))]
     fn once(&self, lower: f64, upper: Option<f64>) -> PyResult<Formula> {
         let interval = make_interval(lower, upper)?;
