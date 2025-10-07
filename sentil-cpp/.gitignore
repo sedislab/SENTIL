@@ -1,0 +1,6 @@
+# CMake build trees
+build/
+cmake-build-*/
+
+# CMake's per-user presets
+CMakeUserPresets.json
