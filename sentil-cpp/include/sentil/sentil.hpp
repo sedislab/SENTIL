@@ -227,6 +227,46 @@ inline Expr abs(Expr term) {
     return Expr(detail::must(sentil_expr_call("abs", &arg, 1)));
 }
 
+namespace detail {
+
+inline Formula predicate(Expr left, sentil_comparison_op_t op, Expr right) {
+    return Formula(must(sentil_formula_predicate(left.release(), op, right.release())));
+}
+
+}  // namespace detail
+
+inline Formula operator>(Expr left, Expr right) {
+    return detail::predicate(std::move(left), SENTIL_CMP_GT, std::move(right));
+}
+inline Formula operator>=(Expr left, Expr right) {
+    return detail::predicate(std::move(left), SENTIL_CMP_GE, std::move(right));
+}
+inline Formula operator<(Expr left, Expr right) {
+    return detail::predicate(std::move(left), SENTIL_CMP_LT, std::move(right));
+}
+inline Formula operator<=(Expr left, Expr right) {
+    return detail::predicate(std::move(left), SENTIL_CMP_LE, std::move(right));
+}
+inline Formula operator==(Expr left, Expr right) {
+    return detail::predicate(std::move(left), SENTIL_CMP_EQ, std::move(right));
+}
+inline Formula operator!=(Expr left, Expr right) {
+    return detail::predicate(std::move(left), SENTIL_CMP_NE, std::move(right));
+}
+
+inline Formula operator>(Expr left, double right) { return std::move(left) > Expr::constant(right); }
+inline Formula operator>(double left, Expr right) { return Expr::constant(left) > std::move(right); }
+inline Formula operator>=(Expr left, double right) { return std::move(left) >= Expr::constant(right); }
+inline Formula operator>=(double left, Expr right) { return Expr::constant(left) >= std::move(right); }
+inline Formula operator<(Expr left, double right) { return std::move(left) < Expr::constant(right); }
+inline Formula operator<(double left, Expr right) { return Expr::constant(left) < std::move(right); }
+inline Formula operator<=(Expr left, double right) { return std::move(left) <= Expr::constant(right); }
+inline Formula operator<=(double left, Expr right) { return Expr::constant(left) <= std::move(right); }
+inline Formula operator==(Expr left, double right) { return std::move(left) == Expr::constant(right); }
+inline Formula operator==(double left, Expr right) { return Expr::constant(left) == std::move(right); }
+inline Formula operator!=(Expr left, double right) { return std::move(left) != Expr::constant(right); }
+inline Formula operator!=(double left, Expr right) { return Expr::constant(left) != std::move(right); }
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
