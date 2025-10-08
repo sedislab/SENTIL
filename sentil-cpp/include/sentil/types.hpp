@@ -91,6 +91,50 @@ enum class ProbabilityOp {
     Lt = SENTIL_PROB_LT,
 };
 
+/// A robustness verdict.
+struct Robustness {
+    bool resolved;
+    bool satisfied;
+    double value;
+    double lower;
+    double upper;
+};
+
+/// A time span [start, end] where a property does not hold.
+struct Interval {
+    double start;
+    double end;
+};
+
+/// A timed sample.
+struct Sample {
+    bool found;
+    double time;
+    double value;
+};
+
+/// A binomial proportion confidence interval at a confidence level.
+struct ConfidenceInterval {
+    double lower;
+    double upper;
+    double level;
+
+    double width() const { return upper - lower; }
+};
+
+namespace detail {
+
+inline Robustness from_c(const sentil_robustness_t& r) {
+    return Robustness{r.resolved, r.satisfied, r.value, r.lower, r.upper};
+}
+inline Interval from_c(const sentil_interval_t& i) { return Interval{i.start, i.end}; }
+inline Sample from_c(const sentil_sample_t& s) { return Sample{s.found, s.time, s.value}; }
+inline ConfidenceInterval from_c(const sentil_confidence_interval_t& c) {
+    return ConfidenceInterval{c.lower, c.upper, c.level};
+}
+
+}  // namespace detail
+
 }  // namespace sentil
 
 #endif  // SENTIL_TYPES_HPP
