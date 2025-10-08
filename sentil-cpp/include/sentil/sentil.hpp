@@ -159,6 +159,14 @@ public:
         return detail::owned_string_array(raw, count);
     }
 
+    /// This formula implies consequent.
+    Formula implies(Formula consequent) && {
+        return Formula(detail::must(sentil_formula_implies(release(), consequent.release())));
+    }
+
+    /// The formula holds at the next sample.
+    Formula next() && { return Formula(detail::must(sentil_formula_next(release()))); }
+
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
     sentil_formula_t* get() const { return handle_.get(); }
@@ -266,6 +274,23 @@ inline Formula operator==(Expr left, double right) { return std::move(left) == E
 inline Formula operator==(double left, Expr right) { return Expr::constant(left) == std::move(right); }
 inline Formula operator!=(Expr left, double right) { return std::move(left) != Expr::constant(right); }
 inline Formula operator!=(double left, Expr right) { return Expr::constant(left) != std::move(right); }
+
+inline Formula operator!(Formula phi) { return Formula(detail::must(sentil_formula_not(phi.release()))); }
+
+inline Formula operator&&(Formula left, Formula right) {
+    return Formula(detail::must(sentil_formula_and(left.release(), right.release())));
+}
+
+inline Formula operator||(Formula left, Formula right) {
+    return Formula(detail::must(sentil_formula_or(left.release(), right.release())));
+}
+
+inline Formula implies(Formula antecedent, Formula consequent) {
+    return std::move(antecedent).implies(std::move(consequent));
+}
+
+/// phi holds at the next sample.
+inline Formula next(Formula phi) { return std::move(phi).next(); }
 
 }  // namespace sentil
 
