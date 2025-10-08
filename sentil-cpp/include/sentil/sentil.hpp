@@ -163,9 +163,69 @@ public:
 
     sentil_formula_t* get() const { return handle_.get(); }
 
+    sentil_formula_t* release() { return handle_.release(); }
+
 private:
     detail::Handle<sentil_formula_t, sentil_formula_destroy> handle_;
 };
+
+/// An arithmetic term inside a predicate.
+class Expr {
+public:
+    /// A term that reads the named variable.
+    static Expr var(const std::string& name) {
+        return Expr(detail::must(sentil_expr_variable(name.c_str())));
+    }
+
+    /// A constant term.
+    static Expr constant(double value) { return Expr(detail::must(sentil_expr_literal(value))); }
+
+    explicit Expr(sentil_expr_t* handle) : handle_(handle) {}
+
+    sentil_expr_t* get() const { return handle_.get(); }
+
+    sentil_expr_t* release() { return handle_.release(); }
+
+private:
+    detail::Handle<sentil_expr_t, sentil_expr_destroy> handle_;
+};
+
+namespace detail {
+
+inline Expr make_binary(sentil_binary_op_t op, Expr left, Expr right) {
+    return Expr(must(sentil_expr_binary(op, left.release(), right.release())));
+}
+
+}  // namespace detail
+
+inline Expr operator+(Expr left, Expr right) {
+    return detail::make_binary(SENTIL_BIN_ADD, std::move(left), std::move(right));
+}
+inline Expr operator-(Expr left, Expr right) {
+    return detail::make_binary(SENTIL_BIN_SUB, std::move(left), std::move(right));
+}
+inline Expr operator*(Expr left, Expr right) {
+    return detail::make_binary(SENTIL_BIN_MUL, std::move(left), std::move(right));
+}
+inline Expr operator/(Expr left, Expr right) {
+    return detail::make_binary(SENTIL_BIN_DIV, std::move(left), std::move(right));
+}
+
+inline Expr operator+(Expr left, double right) { return std::move(left) + Expr::constant(right); }
+inline Expr operator+(double left, Expr right) { return Expr::constant(left) + std::move(right); }
+inline Expr operator-(Expr left, double right) { return std::move(left) - Expr::constant(right); }
+inline Expr operator-(double left, Expr right) { return Expr::constant(left) - std::move(right); }
+inline Expr operator*(Expr left, double right) { return std::move(left) * Expr::constant(right); }
+inline Expr operator*(double left, Expr right) { return Expr::constant(left) * std::move(right); }
+inline Expr operator/(Expr left, double right) { return std::move(left) / Expr::constant(right); }
+inline Expr operator/(double left, Expr right) { return Expr::constant(left) / std::move(right); }
+
+inline Expr operator-(Expr term) { return Expr::constant(0.0) - std::move(term); }
+
+inline Expr abs(Expr term) {
+    sentil_expr_t* arg = term.release();
+    return Expr(detail::must(sentil_expr_call("abs", &arg, 1)));
+}
 
 }  // namespace sentil
 
