@@ -173,6 +173,62 @@ struct CmaConfig {
     std::uint64_t seed = 42;
 };
 
+/// The outcome of a statistical check.
+struct SmcResult {
+    double probability;
+    ConfidenceInterval interval;
+    std::uint64_t satisfactions;
+    std::uint64_t samples;
+    bool holds;
+};
+
+/// Summary statistics of robustness across the sampled ensemble.
+struct RobustnessDistribution {
+    std::uint64_t count;
+    double mean;
+    double variance;
+    double std_dev;
+    double min;
+    double max;
+};
+
+/// The outcome of a sequential probability ratio test.
+struct SprtResult {
+    SprtVerdict verdict;
+    std::uint64_t samples;
+    double log_likelihood;
+};
+
+/// The outcome of a Bayesian sequential test.
+struct BayesResult {
+    BayesVerdict verdict;
+    std::uint64_t samples;
+    double posterior;
+};
+
+/// The outcome of a rare-event estimate.
+struct RareEventResult {
+    double probability;
+    double violation_probability;
+    bool holds;
+    std::uint64_t simulations;
+};
+
+/// The outcome of validating a chance constraint.
+struct ChanceReport {
+    double estimate;
+    double lower_bound;
+    std::uint64_t samples;
+    bool holds;
+};
+
+/// A fixed-effort multilevel-splitting estimate from the GPU.
+struct GpuSplittingEstimate {
+    double violation_probability;
+    std::size_t particles;
+    std::uint32_t levels;
+};
+
 namespace detail {
 
 inline sentil_smc_config_t to_c(const SmcConfig& c) {
@@ -202,6 +258,27 @@ inline Interval from_c(const sentil_interval_t& i) { return Interval{i.start, i.
 inline Sample from_c(const sentil_sample_t& s) { return Sample{s.found, s.time, s.value}; }
 inline ConfidenceInterval from_c(const sentil_confidence_interval_t& c) {
     return ConfidenceInterval{c.lower, c.upper, c.level};
+}
+inline SmcResult from_c(const sentil_smc_result_t& r) {
+    return SmcResult{r.probability, from_c(r.interval), r.satisfactions, r.samples, r.holds};
+}
+inline RobustnessDistribution from_c(const sentil_robustness_distribution_t& d) {
+    return RobustnessDistribution{d.count, d.mean, d.variance, d.std_dev, d.min, d.max};
+}
+inline SprtResult from_c(const sentil_sprt_result_t& r) {
+    return SprtResult{static_cast<SprtVerdict>(r.verdict), r.samples, r.log_likelihood};
+}
+inline BayesResult from_c(const sentil_bayes_result_t& r) {
+    return BayesResult{static_cast<BayesVerdict>(r.verdict), r.samples, r.posterior};
+}
+inline RareEventResult from_c(const sentil_rare_event_result_t& r) {
+    return RareEventResult{r.probability, r.violation_probability, r.holds, r.simulations};
+}
+inline ChanceReport from_c(const sentil_chance_report_t& r) {
+    return ChanceReport{r.estimate, r.lower_bound, r.samples, r.holds};
+}
+inline GpuSplittingEstimate from_c(const sentil_gpu_splitting_estimate_t& e) {
+    return GpuSplittingEstimate{e.violation_probability, e.particles, e.levels};
 }
 
 }  // namespace detail
