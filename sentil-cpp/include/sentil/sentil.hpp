@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -167,6 +168,49 @@ public:
     /// The formula holds at the next sample.
     Formula next() && { return Formula(detail::must(sentil_formula_next(release()))); }
 
+    /// The formula holds throughout [lower, upper].
+    Formula always(double lower = 0.0, std::optional<double> upper = std::nullopt) && {
+        return Formula(detail::must(
+            sentil_formula_always(lower, upper.value_or(0.0), upper.has_value(), release())));
+    }
+
+    /// The formula holds at some point in [lower, upper].
+    Formula eventually(double lower = 0.0, std::optional<double> upper = std::nullopt) && {
+        return Formula(detail::must(
+            sentil_formula_eventually(lower, upper.value_or(0.0), upper.has_value(), release())));
+    }
+
+    /// The formula held throughout the past window [lower, upper].
+    Formula historically(double lower = 0.0, std::optional<double> upper = std::nullopt) && {
+        return Formula(detail::must(
+            sentil_formula_historically(lower, upper.value_or(0.0), upper.has_value(), release())));
+    }
+
+    /// The formula held at some past point in [lower, upper].
+    Formula once(double lower = 0.0, std::optional<double> upper = std::nullopt) && {
+        return Formula(detail::must(
+            sentil_formula_once(lower, upper.value_or(0.0), upper.has_value(), release())));
+    }
+
+    /// This formula holds until right does, within [lower, upper].
+    Formula until(Formula right, double lower = 0.0, std::optional<double> upper = std::nullopt) && {
+        return Formula(detail::must(sentil_formula_until(
+            lower, upper.value_or(0.0), upper.has_value(), release(), right.release())));
+    }
+
+    /// This formula has held since right did, within the past [lower, upper].
+    Formula since(Formula right, double lower = 0.0, std::optional<double> upper = std::nullopt) && {
+        return Formula(detail::must(sentil_formula_since(
+            lower, upper.value_or(0.0), upper.has_value(), release(), right.release())));
+    }
+
+    /// Wrap this formula in a probabilistic operator P~p, asserting it holds with
+    /// probability op-related to threshold.
+    Formula probability(ProbabilityOp op, double threshold) && {
+        return Formula(detail::must(sentil_formula_probabilistic(
+            static_cast<sentil_probability_op_t>(op), threshold, release())));
+    }
+
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
     sentil_formula_t* get() const { return handle_.get(); }
@@ -291,6 +335,45 @@ inline Formula implies(Formula antecedent, Formula consequent) {
 
 /// phi holds at the next sample.
 inline Formula next(Formula phi) { return std::move(phi).next(); }
+
+/// phi holds throughout [lower, upper].
+inline Formula always(Formula phi, double lower = 0.0, std::optional<double> upper = std::nullopt) {
+    return std::move(phi).always(lower, upper);
+}
+
+/// phi holds at some point in [lower, upper].
+inline Formula eventually(Formula phi, double lower = 0.0,
+                          std::optional<double> upper = std::nullopt) {
+    return std::move(phi).eventually(lower, upper);
+}
+
+/// phi held throughout the past window [lower, upper].
+inline Formula historically(Formula phi, double lower = 0.0,
+                            std::optional<double> upper = std::nullopt) {
+    return std::move(phi).historically(lower, upper);
+}
+
+/// phi held at some past point in [lower, upper].
+inline Formula once(Formula phi, double lower = 0.0, std::optional<double> upper = std::nullopt) {
+    return std::move(phi).once(lower, upper);
+}
+
+/// left holds until right does, within [lower, upper].
+inline Formula until(Formula left, Formula right, double lower = 0.0,
+                     std::optional<double> upper = std::nullopt) {
+    return std::move(left).until(std::move(right), lower, upper);
+}
+
+/// left has held since right did, within the past [lower, upper].
+inline Formula since(Formula left, Formula right, double lower = 0.0,
+                     std::optional<double> upper = std::nullopt) {
+    return std::move(left).since(std::move(right), lower, upper);
+}
+
+/// Wrap phi in a probabilistic operator P~p.
+inline Formula probability(Formula phi, ProbabilityOp op, double threshold) {
+    return std::move(phi).probability(op, threshold);
+}
 
 }  // namespace sentil
 
