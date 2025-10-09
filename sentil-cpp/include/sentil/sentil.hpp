@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -374,6 +375,42 @@ inline Formula since(Formula left, Formula right, double lower = 0.0,
 inline Formula probability(Formula phi, ProbabilityOp op, double threshold) {
     return std::move(phi).probability(op, threshold);
 }
+
+/// A multivariate signal.
+class Trace {
+public:
+    /// A trace over the given strictly increasing times, with no signals yet.
+    explicit Trace(const std::vector<double>& times)
+        : handle_(detail::must(sentil_trace_create(times.data(), times.size()))) {}
+
+    /// A trace over the times carrying one named signal.
+    Trace(const std::vector<double>& times, const std::string& name,
+          const std::vector<double>& values)
+        : handle_(detail::must(sentil_trace_from_signal(times.data(), times.size(), name.c_str(),
+                                                        values.data(), values.size()))) {}
+
+    /// A trace over the times carrying the given named signals.
+    Trace(const std::vector<double>& times,
+          const std::map<std::string, std::vector<double>>& signals)
+        : handle_(detail::must(sentil_trace_create(times.data(), times.size()))) {
+        for (const auto& entry : signals) {
+            check(sentil_trace_add_signal(get(), entry.first.c_str(), entry.second.data(),
+                                          entry.second.size()));
+        }
+    }
+
+    /// A trace with integer times 0, 1, ..., len - 1 and no signals yet.
+    static Trace indexed(std::size_t len) { return Trace(detail::must(sentil_trace_indexed(len))); }
+
+    explicit Trace(sentil_trace_t* handle) : handle_(handle) {}
+
+    sentil_trace_t* get() const { return handle_.get(); }
+
+    sentil_trace_t* release() { return handle_.release(); }
+
+private:
+    detail::Handle<sentil_trace_t, sentil_trace_destroy> handle_;
+};
 
 }  // namespace sentil
 
