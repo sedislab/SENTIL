@@ -377,6 +377,8 @@ inline Formula probability(Formula phi, ProbabilityOp op, double threshold) {
     return std::move(phi).probability(op, threshold);
 }
 
+class PreparedTrace;
+
 /// A multivariate signal.
 class Trace {
 public:
@@ -472,6 +474,16 @@ public:
         return *values;
     }
 
+    /// Resample onto new times with the given interpolation.
+    Trace resample(const std::vector<double>& times,
+                   Interpolation interp = Interpolation::Linear) const {
+        return Trace(detail::must(sentil_trace_resample(
+            get(), times.data(), times.size(), static_cast<sentil_interpolation_t>(interp))));
+    }
+
+    /// Fix the interpolation coefficients for repeated resampling.
+    PreparedTrace prepare(Interpolation interp) const;
+
     explicit Trace(sentil_trace_t* handle) : handle_(handle) {}
 
     sentil_trace_t* get() const { return handle_.get(); }
@@ -481,6 +493,28 @@ public:
 private:
     detail::Handle<sentil_trace_t, sentil_trace_destroy> handle_;
 };
+
+/// A trace with its interpolation coefficients precomputed.
+class PreparedTrace {
+public:
+    /// Resample onto new times using the interpolation fixed at prepare time.
+    Trace resample(const std::vector<double>& times) const {
+        return Trace(
+            detail::must(sentil_prepared_trace_resample(get(), times.data(), times.size())));
+    }
+
+    explicit PreparedTrace(sentil_prepared_trace_t* handle) : handle_(handle) {}
+
+    sentil_prepared_trace_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_prepared_trace_t, sentil_prepared_trace_destroy> handle_;
+};
+
+inline PreparedTrace Trace::prepare(Interpolation interp) const {
+    return PreparedTrace(
+        detail::must(sentil_trace_prepare(get(), static_cast<sentil_interpolation_t>(interp))));
+}
 
 }  // namespace sentil
 
