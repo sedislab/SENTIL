@@ -742,6 +742,29 @@ inline std::vector<Interval> Formula::violations(const Trace& trace) const {
     return detail::owned_intervals(raw, count);
 }
 
+/// A monitor configuration.
+class Config {
+public:
+    explicit Config(TimeMode time = TimeMode::Discrete)
+        : handle_(detail::must(sentil_monitor_config_create())) {
+        if (time != TimeMode::Discrete) {
+            check(sentil_monitor_config_set_time(get(), static_cast<sentil_time_mode_t>(time)));
+        }
+    }
+
+    /// The time mode the monitor will use.
+    TimeMode time() const {
+        return static_cast<TimeMode>(sentil_monitor_config_time_mode(get()));
+    }
+
+    explicit Config(sentil_monitor_config_t* handle) : handle_(handle) {}
+
+    sentil_monitor_config_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_monitor_config_t, sentil_monitor_config_destroy> handle_;
+};
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
