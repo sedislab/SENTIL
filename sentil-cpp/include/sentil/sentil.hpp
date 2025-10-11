@@ -80,6 +80,22 @@ inline std::vector<double> owned_doubles(double* array, std::size_t count) {
     return out;
 }
 
+inline std::vector<Interval> owned_intervals(sentil_interval_t* array, std::size_t count) {
+    if (!array) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last();
+        }
+        return {};
+    }
+    std::vector<Interval> out;
+    out.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        out.push_back(from_c(array[i]));
+    }
+    sentil_free_intervals(array, count);
+    return out;
+}
+
 template <typename T, void (*Destroy)(T*)>
 class Handle {
 public:
@@ -133,6 +149,8 @@ inline Version version() {
     sentil_version(&v.major, &v.minor, &v.patch);
     return v;
 }
+
+class Trace;
 
 /// A parsed PrSTL formula.
 class Formula {
@@ -213,6 +231,21 @@ public:
         return Formula(detail::must(sentil_formula_probabilistic(
             static_cast<sentil_probability_op_t>(op), threshold, release())));
     }
+
+    /// The robustness of the formula over the trace, reading the sample grid.
+    double robustness(const Trace& trace) const;
+
+    /// The robustness over the trace in dense time.
+    double robustness_dense(const Trace& trace) const;
+
+    /// The robustness at every sample, reading the grid.
+    std::vector<double> robustness_signal(const Trace& trace) const;
+
+    /// The robustness at every sample in dense time.
+    std::vector<double> robustness_dense_signal(const Trace& trace) const;
+
+    /// The time spans where the formula does not hold.
+    std::vector<Interval> violations(const Trace& trace) const;
 
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
@@ -678,6 +711,36 @@ public:
 private:
     detail::Handle<sentil_ring_buffer_t, sentil_ring_buffer_destroy> handle_;
 };
+
+inline double Formula::robustness(const Trace& trace) const {
+    double out;
+    check(sentil_formula_robustness(get(), trace.get(), &out));
+    return out;
+}
+
+inline double Formula::robustness_dense(const Trace& trace) const {
+    double out;
+    check(sentil_formula_robustness_dense(get(), trace.get(), &out));
+    return out;
+}
+
+inline std::vector<double> Formula::robustness_signal(const Trace& trace) const {
+    std::size_t len = 0;
+    double* raw = sentil_formula_robustness_signal(get(), trace.get(), &len);
+    return detail::owned_doubles(raw, len);
+}
+
+inline std::vector<double> Formula::robustness_dense_signal(const Trace& trace) const {
+    std::size_t len = 0;
+    double* raw = sentil_formula_robustness_dense_signal(get(), trace.get(), &len);
+    return detail::owned_doubles(raw, len);
+}
+
+inline std::vector<Interval> Formula::violations(const Trace& trace) const {
+    std::size_t count = 0;
+    sentil_interval_t* raw = sentil_formula_violations(get(), trace.get(), &count);
+    return detail::owned_intervals(raw, count);
+}
 
 }  // namespace sentil
 
