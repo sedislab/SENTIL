@@ -638,6 +638,39 @@ public:
         return out;
     }
 
+    /// The mean of the buffered values, or none when empty.
+    std::optional<double> mean() const {
+        double out;
+        return sentil_ring_buffer_mean(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// The variance of the buffered values, or none when fewer than two are held.
+    std::optional<double> variance() const {
+        double out;
+        return sentil_ring_buffer_variance(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// The standard deviation, or none when fewer than two values are held.
+    std::optional<double> std_dev() const {
+        double out;
+        return sentil_ring_buffer_std_dev(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// The smallest buffered value, or none when empty.
+    std::optional<double> min() const {
+        double out;
+        return sentil_ring_buffer_min(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// The largest buffered value, or none when empty.
+    std::optional<double> max() const {
+        double out;
+        return sentil_ring_buffer_max(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// Recompute the running mean and variance from scratch.
+    void recompute_statistics() { sentil_ring_buffer_recompute_statistics(get()); }
+
     explicit RingBuffer(sentil_ring_buffer_t* handle) : handle_(handle) {}
 
     sentil_ring_buffer_t* get() const { return handle_.get(); }
