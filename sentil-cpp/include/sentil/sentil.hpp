@@ -9,6 +9,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "sentil/errors.hpp"
@@ -584,6 +585,57 @@ public:
             throw std::out_of_range("ring buffer index out of range");
         }
         return *sample;
+    }
+
+    /// Remove and return the oldest sample, or none when empty.
+    std::optional<Sample> pop_front() {
+        return detail::to_optional(sentil_ring_buffer_pop_front(get()));
+    }
+
+    /// Remove and return the newest sample, or none when empty.
+    std::optional<Sample> pop_back() {
+        return detail::to_optional(sentil_ring_buffer_pop_back(get()));
+    }
+
+    /// The sample whose time is nearest the query, or none when empty.
+    std::optional<Sample> closest_to_time(double time) const {
+        return detail::to_optional(sentil_ring_buffer_closest_to_time(get(), time));
+    }
+
+    /// The value recorded at the query time within a small tolerance, or none.
+    std::optional<double> at_time(double time) const {
+        double out;
+        return sentil_ring_buffer_at_time(get(), time, &out) ? std::optional<double>(out)
+                                                             : std::nullopt;
+    }
+
+    /// The earliest and latest times held, or none when empty.
+    std::optional<std::pair<double, double>> time_range() const {
+        double start;
+        double end;
+        if (!sentil_ring_buffer_time_range(get(), &start, &end)) {
+            return std::nullopt;
+        }
+        return std::make_pair(start, end);
+    }
+
+    /// The samples whose time lies in [start, end], oldest first.
+    std::vector<Sample> between(double start, double end) const {
+        std::size_t count = 0;
+        sentil_sample_t* array = sentil_ring_buffer_between(get(), start, end, &count);
+        if (!array) {
+            if (sentil_get_last_error_code() != SENTIL_OK) {
+                detail::raise_last();
+            }
+            return {};
+        }
+        std::vector<Sample> out;
+        out.reserve(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            out.push_back(detail::from_c(array[i]));
+        }
+        sentil_free_samples(array, count);
+        return out;
     }
 
     explicit RingBuffer(sentil_ring_buffer_t* handle) : handle_(handle) {}
