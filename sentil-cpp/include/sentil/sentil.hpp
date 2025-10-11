@@ -516,6 +516,84 @@ inline PreparedTrace Trace::prepare(Interpolation interp) const {
         detail::must(sentil_trace_prepare(get(), static_cast<sentil_interpolation_t>(interp))));
 }
 
+namespace detail {
+
+inline std::optional<Sample> to_optional(const sentil_sample_t& s) {
+    if (!s.found) {
+        return std::nullopt;
+    }
+    return from_c(s);
+}
+
+/// The C ABI reports "no estimate yet" as a NaN probability.
+inline std::optional<double> to_optional(double p) {
+    return std::isnan(p) ? std::nullopt : std::optional<double>(p);
+}
+
+}  // namespace detail
+
+/// A fixed-capacity rolling window over the most recent timed samples, keeping
+/// running statistics.
+class RingBuffer {
+public:
+    /// A ring buffer holding at most capacity samples.
+    explicit RingBuffer(std::size_t capacity)
+        : handle_(detail::must(sentil_ring_buffer_create(capacity))) {}
+
+    /// Append a sample, returning the oldest sample if one was evicted.
+    std::optional<Sample> push(double time, double value) {
+        sentil_sample_t evicted;
+        check(sentil_ring_buffer_push(get(), time, value, &evicted));
+        return detail::to_optional(evicted);
+    }
+
+    /// The number of samples currently held.
+    std::size_t size() const { return sentil_ring_buffer_len(get()); }
+
+    /// The most samples the buffer can hold.
+    std::size_t capacity() const { return sentil_ring_buffer_capacity(get()); }
+
+    /// Whether the buffer holds no samples.
+    bool empty() const { return sentil_ring_buffer_is_empty(get()); }
+
+    /// Whether the buffer is at capacity.
+    bool is_full() const { return sentil_ring_buffer_is_full(get()); }
+
+    /// Drop every sample.
+    void clear() { sentil_ring_buffer_clear(get()); }
+
+    /// The oldest sample, or none when empty.
+    std::optional<Sample> front() const {
+        return detail::to_optional(sentil_ring_buffer_front(get()));
+    }
+
+    /// The newest sample, or none when empty.
+    std::optional<Sample> back() const {
+        return detail::to_optional(sentil_ring_buffer_back(get()));
+    }
+
+    /// The sample at an index counted from the oldest, or none when out of range.
+    std::optional<Sample> get(std::size_t index) const {
+        return detail::to_optional(sentil_ring_buffer_get(get(), index));
+    }
+
+    /// The sample at an index, throwing std::out_of_range when out of range.
+    Sample operator[](std::size_t index) const {
+        std::optional<Sample> sample = get(index);
+        if (!sample) {
+            throw std::out_of_range("ring buffer index out of range");
+        }
+        return *sample;
+    }
+
+    explicit RingBuffer(sentil_ring_buffer_t* handle) : handle_(handle) {}
+
+    sentil_ring_buffer_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_ring_buffer_t, sentil_ring_buffer_destroy> handle_;
+};
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
