@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -424,6 +425,51 @@ public:
         for (const auto& entry : signals) {
             add_signal(entry.first, entry.second);
         }
+    }
+
+    /// The number of time points.
+    std::size_t size() const { return sentil_trace_len(get()); }
+
+    /// Whether the trace has no time points.
+    bool empty() const { return sentil_trace_is_empty(get()); }
+
+    /// The time points.
+    std::vector<double> times() const {
+        std::size_t len = 0;
+        const double* p = sentil_trace_times(get(), &len);
+        return p ? std::vector<double>(p, p + len) : std::vector<double>();
+    }
+
+    /// The signal names, sorted.
+    std::vector<std::string> variables() const {
+        std::size_t count = 0;
+        char** raw = sentil_trace_variables(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// The values of a named signal, or empty when the trace has no such signal.
+    std::optional<std::vector<double>> signal(const std::string& name) const {
+        std::size_t len = 0;
+        const double* p = sentil_trace_signal(get(), name.c_str(), &len);
+        if (!p) {
+            return std::nullopt;
+        }
+        return std::vector<double>(p, p + len);
+    }
+
+    /// Whether the trace carries a signal of this name.
+    bool contains(const std::string& name) const {
+        std::size_t len = 0;
+        return sentil_trace_signal(get(), name.c_str(), &len) != nullptr;
+    }
+
+    /// The values of a named signal, throwing std::out_of_range when it is absent.
+    std::vector<double> operator[](const std::string& name) const {
+        std::optional<std::vector<double>> values = signal(name);
+        if (!values) {
+            throw std::out_of_range("no signal named '" + name + "' in the trace");
+        }
+        return *values;
     }
 
     explicit Trace(sentil_trace_t* handle) : handle_(handle) {}
