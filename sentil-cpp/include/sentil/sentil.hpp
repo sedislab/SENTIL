@@ -393,14 +393,38 @@ public:
     Trace(const std::vector<double>& times,
           const std::map<std::string, std::vector<double>>& signals)
         : handle_(detail::must(sentil_trace_create(times.data(), times.size()))) {
-        for (const auto& entry : signals) {
-            check(sentil_trace_add_signal(get(), entry.first.c_str(), entry.second.data(),
-                                          entry.second.size()));
-        }
+        add_signals(signals);
     }
 
     /// A trace with integer times 0, 1, ..., len - 1 and no signals yet.
     static Trace indexed(std::size_t len) { return Trace(detail::must(sentil_trace_indexed(len))); }
+
+    /// Parse a trace from CSV text.
+    static Trace from_csv(const std::string& text) {
+        return Trace(detail::must(sentil_trace_from_csv(text.c_str())));
+    }
+
+    /// Parse a trace from tab-separated text.
+    static Trace from_tsv(const std::string& text) {
+        return Trace(detail::must(sentil_trace_from_tsv(text.c_str())));
+    }
+
+    /// Read a trace from a file, dispatching on its extension.
+    static Trace from_path(const std::string& path) {
+        return Trace(detail::must(sentil_trace_from_path(path.c_str())));
+    }
+
+    /// Add or replace a named signal; its length must equal the trace length.
+    void add_signal(const std::string& name, const std::vector<double>& values) {
+        check(sentil_trace_add_signal(get(), name.c_str(), values.data(), values.size()));
+    }
+
+    /// Add or replace several named signals at once.
+    void add_signals(const std::map<std::string, std::vector<double>>& signals) {
+        for (const auto& entry : signals) {
+            add_signal(entry.first, entry.second);
+        }
+    }
 
     explicit Trace(sentil_trace_t* handle) : handle_(handle) {}
 
