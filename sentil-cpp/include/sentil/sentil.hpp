@@ -154,6 +154,33 @@ inline std::vector<Robustness> owned_robustness(sentil_robustness_t* array, std:
     return out;
 }
 
+inline std::map<std::string, double> bank_results(sentil_bank_result_t* array, std::size_t count) {
+    if (!array) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last();
+        }
+        return {};
+    }
+    std::map<std::string, double> out;
+    bool failed = false;
+    std::string failed_id;
+    sentil_error_t failed_code = SENTIL_OK;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (array[i].ok) {
+            out.emplace(array[i].id, array[i].value);
+        } else if (!failed) {
+            failed = true;
+            failed_id = array[i].id;
+            failed_code = array[i].code;
+        }
+    }
+    sentil_free_bank_results(array, count);
+    if (failed) {
+        raise_with(failed_code, "formula '" + failed_id + "' failed to evaluate");
+    }
+    return out;
+}
+
 template <typename T, void (*Destroy)(T*)>
 class Handle {
 public:
@@ -1016,6 +1043,56 @@ public:
 
 private:
     detail::Handle<sentil_multi_monitor_t, sentil_multi_monitor_destroy> handle_;
+};
+
+/// A batch of named formulas evaluated together over one trace.
+class FormulaBank {
+public:
+    FormulaBank() : handle_(detail::must(sentil_formula_bank_create())) {}
+
+    /// Add a formula string under an id.
+    void add(const std::string& id, const std::string& formula) {
+        check(sentil_formula_bank_add(get(), id.c_str(), formula.c_str()));
+    }
+
+    /// Add a formula under an id.
+    void add(const std::string& id, const Formula& formula) {
+        check(sentil_formula_bank_add_formula(get(), id.c_str(), formula.get()));
+    }
+
+    /// The ids in insertion order.
+    std::vector<std::string> ids() const {
+        std::size_t count = 0;
+        char** raw = sentil_formula_bank_ids(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// The number of formulas.
+    std::size_t size() const { return sentil_formula_bank_len(get()); }
+
+    /// Whether no formula is registered.
+    bool empty() const { return sentil_formula_bank_is_empty(get()); }
+
+    /// The robustness of every formula over the trace, keyed by id.
+    std::map<std::string, double> robustness(const Trace& trace) const {
+        std::size_t count = 0;
+        sentil_bank_result_t* raw = sentil_formula_bank_robustness(get(), trace.get(), &count);
+        return detail::bank_results(raw, count);
+    }
+
+    /// The dense-time robustness of every formula over the trace, keyed by id.
+    std::map<std::string, double> robustness_dense(const Trace& trace) const {
+        std::size_t count = 0;
+        sentil_bank_result_t* raw = sentil_formula_bank_robustness_dense(get(), trace.get(), &count);
+        return detail::bank_results(raw, count);
+    }
+
+    explicit FormulaBank(sentil_formula_bank_t* handle) : handle_(handle) {}
+
+    sentil_formula_bank_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_formula_bank_t, sentil_formula_bank_destroy> handle_;
 };
 
 }  // namespace sentil
