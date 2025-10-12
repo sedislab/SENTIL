@@ -820,6 +820,28 @@ public:
         return found ? std::optional<std::size_t>(index) : std::nullopt;
     }
 
+    /// Fold one timestamped sample given as a map from variable name to value.
+    Robustness update(double time, const std::map<std::string, double>& values) {
+        std::vector<const char*> names;
+        std::vector<double> data;
+        names.reserve(values.size());
+        data.reserve(values.size());
+        for (const auto& entry : values) {
+            names.push_back(entry.first.c_str());
+            data.push_back(entry.second);
+        }
+        sentil_robustness_t out;
+        check(sentil_monitor_update(get(), time, names.data(), data.data(), names.size(), &out));
+        return detail::from_c(out);
+    }
+
+    /// Fold one sample with values already in symbol_index order.
+    Robustness update_packed(double time, const std::vector<double>& values) {
+        sentil_robustness_t out;
+        check(sentil_monitor_update_packed(get(), time, values.data(), values.size(), &out));
+        return detail::from_c(out);
+    }
+
     /// Clear streaming state so the monitor can run a fresh trace.
     void reset() { sentil_monitor_reset(get()); }
 
