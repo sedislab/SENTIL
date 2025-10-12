@@ -138,6 +138,22 @@ inline Robustness update_named(HandleT* handle, UpdateFn update, double time,
     return from_c(out);
 }
 
+inline std::vector<Robustness> owned_robustness(sentil_robustness_t* array, std::size_t count) {
+    if (!array) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last();
+        }
+        return {};
+    }
+    std::vector<Robustness> out;
+    out.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        out.push_back(from_c(array[i]));
+    }
+    sentil_free_robustness(array, count);
+    return out;
+}
+
 template <typename T, void (*Destroy)(T*)>
 class Handle {
 public:
@@ -883,6 +899,59 @@ public:
 
 private:
     detail::Handle<sentil_monitor_t, sentil_monitor_destroy> handle_;
+};
+
+/// The streaming monitor.
+class OnlineMonitor {
+public:
+    /// A streaming monitor for a formula string.
+    explicit OnlineMonitor(const std::string& formula)
+        : handle_(detail::must(sentil_stream_monitor_create(formula.c_str()))) {}
+
+    /// A streaming monitor for a formula.
+    explicit OnlineMonitor(const Formula& formula)
+        : handle_(detail::must(sentil_stream_monitor_from_formula(formula.get()))) {}
+
+    /// The number of variables the formula reads.
+    std::size_t variable_count() const { return sentil_stream_monitor_variable_count(get()); }
+
+    /// The index of a variable in packed-update order, or none when the formula
+    /// does not read it.
+    std::optional<std::size_t> symbol_index(const std::string& name) const {
+        std::size_t index = 0;
+        bool found = false;
+        check(sentil_stream_monitor_symbol_index(get(), name.c_str(), &index, &found));
+        return found ? std::optional<std::size_t>(index) : std::nullopt;
+    }
+
+    /// Fold one timestamped sample given as a map from variable name to value.
+    Robustness update(double time, const std::map<std::string, double>& values) {
+        return detail::update_named(get(), sentil_stream_monitor_update, time, values);
+    }
+
+    /// Fold one sample with values already in symbol_index order.
+    Robustness update_packed(double time, const std::vector<double>& values) {
+        sentil_robustness_t out;
+        check(sentil_stream_monitor_update_packed(get(), time, values.data(), values.size(), &out));
+        return detail::from_c(out);
+    }
+
+    /// Replay a whole trace, returning the per-sample robustness.
+    std::vector<Robustness> run(const Trace& trace) {
+        std::size_t count = 0;
+        sentil_robustness_t* raw = sentil_stream_monitor_run(get(), trace.get(), &count);
+        return detail::owned_robustness(raw, count);
+    }
+
+    /// Clear streaming state so the monitor can run a fresh trace.
+    void reset() { sentil_stream_monitor_reset(get()); }
+
+    explicit OnlineMonitor(sentil_stream_monitor_t* handle) : handle_(handle) {}
+
+    sentil_stream_monitor_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_stream_monitor_t, sentil_stream_monitor_destroy> handle_;
 };
 
 }  // namespace sentil
