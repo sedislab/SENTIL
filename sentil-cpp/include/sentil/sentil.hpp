@@ -954,6 +954,70 @@ private:
     detail::Handle<sentil_stream_monitor_t, sentil_stream_monitor_destroy> handle_;
 };
 
+/// Several streaming formulas under one clock.
+class MultiMonitor {
+public:
+    MultiMonitor() : handle_(detail::must(sentil_multi_monitor_create())) {}
+
+    /// Add a formula string under an id.
+    void add(const std::string& id, const std::string& formula) {
+        check(sentil_multi_monitor_add(get(), id.c_str(), formula.c_str()));
+    }
+
+    /// Add a formula under an id.
+    void add(const std::string& id, const Formula& formula) {
+        check(sentil_multi_monitor_add_formula(get(), id.c_str(), formula.get()));
+    }
+
+    /// Remove the first formula with the id, returning whether one was found.
+    bool remove(const std::string& id) { return sentil_multi_monitor_remove(get(), id.c_str()); }
+
+    /// Clear every monitor's streaming state.
+    void reset() { sentil_multi_monitor_reset(get()); }
+
+    /// The number of formulas.
+    std::size_t size() const { return sentil_multi_monitor_len(get()); }
+
+    /// Whether no formula is registered.
+    bool empty() const { return sentil_multi_monitor_is_empty(get()); }
+
+    /// The ids in insertion order.
+    std::vector<std::string> ids() const {
+        std::size_t count = 0;
+        char** raw = sentil_multi_monitor_ids(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// Advance every monitor at this sample, returning the verdict for each id.
+    std::map<std::string, Robustness> update(double time,
+                                             const std::map<std::string, double>& values) {
+        auto [names, data] = detail::unzip(values);
+        std::size_t count = 0;
+        sentil_named_robustness_t* raw = sentil_multi_monitor_update(get(), time, names.data(),
+                                                                     data.data(), names.size(),
+                                                                     &count);
+        if (!raw) {
+            if (sentil_get_last_error_code() != SENTIL_OK) {
+                detail::raise_last();
+            }
+            return {};
+        }
+        std::map<std::string, Robustness> out;
+        for (std::size_t i = 0; i < count; ++i) {
+            out.emplace(raw[i].id, detail::from_c(raw[i].robustness));
+        }
+        sentil_free_named_robustness(raw, count);
+        return out;
+    }
+
+    explicit MultiMonitor(sentil_multi_monitor_t* handle) : handle_(handle) {}
+
+    sentil_multi_monitor_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_multi_monitor_t, sentil_multi_monitor_destroy> handle_;
+};
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
