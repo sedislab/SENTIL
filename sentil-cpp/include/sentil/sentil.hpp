@@ -765,6 +765,72 @@ private:
     detail::Handle<sentil_monitor_config_t, sentil_monitor_config_destroy> handle_;
 };
 
+/// A monitor for one formula.
+class Monitor {
+public:
+    /// A monitor for a formula, with the default discrete-time config.
+    explicit Monitor(Formula formula)
+        : handle_(detail::must(sentil_monitor_create(formula.release(), nullptr))) {}
+
+    /// A monitor for a formula with the given config.
+    Monitor(Formula formula, const Config& config)
+        : handle_(detail::must(sentil_monitor_create(formula.release(), config.get()))) {}
+
+    /// A monitor for a formula string, with the default config.
+    explicit Monitor(const std::string& formula)
+        : handle_(detail::must(sentil_monitor_parse(formula.c_str(), nullptr))) {}
+
+    /// A monitor for a formula string with the given config.
+    Monitor(const std::string& formula, const Config& config)
+        : handle_(detail::must(sentil_monitor_parse(formula.c_str(), config.get()))) {}
+
+    /// A copy of the monitored formula.
+    Formula formula() const { return Formula(detail::must(sentil_monitor_formula(get()))); }
+
+    /// A copy of the monitor's config.
+    Config config() const { return Config(detail::must(sentil_monitor_config(get()))); }
+
+    /// The robustness over the trace, honoring the config's time mode.
+    double robustness(const Trace& trace) const {
+        double out;
+        check(sentil_monitor_robustness(get(), trace.get(), &out));
+        return out;
+    }
+
+    /// The robustness at every sample.
+    std::vector<double> robustness_signal(const Trace& trace) const {
+        std::size_t len = 0;
+        double* raw = sentil_monitor_robustness_signal(get(), trace.get(), &len);
+        return detail::owned_doubles(raw, len);
+    }
+
+    /// The time spans where the property does not hold.
+    std::vector<Interval> violations(const Trace& trace) const {
+        std::size_t count = 0;
+        sentil_interval_t* raw = sentil_monitor_violations(get(), trace.get(), &count);
+        return detail::owned_intervals(raw, count);
+    }
+
+    /// The index of a variable in packed-update order, or none when the formula
+    /// does not read it.
+    std::optional<std::size_t> symbol_index(const std::string& name) {
+        std::size_t index = 0;
+        bool found = false;
+        check(sentil_monitor_symbol_index(get(), name.c_str(), &index, &found));
+        return found ? std::optional<std::size_t>(index) : std::nullopt;
+    }
+
+    /// Clear streaming state so the monitor can run a fresh trace.
+    void reset() { sentil_monitor_reset(get()); }
+
+    explicit Monitor(sentil_monitor_t* handle) : handle_(handle) {}
+
+    sentil_monitor_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_monitor_t, sentil_monitor_destroy> handle_;
+};
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
