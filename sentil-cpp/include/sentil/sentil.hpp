@@ -1095,6 +1095,61 @@ private:
     detail::Handle<sentil_formula_bank_t, sentil_formula_bank_destroy> handle_;
 };
 
+/// Binomial proportion confidence intervals and the sample-size formulas.
+namespace stats {
+
+/// The Wilson score interval for successes out of trials at the confidence level.
+inline ConfidenceInterval wilson_interval(std::uint64_t successes, std::uint64_t trials,
+                                          double level) {
+    return detail::from_c(sentil_wilson_interval(successes, trials, level));
+}
+
+/// The Clopper-Pearson exact interval.
+inline ConfidenceInterval clopper_pearson(std::uint64_t successes, std::uint64_t trials,
+                                          double level) {
+    return detail::from_c(sentil_clopper_pearson(successes, trials, level));
+}
+
+/// The Jeffreys interval.
+inline ConfidenceInterval jeffreys_interval(std::uint64_t successes, std::uint64_t trials,
+                                            double level) {
+    return detail::from_c(sentil_jeffreys_interval(successes, trials, level));
+}
+
+/// The Agresti-Coull interval.
+inline ConfidenceInterval agresti_coull(std::uint64_t successes, std::uint64_t trials,
+                                        double level) {
+    return detail::from_c(sentil_agresti_coull(successes, trials, level));
+}
+
+/// A confidence interval by the chosen method.
+inline ConfidenceInterval interval(std::uint64_t successes, std::uint64_t trials, double level,
+                                   IntervalMethod method = IntervalMethod::Wilson) {
+    return detail::from_c(sentil_interval(static_cast<sentil_interval_method_t>(method), successes,
+                                          trials, level));
+}
+
+/// The two-sided z critical value for a confidence level in (0, 1).
+inline double z_score(double level) { return sentil_z_score(level); }
+
+/// The sample count the Chernoff-Hoeffding bound needs for a target error and
+/// confidence.
+inline std::uint64_t chernoff_hoeffding_samples(double epsilon, double delta) {
+    std::uint64_t out;
+    check(sentil_chernoff_hoeffding_samples(epsilon, delta, &out));
+    return out;
+}
+
+/// The sample count for a target half-width and confidence under the Wilson
+/// interval.
+inline std::uint64_t wilson_samples(double epsilon, double level) {
+    std::uint64_t out;
+    check(sentil_wilson_samples(epsilon, level, &out));
+    return out;
+}
+
+}  // namespace stats
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
