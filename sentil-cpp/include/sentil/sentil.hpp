@@ -96,6 +96,48 @@ inline std::vector<Interval> owned_intervals(sentil_interval_t* array, std::size
     return out;
 }
 
+inline std::pair<std::vector<const char*>, std::vector<double>> unzip(
+    const std::map<std::string, double>& values) {
+    std::vector<const char*> names;
+    std::vector<double> data;
+    names.reserve(values.size());
+    data.reserve(values.size());
+    for (const auto& entry : values) {
+        names.push_back(entry.first.c_str());
+        data.push_back(entry.second);
+    }
+    return {std::move(names), std::move(data)};
+}
+
+inline std::vector<const char*> c_strs(const std::vector<std::string>& names) {
+    std::vector<const char*> out;
+    out.reserve(names.size());
+    for (const std::string& name : names) {
+        out.push_back(name.c_str());
+    }
+    return out;
+}
+
+inline std::vector<std::vector<double>> unflatten(const std::vector<double>& flat, std::size_t rows,
+                                                  std::size_t cols) {
+    std::vector<std::vector<double>> out;
+    out.reserve(rows);
+    for (std::size_t i = 0; i < rows; ++i) {
+        auto start = flat.begin() + static_cast<std::ptrdiff_t>(i * cols);
+        out.emplace_back(start, start + static_cast<std::ptrdiff_t>(cols));
+    }
+    return out;
+}
+
+template <typename HandleT, typename UpdateFn>
+inline Robustness update_named(HandleT* handle, UpdateFn update, double time,
+                               const std::map<std::string, double>& values) {
+    auto [names, data] = unzip(values);
+    sentil_robustness_t out;
+    check(update(handle, time, names.data(), data.data(), names.size(), &out));
+    return from_c(out);
+}
+
 template <typename T, void (*Destroy)(T*)>
 class Handle {
 public:
@@ -822,17 +864,7 @@ public:
 
     /// Fold one timestamped sample given as a map from variable name to value.
     Robustness update(double time, const std::map<std::string, double>& values) {
-        std::vector<const char*> names;
-        std::vector<double> data;
-        names.reserve(values.size());
-        data.reserve(values.size());
-        for (const auto& entry : values) {
-            names.push_back(entry.first.c_str());
-            data.push_back(entry.second);
-        }
-        sentil_robustness_t out;
-        check(sentil_monitor_update(get(), time, names.data(), data.data(), names.size(), &out));
-        return detail::from_c(out);
+        return detail::update_named(get(), sentil_monitor_update, time, values);
     }
 
     /// Fold one sample with values already in symbol_index order.
