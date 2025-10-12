@@ -58,11 +58,7 @@ inline std::string last_error_message() {
     return buffer;
 }
 
-[[noreturn]] inline void raise(sentil_error_t code) {
-    std::string message = last_error_message();
-    if (message.empty()) {
-        message = "SENTIL error";
-    }
+[[noreturn]] inline void raise_with(sentil_error_t code, std::string message) {
     switch (code) {
         case SENTIL_ERR_PARSE:
             throw ParseError(code, std::move(message));
@@ -73,6 +69,14 @@ inline std::string last_error_message() {
         default:
             throw EvaluationError(code, std::move(message));
     }
+}
+
+[[noreturn]] inline void raise(sentil_error_t code) {
+    std::string message = last_error_message();
+    if (message.empty()) {
+        message = "SENTIL error";
+    }
+    raise_with(code, std::move(message));
 }
 
 [[noreturn]] inline void raise_last() {
