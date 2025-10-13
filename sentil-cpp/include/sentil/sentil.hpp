@@ -238,6 +238,8 @@ inline Version version() {
 
 class Trace;
 class LiftingRegistry;
+class StochasticSystem;
+class SimModel;
 
 /// A parsed PrSTL formula.
 class Formula {
@@ -353,6 +355,10 @@ public:
     /// Decide this P-wrapped formula with a Bayesian sequential test.
     BayesResult check_bayesian(const Trace& trace, const LiftingRegistry& lifting,
                                const BayesConfig& config) const;
+
+    /// Estimate this P-wrapped formula over a stochastic system by adaptive multilevel splitting.
+    RareEventResult check_rare_event(const StochasticSystem& system,
+                                     const RareEventConfig& config = {}) const;
 
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
@@ -949,6 +955,10 @@ public:
     /// Decide this monitor's probabilistic formula sequentially with Wald's SPRT.
     SprtResult check_sequential(const Trace& trace, const LiftingRegistry& lifting,
                                 const SprtConfig& config) const;
+
+    /// Estimate this monitor's probabilistic formula over a stochastic system by
+    /// rare-event splitting.
+    RareEventResult check_rare(const StochasticSystem& system) const;
 
     explicit Monitor(sentil_monitor_t* handle) : handle_(handle) {}
 
@@ -1588,6 +1598,20 @@ private:
 
     detail::Handle<sentil_sim_model_t, sentil_sim_model_destroy> handle_;
 };
+
+inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
+                                                 const RareEventConfig& config) const {
+    sentil_rare_event_config_t c = detail::to_c(config);
+    sentil_rare_event_result_t out;
+    ensure(sentil_formula_check_rare_event(get(), system.get(), &c, &out));
+    return detail::from_c(out);
+}
+
+inline RareEventResult Monitor::check_rare(const StochasticSystem& system) const {
+    sentil_rare_event_result_t out;
+    ensure(sentil_monitor_check_rare(get(), system.get(), &out));
+    return detail::from_c(out);
+}
 
 }  // namespace sentil
 
