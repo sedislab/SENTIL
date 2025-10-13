@@ -135,7 +135,7 @@ inline Robustness update_named(HandleT* handle, UpdateFn update, double time,
                                const std::map<std::string, double>& values) {
     auto [names, data] = unzip(values);
     sentil_robustness_t out;
-    check(update(handle, time, names.data(), data.data(), names.size(), &out));
+    ensure(update(handle, time, names.data(), data.data(), names.size(), &out));
     return from_c(out);
 }
 
@@ -237,6 +237,7 @@ inline Version version() {
 }
 
 class Trace;
+class LiftingRegistry;
 
 /// A parsed PrSTL formula.
 class Formula {
@@ -332,6 +333,18 @@ public:
 
     /// The time spans where the formula does not hold.
     std::vector<Interval> violations(const Trace& trace) const;
+
+    /// Estimate the satisfaction probability of this P-wrapped formula by sampling the lifted trace ensemble.
+    SmcResult check(const Trace& trace, const LiftingRegistry& lifting,
+                    const SmcConfig& config = {}) const;
+
+    /// Like check, but always reports the conservative Clopper-Pearson interval.
+    SmcResult check_conservative(const Trace& trace, const LiftingRegistry& lifting,
+                                 const SmcConfig& config = {}) const;
+
+    /// Like check, but also reports the robustness distribution across the ensemble.
+    std::pair<SmcResult, RobustnessDistribution> check_distribution(
+        const Trace& trace, const LiftingRegistry& lifting, const SmcConfig& config = {}) const;
 
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
@@ -539,7 +552,7 @@ public:
 
     /// Add or replace a named signal; its length must equal the trace length.
     void add_signal(const std::string& name, const std::vector<double>& values) {
-        check(sentil_trace_add_signal(get(), name.c_str(), values.data(), values.size()));
+        ensure(sentil_trace_add_signal(get(), name.c_str(), values.data(), values.size()));
     }
 
     /// Add or replace several named signals at once.
@@ -663,7 +676,7 @@ public:
     /// Append a sample, returning the oldest sample if one was evicted.
     std::optional<Sample> push(double time, double value) {
         sentil_sample_t evicted;
-        check(sentil_ring_buffer_push(get(), time, value, &evicted));
+        ensure(sentil_ring_buffer_push(get(), time, value, &evicted));
         return detail::to_optional(evicted);
     }
 
@@ -800,13 +813,13 @@ private:
 
 inline double Formula::robustness(const Trace& trace) const {
     double out;
-    check(sentil_formula_robustness(get(), trace.get(), &out));
+    ensure(sentil_formula_robustness(get(), trace.get(), &out));
     return out;
 }
 
 inline double Formula::robustness_dense(const Trace& trace) const {
     double out;
-    check(sentil_formula_robustness_dense(get(), trace.get(), &out));
+    ensure(sentil_formula_robustness_dense(get(), trace.get(), &out));
     return out;
 }
 
@@ -834,7 +847,7 @@ public:
     explicit Config(TimeMode time = TimeMode::Discrete)
         : handle_(detail::must(sentil_monitor_config_create())) {
         if (time != TimeMode::Discrete) {
-            check(sentil_monitor_config_set_time(get(), static_cast<sentil_time_mode_t>(time)));
+            ensure(sentil_monitor_config_set_time(get(), static_cast<sentil_time_mode_t>(time)));
         }
     }
 
@@ -879,7 +892,7 @@ public:
     /// The robustness over the trace, honoring the config's time mode.
     double robustness(const Trace& trace) const {
         double out;
-        check(sentil_monitor_robustness(get(), trace.get(), &out));
+        ensure(sentil_monitor_robustness(get(), trace.get(), &out));
         return out;
     }
 
@@ -902,7 +915,7 @@ public:
     std::optional<std::size_t> symbol_index(const std::string& name) {
         std::size_t index = 0;
         bool found = false;
-        check(sentil_monitor_symbol_index(get(), name.c_str(), &index, &found));
+        ensure(sentil_monitor_symbol_index(get(), name.c_str(), &index, &found));
         return found ? std::optional<std::size_t>(index) : std::nullopt;
     }
 
@@ -914,12 +927,16 @@ public:
     /// Fold one sample with values already in symbol_index order.
     Robustness update_packed(double time, const std::vector<double>& values) {
         sentil_robustness_t out;
-        check(sentil_monitor_update_packed(get(), time, values.data(), values.size(), &out));
+        ensure(sentil_monitor_update_packed(get(), time, values.data(), values.size(), &out));
         return detail::from_c(out);
     }
 
     /// Clear streaming state so the monitor can run a fresh trace.
     void reset() { sentil_monitor_reset(get()); }
+
+    /// Check this monitor's probabilistic formula using its configured SMC
+    /// settings and the lifted trace ensemble.
+    SmcResult check(const Trace& trace, const LiftingRegistry& lifting) const;
 
     explicit Monitor(sentil_monitor_t* handle) : handle_(handle) {}
 
@@ -948,7 +965,7 @@ public:
     std::optional<std::size_t> symbol_index(const std::string& name) const {
         std::size_t index = 0;
         bool found = false;
-        check(sentil_stream_monitor_symbol_index(get(), name.c_str(), &index, &found));
+        ensure(sentil_stream_monitor_symbol_index(get(), name.c_str(), &index, &found));
         return found ? std::optional<std::size_t>(index) : std::nullopt;
     }
 
@@ -960,7 +977,7 @@ public:
     /// Fold one sample with values already in symbol_index order.
     Robustness update_packed(double time, const std::vector<double>& values) {
         sentil_robustness_t out;
-        check(sentil_stream_monitor_update_packed(get(), time, values.data(), values.size(), &out));
+        ensure(sentil_stream_monitor_update_packed(get(), time, values.data(), values.size(), &out));
         return detail::from_c(out);
     }
 
@@ -989,12 +1006,12 @@ public:
 
     /// Add a formula string under an id.
     void add(const std::string& id, const std::string& formula) {
-        check(sentil_multi_monitor_add(get(), id.c_str(), formula.c_str()));
+        ensure(sentil_multi_monitor_add(get(), id.c_str(), formula.c_str()));
     }
 
     /// Add a formula under an id.
     void add(const std::string& id, const Formula& formula) {
-        check(sentil_multi_monitor_add_formula(get(), id.c_str(), formula.get()));
+        ensure(sentil_multi_monitor_add_formula(get(), id.c_str(), formula.get()));
     }
 
     /// Remove the first formula with the id, returning whether one was found.
@@ -1053,12 +1070,12 @@ public:
 
     /// Add a formula string under an id.
     void add(const std::string& id, const std::string& formula) {
-        check(sentil_formula_bank_add(get(), id.c_str(), formula.c_str()));
+        ensure(sentil_formula_bank_add(get(), id.c_str(), formula.c_str()));
     }
 
     /// Add a formula under an id.
     void add(const std::string& id, const Formula& formula) {
-        check(sentil_formula_bank_add_formula(get(), id.c_str(), formula.get()));
+        ensure(sentil_formula_bank_add_formula(get(), id.c_str(), formula.get()));
     }
 
     /// The ids in insertion order.
@@ -1262,7 +1279,7 @@ public:
     /// Attach a noise model to a variable.
     void register_noise(const std::string& variable, NoiseModel model,
                         NoiseInteraction interaction = NoiseInteraction::Additive) {
-        check(sentil_lifting_registry_register(get(), variable.c_str(), model.release(),
+        ensure(sentil_lifting_registry_register(get(), variable.c_str(), model.release(),
                                                static_cast<sentil_noise_interaction_t>(interaction)));
     }
 
@@ -1288,6 +1305,38 @@ public:
 private:
     detail::Handle<sentil_lifting_registry_t, sentil_lifting_registry_destroy> handle_;
 };
+
+inline SmcResult Formula::check(const Trace& trace, const LiftingRegistry& lifting,
+                                const SmcConfig& config) const {
+    sentil_smc_config_t c = detail::to_c(config);
+    sentil_smc_result_t out;
+    ensure(sentil_formula_check(get(), trace.get(), lifting.get(), &c, &out));
+    return detail::from_c(out);
+}
+
+inline SmcResult Formula::check_conservative(const Trace& trace, const LiftingRegistry& lifting,
+                                             const SmcConfig& config) const {
+    sentil_smc_config_t c = detail::to_c(config);
+    sentil_smc_result_t out;
+    ensure(sentil_formula_check_conservative(get(), trace.get(), lifting.get(), &c, &out));
+    return detail::from_c(out);
+}
+
+inline std::pair<SmcResult, RobustnessDistribution> Formula::check_distribution(
+    const Trace& trace, const LiftingRegistry& lifting, const SmcConfig& config) const {
+    sentil_smc_config_t c = detail::to_c(config);
+    sentil_smc_result_t result;
+    sentil_robustness_distribution_t distribution;
+    ensure(sentil_formula_check_distribution(get(), trace.get(), lifting.get(), &c, &result,
+                                                    &distribution));
+    return {detail::from_c(result), detail::from_c(distribution)};
+}
+
+inline SmcResult Monitor::check(const Trace& trace, const LiftingRegistry& lifting) const {
+    sentil_smc_result_t out;
+    ensure(sentil_monitor_check(get(), trace.get(), lifting.get(), &out));
+    return detail::from_c(out);
+}
 
 /// Binomial proportion confidence intervals and the sample-size formulas.
 namespace stats {
@@ -1330,7 +1379,7 @@ inline double z_score(double level) { return sentil_z_score(level); }
 /// confidence.
 inline std::uint64_t chernoff_hoeffding_samples(double epsilon, double delta) {
     std::uint64_t out;
-    check(sentil_chernoff_hoeffding_samples(epsilon, delta, &out));
+    ensure(sentil_chernoff_hoeffding_samples(epsilon, delta, &out));
     return out;
 }
 
@@ -1338,7 +1387,7 @@ inline std::uint64_t chernoff_hoeffding_samples(double epsilon, double delta) {
 /// interval.
 inline std::uint64_t wilson_samples(double epsilon, double level) {
     std::uint64_t out;
-    check(sentil_wilson_samples(epsilon, level, &out));
+    ensure(sentil_wilson_samples(epsilon, level, &out));
     return out;
 }
 

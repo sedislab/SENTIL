@@ -86,7 +86,7 @@ inline std::string last_error_message() {
 }  // namespace detail
 
 /// Throw the matching error subclass when code is not SENTIL_OK.
-inline void check(sentil_error_t code) {
+inline void ensure(sentil_error_t code) {
     if (code != SENTIL_OK) {
         detail::raise(code);
     }
