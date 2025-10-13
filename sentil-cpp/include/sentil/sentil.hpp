@@ -1429,6 +1429,74 @@ inline std::uint64_t wilson_samples(double epsilon, double level) {
 
 }  // namespace stats
 
+/// A term in a declarative stochastic update.
+class SimExpr {
+public:
+    /// The previous step's value of the variable at this index.
+    static SimExpr prev(std::size_t variable) {
+        return SimExpr(detail::must(sentil_sim_expr_prev(variable)));
+    }
+    /// The current time.
+    static SimExpr time() { return SimExpr(detail::must(sentil_sim_expr_time())); }
+    /// A constant.
+    static SimExpr constant(double value) {
+        return SimExpr(detail::must(sentil_sim_expr_const(value)));
+    }
+    /// A draw from the noise source at this index.
+    static SimExpr noise(std::size_t source) {
+        return SimExpr(detail::must(sentil_sim_expr_noise(source)));
+    }
+
+    explicit SimExpr(sentil_sim_expr_t* handle) : handle_(handle) {}
+
+    sentil_sim_expr_t* get() const { return handle_.get(); }
+
+    sentil_sim_expr_t* release() { return handle_.release(); }
+
+private:
+    detail::Handle<sentil_sim_expr_t, sentil_sim_expr_destroy> handle_;
+};
+
+inline SimExpr operator+(SimExpr left, SimExpr right) {
+    return SimExpr(detail::must(sentil_sim_expr_add(left.release(), right.release())));
+}
+inline SimExpr operator-(SimExpr left, SimExpr right) {
+    return SimExpr(detail::must(sentil_sim_expr_sub(left.release(), right.release())));
+}
+inline SimExpr operator*(SimExpr left, SimExpr right) {
+    return SimExpr(detail::must(sentil_sim_expr_mul(left.release(), right.release())));
+}
+inline SimExpr operator/(SimExpr left, SimExpr right) {
+    return SimExpr(detail::must(sentil_sim_expr_div(left.release(), right.release())));
+}
+
+inline SimExpr operator+(SimExpr left, double right) {
+    return std::move(left) + SimExpr::constant(right);
+}
+inline SimExpr operator+(double left, SimExpr right) {
+    return SimExpr::constant(left) + std::move(right);
+}
+inline SimExpr operator-(SimExpr left, double right) {
+    return std::move(left) - SimExpr::constant(right);
+}
+inline SimExpr operator-(double left, SimExpr right) {
+    return SimExpr::constant(left) - std::move(right);
+}
+inline SimExpr operator*(SimExpr left, double right) {
+    return std::move(left) * SimExpr::constant(right);
+}
+inline SimExpr operator*(double left, SimExpr right) {
+    return SimExpr::constant(left) * std::move(right);
+}
+inline SimExpr operator/(SimExpr left, double right) {
+    return std::move(left) / SimExpr::constant(right);
+}
+inline SimExpr operator/(double left, SimExpr right) {
+    return SimExpr::constant(left) / std::move(right);
+}
+
+inline SimExpr operator-(SimExpr term) { return SimExpr::constant(0.0) - std::move(term); }
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
