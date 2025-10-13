@@ -1254,6 +1254,41 @@ private:
     detail::Handle<sentil_noise_model_t, sentil_noise_destroy> handle_;
 };
 
+/// The per-variable noise models that turn a deterministic trace into a stochastic ensemble.
+class LiftingRegistry {
+public:
+    LiftingRegistry() : handle_(detail::must(sentil_lifting_registry_create())) {}
+
+    /// Attach a noise model to a variable.
+    void register_noise(const std::string& variable, NoiseModel model,
+                        NoiseInteraction interaction = NoiseInteraction::Additive) {
+        check(sentil_lifting_registry_register(get(), variable.c_str(), model.release(),
+                                               static_cast<sentil_noise_interaction_t>(interaction)));
+    }
+
+    /// The variables that carry a noise model, sorted.
+    std::vector<std::string> variables() const {
+        std::size_t count = 0;
+        char** raw = sentil_lifting_registry_variables(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// Whether no variable carries a noise model.
+    bool empty() const { return sentil_lifting_registry_is_empty(get()); }
+
+    /// One seeded noisy realization of the trace.
+    Trace lift(const Trace& trace, std::uint64_t seed = 42) const {
+        return Trace(detail::must(sentil_lifting_registry_lift(get(), trace.get(), seed)));
+    }
+
+    explicit LiftingRegistry(sentil_lifting_registry_t* handle) : handle_(handle) {}
+
+    sentil_lifting_registry_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_lifting_registry_t, sentil_lifting_registry_destroy> handle_;
+};
+
 /// Binomial proportion confidence intervals and the sample-size formulas.
 namespace stats {
 
