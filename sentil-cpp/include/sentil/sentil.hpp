@@ -1497,6 +1497,98 @@ inline SimExpr operator/(double left, SimExpr right) {
 
 inline SimExpr operator-(SimExpr term) { return SimExpr::constant(0.0) - std::move(term); }
 
+/// A sampling-ready stochastic system, the form the rare-event estimator consumes.
+/// Build one from a SimModel with to_stochastic_system.
+class StochasticSystem {
+public:
+    /// Simulate one full-horizon trajectory from a seed.
+    Trace simulate(std::uint64_t seed = 42) const {
+        return Trace(detail::must(sentil_stochastic_system_simulate(get(), seed)));
+    }
+
+    /// The state variable names.
+    std::vector<std::string> variables() const {
+        std::size_t count = 0;
+        char** raw = sentil_stochastic_system_variables(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// The time step.
+    double dt() const { return sentil_stochastic_system_dt(get()); }
+
+    /// The number of steps in a trajectory.
+    std::size_t horizon() const { return sentil_stochastic_system_horizon(get()); }
+
+    explicit StochasticSystem(sentil_stochastic_system_t* handle) : handle_(handle) {}
+
+    sentil_stochastic_system_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_stochastic_system_t, sentil_stochastic_system_destroy> handle_;
+};
+
+/// A declarative stochastic model.
+class SimModel {
+public:
+    SimModel(const std::vector<std::string>& variables, double dt, std::size_t horizon,
+             std::vector<SimExpr> init, std::vector<SimExpr> advance, std::vector<NoiseModel> noise)
+        : handle_(build(variables, dt, horizon, init, advance, noise)) {}
+
+    /// Simulate one full-horizon trajectory from a seed.
+    Trace simulate(std::uint64_t seed = 42) const {
+        return Trace(detail::must(sentil_sim_model_simulate(get(), seed)));
+    }
+
+    /// Convert to a stochastic system for the rare-event path.
+    StochasticSystem to_stochastic_system() const {
+        return StochasticSystem(detail::must(sentil_sim_model_to_stochastic_system(get())));
+    }
+
+    /// The variable names.
+    std::vector<std::string> variables() const {
+        std::size_t count = 0;
+        char** raw = sentil_sim_model_variables(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// The time step.
+    double dt() const { return sentil_sim_model_dt(get()); }
+
+    /// The number of steps in a trajectory.
+    std::size_t horizon() const { return sentil_sim_model_horizon(get()); }
+
+    explicit SimModel(sentil_sim_model_t* handle) : handle_(handle) {}
+
+    sentil_sim_model_t* get() const { return handle_.get(); }
+
+private:
+    static sentil_sim_model_t* build(const std::vector<std::string>& variables, double dt,
+                                     std::size_t horizon, std::vector<SimExpr>& init,
+                                     std::vector<SimExpr>& advance, std::vector<NoiseModel>& noise) {
+        std::vector<const char*> names = detail::c_strs(variables);
+        std::vector<sentil_sim_expr_t*> init_raw;
+        std::vector<sentil_sim_expr_t*> advance_raw;
+        std::vector<sentil_noise_model_t*> noise_raw;
+        init_raw.reserve(init.size());
+        advance_raw.reserve(advance.size());
+        noise_raw.reserve(noise.size());
+        for (SimExpr& expr : init) {
+            init_raw.push_back(expr.release());
+        }
+        for (SimExpr& expr : advance) {
+            advance_raw.push_back(expr.release());
+        }
+        for (NoiseModel& model : noise) {
+            noise_raw.push_back(model.release());
+        }
+        return detail::must(sentil_sim_model_create(
+            names.data(), names.size(), dt, horizon, init_raw.data(), init_raw.size(),
+            advance_raw.data(), advance_raw.size(), noise_raw.data(), noise_raw.size()));
+    }
+
+    detail::Handle<sentil_sim_model_t, sentil_sim_model_destroy> handle_;
+};
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
