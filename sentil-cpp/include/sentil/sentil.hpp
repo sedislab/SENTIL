@@ -346,6 +346,14 @@ public:
     std::pair<SmcResult, RobustnessDistribution> check_distribution(
         const Trace& trace, const LiftingRegistry& lifting, const SmcConfig& config = {}) const;
 
+    /// Decide this P-wrapped formula sequentially with Wald's SPRT.
+    SprtResult check_sequential(const Trace& trace, const LiftingRegistry& lifting,
+                                const SprtConfig& config) const;
+
+    /// Decide this P-wrapped formula with a Bayesian sequential test.
+    BayesResult check_bayesian(const Trace& trace, const LiftingRegistry& lifting,
+                               const BayesConfig& config) const;
+
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
     sentil_formula_t* get() const { return handle_.get(); }
@@ -938,6 +946,10 @@ public:
     /// settings and the lifted trace ensemble.
     SmcResult check(const Trace& trace, const LiftingRegistry& lifting) const;
 
+    /// Decide this monitor's probabilistic formula sequentially with Wald's SPRT.
+    SprtResult check_sequential(const Trace& trace, const LiftingRegistry& lifting,
+                                const SprtConfig& config) const;
+
     explicit Monitor(sentil_monitor_t* handle) : handle_(handle) {}
 
     sentil_monitor_t* get() const { return handle_.get(); }
@@ -1335,6 +1347,30 @@ inline std::pair<SmcResult, RobustnessDistribution> Formula::check_distribution(
 inline SmcResult Monitor::check(const Trace& trace, const LiftingRegistry& lifting) const {
     sentil_smc_result_t out;
     ensure(sentil_monitor_check(get(), trace.get(), lifting.get(), &out));
+    return detail::from_c(out);
+}
+
+inline SprtResult Formula::check_sequential(const Trace& trace, const LiftingRegistry& lifting,
+                                            const SprtConfig& config) const {
+    sentil_sprt_config_t c = detail::to_c(config);
+    sentil_sprt_result_t out;
+    ensure(sentil_formula_check_sequential(get(), trace.get(), lifting.get(), &c, &out));
+    return detail::from_c(out);
+}
+
+inline BayesResult Formula::check_bayesian(const Trace& trace, const LiftingRegistry& lifting,
+                                           const BayesConfig& config) const {
+    sentil_bayes_config_t c = detail::to_c(config);
+    sentil_bayes_result_t out;
+    ensure(sentil_formula_check_bayesian(get(), trace.get(), lifting.get(), &c, &out));
+    return detail::from_c(out);
+}
+
+inline SprtResult Monitor::check_sequential(const Trace& trace, const LiftingRegistry& lifting,
+                                            const SprtConfig& config) const {
+    sentil_sprt_config_t c = detail::to_c(config);
+    sentil_sprt_result_t out;
+    ensure(sentil_monitor_check_sequential(get(), trace.get(), lifting.get(), &c, &out));
     return detail::from_c(out);
 }
 
