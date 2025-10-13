@@ -1095,6 +1095,84 @@ private:
     detail::Handle<sentil_formula_bank_t, sentil_formula_bank_destroy> handle_;
 };
 
+/// A noise distribution for stochastic signal lifting.
+class NoiseModel {
+public:
+    /// A point mass at value.
+    static NoiseModel dirac(double value) {
+        return NoiseModel(detail::must(sentil_noise_dirac(value)));
+    }
+    /// A normal distribution.
+    static NoiseModel gaussian(double mean, double std_dev) {
+        return NoiseModel(detail::must(sentil_noise_gaussian(mean, std_dev)));
+    }
+    /// A uniform distribution on [low, high].
+    static NoiseModel uniform(double low, double high) {
+        return NoiseModel(detail::must(sentil_noise_uniform(low, high)));
+    }
+    /// A log-normal distribution.
+    static NoiseModel log_normal(double mu, double sigma) {
+        return NoiseModel(detail::must(sentil_noise_log_normal(mu, sigma)));
+    }
+    /// An exponential distribution with the given rate.
+    static NoiseModel exponential(double rate) {
+        return NoiseModel(detail::must(sentil_noise_exponential(rate)));
+    }
+    /// A gamma distribution.
+    static NoiseModel gamma(double shape, double scale) {
+        return NoiseModel(detail::must(sentil_noise_gamma(shape, scale)));
+    }
+    /// A beta distribution.
+    static NoiseModel beta(double alpha, double beta) {
+        return NoiseModel(detail::must(sentil_noise_beta(alpha, beta)));
+    }
+    /// A Weibull distribution.
+    static NoiseModel weibull(double shape, double scale) {
+        return NoiseModel(detail::must(sentil_noise_weibull(shape, scale)));
+    }
+    /// A Rayleigh distribution.
+    static NoiseModel rayleigh(double scale) {
+        return NoiseModel(detail::must(sentil_noise_rayleigh(scale)));
+    }
+    /// A Gumbel distribution.
+    static NoiseModel gumbel(double location, double scale) {
+        return NoiseModel(detail::must(sentil_noise_gumbel(location, scale)));
+    }
+    /// A Cauchy distribution.
+    static NoiseModel cauchy(double location, double scale) {
+        return NoiseModel(detail::must(sentil_noise_cauchy(location, scale)));
+    }
+    /// A Student's t distribution.
+    static NoiseModel student_t(double df, double location, double scale) {
+        return NoiseModel(detail::must(sentil_noise_student_t(df, location, scale)));
+    }
+    /// A normal distribution truncated to [lower, upper].
+    static NoiseModel truncated_normal(double mean, double std_dev, double lower, double upper) {
+        return NoiseModel(detail::must(sentil_noise_truncated_normal(mean, std_dev, lower, upper)));
+    }
+    /// A Poisson distribution with the given rate.
+    static NoiseModel poisson(double rate) {
+        return NoiseModel(detail::must(sentil_noise_poisson(rate)));
+    }
+    /// A binomial distribution of n trials with success probability p.
+    static NoiseModel binomial(std::uint64_t n, double p) {
+        return NoiseModel(detail::must(sentil_noise_binomial(n, p)));
+    }
+    /// An empirical model resampled from residuals.
+    static NoiseModel bootstrap(const std::vector<double>& residuals) {
+        return NoiseModel(detail::must(sentil_noise_bootstrap(residuals.data(), residuals.size())));
+    }
+
+    explicit NoiseModel(sentil_noise_model_t* handle) : handle_(handle) {}
+
+    sentil_noise_model_t* get() const { return handle_.get(); }
+
+    sentil_noise_model_t* release() { return handle_.release(); }
+
+private:
+    detail::Handle<sentil_noise_model_t, sentil_noise_destroy> handle_;
+};
+
 /// Binomial proportion confidence intervals and the sample-size formulas.
 namespace stats {
 
