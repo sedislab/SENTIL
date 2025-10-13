@@ -9,6 +9,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -1161,6 +1162,86 @@ public:
     /// An empirical model resampled from residuals.
     static NoiseModel bootstrap(const std::vector<double>& residuals) {
         return NoiseModel(detail::must(sentil_noise_bootstrap(residuals.data(), residuals.size())));
+    }
+
+    /// A weighted mixture of component models.
+    static NoiseModel mixture(const std::vector<double>& weights, std::vector<NoiseModel> models) {
+        if (weights.size() != models.size()) {
+            detail::raise_with(SENTIL_ERR_INVALID_CONFIG,
+                               "a mixture needs one weight per component model");
+        }
+        std::vector<sentil_noise_model_t*> raw;
+        raw.reserve(models.size());
+        for (NoiseModel& model : models) {
+            raw.push_back(model.release());
+        }
+        return NoiseModel(detail::must(sentil_noise_mixture(weights.data(), raw.data(), raw.size())));
+    }
+
+    /// A weighted mixture of components passed inline.
+    template <typename... Models,
+              std::enable_if_t<(... && std::is_same_v<std::decay_t<Models>, NoiseModel>), int> = 0>
+    static NoiseModel mixture(const std::vector<double>& weights, Models&&... models) {
+        std::vector<NoiseModel> collected;
+        collected.reserve(sizeof...(models));
+        (collected.push_back(std::move(models)), ...);
+        return mixture(weights, std::move(collected));
+    }
+
+    /// A maximum-likelihood Gaussian fit of the samples.
+    static NoiseModel fit_gaussian(const std::vector<double>& samples) {
+        return NoiseModel(detail::must(sentil_noise_fit_gaussian(samples.data(), samples.size())));
+    }
+
+    /// The empirical bootstrap of the samples.
+    static NoiseModel fit_bootstrap(const std::vector<double>& samples) {
+        return NoiseModel(detail::must(sentil_noise_fit_bootstrap(samples.data(), samples.size())));
+    }
+
+    /// A reservoir-sampled bootstrap that caps the retained residuals.
+    static NoiseModel fit_bootstrap_reservoir(const std::vector<double>& samples,
+                                              std::size_t max_samples) {
+        return NoiseModel(detail::must(
+            sentil_noise_fit_bootstrap_reservoir(samples.data(), samples.size(), max_samples)));
+    }
+
+    /// A Gaussian mixture fit by expectation-maximization.
+    static NoiseModel fit_gaussian_mixture(const std::vector<double>& samples,
+                                           std::size_t components, std::size_t max_iters) {
+        return NoiseModel(detail::must(sentil_noise_fit_gaussian_mixture(
+            samples.data(), samples.size(), components, max_iters)));
+    }
+
+    /// The residuals between paired ground-truth and sensor readings.
+    static std::vector<double> residuals(const std::vector<double>& ground_truth,
+                                         const std::vector<double>& sensor,
+                                         NoiseInteraction interaction) {
+        std::size_t len = 0;
+        double* raw = sentil_noise_residuals(ground_truth.data(), ground_truth.size(), sensor.data(),
+                                             sensor.size(),
+                                             static_cast<sentil_noise_interaction_t>(interaction),
+                                             &len);
+        return detail::owned_doubles(raw, len);
+    }
+
+    /// The analytic mean, or none where it is undefined.
+    std::optional<double> mean() const {
+        double out;
+        return sentil_noise_mean(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// The analytic variance, or none where it is undefined.
+    std::optional<double> variance() const {
+        double out;
+        return sentil_noise_variance(get(), &out) ? std::optional<double>(out) : std::nullopt;
+    }
+
+    /// The model as a JSON string.
+    std::string to_json() const { return detail::owned_string(sentil_noise_to_json(get())); }
+
+    /// Rebuild a model from the JSON produced by to_json.
+    static NoiseModel from_json(const std::string& json) {
+        return NoiseModel(detail::must(sentil_noise_from_json(json.c_str())));
     }
 
     explicit NoiseModel(sentil_noise_model_t* handle) : handle_(handle) {}
