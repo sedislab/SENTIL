@@ -336,6 +336,9 @@ public:
     /// The time spans where the formula does not hold.
     std::vector<Interval> violations(const Trace& trace) const;
 
+    /// The differentiable surrogate for robustness the synthesis optimizers climb.
+    double smooth_robustness(const Trace& trace, const SmoothConfig& config = {}) const;
+
     /// Estimate the satisfaction probability of this P-wrapped formula by sampling the lifted trace ensemble.
     SmcResult check(const Trace& trace, const LiftingRegistry& lifting,
                     const SmcConfig& config = {}) const;
@@ -853,6 +856,13 @@ inline std::vector<Interval> Formula::violations(const Trace& trace) const {
     std::size_t count = 0;
     sentil_interval_t* raw = sentil_formula_violations(get(), trace.get(), &count);
     return detail::owned_intervals(raw, count);
+}
+
+inline double Formula::smooth_robustness(const Trace& trace, const SmoothConfig& config) const {
+    sentil_smooth_config_t c = detail::to_c(config);
+    double out;
+    ensure(sentil_formula_smooth_robustness(get(), trace.get(), &c, &out));
+    return out;
 }
 
 /// A monitor configuration.
@@ -1598,6 +1608,21 @@ private:
 
     detail::Handle<sentil_sim_model_t, sentil_sim_model_destroy> handle_;
 };
+
+/// Smooth-robustness primitives and the synthesis numerics.
+namespace synthesis {
+
+/// The smooth (differentiable) minimum of values at the given temperature.
+inline double soft_min(const std::vector<double>& values, double temperature) {
+    return sentil_soft_min(values.data(), values.size(), temperature);
+}
+
+/// The smooth (differentiable) maximum of values at the given temperature.
+inline double soft_max(const std::vector<double>& values, double temperature) {
+    return sentil_soft_max(values.data(), values.size(), temperature);
+}
+
+}  // namespace synthesis
 
 inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
                                                  const RareEventConfig& config) const {
