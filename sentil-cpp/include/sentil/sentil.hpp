@@ -1797,6 +1797,45 @@ inline SynthesisResult synthesize(const SystemModel& model, const Formula& spec,
 
 }  // namespace synthesis
 
+/// A least-restrictive safety shield.
+class SafetyFilter {
+public:
+    /// A filter enforcing the given bounds.
+    explicit SafetyFilter(Bounds bounds)
+        : handle_(detail::must(sentil_safety_filter_create(bounds.release()))) {}
+
+    /// The input closest to nominal that satisfies each barrier and the bounds.
+    std::vector<double> filter(
+        const std::vector<double>& nominal,
+        const std::vector<std::pair<std::vector<double>, double>>& barriers = {}) const {
+        std::size_t n = nominal.size();
+        std::size_t m = barriers.size();
+        std::vector<double> barrier_a;
+        std::vector<double> barrier_b;
+        barrier_a.reserve(m * n);
+        barrier_b.reserve(m);
+        for (const auto& barrier : barriers) {
+            if (barrier.first.size() != n) {
+                detail::raise_with(SENTIL_ERR_INVALID_CONFIG,
+                                   "each barrier coefficient vector must match the input length");
+            }
+            barrier_a.insert(barrier_a.end(), barrier.first.begin(), barrier.first.end());
+            barrier_b.push_back(barrier.second);
+        }
+        std::vector<double> out(n);
+        ensure(sentil_safety_filter_filter(get(), nominal.data(), n, barrier_a.data(),
+                                           barrier_b.data(), m, out.data()));
+        return out;
+    }
+
+    explicit SafetyFilter(sentil_safety_filter_t* handle) : handle_(handle) {}
+
+    sentil_safety_filter_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_safety_filter_t, sentil_safety_filter_destroy> handle_;
+};
+
 inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
                                                  const RareEventConfig& config) const {
     sentil_rare_event_config_t c = detail::to_c(config);
