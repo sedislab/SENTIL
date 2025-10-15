@@ -1622,6 +1622,54 @@ private:
     detail::Handle<sentil_sim_model_t, sentil_sim_model_destroy> handle_;
 };
 
+/// Per-coordinate box bounds on a synthesis input.
+class Bounds {
+public:
+    /// Bounds with the given lower and upper limit per coordinate.
+    Bounds(const std::vector<double>& lower, const std::vector<double>& upper)
+        : handle_(make(lower, upper)) {}
+
+    /// Bounds that constrain nothing over the given number of coordinates.
+    static Bounds unbounded(std::size_t dimension) {
+        return Bounds(detail::must(sentil_bounds_unbounded(dimension)));
+    }
+
+    /// The number of coordinates.
+    std::size_t dimension() const { return sentil_bounds_dimension(get()); }
+
+    /// The per-coordinate lower limits.
+    std::vector<double> lower() const {
+        std::vector<double> out(dimension());
+        sentil_bounds_lower(get(), out.data());
+        return out;
+    }
+
+    /// The per-coordinate upper limits.
+    std::vector<double> upper() const {
+        std::vector<double> out(dimension());
+        sentil_bounds_upper(get(), out.data());
+        return out;
+    }
+
+    explicit Bounds(sentil_bounds_t* handle) : handle_(handle) {}
+
+    sentil_bounds_t* get() const { return handle_.get(); }
+
+    sentil_bounds_t* release() { return handle_.release(); }
+
+private:
+    static sentil_bounds_t* make(const std::vector<double>& lower,
+                                 const std::vector<double>& upper) {
+        if (lower.size() != upper.size()) {
+            detail::raise_with(SENTIL_ERR_INVALID_CONFIG,
+                               "bounds lower and upper must have the same length");
+        }
+        return detail::must(sentil_bounds_create(lower.data(), upper.data(), lower.size()));
+    }
+
+    detail::Handle<sentil_bounds_t, sentil_bounds_destroy> handle_;
+};
+
 /// Smooth-robustness primitives and the synthesis numerics.
 namespace synthesis {
 
