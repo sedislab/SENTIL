@@ -182,6 +182,19 @@ inline std::map<std::string, double> bank_results(sentil_bank_result_t* array, s
     return out;
 }
 
+inline std::vector<double> flatten(const std::vector<std::vector<double>>& matrix,
+                                   std::size_t expected_cols) {
+    std::vector<double> flat;
+    flat.reserve(matrix.size() * expected_cols);
+    for (const std::vector<double>& row : matrix) {
+        if (row.size() != expected_cols) {
+            raise_with(SENTIL_ERR_INVALID_CONFIG, "matrix row has the wrong length");
+        }
+        flat.insert(flat.end(), row.begin(), row.end());
+    }
+    return flat;
+}
+
 template <typename T, void (*Destroy)(T*)>
 class Handle {
 public:
@@ -1620,6 +1633,51 @@ inline double soft_min(const std::vector<double>& values, double temperature) {
 /// The smooth (differentiable) maximum of values at the given temperature.
 inline double soft_max(const std::vector<double>& values, double temperature) {
     return sentil_soft_max(values.data(), values.size(), temperature);
+}
+
+/// Minimize 1/2 u'Pu + q'u subject to Gu <= h.
+inline std::vector<double> solve_qp(const std::vector<std::vector<double>>& p,
+                                    const std::vector<double>& q,
+                                    const std::vector<std::vector<double>>& g,
+                                    const std::vector<double>& h, std::size_t max_iters = 200) {
+    std::size_t n = p.size();
+    std::size_t m = g.size();
+    if (q.size() != n) {
+        detail::raise_with(SENTIL_ERR_INVALID_CONFIG, "q must have one entry per column of P");
+    }
+    if (h.size() != m) {
+        detail::raise_with(SENTIL_ERR_INVALID_CONFIG, "h must have one entry per row of G");
+    }
+    std::vector<double> p_flat = detail::flatten(p, n);
+    std::vector<double> g_flat = detail::flatten(g, n);
+    std::vector<double> out(n);
+    ensure(sentil_solve_qp(p_flat.data(), n, q.data(), g_flat.data(), m, h.data(), max_iters,
+                           out.data()));
+    return out;
+}
+
+/// Solve Ax = b for a symmetric positive-definite A.
+inline std::vector<double> solve_spd(const std::vector<std::vector<double>>& matrix,
+                                     const std::vector<double>& rhs) {
+    std::size_t n = matrix.size();
+    if (rhs.size() != n) {
+        detail::raise_with(SENTIL_ERR_INVALID_CONFIG, "the right-hand side must match A's order");
+    }
+    std::vector<double> flat = detail::flatten(matrix, n);
+    std::vector<double> out(n);
+    ensure(sentil_solve_spd(flat.data(), n, rhs.data(), out.data()));
+    return out;
+}
+
+/// The eigenvalues and eigenvectors of a symmetric matrix, the eigenvectors as rows.
+inline std::pair<std::vector<double>, std::vector<std::vector<double>>> symmetric_eigen(
+    const std::vector<std::vector<double>>& matrix) {
+    std::size_t n = matrix.size();
+    std::vector<double> flat = detail::flatten(matrix, n);
+    std::vector<double> values(n);
+    std::vector<double> vectors_flat(n * n);
+    ensure(sentil_symmetric_eigen(flat.data(), n, values.data(), vectors_flat.data()));
+    return {std::move(values), detail::unflatten(vectors_flat, n, n)};
 }
 
 }  // namespace synthesis
