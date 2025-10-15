@@ -1670,6 +1670,52 @@ private:
     detail::Handle<sentil_bounds_t, sentil_bounds_destroy> handle_;
 };
 
+/// A dynamical system the synthesizer drives. The only public constructor is the
+/// linear time-invariant model; closure-driven models are out of scope, as in the
+/// other bindings, because the engine would run the callback across worker threads.
+class SystemModel {
+public:
+    /// A linear model x_{t+1} = A x_t + B u_t.
+    static SystemModel linear(const std::vector<std::vector<double>>& a,
+                              const std::vector<std::vector<double>>& b,
+                              const std::vector<double>& x0,
+                              const std::vector<std::string>& variables, double dt,
+                              std::size_t horizon) {
+        std::size_t n = a.size();
+        if (x0.size() != n || variables.size() != n || b.size() != n) {
+            detail::raise_with(SENTIL_ERR_INVALID_CONFIG,
+                               "A is n-by-n, B has n rows, and x0 and variables have length n");
+        }
+        std::size_t b_cols = b.empty() ? 0 : b.front().size();
+        std::vector<double> a_flat = detail::flatten(a, n);
+        std::vector<double> b_flat = detail::flatten(b, b_cols);
+        std::vector<const char*> names = detail::c_strs(variables);
+        return SystemModel(detail::must(sentil_linear_model_create(
+            a_flat.data(), n, b_flat.data(), b_cols, x0.data(), names.data(), names.size(), dt,
+            horizon)));
+    }
+
+    /// The total length of the input sequence the synthesizer optimizes.
+    std::size_t input_dimension() const { return sentil_system_model_input_dimension(get()); }
+
+    explicit SystemModel(sentil_system_model_t* handle) : handle_(handle) {}
+
+    sentil_system_model_t* get() const { return handle_.get(); }
+
+    sentil_system_model_t* release() { return handle_.release(); }
+
+private:
+    detail::Handle<sentil_system_model_t, sentil_system_model_destroy> handle_;
+};
+
+/// The result of open-loop synthesis.
+struct SynthesisResult {
+    std::vector<double> input;
+    double robustness;
+    bool holds;
+    Backend backend;
+};
+
 /// Smooth-robustness primitives and the synthesis numerics.
 namespace synthesis {
 
@@ -1726,6 +1772,27 @@ inline std::pair<std::vector<double>, std::vector<std::vector<double>>> symmetri
     std::vector<double> vectors_flat(n * n);
     ensure(sentil_symmetric_eigen(flat.data(), n, values.data(), vectors_flat.data()));
     return {std::move(values), detail::unflatten(vectors_flat, n, n)};
+}
+
+/// Find an input sequence for the model that best satisfies the spec.
+inline SynthesisResult synthesize(const SystemModel& model, const Formula& spec,
+                                  const Bounds* bounds = nullptr,
+                                  const SmoothConfig* smooth = nullptr,
+                                  Backend backend = Backend::Auto, std::size_t max_iters = 0,
+                                  std::size_t population = 0) {
+    sentil_smooth_config_t sc;
+    const sentil_smooth_config_t* sc_ptr = nullptr;
+    if (smooth) {
+        sc = detail::to_c(*smooth);
+        sc_ptr = &sc;
+    }
+    sentil_synthesis_result_t out;
+    ensure(sentil_synthesize(model.get(), spec.get(), bounds ? bounds->get() : nullptr, sc_ptr,
+                             max_iters, static_cast<sentil_backend_t>(backend), population, &out));
+    std::vector<double> input(out.input, out.input + out.input_len);
+    sentil_free_doubles(out.input, out.input_len);
+    return SynthesisResult{std::move(input), out.robustness, out.holds,
+                           static_cast<Backend>(out.backend)};
 }
 
 }  // namespace synthesis
