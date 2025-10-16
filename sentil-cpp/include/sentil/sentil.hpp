@@ -1966,6 +1966,89 @@ inline Witness Formula::falsify(const SystemModel& model, const Bounds& bounds,
     return detail::pack_witness(out);
 }
 
+/// The specifications-library loader.
+class SpecBuilder {
+public:
+    /// A builder for the named spec from the embedded registry.
+    explicit SpecBuilder(const std::string& name)
+        : handle_(detail::must(sentil_spec_builder_create(name.c_str()))) {}
+
+    /// The names of every embedded specification, sorted.
+    static std::vector<std::string> available() {
+        std::size_t count = 0;
+        char** raw = sentil_spec_registry_available(&count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// A builder loaded from a spec template file.
+    static SpecBuilder from_file(const std::string& path) {
+        return SpecBuilder(detail::must(sentil_spec_builder_from_file(path.c_str())));
+    }
+
+    /// Select a named variant.
+    SpecBuilder with_variant(const std::string& variant) && {
+        return SpecBuilder(
+            detail::must(sentil_spec_builder_with_variant(release(), variant.c_str())));
+    }
+
+    /// Override a parameter.
+    SpecBuilder with_param(const std::string& name, double value) && {
+        return SpecBuilder(
+            detail::must(sentil_spec_builder_with_param(release(), name.c_str(), value)));
+    }
+
+    /// The variant names the spec offers, sorted.
+    std::vector<std::string> available_variants() const {
+        std::size_t count = 0;
+        char** raw = sentil_spec_builder_available_variants(get(), &count);
+        return detail::owned_string_array(raw, count);
+    }
+
+    /// The deterministic formula text with the parameters filled in.
+    std::string build_deterministic() const {
+        return detail::owned_string(sentil_spec_builder_build_deterministic(get()));
+    }
+
+    /// The probabilistic formula text with the parameters filled in.
+    std::string build_probabilistic() const {
+        return detail::owned_string(sentil_spec_builder_build_probabilistic(get()));
+    }
+
+    /// The deterministic formula as a handle.
+    Formula build_formula() const {
+        return Formula(detail::must(sentil_spec_builder_build_formula(get())));
+    }
+
+    /// The probabilistic formula as a handle.
+    Formula build_probabilistic_formula() const {
+        return Formula(detail::must(sentil_spec_builder_build_probabilistic_formula(get())));
+    }
+
+    /// A lifting registry built from the spec's resolved noise models.
+    LiftingRegistry build_lifting_registry() const {
+        return LiftingRegistry(detail::must(sentil_spec_builder_build_lifting_registry(get())));
+    }
+
+    /// The resolved parameters as a JSON object.
+    std::string parameters_json() const {
+        return detail::owned_string(sentil_spec_builder_parameters_json(get()));
+    }
+
+    /// A monitor preloaded with the spec's recommended settings.
+    Monitor build_monitor() && {
+        return Monitor(detail::must(sentil_spec_builder_into_monitor(release())));
+    }
+
+    explicit SpecBuilder(sentil_spec_builder_t* handle) : handle_(handle) {}
+
+    sentil_spec_builder_t* get() const { return handle_.get(); }
+
+    sentil_spec_builder_t* release() { return handle_.release(); }
+
+private:
+    detail::Handle<sentil_spec_builder_t, sentil_spec_builder_destroy> handle_;
+};
+
 }  // namespace sentil
 
 #endif  // SENTIL_HPP
