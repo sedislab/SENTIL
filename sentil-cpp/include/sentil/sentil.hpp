@@ -388,6 +388,10 @@ public:
     Witness falsify(const SystemModel& model, const Bounds& bounds, const CmaConfig& config = {},
                     std::size_t restarts = 1) const;
 
+    /// Estimate a rare-event probability for this P >= p (always[0, b] psi) formula on the GPU by fixed-effort multilevel splitting.
+    GpuSplittingEstimate check_rare_event_gpu(const SimModel& model,
+                                              const RareEventConfig& config = {}) const;
+
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
     sentil_formula_t* get() const { return handle_.get(); }
@@ -2048,6 +2052,22 @@ public:
 private:
     detail::Handle<sentil_spec_builder_t, sentil_spec_builder_destroy> handle_;
 };
+
+inline GpuSplittingEstimate Formula::check_rare_event_gpu(const SimModel& model,
+                                                          const RareEventConfig& config) const {
+    sentil_rare_event_config_t c = detail::to_c(config);
+    sentil_gpu_splitting_estimate_t out;
+    ensure(sentil_formula_check_rare_event_gpu(get(), model.get(), &c, &out));
+    return detail::from_c(out);
+}
+
+/// The GPU accelerated paths.
+namespace gpu {
+
+/// Whether a usable GPU device is present.
+inline bool is_available() { return sentil_gpu_is_available(); }
+
+}  // namespace gpu
 
 }  // namespace sentil
 
