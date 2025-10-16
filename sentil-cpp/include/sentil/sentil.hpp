@@ -253,6 +253,9 @@ class Trace;
 class LiftingRegistry;
 class StochasticSystem;
 class SimModel;
+class SystemModel;
+class Bounds;
+struct Witness;
 
 /// A parsed PrSTL formula.
 class Formula {
@@ -375,6 +378,15 @@ public:
     /// Estimate this P-wrapped formula over a stochastic system by adaptive multilevel splitting.
     RareEventResult check_rare_event(const StochasticSystem& system,
                                      const RareEventConfig& config = {}) const;
+
+    /// Search for a trajectory that violates the formula on the model.
+    Witness find_counterexample(const SystemModel& model, const Bounds& bounds,
+                                std::size_t max_iters = 200,
+                                const SmoothConfig* smooth = nullptr) const;
+
+    /// Search for a violating trajectory globally with restarted CMA-ES on the exact robustness.
+    Witness falsify(const SystemModel& model, const Bounds& bounds, const CmaConfig& config = {},
+                    std::size_t restarts = 1) const;
 
     explicit Formula(sentil_formula_t* handle) : handle_(handle) {}
 
@@ -1901,6 +1913,23 @@ private:
     detail::Handle<sentil_controller_t, sentil_controller_destroy> handle_;
 };
 
+/// A witnessing trajectory found by the counterexample search.
+struct Witness {
+    std::vector<double> input;
+    double robustness;
+    Trace trace;
+};
+
+namespace detail {
+
+inline Witness pack_witness(sentil_witness_t& w) {
+    std::vector<double> input(w.input, w.input + w.input_len);
+    sentil_free_doubles(w.input, w.input_len);
+    return Witness{std::move(input), w.robustness, Trace(w.trace)};
+}
+
+}  // namespace detail
+
 inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
                                                  const RareEventConfig& config) const {
     sentil_rare_event_config_t c = detail::to_c(config);
@@ -1913,6 +1942,28 @@ inline RareEventResult Monitor::check_rare(const StochasticSystem& system) const
     sentil_rare_event_result_t out;
     ensure(sentil_monitor_check_rare(get(), system.get(), &out));
     return detail::from_c(out);
+}
+
+inline Witness Formula::find_counterexample(const SystemModel& model, const Bounds& bounds,
+                                            std::size_t max_iters, const SmoothConfig* smooth) const {
+    sentil_smooth_config_t sc;
+    const sentil_smooth_config_t* sc_ptr = nullptr;
+    if (smooth) {
+        sc = detail::to_c(*smooth);
+        sc_ptr = &sc;
+    }
+    sentil_witness_t out;
+    ensure(sentil_formula_find_counterexample(get(), model.get(), bounds.get(), max_iters, sc_ptr,
+                                              &out));
+    return detail::pack_witness(out);
+}
+
+inline Witness Formula::falsify(const SystemModel& model, const Bounds& bounds,
+                                const CmaConfig& config, std::size_t restarts) const {
+    sentil_cma_config_t c = detail::to_c(config);
+    sentil_witness_t out;
+    ensure(sentil_formula_falsify(get(), model.get(), bounds.get(), c, restarts, &out));
+    return detail::pack_witness(out);
 }
 
 }  // namespace sentil
