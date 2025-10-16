@@ -1836,6 +1836,31 @@ private:
     detail::Handle<sentil_safety_filter_t, sentil_safety_filter_destroy> handle_;
 };
 
+/// A requirement that a spec holds with at least a target probability.
+class ChanceConstraint {
+public:
+    /// The constraint that spec holds with probability at least probability.
+    ChanceConstraint(Formula spec, double probability, double confidence = 0.0,
+                     double tightening = 0.0)
+        : handle_(detail::must(sentil_chance_constraint_create(spec.release(), probability,
+                                                               confidence, tightening))) {}
+
+    /// Estimate satisfaction over the given number of sampled trajectories.
+    ChanceReport validate(const StochasticSystem& system, std::uint64_t samples = 1000,
+                          std::uint64_t seed = 42) const {
+        sentil_chance_report_t out;
+        ensure(sentil_chance_constraint_validate(get(), system.get(), samples, seed, &out));
+        return detail::from_c(out);
+    }
+
+    explicit ChanceConstraint(sentil_chance_constraint_t* handle) : handle_(handle) {}
+
+    sentil_chance_constraint_t* get() const { return handle_.get(); }
+
+private:
+    detail::Handle<sentil_chance_constraint_t, sentil_chance_constraint_destroy> handle_;
+};
+
 inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
                                                  const RareEventConfig& config) const {
     sentil_rare_event_config_t c = detail::to_c(config);
