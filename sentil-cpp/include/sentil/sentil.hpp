@@ -1861,6 +1861,46 @@ private:
     detail::Handle<sentil_chance_constraint_t, sentil_chance_constraint_destroy> handle_;
 };
 
+/// A receding-horizon controller that emits a control input within a hard deadline.
+class Controller {
+public:
+    /// A controller over the model and spec. budget_ns is in nanoseconds.
+    Controller(SystemModel model, Formula spec, std::size_t input_width, std::uint64_t budget_ns,
+               const Bounds* bounds = nullptr, const SmoothConfig* smooth = nullptr)
+        : input_width_(input_width),
+          handle_(make(std::move(model), std::move(spec), input_width, budget_ns, bounds, smooth)) {}
+
+    /// Plan from the current state and return the first control input.
+    std::vector<double> control(const std::vector<double>& state) {
+        std::vector<double> out(input_width_);
+        ensure(sentil_controller_control(get(), state.data(), state.size(), out.data()));
+        return out;
+    }
+
+    Controller(sentil_controller_t* handle, std::size_t input_width)
+        : input_width_(input_width), handle_(handle) {}
+
+    sentil_controller_t* get() const { return handle_.get(); }
+
+private:
+    static sentil_controller_t* make(SystemModel model, Formula spec, std::size_t input_width,
+                                     std::uint64_t budget_ns, const Bounds* bounds,
+                                     const SmoothConfig* smooth) {
+        sentil_smooth_config_t sc;
+        const sentil_smooth_config_t* sc_ptr = nullptr;
+        if (smooth) {
+            sc = detail::to_c(*smooth);
+            sc_ptr = &sc;
+        }
+        return detail::must(sentil_controller_create(model.release(), spec.release(), input_width,
+                                                     budget_ns, bounds ? bounds->get() : nullptr,
+                                                     sc_ptr));
+    }
+
+    std::size_t input_width_;
+    detail::Handle<sentil_controller_t, sentil_controller_destroy> handle_;
+};
+
 inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
                                                  const RareEventConfig& config) const {
     sentil_rare_event_config_t c = detail::to_c(config);
