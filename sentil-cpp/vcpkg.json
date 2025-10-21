@@ -1,0 +1,11 @@
+{
+  "name": "sentil-cpp",
+  "version": "1.0.0",
+  "description": "C++ bindings for SENTIL, runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL",
+  "homepage": "https://github.com/sedislab/SENTIL",
+  "license": "MIT OR Apache-2.0",
+  "supports": "linux | osx | windows",
+  "dependencies": [
+    "sentil"
+  ]
+}
