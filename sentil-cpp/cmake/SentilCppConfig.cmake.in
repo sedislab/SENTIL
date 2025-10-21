@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Sentil CONFIG)
+
+if(NOT TARGET Sentil::cpp)
+    add_library(Sentil::cpp INTERFACE IMPORTED)
+    set_target_properties(Sentil::cpp PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
+        INTERFACE_COMPILE_FEATURES cxx_std_17
+        INTERFACE_LINK_LIBRARIES Sentil::sentil)
+endif()
+
+check_required_components(SentilCpp)

@@ -55,3 +55,19 @@ endif()
 if(SENTIL_CPP_BUILD_EXAMPLES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/CMakeLists.txt")
     add_subdirectory(examples)
 endif()
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(DIRECTORY include/sentil DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+set(_sentil_cpp_cmakedir "${CMAKE_INSTALL_LIBDIR}/cmake/SentilCpp")
+configure_package_config_file(cmake/SentilCppConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/SentilCppConfig.cmake"
+    INSTALL_DESTINATION "${_sentil_cpp_cmakedir}")
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/SentilCppConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/SentilCppConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/SentilCppConfigVersion.cmake"
+    DESTINATION "${_sentil_cpp_cmakedir}")
