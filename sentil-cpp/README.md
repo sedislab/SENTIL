@@ -1,0 +1,64 @@
+# sentil-cpp
+
+C++ bindings for SENTIL, a runtime verification engine for Signal Temporal Logic and its probabilistic extension PrSTL. The engine is the compiled Rust core; this layer is a header-only RAII wrapper over its C ABI, so a C++ program gets the same numbers the core computes, with C++ types, exceptions, and ownership.
+
+## What you get
+
+One header, `sentil/sentil.hpp`. Every wrapper owns its C handle and frees it in the destructor, so you never call a destroy function by hand. Every fallible call throws a `sentil::SentilError` carrying the core's message rather than returning a status code. The names match the Python binding concept for concept, so an API you learned in one carries over.
+
+```cpp
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+int main() {
+    sentil::Trace trace({0, 1, 2, 3}, "speed", {12, 9, 7, 4});
+    sentil::Formula phi = sentil::Formula::parse("always (speed > 5)");
+    std::cout << phi.robustness(trace) << "\n";  // negative: violated by the end
+}
+```
+
+Formulas also compose with operators and a small expression type:
+
+```cpp
+using sentil::Expr;
+auto phi = sentil::always(Expr::var("speed") > 5) && sentil::eventually(Expr::var("gap") > 2);
+```
+
+## Install
+
+The C library and its header come from the SENTIL C package. Once that is installed, `sentil-cpp` adds the header on top, found two ways so a project can pick either.
+
+With CMake:
+
+```cmake
+find_package(SentilCpp CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Sentil::cpp)
+```
+
+With pkg-config the C library resolves as `sentil`, and the C++ headers sit beside it:
+
+```
+c++ my_app.cpp $(pkg-config --cflags --libs sentil) -o my_app
+```
+
+The packages ship through vcpkg and Conan as `sentil`, and the C library ships as `.deb` and `.rpm` (`libsentil-dev`) for apt, yum, and pacman. On macOS and Windows the same CMake and vcpkg paths work; the shared library is `libsentil.dylib` and `sentil.dll`.
+
+## Build from source
+
+You need CMake 3.16 or newer, a C++17 compiler, and the Rust toolchain to build the core. From the repository root:
+
+```
+cmake -S sentil-cpp -B sentil-cpp/build
+cmake --build sentil-cpp/build
+ctest --test-dir sentil-cpp/build
+```
+
+The build compiles `libsentil` first, so a test never runs against a stale core. `cmake --build sentil-cpp/build --target leakcheck` runs the suite under valgrind and expects zero definite or indirect leaks. The four programs under `examples/` build alongside the tests and run unmodified.
+
+## What it covers
+
+The whole engine: deterministic STL monitoring offline and online, the statistical layer (noise models, lifting, statistical model checking, the sequential tests, rare-event splitting), synthesis (the smooth robustness, the numerics, open-loop synthesis, the receding-horizon controller, the safety filter, chance constraints, and the counterexample search), the specifications library, and the GPU rare-event path. A few low-level hooks that pass a host function into the parallel engine are left out, the same ones the Python binding leaves out, because the engine would run them across worker threads; the declarative `SystemModel::linear` and `SimModel` paths cover the same ground.
+
+## More
+
+Per-language guides and the full reference live at the documentation site. SENTIL is by Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab at Baylor University, dual licensed under MIT or Apache-2.0.
