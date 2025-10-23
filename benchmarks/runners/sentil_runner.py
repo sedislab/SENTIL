@@ -11,7 +11,6 @@ import sentil
 VERSION = "1.0.0"
 FORMULA = "always[0, 100](eventually[0, 10](x > 5))"
 
-
 def summarize(samples):
     samples = sorted(samples)
     n = len(samples)
@@ -29,7 +28,6 @@ def summarize(samples):
         "p99_ms": pct(0.99),
     }
 
-
 def hardware():
     cpu = "unknown"
     try:
@@ -42,7 +40,6 @@ def hardware():
         pass
     return {"cpu": cpu, "cores": os.cpu_count() or 1}
 
-
 def peak_rss_bytes():
     try:
         with open("/proc/self/status") as f:
@@ -52,7 +49,6 @@ def peak_rss_bytes():
     except OSError:
         pass
     return None
-
 
 def emit(benchmark, question, size, robustness, timing, runs):
     record = {
@@ -71,12 +67,10 @@ def emit(benchmark, question, size, robustness, timing, runs):
     }
     print(json.dumps(record))
 
-
 def oracle_trace(n):
     times = np.arange(n, dtype=np.float64)
     x = 15.0 * np.sin(times * 0.1)
     return sentil.Trace(times, {"x": x})
-
 
 def scalability():
     for n in (1_000, 10_000, 100_000, 1_000_000, 10_000_000):
@@ -100,7 +94,6 @@ def scalability():
             samples.append((time.perf_counter() - start) * 1e3)
         emit("scalability/length", "monitoring", n, mon, summarize(samples), runs)
 
-
 def streaming():
     monitor = sentil.OnlineMonitor(FORMULA)
     idx = monitor.symbol_index("x")
@@ -116,7 +109,6 @@ def streaming():
         last = verdict.lower
     emit("streaming", "monitoring", n, last, summarize(latencies), n)
 
-
 def main():
     suite = sys.argv[1] if len(sys.argv) > 1 else ""
     if suite == "scalability":
@@ -127,7 +119,6 @@ def main():
         print("unknown suite", file=sys.stderr)
         return 1
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
