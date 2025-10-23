@@ -355,6 +355,16 @@ public:
     /// The differentiable surrogate for robustness the synthesis optimizers climb.
     double smooth_robustness(const Trace& trace, const SmoothConfig& config = {}) const;
 
+    /// The smooth robustness and its gradient with respect to every signal at every sample, returned as [variable][sample] in sorted variable order.
+    std::pair<double, std::vector<std::vector<double>>> smooth_value_and_gradient(
+        const Trace& trace, const SmoothConfig& config = {}) const;
+
+    /// The smooth robustness and its gradient per input coordinate, for the trajectory the model rolls from initial under input.
+    std::pair<double, std::vector<double>> smooth_gradient(const SystemModel& model,
+                                                          const std::vector<double>& initial,
+                                                          const std::vector<double>& input,
+                                                          const SmoothConfig& config = {}) const;
+
     /// Estimate the satisfaction probability of this P-wrapped formula by sampling the lifted trace ensemble.
     SmcResult check(const Trace& trace, const LiftingRegistry& lifting,
                     const SmcConfig& config = {}) const;
@@ -940,6 +950,18 @@ inline double Formula::smooth_robustness(const Trace& trace, const SmoothConfig&
     double out;
     ensure(sentil_formula_smooth_robustness(get(), trace.get(), &c, &out));
     return out;
+}
+
+inline std::pair<double, std::vector<std::vector<double>>> Formula::smooth_value_and_gradient(
+    const Trace& trace, const SmoothConfig& config) const {
+    std::size_t n_vars = variables().size();
+    std::size_t n_samples = trace.size();
+    sentil_smooth_config_t c = detail::to_c(config);
+    double value = 0.0;
+    std::vector<double> flat(n_vars * n_samples);
+    ensure(sentil_formula_smooth_value_and_gradient(get(), trace.get(), &c, &value, flat.data(),
+                                                    n_vars, n_samples));
+    return {value, detail::unflatten(flat, n_vars, n_samples)};
 }
 
 /// A monitor configuration.
@@ -2089,6 +2111,17 @@ inline Witness Formula::falsify(const SystemModel& model, const Bounds& bounds,
     sentil_witness_t out;
     ensure(sentil_formula_falsify(get(), model.get(), bounds.get(), c, restarts, &out));
     return detail::pack_witness(out);
+}
+
+inline std::pair<double, std::vector<double>> Formula::smooth_gradient(
+    const SystemModel& model, const std::vector<double>& initial,
+    const std::vector<double>& input, const SmoothConfig& config) const {
+    sentil_smooth_config_t c = detail::to_c(config);
+    double value = 0.0;
+    std::vector<double> gradient(input.size());
+    ensure(sentil_formula_smooth_gradient(get(), model.get(), initial.data(), initial.size(),
+                                          input.data(), input.size(), &c, &value, gradient.data()));
+    return {value, std::move(gradient)};
 }
 
 /// The SMC settings a spec recommends.
