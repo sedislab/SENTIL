@@ -887,6 +887,15 @@ inline std::vector<Interval> Formula::violations(const Trace& trace) const {
     return detail::owned_intervals(raw, count);
 }
 
+/// The spans where a robustness signal, sampled at the given times, is negative.
+inline std::vector<Interval> violation_intervals(const std::vector<double>& times,
+                                                 const std::vector<double>& signal) {
+    std::size_t count = 0;
+    sentil_interval_t* raw =
+        sentil_violation_intervals(times.data(), times.size(), signal.data(), signal.size(), &count);
+    return detail::owned_intervals(raw, count);
+}
+
 inline double Formula::smooth_robustness(const Trace& trace, const SmoothConfig& config) const {
     sentil_smooth_config_t c = detail::to_c(config);
     double out;
@@ -1331,6 +1340,11 @@ public:
         return NoiseModel(detail::must(sentil_noise_from_json(json.c_str())));
     }
 
+    /// Load a model from a JSON file.
+    static NoiseModel from_file(const std::string& path) {
+        return NoiseModel(detail::must(sentil_noise_from_file(path.c_str())));
+    }
+
     explicit NoiseModel(sentil_noise_model_t* handle) : handle_(handle) {}
 
     sentil_noise_model_t* get() const { return handle_.get(); }
@@ -1690,6 +1704,16 @@ public:
         std::vector<double> out(dimension());
         sentil_bounds_upper(get(), out.data());
         return out;
+    }
+
+    /// Project a point into the box, returning the clamped copy.
+    std::vector<double> clamp(std::vector<double> point) const {
+        if (point.size() != dimension()) {
+            detail::raise_with(SENTIL_ERR_INVALID_CONFIG,
+                               "point length must equal the bounds dimension");
+        }
+        sentil_bounds_clamp(get(), point.data(), point.size());
+        return point;
     }
 
     explicit Bounds(sentil_bounds_t* handle) : handle_(handle) {}
