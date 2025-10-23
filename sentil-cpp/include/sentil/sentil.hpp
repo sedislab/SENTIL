@@ -1624,6 +1624,39 @@ inline SimExpr operator/(double left, SimExpr right) {
 
 inline SimExpr operator-(SimExpr term) { return SimExpr::constant(0.0) - std::move(term); }
 
+namespace detail {
+
+inline SimExpr sim_unary_call(const char* name, SimExpr arg) {
+    sentil_sim_expr_t* a = arg.release();
+    return SimExpr(must(sentil_sim_expr_call(name, &a, 1)));
+}
+
+inline SimExpr sim_binary_call(const char* name, SimExpr left, SimExpr right) {
+    sentil_sim_expr_t* args[2] = {left.release(), right.release()};
+    return SimExpr(must(sentil_sim_expr_call(name, args, 2)));
+}
+
+}  // namespace detail
+
+inline SimExpr abs(SimExpr term) { return detail::sim_unary_call("abs", std::move(term)); }
+inline SimExpr sin(SimExpr term) { return detail::sim_unary_call("sin", std::move(term)); }
+inline SimExpr cos(SimExpr term) { return detail::sim_unary_call("cos", std::move(term)); }
+inline SimExpr tan(SimExpr term) { return detail::sim_unary_call("tan", std::move(term)); }
+inline SimExpr sqrt(SimExpr term) { return detail::sim_unary_call("sqrt", std::move(term)); }
+inline SimExpr exp(SimExpr term) { return detail::sim_unary_call("exp", std::move(term)); }
+inline SimExpr log(SimExpr term) { return detail::sim_unary_call("log", std::move(term)); }
+inline SimExpr ln(SimExpr term) { return detail::sim_unary_call("ln", std::move(term)); }
+inline SimExpr floor(SimExpr term) { return detail::sim_unary_call("floor", std::move(term)); }
+inline SimExpr ceil(SimExpr term) { return detail::sim_unary_call("ceil", std::move(term)); }
+
+inline SimExpr min(SimExpr left, SimExpr right) {
+    return detail::sim_binary_call("min", std::move(left), std::move(right));
+}
+
+inline SimExpr max(SimExpr left, SimExpr right) {
+    return detail::sim_binary_call("max", std::move(left), std::move(right));
+}
+
 /// A sampling-ready stochastic system, the form the rare-event estimator consumes.
 /// Build one from a SimModel with to_stochastic_system.
 class StochasticSystem {
