@@ -2091,6 +2091,27 @@ inline Witness Formula::falsify(const SystemModel& model, const Bounds& bounds,
     return detail::pack_witness(out);
 }
 
+/// The SMC settings a spec recommends.
+struct SpecSmcSettings {
+    double confidence;
+    std::uint64_t sample_budget;
+};
+
+/// The SPRT settings a spec recommends.
+struct SpecSprtSettings {
+    double p0;
+    double p1;
+    double alpha;
+    double beta;
+    std::size_t max_samples;
+};
+
+/// The rare-event splitting settings a spec recommends.
+struct SpecAmsSettings {
+    std::size_t num_particles;
+    std::size_t max_steps;
+};
+
 /// The specifications-library loader.
 class SpecBuilder {
 public:
@@ -2162,6 +2183,33 @@ public:
     /// A monitor preloaded with the spec's recommended settings.
     Monitor build_monitor() && {
         return Monitor(detail::must(sentil_spec_builder_into_monitor(release())));
+    }
+
+    /// The SMC settings the spec recommends, or none when it carries none.
+    std::optional<SpecSmcSettings> smc_settings() const {
+        sentil_spec_smc_settings_t out;
+        if (!sentil_spec_builder_smc_settings(get(), &out)) {
+            return std::nullopt;
+        }
+        return SpecSmcSettings{out.confidence, out.sample_budget};
+    }
+
+    /// The SPRT settings the spec recommends, or none when it carries none.
+    std::optional<SpecSprtSettings> sprt_settings() const {
+        sentil_spec_sprt_settings_t out;
+        if (!sentil_spec_builder_sprt_settings(get(), &out)) {
+            return std::nullopt;
+        }
+        return SpecSprtSettings{out.p0, out.p1, out.alpha, out.beta, out.max_samples};
+    }
+
+    /// The rare-event settings the spec recommends, or none when it carries none.
+    std::optional<SpecAmsSettings> ams_settings() const {
+        sentil_spec_ams_settings_t out;
+        if (!sentil_spec_builder_ams_settings(get(), &out)) {
+            return std::nullopt;
+        }
+        return SpecAmsSettings{out.num_particles, out.max_steps};
     }
 
     explicit SpecBuilder(sentil_spec_builder_t* handle) : handle_(handle) {}
