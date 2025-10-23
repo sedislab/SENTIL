@@ -9,7 +9,8 @@ set(SENTIL_CPP_TESTS
     test_stats
     test_synthesis
     test_specs
-    test_errors)
+    test_errors
+    test_parity)
 
 set(SENTIL_CPP_GPU_TESTS test_gpu)
 
