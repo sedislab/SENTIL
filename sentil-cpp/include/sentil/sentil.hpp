@@ -1972,9 +1972,28 @@ private:
     detail::Handle<sentil_bounds_t, sentil_bounds_destroy> handle_;
 };
 
-/// A dynamical system the synthesizer drives. The only public constructor is the
-/// linear time-invariant model; closure-driven models are out of scope, as in the
-/// other bindings, because the engine would run the callback across worker threads.
+namespace detail {
+
+struct ModelCallbackState {
+    std::function<std::vector<std::vector<double>>(const std::vector<double>& initial,
+                                                   const std::vector<double>& input)>
+        rollout;
+    std::vector<double> initial_state;
+    std::size_t horizon = 0;
+    std::mutex mutex;
+    std::exception_ptr error = nullptr;
+
+    void capture() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!error) {
+            error = std::current_exception();
+        }
+    }
+};
+
+}  // namespace detail
+
+/// A dynamical system the synthesizer drives.
 class SystemModel {
 public:
     /// A linear model x_{t+1} = A x_t + B u_t.
@@ -1997,8 +2016,60 @@ public:
             horizon)));
     }
 
+    /// A model whose rollout is a host function returning one row of horizon + 1
+    /// samples per variable. The rollout must be thread-safe.
+    static SystemModel custom(
+        const std::vector<std::string>& variables, double dt, std::size_t horizon,
+        const std::vector<double>& initial_state, std::size_t input_dimension,
+        std::function<std::vector<std::vector<double>>(const std::vector<double>& initial,
+                                                       const std::vector<double>& input)>
+            rollout) {
+        auto state = std::make_shared<detail::ModelCallbackState>();
+        state->rollout = std::move(rollout);
+        state->initial_state = initial_state;
+        state->horizon = horizon;
+        sentil_model_vtable_t vtable;
+        vtable.userdata = state.get();
+        vtable.input_dimension = input_dimension;
+        vtable.initial_state = state->initial_state.data();
+        vtable.rollout = +[](void* userdata, const double* initial, std::size_t n_state,
+                             const double* input, std::size_t n_input, double* out_signals) {
+            auto& s = *static_cast<detail::ModelCallbackState*>(userdata);
+            std::size_t cols = s.horizon + 1;
+            try {
+                std::vector<std::vector<double>> signals =
+                    s.rollout(std::vector<double>(initial, initial + n_state),
+                              std::vector<double>(input, input + n_input));
+                for (std::size_t i = 0; i < n_state; ++i) {
+                    for (std::size_t j = 0; j < cols; ++j) {
+                        out_signals[i * cols + j] =
+                            (i < signals.size() && j < signals[i].size()) ? signals[i][j] : 0.0;
+                    }
+                }
+            } catch (...) {
+                s.capture();
+                for (std::size_t k = 0; k < n_state * cols; ++k) {
+                    out_signals[k] = 0.0;
+                }
+            }
+        };
+        std::vector<const char*> names = detail::c_strs(variables);
+        sentil_system_model_t* handle = detail::must(sentil_system_model_create_custom(
+            names.data(), names.size(), dt, horizon, vtable));
+        return SystemModel(handle, std::move(state));
+    }
+
     /// The total length of the input sequence the synthesizer optimizes.
     std::size_t input_dimension() const { return sentil_system_model_input_dimension(get()); }
+
+    /// Rethrow any error a custom rollout recorded during the last use.
+    void rethrow_callback_error() const {
+        if (state_ && state_->error) {
+            std::exception_ptr error = state_->error;
+            state_->error = nullptr;
+            std::rethrow_exception(error);
+        }
+    }
 
     explicit SystemModel(sentil_system_model_t* handle) : handle_(handle) {}
 
@@ -2006,7 +2077,14 @@ public:
 
     sentil_system_model_t* release() { return handle_.release(); }
 
+    /// The rollout state, null for a linear model.
+    std::shared_ptr<detail::ModelCallbackState> share_state() const { return state_; }
+
 private:
+    SystemModel(sentil_system_model_t* handle, std::shared_ptr<detail::ModelCallbackState> state)
+        : state_(std::move(state)), handle_(handle) {}
+
+    std::shared_ptr<detail::ModelCallbackState> state_;
     detail::Handle<sentil_system_model_t, sentil_system_model_destroy> handle_;
 };
 
@@ -2088,11 +2166,17 @@ inline SynthesisResult synthesize(const SystemModel& model, const Formula& spec,
         sc = detail::to_c(*smooth);
         sc_ptr = &sc;
     }
-    sentil_synthesis_result_t out;
-    ensure(sentil_synthesize(model.get(), spec.get(), bounds ? bounds->get() : nullptr, sc_ptr,
-                             max_iters, static_cast<sentil_backend_t>(backend), population, &out));
-    std::vector<double> input(out.input, out.input + out.input_len);
-    sentil_free_doubles(out.input, out.input_len);
+    sentil_synthesis_result_t out{};
+    sentil_error_t code =
+        sentil_synthesize(model.get(), spec.get(), bounds ? bounds->get() : nullptr, sc_ptr,
+                          max_iters, static_cast<sentil_backend_t>(backend), population, &out);
+    std::vector<double> input;
+    if (out.input) {
+        input.assign(out.input, out.input + out.input_len);
+        sentil_free_doubles(out.input, out.input_len);
+    }
+    model.rethrow_callback_error();
+    ensure(code);
     return SynthesisResult{std::move(input), out.robustness, out.holds,
                            static_cast<Backend>(out.backend)};
 }
@@ -2297,12 +2381,20 @@ public:
     Controller(SystemModel model, Formula spec, std::size_t input_width, std::uint64_t budget_ns,
                const Bounds* bounds = nullptr, const SmoothConfig* smooth = nullptr)
         : input_width_(input_width),
+          model_state_(model.share_state()),
           handle_(make(std::move(model), std::move(spec), input_width, budget_ns, bounds, smooth)) {}
 
     /// Plan from the current state and return the first control input.
     std::vector<double> control(const std::vector<double>& state) {
         std::vector<double> out(input_width_);
-        ensure(sentil_controller_control(get(), state.data(), state.size(), out.data()));
+        sentil_error_t code = sentil_controller_control(get(), state.data(), state.size(),
+                                                        out.data());
+        if (model_state_ && model_state_->error) {
+            std::exception_ptr error = model_state_->error;
+            model_state_->error = nullptr;
+            std::rethrow_exception(error);
+        }
+        ensure(code);
         return out;
     }
 
@@ -2327,6 +2419,7 @@ private:
     }
 
     std::size_t input_width_;
+    std::shared_ptr<detail::ModelCallbackState> model_state_;
     detail::Handle<sentil_controller_t, sentil_controller_destroy> handle_;
 };
 
@@ -2373,18 +2466,24 @@ inline Witness Formula::find_counterexample(const SystemModel& model, const Boun
         sc = detail::to_c(*smooth);
         sc_ptr = &sc;
     }
-    sentil_witness_t out;
-    ensure(sentil_formula_find_counterexample(get(), model.get(), bounds.get(), max_iters, sc_ptr,
-                                              &out));
-    return detail::pack_witness(out);
+    sentil_witness_t out{};
+    sentil_error_t code = sentil_formula_find_counterexample(get(), model.get(), bounds.get(),
+                                                             max_iters, sc_ptr, &out);
+    Witness witness = code == SENTIL_OK ? detail::pack_witness(out) : Witness{{}, 0.0, Trace(nullptr)};
+    model.rethrow_callback_error();
+    ensure(code);
+    return witness;
 }
 
 inline Witness Formula::falsify(const SystemModel& model, const Bounds& bounds,
                                 const CmaConfig& config, std::size_t restarts) const {
     sentil_cma_config_t c = detail::to_c(config);
-    sentil_witness_t out;
-    ensure(sentil_formula_falsify(get(), model.get(), bounds.get(), c, restarts, &out));
-    return detail::pack_witness(out);
+    sentil_witness_t out{};
+    sentil_error_t code = sentil_formula_falsify(get(), model.get(), bounds.get(), c, restarts, &out);
+    Witness witness = code == SENTIL_OK ? detail::pack_witness(out) : Witness{{}, 0.0, Trace(nullptr)};
+    model.rethrow_callback_error();
+    ensure(code);
+    return witness;
 }
 
 inline std::pair<double, std::vector<double>> Formula::smooth_gradient(
@@ -2393,8 +2492,11 @@ inline std::pair<double, std::vector<double>> Formula::smooth_gradient(
     sentil_smooth_config_t c = detail::to_c(config);
     double value = 0.0;
     std::vector<double> gradient(input.size());
-    ensure(sentil_formula_smooth_gradient(get(), model.get(), initial.data(), initial.size(),
-                                          input.data(), input.size(), &c, &value, gradient.data()));
+    sentil_error_t code =
+        sentil_formula_smooth_gradient(get(), model.get(), initial.data(), initial.size(),
+                                       input.data(), input.size(), &c, &value, gradient.data());
+    model.rethrow_callback_error();
+    ensure(code);
     return {value, std::move(gradient)};
 }
 
