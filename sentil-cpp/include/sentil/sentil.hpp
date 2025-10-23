@@ -5,6 +5,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -1952,6 +1955,141 @@ inline SynthesisResult synthesize(const SystemModel& model, const Formula& spec,
     sentil_free_doubles(out.input, out.input_len);
     return SynthesisResult{std::move(input), out.robustness, out.holds,
                            static_cast<Backend>(out.backend)};
+}
+
+/// An objective returning the value and its gradient at a point.
+using GradientObjective = std::function<std::pair<double, std::vector<double>>(
+    const std::vector<double>&)>;
+/// A scalar objective for cma_es.
+using Objective = std::function<double(const std::vector<double>&)>;
+/// A batch objective scoring many points at once for cma_es_batched. It may be
+/// called from several threads, so it must be thread-safe.
+using BatchObjective = std::function<std::vector<double>(
+    const std::vector<std::vector<double>>&)>;
+
+namespace detail {
+
+template <typename Fn>
+struct CallbackState {
+    Fn fn;
+    std::exception_ptr error = nullptr;
+};
+
+}  // namespace detail
+
+/// Maximize a gradient objective from start, optionally inside bounds.
+inline std::pair<std::vector<double>, double> maximize(GradientObjective objective,
+                                                       const std::vector<double>& start,
+                                                       const Bounds* bounds = nullptr,
+                                                       std::size_t max_iters = 0) {
+    detail::CallbackState<GradientObjective> state{std::move(objective)};
+    auto trampoline = +[](void* userdata, const double* x, std::size_t n, double* out_value,
+                          double* out_gradient) {
+        auto& s = *static_cast<detail::CallbackState<GradientObjective>*>(userdata);
+        if (s.error) {
+            *out_value = -std::numeric_limits<double>::infinity();
+            return;
+        }
+        try {
+            std::pair<double, std::vector<double>> result = s.fn(std::vector<double>(x, x + n));
+            *out_value = result.first;
+            for (std::size_t i = 0; i < n; ++i) {
+                out_gradient[i] = i < result.second.size() ? result.second[i] : 0.0;
+            }
+        } catch (...) {
+            s.error = std::current_exception();
+            *out_value = -std::numeric_limits<double>::infinity();
+            for (std::size_t i = 0; i < n; ++i) {
+                out_gradient[i] = 0.0;
+            }
+        }
+    };
+    std::vector<double> out_point(start.size());
+    double out_value = 0.0;
+    sentil_error_t code = sentil_maximize(trampoline, &state, start.data(), start.size(),
+                                          bounds ? bounds->get() : nullptr, max_iters,
+                                          out_point.data(), &out_value);
+    if (state.error) {
+        std::rethrow_exception(state.error);
+    }
+    ensure(code);
+    return {std::move(out_point), out_value};
+}
+
+/// Maximize a scalar objective with gradient-free CMA-ES from start, optionally
+/// inside bounds.
+inline std::pair<std::vector<double>, double> cma_es(Objective objective,
+                                                     const std::vector<double>& start,
+                                                     const Bounds* bounds = nullptr,
+                                                     const CmaConfig& config = {}) {
+    detail::CallbackState<Objective> state{std::move(objective)};
+    auto trampoline = +[](void* userdata, const double* x, std::size_t n) -> double {
+        auto& s = *static_cast<detail::CallbackState<Objective>*>(userdata);
+        if (s.error) {
+            return -std::numeric_limits<double>::infinity();
+        }
+        try {
+            return s.fn(std::vector<double>(x, x + n));
+        } catch (...) {
+            s.error = std::current_exception();
+            return -std::numeric_limits<double>::infinity();
+        }
+    };
+    std::vector<double> out_point(start.size());
+    double out_value = 0.0;
+    sentil_error_t code = sentil_cma_es(trampoline, &state, start.data(), start.size(),
+                                        bounds ? bounds->get() : nullptr, sentil::detail::to_c(config),
+                                        out_point.data(), &out_value);
+    if (state.error) {
+        std::rethrow_exception(state.error);
+    }
+    ensure(code);
+    return {std::move(out_point), out_value};
+}
+
+/// Maximize a batch objective with CMA-ES, scoring a whole population at once.
+/// The objective must be thread-safe.
+inline std::pair<std::vector<double>, double> cma_es_batched(BatchObjective objective,
+                                                            const std::vector<double>& start,
+                                                            const Bounds* bounds = nullptr,
+                                                            const CmaConfig& config = {}) {
+    detail::CallbackState<BatchObjective> state{std::move(objective)};
+    auto trampoline = +[](void* userdata, const double* points, std::size_t population,
+                          std::size_t dim, double* out_scores) {
+        auto& s = *static_cast<detail::CallbackState<BatchObjective>*>(userdata);
+        if (s.error) {
+            for (std::size_t i = 0; i < population; ++i) {
+                out_scores[i] = -std::numeric_limits<double>::infinity();
+            }
+            return;
+        }
+        try {
+            std::vector<std::vector<double>> grid(population);
+            for (std::size_t i = 0; i < population; ++i) {
+                grid[i].assign(points + i * dim, points + (i + 1) * dim);
+            }
+            std::vector<double> scores = s.fn(grid);
+            for (std::size_t i = 0; i < population; ++i) {
+                out_scores[i] = i < scores.size() ? scores[i]
+                                                  : -std::numeric_limits<double>::infinity();
+            }
+        } catch (...) {
+            s.error = std::current_exception();
+            for (std::size_t i = 0; i < population; ++i) {
+                out_scores[i] = -std::numeric_limits<double>::infinity();
+            }
+        }
+    };
+    std::vector<double> out_point(start.size());
+    double out_value = 0.0;
+    sentil_error_t code = sentil_cma_es_batched(trampoline, &state, start.data(), start.size(),
+                                                bounds ? bounds->get() : nullptr,
+                                                sentil::detail::to_c(config), out_point.data(), &out_value);
+    if (state.error) {
+        std::rethrow_exception(state.error);
+    }
+    ensure(code);
+    return {std::move(out_point), out_value};
 }
 
 }  // namespace synthesis
