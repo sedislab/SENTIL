@@ -32,6 +32,8 @@ struct CallbackState {
 
 template <typename Fn>
 struct SyncCallbackState {
+    explicit SyncCallbackState(Fn callback) : fn(std::move(callback)) {}
+
     Fn fn;
     std::mutex mutex;
     std::exception_ptr error = nullptr;
@@ -2475,6 +2477,89 @@ inline double mine_tightest_parameter(SpecMaker make, const std::vector<Trace>& 
     }
     ensure(code);
     return out;
+}
+
+/// A rare-event probability estimated over a user-defined simulator.
+struct RareEventEstimate {
+    double probability;
+    std::uint64_t simulations;
+};
+
+/// A simulator over a trivially copyable state, for adaptive multilevel splitting.
+/// The callbacks must be thread-safe.
+template <typename State>
+struct AmsSimulator {
+    /// Draw an initial state from a seed.
+    std::function<State(std::uint64_t seed)> initial_state;
+    /// Advance one step from a state and a seed.
+    std::function<State(const State& state, std::uint64_t seed)> step;
+    /// Whether the run has ended, setting in_rare_event to whether it reached the
+    /// rare set.
+    std::function<bool(const State& state, bool& in_rare_event)> is_terminal;
+    /// The level score of a state.
+    std::function<double(const State& state)> score;
+};
+
+/// Estimate a rare-event probability over a user-defined simulator by adaptive
+/// multilevel splitting.
+template <typename State>
+inline RareEventEstimate adaptive_multilevel_splitting(const AmsSimulator<State>& simulator,
+                                                       std::size_t particles, double target_score,
+                                                       std::uint64_t max_steps,
+                                                       std::uint64_t seed) {
+    static_assert(std::is_trivially_copyable<State>::value,
+                  "the AMS state must be trivially copyable: the engine clones particles by bytes");
+    using StateHolder = detail::SyncCallbackState<AmsSimulator<State>>;
+    StateHolder holder{simulator};
+    sentil_ams_interface_t iface;
+    iface.state_size = sizeof(State);
+    iface.userdata = &holder;
+    iface.initial_state = +[](void* userdata, std::uint64_t s, void* out) {
+        auto& h = *static_cast<StateHolder*>(userdata);
+        try {
+            *static_cast<State*>(out) = h.fn.initial_state(s);
+        } catch (...) {
+            h.capture();
+        }
+    };
+    iface.step = +[](void* userdata, const void* state, std::uint64_t s, void* out) {
+        auto& h = *static_cast<StateHolder*>(userdata);
+        try {
+            *static_cast<State*>(out) = h.fn.step(*static_cast<const State*>(state), s);
+        } catch (...) {
+            h.capture();
+        }
+    };
+    iface.is_terminal = +[](void* userdata, const void* state, bool* out_in_rare_event) -> bool {
+        auto& h = *static_cast<StateHolder*>(userdata);
+        try {
+            bool in_rare = false;
+            bool terminal = h.fn.is_terminal(*static_cast<const State*>(state), in_rare);
+            *out_in_rare_event = in_rare;
+            return terminal;
+        } catch (...) {
+            h.capture();
+            *out_in_rare_event = false;
+            return true;
+        }
+    };
+    iface.score = +[](void* userdata, const void* state) -> double {
+        auto& h = *static_cast<StateHolder*>(userdata);
+        try {
+            return h.fn.score(*static_cast<const State*>(state));
+        } catch (...) {
+            h.capture();
+            return -std::numeric_limits<double>::infinity();
+        }
+    };
+    sentil_rare_event_estimate_t out;
+    sentil_error_t code = sentil_adaptive_multilevel_splitting(iface, particles, target_score,
+                                                               max_steps, seed, &out);
+    if (holder.error) {
+        std::rethrow_exception(holder.error);
+    }
+    ensure(code);
+    return RareEventEstimate{out.probability, out.simulations};
 }
 
 /// The GPU accelerated paths.
