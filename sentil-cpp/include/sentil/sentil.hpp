@@ -429,6 +429,16 @@ inline Expr make_binary(sentil_binary_op_t op, Expr left, Expr right) {
     return Expr(must(sentil_expr_binary(op, left.release(), right.release())));
 }
 
+inline Expr unary_call(const char* name, Expr arg) {
+    sentil_expr_t* a = arg.release();
+    return Expr(must(sentil_expr_call(name, &a, 1)));
+}
+
+inline Expr binary_call(const char* name, Expr left, Expr right) {
+    sentil_expr_t* args[2] = {left.release(), right.release()};
+    return Expr(must(sentil_expr_call(name, args, 2)));
+}
+
 }  // namespace detail
 
 inline Expr operator+(Expr left, Expr right) {
@@ -455,10 +465,39 @@ inline Expr operator/(double left, Expr right) { return Expr::constant(left) / s
 
 inline Expr operator-(Expr term) { return Expr::constant(0.0) - std::move(term); }
 
-inline Expr abs(Expr term) {
-    sentil_expr_t* arg = term.release();
-    return Expr(detail::must(sentil_expr_call("abs", &arg, 1)));
+inline Expr abs(Expr term) { return detail::unary_call("abs", std::move(term)); }
+inline Expr sin(Expr term) { return detail::unary_call("sin", std::move(term)); }
+inline Expr cos(Expr term) { return detail::unary_call("cos", std::move(term)); }
+inline Expr tan(Expr term) { return detail::unary_call("tan", std::move(term)); }
+inline Expr sqrt(Expr term) { return detail::unary_call("sqrt", std::move(term)); }
+inline Expr exp(Expr term) { return detail::unary_call("exp", std::move(term)); }
+inline Expr log(Expr term) { return detail::unary_call("log", std::move(term)); }
+inline Expr ln(Expr term) { return detail::unary_call("ln", std::move(term)); }
+inline Expr floor(Expr term) { return detail::unary_call("floor", std::move(term)); }
+inline Expr ceil(Expr term) { return detail::unary_call("ceil", std::move(term)); }
+
+inline Expr min(Expr left, Expr right) {
+    return detail::binary_call("min", std::move(left), std::move(right));
 }
+inline Expr min(Expr left, double right) { return min(std::move(left), Expr::constant(right)); }
+inline Expr min(double left, Expr right) { return min(Expr::constant(left), std::move(right)); }
+
+inline Expr max(Expr left, Expr right) {
+    return detail::binary_call("max", std::move(left), std::move(right));
+}
+inline Expr max(Expr left, double right) { return max(std::move(left), Expr::constant(right)); }
+inline Expr max(double left, Expr right) { return max(Expr::constant(left), std::move(right)); }
+
+inline Expr pow(Expr base, Expr exponent) {
+    return detail::make_binary(SENTIL_BIN_POW, std::move(base), std::move(exponent));
+}
+inline Expr pow(Expr base, double exponent) { return pow(std::move(base), Expr::constant(exponent)); }
+
+inline Expr operator%(Expr left, Expr right) {
+    return detail::make_binary(SENTIL_BIN_MOD, std::move(left), std::move(right));
+}
+inline Expr operator%(Expr left, double right) { return std::move(left) % Expr::constant(right); }
+inline Expr operator%(double left, Expr right) { return Expr::constant(left) % std::move(right); }
 
 namespace detail {
 
