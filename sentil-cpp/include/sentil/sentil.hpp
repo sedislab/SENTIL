@@ -1018,6 +1018,11 @@ public:
     explicit OnlineMonitor(const Formula& formula)
         : handle_(detail::must(sentil_stream_monitor_from_formula(formula.get()))) {}
 
+    /// A streaming monitor that tracks a P~p(phi) formula online, lifting each
+    /// reading into a particle ensemble through the registry.
+    static OnlineMonitor with_lifting(const Formula& formula, const LiftingRegistry& lifting,
+                                      const SmcConfig& config = {});
+
     /// The number of variables the formula reads.
     std::size_t variable_count() const { return sentil_stream_monitor_variable_count(get()); }
 
@@ -1093,6 +1098,10 @@ public:
         char** raw = sentil_multi_monitor_ids(get(), &count);
         return detail::owned_string_array(raw, count);
     }
+
+    /// Add a P~p(phi) formula tracked online through a lifted particle ensemble.
+    void add_probabilistic(const std::string& id, const Formula& formula,
+                           const LiftingRegistry& lifting, const SmcConfig& config = {});
 
     /// Advance every monitor at this sample, returning the verdict for each id.
     std::map<std::string, Robustness> update(double time,
@@ -1366,6 +1375,22 @@ public:
 private:
     detail::Handle<sentil_lifting_registry_t, sentil_lifting_registry_destroy> handle_;
 };
+
+inline OnlineMonitor OnlineMonitor::with_lifting(const Formula& formula,
+                                                const LiftingRegistry& lifting,
+                                                const SmcConfig& config) {
+    sentil_smc_config_t c = detail::to_c(config);
+    return OnlineMonitor(
+        detail::must(sentil_stream_monitor_with_lifting(formula.get(), lifting.get(), &c)));
+}
+
+inline void MultiMonitor::add_probabilistic(const std::string& id, const Formula& formula,
+                                            const LiftingRegistry& lifting,
+                                            const SmcConfig& config) {
+    sentil_smc_config_t c = detail::to_c(config);
+    ensure(sentil_multi_monitor_add_probabilistic(get(), id.c_str(), formula.get(), lifting.get(),
+                                                  &c));
+}
 
 inline SmcResult Formula::check(const Trace& trace, const LiftingRegistry& lifting,
                                 const SmcConfig& config) const {
