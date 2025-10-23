@@ -9,6 +9,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -1736,13 +1737,84 @@ inline SimExpr max(SimExpr left, SimExpr right) {
     return detail::sim_binary_call("max", std::move(left), std::move(right));
 }
 
-/// A sampling-ready stochastic system, the form the rare-event estimator consumes.
-/// Build one from a SimModel with to_stochastic_system.
+namespace detail {
+
+struct SystemCallbackState {
+    std::function<std::vector<double>(std::uint64_t seed)> init;
+    std::function<std::vector<double>(const std::vector<double>& prev, double time,
+                                      std::uint64_t seed)>
+        step;
+    std::mutex mutex;
+    std::exception_ptr error = nullptr;
+
+    void capture() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!error) {
+            error = std::current_exception();
+        }
+    }
+};
+
+}  // namespace detail
+
+/// A sampling-ready stochastic system.
 class StochasticSystem {
 public:
+    /// A system whose dynamics are host callbacks, which must be thread-safe.
+    static StochasticSystem custom(
+        const std::vector<std::string>& variables, double dt, std::size_t horizon,
+        std::function<std::vector<double>(std::uint64_t seed)> init,
+        std::function<std::vector<double>(const std::vector<double>& prev, double time,
+                                          std::uint64_t seed)>
+            step) {
+        auto state = std::unique_ptr<detail::SystemCallbackState>(new detail::SystemCallbackState());
+        state->init = std::move(init);
+        state->step = std::move(step);
+        sentil_system_callbacks_t callbacks;
+        callbacks.userdata = state.get();
+        callbacks.init = +[](void* userdata, std::uint64_t seed, double* out_state, std::size_t n) {
+            auto& s = *static_cast<detail::SystemCallbackState*>(userdata);
+            try {
+                std::vector<double> values = s.init(seed);
+                for (std::size_t i = 0; i < n; ++i) {
+                    out_state[i] = i < values.size() ? values[i] : 0.0;
+                }
+            } catch (...) {
+                s.capture();
+                for (std::size_t i = 0; i < n; ++i) {
+                    out_state[i] = 0.0;
+                }
+            }
+        };
+        callbacks.step = +[](void* userdata, const double* prev, std::size_t n, double time,
+                             std::uint64_t seed, double* out_state) {
+            auto& s = *static_cast<detail::SystemCallbackState*>(userdata);
+            try {
+                std::vector<double> values = s.step(std::vector<double>(prev, prev + n), time, seed);
+                for (std::size_t i = 0; i < n; ++i) {
+                    out_state[i] = i < values.size() ? values[i] : 0.0;
+                }
+            } catch (...) {
+                s.capture();
+                for (std::size_t i = 0; i < n; ++i) {
+                    out_state[i] = 0.0;
+                }
+            }
+        };
+        std::vector<const char*> names = detail::c_strs(variables);
+        sentil_stochastic_system_t* handle = detail::must(
+            sentil_stochastic_system_create(names.data(), names.size(), dt, horizon, callbacks));
+        return StochasticSystem(handle, std::move(state));
+    }
+
     /// Simulate one full-horizon trajectory from a seed.
     Trace simulate(std::uint64_t seed = 42) const {
-        return Trace(detail::must(sentil_stochastic_system_simulate(get(), seed)));
+        Trace result(sentil_stochastic_system_simulate(get(), seed));
+        rethrow_callback_error();
+        if (!result.get()) {
+            detail::raise_last();
+        }
+        return result;
     }
 
     /// The state variable names.
@@ -1758,11 +1830,25 @@ public:
     /// The number of steps in a trajectory.
     std::size_t horizon() const { return sentil_stochastic_system_horizon(get()); }
 
+    /// Rethrow any error a host callback recorded during the last run.
+    void rethrow_callback_error() const {
+        if (state_ && state_->error) {
+            std::exception_ptr error = state_->error;
+            state_->error = nullptr;
+            std::rethrow_exception(error);
+        }
+    }
+
     explicit StochasticSystem(sentil_stochastic_system_t* handle) : handle_(handle) {}
 
     sentil_stochastic_system_t* get() const { return handle_.get(); }
 
 private:
+    StochasticSystem(sentil_stochastic_system_t* handle,
+                     std::unique_ptr<detail::SystemCallbackState> state)
+        : state_(std::move(state)), handle_(handle) {}
+
+    std::unique_ptr<detail::SystemCallbackState> state_;
     detail::Handle<sentil_stochastic_system_t, sentil_stochastic_system_destroy> handle_;
 };
 
@@ -2189,7 +2275,10 @@ public:
     ChanceReport validate(const StochasticSystem& system, std::uint64_t samples = 1000,
                           std::uint64_t seed = 42) const {
         sentil_chance_report_t out;
-        ensure(sentil_chance_constraint_validate(get(), system.get(), samples, seed, &out));
+        sentil_error_t code =
+            sentil_chance_constraint_validate(get(), system.get(), samples, seed, &out);
+        system.rethrow_callback_error();
+        ensure(code);
         return detail::from_c(out);
     }
 
@@ -2262,13 +2351,17 @@ inline RareEventResult Formula::check_rare_event(const StochasticSystem& system,
                                                  const RareEventConfig& config) const {
     sentil_rare_event_config_t c = detail::to_c(config);
     sentil_rare_event_result_t out;
-    ensure(sentil_formula_check_rare_event(get(), system.get(), &c, &out));
+    sentil_error_t code = sentil_formula_check_rare_event(get(), system.get(), &c, &out);
+    system.rethrow_callback_error();
+    ensure(code);
     return detail::from_c(out);
 }
 
 inline RareEventResult Monitor::check_rare(const StochasticSystem& system) const {
     sentil_rare_event_result_t out;
-    ensure(sentil_monitor_check_rare(get(), system.get(), &out));
+    sentil_error_t code = sentil_monitor_check_rare(get(), system.get(), &out);
+    system.rethrow_callback_error();
+    ensure(code);
     return detail::from_c(out);
 }
 
