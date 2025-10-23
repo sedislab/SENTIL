@@ -9,6 +9,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -22,6 +23,26 @@
 namespace sentil {
 
 namespace detail {
+
+template <typename Fn>
+struct CallbackState {
+    Fn fn;
+    std::exception_ptr error = nullptr;
+};
+
+template <typename Fn>
+struct SyncCallbackState {
+    Fn fn;
+    std::mutex mutex;
+    std::exception_ptr error = nullptr;
+
+    void capture() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!error) {
+            error = std::current_exception();
+        }
+    }
+};
 
 template <typename Fn>
 inline bool draw_bernoulli(void* userdata) {
@@ -1579,6 +1600,37 @@ inline std::uint64_t wilson_samples(double epsilon, double level) {
     return out;
 }
 
+/// A source of Bernoulli outcomes the sequential tests draw from.
+using BernoulliSource = std::function<bool()>;
+
+/// Run Wald's SPRT over a caller-supplied Bernoulli source.
+inline SprtResult sequential_test(const SprtConfig& config, BernoulliSource draw) {
+    detail::CallbackState<BernoulliSource> state{std::move(draw)};
+    sentil_sprt_config_t c = detail::to_c(config);
+    sentil_sprt_result_t out;
+    sentil_error_t code =
+        sentil_sequential_test(&c, detail::draw_bernoulli<BernoulliSource>, &state, &out);
+    if (state.error) {
+        std::rethrow_exception(state.error);
+    }
+    ensure(code);
+    return detail::from_c(out);
+}
+
+/// Run a Bayesian sequential test over a caller-supplied Bernoulli source.
+inline BayesResult bayes_sequential_test(const BayesConfig& config, BernoulliSource draw) {
+    detail::CallbackState<BernoulliSource> state{std::move(draw)};
+    sentil_bayes_config_t c = detail::to_c(config);
+    sentil_bayes_result_t out;
+    sentil_error_t code =
+        sentil_bayes_sequential_test(&c, detail::draw_bernoulli<BernoulliSource>, &state, &out);
+    if (state.error) {
+        std::rethrow_exception(state.error);
+    }
+    ensure(code);
+    return detail::from_c(out);
+}
+
 }  // namespace stats
 
 /// A term in a declarative stochastic update.
@@ -1962,20 +2014,9 @@ using GradientObjective = std::function<std::pair<double, std::vector<double>>(
     const std::vector<double>&)>;
 /// A scalar objective for cma_es.
 using Objective = std::function<double(const std::vector<double>&)>;
-/// A batch objective scoring many points at once for cma_es_batched. It may be
-/// called from several threads, so it must be thread-safe.
+/// A batch objective scoring many points at once for cma_es_batched.
 using BatchObjective = std::function<std::vector<double>(
     const std::vector<std::vector<double>>&)>;
-
-namespace detail {
-
-template <typename Fn>
-struct CallbackState {
-    Fn fn;
-    std::exception_ptr error = nullptr;
-};
-
-}  // namespace detail
 
 /// Maximize a gradient objective from start, optionally inside bounds.
 inline std::pair<std::vector<double>, double> maximize(GradientObjective objective,
@@ -2038,7 +2079,7 @@ inline std::pair<std::vector<double>, double> cma_es(Objective objective,
     std::vector<double> out_point(start.size());
     double out_value = 0.0;
     sentil_error_t code = sentil_cma_es(trampoline, &state, start.data(), start.size(),
-                                        bounds ? bounds->get() : nullptr, sentil::detail::to_c(config),
+                                        bounds ? bounds->get() : nullptr, detail::to_c(config),
                                         out_point.data(), &out_value);
     if (state.error) {
         std::rethrow_exception(state.error);
@@ -2084,7 +2125,7 @@ inline std::pair<std::vector<double>, double> cma_es_batched(BatchObjective obje
     double out_value = 0.0;
     sentil_error_t code = sentil_cma_es_batched(trampoline, &state, start.data(), start.size(),
                                                 bounds ? bounds->get() : nullptr,
-                                                sentil::detail::to_c(config), out_point.data(), &out_value);
+                                                detail::to_c(config), out_point.data(), &out_value);
     if (state.error) {
         std::rethrow_exception(state.error);
     }
@@ -2399,6 +2440,41 @@ inline GpuSplittingEstimate Formula::check_rare_event_gpu(const SimModel& model,
     sentil_gpu_splitting_estimate_t out;
     ensure(sentil_formula_check_rare_event_gpu(get(), model.get(), &c, &out));
     return detail::from_c(out);
+}
+
+/// Builds a formula from a parameter value.
+using SpecMaker = std::function<Formula(double)>;
+
+/// Find the tightest parameter in [lower, upper] for which make(param) holds on
+/// every trace.
+inline double mine_tightest_parameter(SpecMaker make, const std::vector<Trace>& traces,
+                                      double lower, double upper) {
+    detail::CallbackState<SpecMaker> state{std::move(make)};
+    auto trampoline = +[](void* userdata, double param) -> sentil_formula_t* {
+        auto& s = *static_cast<detail::CallbackState<SpecMaker>*>(userdata);
+        if (s.error) {
+            return nullptr;
+        }
+        try {
+            return s.fn(param).release();
+        } catch (...) {
+            s.error = std::current_exception();
+            return nullptr;
+        }
+    };
+    std::vector<const sentil_trace_t*> raw;
+    raw.reserve(traces.size());
+    for (const Trace& trace : traces) {
+        raw.push_back(trace.get());
+    }
+    double out = 0.0;
+    sentil_error_t code = sentil_mine_tightest_parameter(trampoline, &state, raw.data(), raw.size(),
+                                                         lower, upper, &out);
+    if (state.error) {
+        std::rethrow_exception(state.error);
+    }
+    ensure(code);
+    return out;
 }
 
 /// The GPU accelerated paths.
