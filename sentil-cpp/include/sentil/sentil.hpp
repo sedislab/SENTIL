@@ -357,8 +357,7 @@ public:
             lower, upper.value_or(0.0), upper.has_value(), release(), right.release())));
     }
 
-    /// Wrap this formula in a probabilistic operator P~p, asserting it holds with
-    /// probability op-related to threshold.
+    /// Wrap this formula in a probabilistic operator P~p.
     Formula probability(ProbabilityOp op, double threshold) && {
         return Formula(detail::must(sentil_formula_probabilistic(
             static_cast<sentil_probability_op_t>(op), threshold, release())));
