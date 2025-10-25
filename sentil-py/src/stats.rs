@@ -321,6 +321,16 @@ impl NoiseModel {
         Ok(NoiseModel { inner })
     }
 
+    /// Load a model from a JSON file.
+    #[staticmethod]
+    fn from_file(path: &str) -> PyResult<NoiseModel> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| EvaluationError::new_err(format!("could not read {path}: {e}")))?;
+        let inner = serde_json::from_str(&text)
+            .map_err(|e| EvaluationError::new_err(format!("invalid noise model JSON in {path}: {e}")))?;
+        Ok(NoiseModel { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!("{:?}", self.inner)
     }
