@@ -1,6 +1,8 @@
 CARGO ?= cargo
 CC ?= cc
+CXX ?= c++
 CFLAGS ?= -std=c11 -Wall -Wextra -O2
+CXXFLAGS ?= -std=c++17 -O2
 PREFIX ?= /usr/local
 
 ROOT := $(abspath ..)
@@ -22,7 +24,7 @@ GPU_TEST := tests/gpu_test.c
 CPU_TESTS := $(filter-out $(GPU_TEST),$(TESTS))
 LINK := -L$(LIBDIR) -lsentil -Wl,-rpath,$(LIBDIR) -lm
 
-.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-py dist install clean
+.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-cpp bench-py dist install clean
 
 build:
 	$(CARGO) build --release -p sentil-ffi
@@ -53,6 +55,10 @@ leakcheck: build
 bench-c: build
 	$(CC) $(CFLAGS) -I$(INCLUDE) ../benchmarks/runners/sentil_runner.c $(LINK) \
 		-o $(ROOT)/target/sentil_bench_c
+
+bench-cpp: build
+	$(CXX) $(CXXFLAGS) -I$(INCLUDE) -I../sentil-cpp/include \
+		../benchmarks/runners/sentil_runner.cpp $(LINK) -o $(ROOT)/target/sentil_bench_cpp
 
 bench-py: build
 	cd ../benchmarks && python runners/sentil_runner.py
