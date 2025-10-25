@@ -95,6 +95,45 @@ impl Expr {
         Expr { inner: CoreExpr::Call("abs".to_owned(), vec![self.inner.clone()]) }
     }
 
+    fn __pow__(&self, other: &Bound<'_, PyAny>, _modulo: &Bound<'_, PyAny>) -> PyResult<Expr> {
+        self.combine(BinaryOp::Pow, other, false)
+    }
+
+    fn __rpow__(&self, other: &Bound<'_, PyAny>, _modulo: &Bound<'_, PyAny>) -> PyResult<Expr> {
+        self.combine(BinaryOp::Pow, other, true)
+    }
+
+    fn __mod__(&self, other: &Bound<'_, PyAny>) -> PyResult<Expr> {
+        self.combine(BinaryOp::Mod, other, false)
+    }
+
+    fn __rmod__(&self, other: &Bound<'_, PyAny>) -> PyResult<Expr> {
+        self.combine(BinaryOp::Mod, other, true)
+    }
+
+    fn call(&self, name: &str) -> Expr {
+        Expr { inner: CoreExpr::Call(name.to_owned(), vec![self.inner.clone()]) }
+    }
+    fn sin(&self) -> Expr { self.call("sin") }
+    fn cos(&self) -> Expr { self.call("cos") }
+    fn tan(&self) -> Expr { self.call("tan") }
+    fn sqrt(&self) -> Expr { self.call("sqrt") }
+    fn exp(&self) -> Expr { self.call("exp") }
+    fn log(&self) -> Expr { self.call("log") }
+    fn ln(&self) -> Expr { self.call("ln") }
+    fn floor(&self) -> Expr { self.call("floor") }
+    fn ceil(&self) -> Expr { self.call("ceil") }
+
+    /// The smaller of this term and another.
+    fn min(&self, other: &Bound<'_, PyAny>) -> PyResult<Expr> {
+        Ok(Expr { inner: CoreExpr::Call("min".to_owned(), vec![self.inner.clone(), to_core_expr(other)?]) })
+    }
+
+    /// The larger of this term and another.
+    fn max(&self, other: &Bound<'_, PyAny>) -> PyResult<Expr> {
+        Ok(Expr { inner: CoreExpr::Call("max".to_owned(), vec![self.inner.clone(), to_core_expr(other)?]) })
+    }
+
     fn __richcmp__(&self, other: &Bound<'_, PyAny>, op: CompareOp) -> PyResult<Formula> {
         let rhs = to_core_expr(other)?;
         let comparison = match op {
