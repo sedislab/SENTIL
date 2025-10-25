@@ -396,7 +396,7 @@ pub struct SmcConfig {
 }
 
 impl SmcConfig {
-    fn to_core(&self) -> CoreSmc {
+    pub(crate) fn to_core(&self) -> CoreSmc {
         CoreSmc {
             samples: self.samples,
             confidence: self.confidence,
@@ -823,6 +823,30 @@ impl SimExpr {
 
     fn __rtruediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
         self.combine(CoreSimExpr::Div, other, true)
+    }
+
+    fn call(&self, name: &str) -> SimExpr {
+        SimExpr { inner: CoreSimExpr::Call(name.to_owned(), vec![self.inner.clone()]) }
+    }
+    fn __abs__(&self) -> SimExpr { self.call("abs") }
+    fn sin(&self) -> SimExpr { self.call("sin") }
+    fn cos(&self) -> SimExpr { self.call("cos") }
+    fn tan(&self) -> SimExpr { self.call("tan") }
+    fn sqrt(&self) -> SimExpr { self.call("sqrt") }
+    fn exp(&self) -> SimExpr { self.call("exp") }
+    fn log(&self) -> SimExpr { self.call("log") }
+    fn ln(&self) -> SimExpr { self.call("ln") }
+    fn floor(&self) -> SimExpr { self.call("floor") }
+    fn ceil(&self) -> SimExpr { self.call("ceil") }
+
+    /// The smaller of this term and another.
+    fn min(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        Ok(SimExpr { inner: CoreSimExpr::Call("min".to_owned(), vec![self.inner.clone(), to_sim_expr(other)?]) })
+    }
+
+    /// The larger of this term and another.
+    fn max(&self, other: &Bound<'_, PyAny>) -> PyResult<SimExpr> {
+        Ok(SimExpr { inner: CoreSimExpr::Call("max".to_owned(), vec![self.inner.clone(), to_sim_expr(other)?]) })
     }
 
     fn __repr__(&self) -> String {
