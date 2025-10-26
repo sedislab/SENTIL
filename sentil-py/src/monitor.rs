@@ -4,6 +4,7 @@ use crate::config::{Config, Interval as PyInterval, Robustness};
 use crate::errors::pyerr;
 use crate::formula::Formula;
 use crate::signal::Trace;
+use crate::stats::{LiftingRegistry, SmcConfig};
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -120,6 +121,19 @@ impl OnlineMonitor {
         Ok(Self { inner: CoreStream::from_formula(&formula).map_err(pyerr)? })
     }
 
+    /// A streaming monitor for a P~p(phi) formula lifted through the registry.
+    #[staticmethod]
+    #[pyo3(signature = (formula, lifting, config=None))]
+    fn with_lifting(
+        formula: &Bound<'_, PyAny>,
+        lifting: &LiftingRegistry,
+        config: Option<SmcConfig>,
+    ) -> PyResult<Self> {
+        let formula = formula_arg(formula)?;
+        let config = config.map(|c| c.to_core()).unwrap_or_default();
+        Ok(Self { inner: CoreStream::with_lifting(&formula, &lifting.inner, &config).map_err(pyerr)? })
+    }
+
     fn update(&mut self, time: f64, values: &Bound<'_, PyDict>) -> PyResult<Robustness> {
         let pairs = named_pairs(values)?;
         let verdict = self.inner.update(time, &refs(&pairs)).map_err(pyerr)?;
@@ -174,6 +188,20 @@ impl MultiMonitor {
             let formula = formula.extract::<PyRef<Formula>>()?;
             self.inner.add_formula(id, &formula.inner).map_err(pyerr)
         }
+    }
+
+    /// Add a P~p(phi) formula tracked through a lifted particle ensemble.
+    #[pyo3(signature = (id, formula, lifting, config=None))]
+    fn add_probabilistic(
+        &mut self,
+        id: String,
+        formula: &Bound<'_, PyAny>,
+        lifting: &LiftingRegistry,
+        config: Option<SmcConfig>,
+    ) -> PyResult<()> {
+        let formula = formula_arg(formula)?;
+        let config = config.map(|c| c.to_core()).unwrap_or_default();
+        self.inner.add_probabilistic(id, &formula, &lifting.inner, &config).map_err(pyerr)
     }
 
     fn remove(&mut self, id: &str) -> bool {
