@@ -102,6 +102,28 @@ impl SpecBuilder {
         Ok(Monitor { inner: self.resolved()?.into_monitor().map_err(pyerr)? })
     }
 
+    /// The SMC settings the spec recommends as (confidence, sample_budget), or None.
+    fn smc_settings(&self) -> PyResult<Option<(f64, u64)>> {
+        Ok(self.resolved()?.smc_settings().map(|s| (s.confidence, s.sample_budget)))
+    }
+
+    /// The SPRT settings as (p0, p1, alpha, beta, max_samples), or None.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the tuple is the Python return shape, and naming it would not reach Python"
+    )]
+    fn sprt_settings(&self) -> PyResult<Option<(f64, f64, f64, f64, usize)>> {
+        Ok(self
+            .resolved()?
+            .sprt_settings()
+            .map(|s| (s.p0, s.p1, s.alpha, s.beta, s.max_samples)))
+    }
+
+    /// The rare-event settings as (num_particles, max_steps), or None.
+    fn ams_settings(&self) -> PyResult<Option<(usize, usize)>> {
+        Ok(self.resolved()?.ams_settings().map(|s| (s.num_particles, s.max_steps)))
+    }
+
     fn __repr__(&self) -> String {
         format!("SpecBuilder(variants={:?}, params={:?})", self.variants, self.params)
     }
