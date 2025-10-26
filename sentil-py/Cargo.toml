@@ -6,6 +6,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Python bindings for SENTIL, the runtime verification engine for STL and PrSTL"
+publish = false
 
 [lib]
 name = "_sentil"
