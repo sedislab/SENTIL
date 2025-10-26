@@ -4,6 +4,7 @@ use crate::errors::pyerr;
 use crate::formula::Formula;
 use crate::signal::Trace;
 use crate::stats::StochasticSystem;
+use std::collections::HashMap;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::prelude::*;
 use sentil::synthesis::{
@@ -140,6 +141,33 @@ impl Formula {
     fn smooth_robustness(&self, trace: &Trace, config: Option<SmoothConfig>) -> PyResult<f64> {
         self.inner.smooth_robustness(&trace.inner, smooth_or_default(config)?).map_err(pyerr)
     }
+
+    /// The smooth robustness and its gradient with respect to every signal.
+    #[pyo3(signature = (trace, config=None))]
+    fn smooth_value_and_gradient(
+        &self,
+        trace: &Trace,
+        config: Option<SmoothConfig>,
+    ) -> PyResult<(f64, HashMap<String, Vec<f64>>)> {
+        let config = smooth_or_default(config)?;
+        let (value, gradients) =
+            self.inner.smooth_value_and_gradient(&trace.inner, config).map_err(pyerr)?;
+        Ok((value, gradients.into_iter().collect()))
+    }
+
+    /// The smooth robustness and its gradient per input coordinate.
+    #[pyo3(signature = (model, initial, input, config=None))]
+    fn smooth_gradient(
+        &self,
+        model: PyRef<'_, SystemModel>,
+        initial: Vec<f64>,
+        input: Vec<f64>,
+        config: Option<SmoothConfig>,
+    ) -> PyResult<(f64, Vec<f64>)> {
+        let config = smooth_or_default(config)?;
+        let dyn_model = DynModel(&*model.inner);
+        self.inner.smooth_gradient(&dyn_model, &initial, &input, config).map_err(pyerr)
+    }
 }
 
 /// The optimization backend the synthesizer uses.
@@ -216,6 +244,13 @@ impl Bounds {
     #[getter]
     fn dimension(&self) -> usize {
         self.lower.len()
+    }
+
+    /// Project a point into the box, returning the clamped copy.
+    fn clamp(&self, point: Vec<f64>) -> PyResult<Vec<f64>> {
+        let mut clamped = point;
+        self.to_core()?.clamp(&mut clamped);
+        Ok(clamped)
     }
 }
 
