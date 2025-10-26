@@ -1,0 +1,40 @@
+name: release-crates
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: build and verify the crate without uploading
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    name: crates.io
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: vendor the specifications into the crate
+        run: |
+          cp -r specifications sentil-core/specifications
+          sed -i 's#"../specifications/"#"specifications/"#' sentil-core/src/spec_builder.rs
+      - name: verify the packages
+        run: cargo package -p sentil -p sentil-ffi -p sentil-cli --allow-dirty
+      - name: publish
+        if: github.event_name == 'push' && env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish -p sentil --allow-dirty
+
+      - name: publish the C ABI crate
+        if: github.event_name == 'push' && env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish -p sentil-ffi --allow-dirty
+
+      - name: publish the command-line crate
+        if: github.event_name == 'push' && env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish -p sentil-cli --allow-dirty
