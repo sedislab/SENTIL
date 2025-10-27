@@ -1,0 +1,20 @@
+name = "Sentil"
+uuid = "22654516-f281-488a-8e54-6bb281490963"
+authors = ["Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>", "Ernest Bonnah"]
+version = "1.0.0"
+
+[deps]
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+
+[compat]
+Artifacts = "1"
+LazyArtifacts = "1"
+Libdl = "1"
+julia = "1.10"
+
+[extras]
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test", "Random"]
