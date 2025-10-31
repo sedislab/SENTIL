@@ -9,6 +9,7 @@ function __init__()
 end
 
 include("errors.jl")
+include("enums.jl")
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
 function version()
