@@ -20,3 +20,28 @@
 end
 
 export SentilErrorCode
+
+"""Supertype of every error the library raises."""
+abstract type SentilError <: Exception end
+
+"""A formula or input that did not parse."""
+struct ParseError <: SentilError
+    code::SentilErrorCode
+    msg::String
+end
+
+"""A well-formed input the engine cannot make sense of."""
+struct SemanticError <: SentilError
+    code::SentilErrorCode
+    msg::String
+end
+
+"""A failure raised while evaluating or running."""
+struct EvaluationError <: SentilError
+    code::SentilErrorCode
+    msg::String
+end
+
+Base.showerror(io::IO, e::SentilError) = print(io, nameof(typeof(e)), '(', e.code, "): ", e.msg)
+
+export SentilError, ParseError, SemanticError, EvaluationError
