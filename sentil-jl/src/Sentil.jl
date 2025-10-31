@@ -10,6 +10,7 @@ end
 
 include("errors.jl")
 include("enums.jl")
+include("value_structs.jl")
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
 function version()
