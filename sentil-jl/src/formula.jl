@@ -171,3 +171,37 @@ for (op, code) in ((:<, _CMP_LT), (:(<=), _CMP_LE), (:>, _CMP_GT),
         Base.$op(a::Real, b::Expr) = _predicate(literal(a), $code, b)
     end
 end
+
+Base.:!(f::Formula) =
+    Formula(ccall((:sentil_formula_not, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
+Base.:~(f::Formula) = !f
+
+function Base.:&(a::Formula, b::Formula)
+    l, r = _consume_all!(a, b)
+    Formula(ccall((:sentil_formula_and, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
+end
+
+function Base.:|(a::Formula, b::Formula)
+    l, r = _consume_all!(a, b)
+    Formula(ccall((:sentil_formula_or, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
+end
+
+and(a::Formula, b::Formula) = a & b
+or(a::Formula, b::Formula) = a | b
+
+"""
+    implies(a, b) -> Formula
+
+The formula `a → b`, equal to `!a | b`.
+"""
+function implies(a::Formula, b::Formula)
+    l, r = _consume_all!(a, b)
+    Formula(ccall((:sentil_formula_implies, libsentil[]), Ptr{Cvoid},
+                  (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
+end
+
+"""The formula holds at the next step."""
+next(f::Formula) =
+    Formula(ccall((:sentil_formula_next, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
+
+export and, or, implies, next
