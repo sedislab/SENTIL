@@ -33,4 +33,28 @@ Base.parse(::Type{Formula}, text::AbstractString) =
 
 formula(text::AbstractString) = parse(Formula, text)
 
-export Formula, formula
+"""The formula as JSON, the form `from_json` reads back."""
+to_json(f::Formula) =
+    _take_string(ccall((:sentil_formula_to_json, libsentil[]), Ptr{UInt8}, (Ptr{Cvoid},), _ptr(f)))
+
+"""Rebuild a formula from the output of `to_json`."""
+from_json(::Type{Formula}, json::AbstractString) =
+    Formula(ccall((:sentil_formula_from_json, libsentil[]), Ptr{Cvoid}, (Cstring,), json))
+
+"""The nesting depth, where a predicate is 1."""
+depth(f::Formula) =
+    Int(ccall((:sentil_formula_depth, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(f)))
+
+"""Whether the formula carries a temporal operator."""
+is_temporal(f::Formula) =
+    ccall((:sentil_formula_has_temporal, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(f))
+
+"""The variable names the formula references, sorted and unique."""
+function variables(f::Formula)
+    count = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_formula_variables, libsentil[]), Ptr{Ptr{UInt8}},
+                (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), count)
+    return _take_string_array(ptr, count[])
+end
+
+export Formula, formula, to_json, from_json, depth, is_temporal, variables
