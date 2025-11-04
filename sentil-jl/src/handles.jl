@@ -12,6 +12,12 @@ function _ptr(h)
     return h.ptr
 end
 
+function _consume!(h)
+    p = _ptr(h)
+    h.ptr = C_NULL
+    return p
+end
+
 function _take_string(ptr::Ptr{UInt8})
     ptr == C_NULL && return ""
     s = unsafe_string(ptr)
