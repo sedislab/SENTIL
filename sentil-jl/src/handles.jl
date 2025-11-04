@@ -18,6 +18,14 @@ function _consume!(h)
     return p
 end
 
+function _consume_all!(handles...)
+    ptrs = map(_ptr, handles)
+    for h in handles
+        h.ptr = C_NULL
+    end
+    return ptrs
+end
+
 function _take_string(ptr::Ptr{UInt8})
     ptr == C_NULL && return ""
     s = unsafe_string(ptr)
