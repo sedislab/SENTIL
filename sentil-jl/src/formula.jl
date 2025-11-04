@@ -90,3 +90,84 @@ literal(value::Real) =
     Expr(ccall((:sentil_expr_literal, libsentil[]), Ptr{Cvoid}, (Cdouble,), value))
 
 export variable, literal
+
+# Matching sentil_binary_op_t.
+const _BIN_ADD = Int32(0)
+const _BIN_SUB = Int32(1)
+const _BIN_MUL = Int32(2)
+const _BIN_DIV = Int32(3)
+const _BIN_MOD = Int32(4)
+const _BIN_POW = Int32(5)
+
+function _binary(op::Int32, left::Expr, right::Expr)
+    l, r = _consume_all!(left, right)
+    Expr(ccall((:sentil_expr_binary, libsentil[]), Ptr{Cvoid},
+               (Int32, Ptr{Cvoid}, Ptr{Cvoid}), op, l, r))
+end
+
+for (op, code) in ((:+, _BIN_ADD), (:-, _BIN_SUB), (:*, _BIN_MUL), (:/, _BIN_DIV))
+    @eval begin
+        Base.$op(a::Expr, b::Expr) = _binary($code, a, b)
+        Base.$op(a::Expr, b::Real) = _binary($code, a, literal(b))
+        Base.$op(a::Real, b::Expr) = _binary($code, literal(a), b)
+    end
+end
+
+Base.:-(e::Expr) = _binary(_BIN_SUB, literal(0.0), e)
+
+Base.mod(a::Expr, b::Expr) = _binary(_BIN_MOD, a, b)
+Base.mod(a::Expr, b::Real) = _binary(_BIN_MOD, a, literal(b))
+
+"""Raise one term to another."""
+pow(a::Expr, b::Expr) = _binary(_BIN_POW, a, b)
+pow(a::Expr, b::Real) = _binary(_BIN_POW, a, literal(b))
+Base.:^(a::Expr, b::Expr) = pow(a, b)
+Base.:^(a::Expr, b::Real) = pow(a, literal(b))
+Base.literal_pow(::typeof(^), a::Expr, ::Val{p}) where {p} = pow(a, literal(p))
+
+export pow
+
+function _call(name::AbstractString, args::Expr...)
+    ptrs = collect(Ptr{Cvoid}, _consume_all!(args...))
+    Expr(ccall((:sentil_expr_call, libsentil[]), Ptr{Cvoid},
+               (Cstring, Ptr{Ptr{Cvoid}}, Csize_t), name, ptrs, length(ptrs)))
+end
+
+for fn in (:abs, :sin, :cos, :tan, :sqrt, :exp, :log, :floor, :ceil)
+    @eval Base.$fn(e::Expr) = _call($(string(fn)), e)
+end
+
+"""The natural logarithm of a term."""
+ln(e::Expr) = _call("ln", e)
+
+Base.min(a::Expr, b::Expr) = _call("min", a, b)
+Base.min(a::Expr, b::Real) = _call("min", a, literal(b))
+Base.min(a::Real, b::Expr) = _call("min", literal(a), b)
+Base.max(a::Expr, b::Expr) = _call("max", a, b)
+Base.max(a::Expr, b::Real) = _call("max", a, literal(b))
+Base.max(a::Real, b::Expr) = _call("max", literal(a), b)
+
+export ln
+
+# Matching sentil_comparison_op_t.
+const _CMP_LT = Int32(0)
+const _CMP_LE = Int32(1)
+const _CMP_GT = Int32(2)
+const _CMP_GE = Int32(3)
+const _CMP_EQ = Int32(4)
+const _CMP_NE = Int32(5)
+
+function _predicate(lhs::Expr, op::Int32, rhs::Expr)
+    l, r = _consume_all!(lhs, rhs)
+    Formula(ccall((:sentil_formula_predicate, libsentil[]), Ptr{Cvoid},
+                  (Ptr{Cvoid}, Int32, Ptr{Cvoid}), l, op, r))
+end
+
+for (op, code) in ((:<, _CMP_LT), (:(<=), _CMP_LE), (:>, _CMP_GT),
+                   (:(>=), _CMP_GE), (:(==), _CMP_EQ), (:(!=), _CMP_NE))
+    @eval begin
+        Base.$op(a::Expr, b::Expr) = _predicate(a, $code, b)
+        Base.$op(a::Expr, b::Real) = _predicate(a, $code, literal(b))
+        Base.$op(a::Real, b::Expr) = _predicate(literal(a), $code, b)
+    end
+end
