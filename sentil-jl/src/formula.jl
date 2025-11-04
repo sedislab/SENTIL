@@ -89,4 +89,4 @@ variable(name::AbstractString) =
 literal(value::Real) =
     Expr(ccall((:sentil_expr_literal, libsentil[]), Ptr{Cvoid}, (Cdouble,), value))
 
-export Expr, variable, literal
+export variable, literal
