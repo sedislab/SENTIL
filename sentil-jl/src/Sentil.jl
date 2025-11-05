@@ -13,6 +13,7 @@ include("enums.jl")
 include("value_structs.jl")
 include("handles.jl")
 include("formula.jl")
+include("trace.jl")
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
 function version()

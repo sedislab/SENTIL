@@ -51,3 +51,18 @@ function _take_doubles(ptr::Ptr{Float64}, count::Integer)
     ccall((:sentil_free_doubles, libsentil[]), Cvoid, (Ptr{Float64}, Csize_t), ptr, count)
     return out
 end
+
+function _copy_doubles(ptr::Ptr{Float64}, count::Integer)
+    ptr == C_NULL && return Float64[]
+    out = Vector{Float64}(undef, count)
+    unsafe_copyto!(pointer(out), ptr, count)
+    return out
+end
+
+function _take_intervals(ptr::Ptr{Interval}, count::Integer)
+    ptr == C_NULL && return Interval[]
+    out = Vector{Interval}(undef, count)
+    unsafe_copyto!(pointer(out), ptr, count)
+    ccall((:sentil_free_intervals, libsentil[]), Cvoid, (Ptr{Interval}, Csize_t), ptr, count)
+    return out
+end
