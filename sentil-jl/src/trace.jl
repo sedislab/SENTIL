@@ -30,7 +30,8 @@ function Trace(times::AbstractVector{<:Real}, name::AbstractString, values::Abst
     tt = convert(Vector{Float64}, times)
     vv = convert(Vector{Float64}, values)
     Trace(ccall((:sentil_trace_from_signal, libsentil[]), Ptr{Cvoid},
-                (Ptr{Float64}, Csize_t, Cstring, Ptr{Float64}), tt, length(tt), name, vv))
+                (Ptr{Float64}, Csize_t, Cstring, Ptr{Float64}, Csize_t),
+                tt, length(tt), name, vv, length(vv)))
 end
 
 """A trace over `times` carrying every signal in the `name => values` mapping."""
