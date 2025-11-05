@@ -205,3 +205,36 @@ next(f::Formula) =
     Formula(ccall((:sentil_formula_next, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
 
 export and, or, implies, next
+
+for (jl, c) in ((:always, :sentil_formula_always), (:eventually, :sentil_formula_eventually),
+                (:historically, :sentil_formula_historically), (:once, :sentil_formula_once))
+    @eval function $jl(f::Formula; lower::Real = 0.0, upper = nothing)
+        has_upper = upper !== nothing
+        u = has_upper ? Float64(upper) : 0.0
+        Formula(ccall(($(QuoteNode(c)), libsentil[]), Ptr{Cvoid},
+                      (Cdouble, Cdouble, Bool, Ptr{Cvoid}),
+                      Float64(lower), u, has_upper, _consume!(f)))
+    end
+end
+
+for (jl, c) in ((:until, :sentil_formula_until), (:since, :sentil_formula_since))
+    @eval function $jl(a::Formula, b::Formula; lower::Real = 0.0, upper = nothing)
+        has_upper = upper !== nothing
+        u = has_upper ? Float64(upper) : 0.0
+        l, r = _consume_all!(a, b)
+        Formula(ccall(($(QuoteNode(c)), libsentil[]), Ptr{Cvoid},
+                      (Cdouble, Cdouble, Bool, Ptr{Cvoid}, Ptr{Cvoid}),
+                      Float64(lower), u, has_upper, l, r))
+    end
+end
+
+"""Wrap `f` in a probabilistic operator `P~p` against a threshold in `[0, 1]`."""
+function probability(f::Formula, op::ProbabilityOp.T, threshold::Real)
+    0.0 <= threshold <= 1.0 ||
+        throw(SemanticError(SENTIL_ERR_INVALID_CONFIG,
+                            "probability threshold $threshold is outside [0, 1]"))
+    Formula(ccall((:sentil_formula_probabilistic, libsentil[]), Ptr{Cvoid},
+                  (Int32, Cdouble, Ptr{Cvoid}), Int32(op), Float64(threshold), _consume!(f)))
+end
+
+export always, eventually, historically, once, until, since, probability
