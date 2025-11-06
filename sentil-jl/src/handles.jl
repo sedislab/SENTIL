@@ -66,3 +66,11 @@ function _take_intervals(ptr::Ptr{Interval}, count::Integer)
     ccall((:sentil_free_intervals, libsentil[]), Cvoid, (Ptr{Interval}, Csize_t), ptr, count)
     return out
 end
+
+function _take_samples(ptr::Ptr{Sample}, count::Integer)
+    ptr == C_NULL && return Sample[]
+    out = Vector{Sample}(undef, count)
+    unsafe_copyto!(pointer(out), ptr, count)
+    ccall((:sentil_free_samples, libsentil[]), Cvoid, (Ptr{Sample}, Csize_t), ptr, count)
+    return out
+end

@@ -145,3 +145,111 @@ end
 
 export Trace, indexed_trace, add_signal!, times, signal, resample, prepare
 export read_trace, parse_trace
+
+mutable struct RingBuffer
+    ptr::Ptr{Cvoid}
+    function RingBuffer(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        b = new(ptr)
+        finalizer(_destroy, b)
+        return b
+    end
+end
+
+function _destroy(b::RingBuffer)
+    if b.ptr != C_NULL
+        ccall((:sentil_ring_buffer_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), b.ptr)
+        b.ptr = C_NULL
+    end
+end
+
+close!(b::RingBuffer) = _destroy(b)
+
+"""A ring buffer holding the most recent `capacity` timed samples."""
+RingBuffer(capacity::Integer) =
+    RingBuffer(ccall((:sentil_ring_buffer_create, libsentil[]), Ptr{Cvoid}, (Csize_t,), capacity))
+
+_sample(s::Sample) = s.found ? s : nothing
+
+"""Append a sample, returning the evicted oldest sample when the buffer is full."""
+function Base.push!(b::RingBuffer, time::Real, value::Real)
+    evicted = Ref(Sample(false, 0.0, 0.0))
+    check_error(ccall((:sentil_ring_buffer_push, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cdouble, Cdouble, Ptr{Sample}), _ptr(b), time, value, evicted))
+    return _sample(evicted[])
+end
+
+Base.length(b::RingBuffer) =
+    Int(ccall((:sentil_ring_buffer_len, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(b)))
+Base.isempty(b::RingBuffer) =
+    ccall((:sentil_ring_buffer_is_empty, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(b))
+
+"""The number of samples the buffer can hold."""
+capacity(b::RingBuffer) =
+    Int(ccall((:sentil_ring_buffer_capacity, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(b)))
+
+"""Whether the buffer is at capacity."""
+is_full(b::RingBuffer) =
+    ccall((:sentil_ring_buffer_is_full, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(b))
+
+"""Drop every sample."""
+clear!(b::RingBuffer) =
+    (ccall((:sentil_ring_buffer_clear, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(b)); b)
+
+"""The oldest sample, or `nothing` when empty."""
+front(b::RingBuffer) =
+    _sample(ccall((:sentil_ring_buffer_front, libsentil[]), Sample, (Ptr{Cvoid},), _ptr(b)))
+
+"""The newest sample, or `nothing` when empty."""
+back(b::RingBuffer) =
+    _sample(ccall((:sentil_ring_buffer_back, libsentil[]), Sample, (Ptr{Cvoid},), _ptr(b)))
+
+"""The i-th sample, where 1 is the oldest."""
+function Base.getindex(b::RingBuffer, i::Integer)
+    1 <= i <= typemax(Csize_t) || throw(BoundsError(b, i))
+    s = ccall((:sentil_ring_buffer_get, libsentil[]), Sample, (Ptr{Cvoid}, Csize_t), _ptr(b), i - 1)
+    s.found || throw(BoundsError(b, i))
+    return s
+end
+
+"""Remove and return the oldest sample, or `nothing` when empty."""
+pop_front!(b::RingBuffer) =
+    _sample(ccall((:sentil_ring_buffer_pop_front, libsentil[]), Sample, (Ptr{Cvoid},), _ptr(b)))
+
+"""Remove and return the newest sample, or `nothing` when empty."""
+pop_back!(b::RingBuffer) =
+    _sample(ccall((:sentil_ring_buffer_pop_back, libsentil[]), Sample, (Ptr{Cvoid},), _ptr(b)))
+
+"""The buffered sample whose time is nearest `time`, or `nothing` when empty."""
+closest_to_time(b::RingBuffer, time::Real) =
+    _sample(ccall((:sentil_ring_buffer_closest_to_time, libsentil[]), Sample,
+                  (Ptr{Cvoid}, Cdouble), _ptr(b), time))
+
+"""The value recorded at `time` within a small tolerance, or `nothing` if none is."""
+function at_time(b::RingBuffer, time::Real)
+    out = Ref{Float64}(0.0)
+    ok = ccall((:sentil_ring_buffer_at_time, libsentil[]), Bool,
+               (Ptr{Cvoid}, Cdouble, Ptr{Float64}), _ptr(b), time, out)
+    return ok ? out[] : nothing
+end
+
+"""The earliest and latest times held as `(start, stop)`, or `nothing` when empty."""
+function time_range(b::RingBuffer)
+    lo = Ref{Float64}(0.0)
+    hi = Ref{Float64}(0.0)
+    ok = ccall((:sentil_ring_buffer_time_range, libsentil[]), Bool,
+               (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}), _ptr(b), lo, hi)
+    return ok ? (lo[], hi[]) : nothing
+end
+
+"""The buffered samples whose time falls in `[start, stop]`."""
+function between(b::RingBuffer, start::Real, stop::Real)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_ring_buffer_between, libsentil[]), Ptr{Sample},
+                (Ptr{Cvoid}, Cdouble, Cdouble, Ptr{Csize_t}), _ptr(b), start, stop, n)
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    return _take_samples(ptr, n[])
+end
+
+export RingBuffer, capacity, is_full, clear!, front, back, pop_front!, pop_back!
+export closest_to_time, at_time, time_range, between
