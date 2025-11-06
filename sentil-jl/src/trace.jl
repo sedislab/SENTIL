@@ -251,5 +251,21 @@ function between(b::RingBuffer, start::Real, stop::Real)
     return _take_samples(ptr, n[])
 end
 
+for (jl, c) in ((:mean, :sentil_ring_buffer_mean), (:var, :sentil_ring_buffer_variance),
+                (:std, :sentil_ring_buffer_std_dev), (:minimum, :sentil_ring_buffer_min),
+                (:maximum, :sentil_ring_buffer_max))
+    @eval function $jl(b::RingBuffer)
+        out = Ref{Float64}(0.0)
+        ok = ccall(($(QuoteNode(c)), libsentil[]), Bool,
+                   (Ptr{Cvoid}, Ptr{Float64}), _ptr(b), out)
+        return ok ? out[] : nothing
+    end
+end
+
+"""Recompute the running mean and variance from the held samples."""
+recompute_statistics!(b::RingBuffer) =
+    (ccall((:sentil_ring_buffer_recompute_statistics, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(b)); b)
+
 export RingBuffer, capacity, is_full, clear!, front, back, pop_front!, pop_back!
 export closest_to_time, at_time, time_range, between
+export mean, var, std, recompute_statistics!

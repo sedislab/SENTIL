@@ -1,5 +1,8 @@
 module Sentil
 
+import Base: minimum, maximum
+import Statistics: mean, var, std
+
 include("loader.jl")
 
 const libsentil = Ref{String}()
