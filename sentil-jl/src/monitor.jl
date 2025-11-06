@@ -204,3 +204,164 @@ reset!(m::OnlineMonitor) =
     (ccall((:sentil_stream_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
 
 export OnlineMonitor, variable_count, run!
+
+# Mirrors sentil_named_robustness_t and sentil_bank_result_t.
+struct _NamedRobustness
+    id::Ptr{UInt8}
+    robustness::Robustness
+end
+
+struct _BankResult
+    id::Ptr{UInt8}
+    ok::Bool
+    value::Float64
+    code::SentilErrorCode
+end
+
+mutable struct MultiMonitor
+    ptr::Ptr{Cvoid}
+    function MultiMonitor(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        m = new(ptr)
+        finalizer(_destroy, m)
+        return m
+    end
+end
+
+function _destroy(m::MultiMonitor)
+    if m.ptr != C_NULL
+        ccall((:sentil_multi_monitor_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), m.ptr)
+        m.ptr = C_NULL
+    end
+end
+
+close!(m::MultiMonitor) = _destroy(m)
+
+"""A monitor over several named formulas, all advanced from one stream of samples."""
+MultiMonitor() = MultiMonitor(ccall((:sentil_multi_monitor_create, libsentil[]), Ptr{Cvoid}, ()))
+
+"""Track another formula under `id`, given as text or as a borrowed `Formula`."""
+function add!(m::MultiMonitor, id::AbstractString, text::AbstractString)
+    check_error(ccall((:sentil_multi_monitor_add, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Cstring), _ptr(m), id, text))
+    return m
+end
+
+function add!(m::MultiMonitor, id::AbstractString, f::Formula)
+    check_error(ccall((:sentil_multi_monitor_add_formula, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Ptr{Cvoid}), _ptr(m), id, _ptr(f)))
+    return m
+end
+
+"""Remove the formula under `id`, returning whether one was there."""
+remove!(m::MultiMonitor, id::AbstractString) =
+    ccall((:sentil_multi_monitor_remove, libsentil[]), Bool, (Ptr{Cvoid}, Cstring), _ptr(m), id)
+
+Base.length(m::MultiMonitor) =
+    Int(ccall((:sentil_multi_monitor_len, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(m)))
+Base.isempty(m::MultiMonitor) =
+    ccall((:sentil_multi_monitor_is_empty, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(m))
+
+"""The ids being monitored, in insertion order."""
+function ids(m::MultiMonitor)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_multi_monitor_ids, libsentil[]), Ptr{Ptr{UInt8}},
+                (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(m), n)
+    return _take_string_array(ptr, n[])
+end
+
+"""Advance every tracked formula at this sample, returning the verdict under each id."""
+function update!(m::MultiMonitor, time::Real, samples::AbstractDict)
+    names, vals = _split_samples(samples)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_multi_monitor_update, libsentil[]), Ptr{_NamedRobustness},
+                (Ptr{Cvoid}, Cdouble, Ptr{Cstring}, Ptr{Float64}, Csize_t, Ptr{Csize_t}),
+                _ptr(m), time, names, vals, length(names), n)
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    out = Dict{String,Robustness}()
+    for i in 1:n[]
+        nr = unsafe_load(ptr, i)
+        out[unsafe_string(nr.id)] = nr.robustness
+    end
+    ccall((:sentil_free_named_robustness, libsentil[]), Cvoid,
+          (Ptr{_NamedRobustness}, Csize_t), ptr, n[])
+    return out
+end
+
+reset!(m::MultiMonitor) =
+    (ccall((:sentil_multi_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
+
+export MultiMonitor, add!, remove!, ids
+
+mutable struct FormulaBank
+    ptr::Ptr{Cvoid}
+    function FormulaBank(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        b = new(ptr)
+        finalizer(_destroy, b)
+        return b
+    end
+end
+
+function _destroy(b::FormulaBank)
+    if b.ptr != C_NULL
+        ccall((:sentil_formula_bank_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), b.ptr)
+        b.ptr = C_NULL
+    end
+end
+
+close!(b::FormulaBank) = _destroy(b)
+
+"""A bank of named formulas evaluated together over a trace."""
+FormulaBank() = FormulaBank(ccall((:sentil_formula_bank_create, libsentil[]), Ptr{Cvoid}, ()))
+
+function add!(b::FormulaBank, id::AbstractString, text::AbstractString)
+    check_error(ccall((:sentil_formula_bank_add, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Cstring), _ptr(b), id, text))
+    return b
+end
+
+function add!(b::FormulaBank, id::AbstractString, f::Formula)
+    check_error(ccall((:sentil_formula_bank_add_formula, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Ptr{Cvoid}), _ptr(b), id, _ptr(f)))
+    return b
+end
+
+Base.length(b::FormulaBank) =
+    Int(ccall((:sentil_formula_bank_len, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(b)))
+Base.isempty(b::FormulaBank) =
+    ccall((:sentil_formula_bank_is_empty, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(b))
+
+function ids(b::FormulaBank)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_formula_bank_ids, libsentil[]), Ptr{Ptr{UInt8}},
+                (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(b), n)
+    return _take_string_array(ptr, n[])
+end
+
+"""The robustness of every formula in the bank over `trace`, under its id."""
+function robustness(b::FormulaBank, trace::Trace; dense::Bool = false)
+    n = Ref{Csize_t}(0)
+    ptr = if dense
+        ccall((:sentil_formula_bank_robustness_dense, libsentil[]), Ptr{_BankResult},
+              (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(b), _ptr(trace), n)
+    else
+        ccall((:sentil_formula_bank_robustness, libsentil[]), Ptr{_BankResult},
+              (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(b), _ptr(trace), n)
+    end
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    out = Dict{String,Float64}()
+    try
+        for i in 1:n[]
+            br = unsafe_load(ptr, i)
+            id = unsafe_string(br.id)
+            br.ok || throw(_error(br.code, "formula `$id` in the bank failed to evaluate"))
+            out[id] = br.value
+        end
+    finally
+        ccall((:sentil_free_bank_results, libsentil[]), Cvoid, (Ptr{_BankResult}, Csize_t), ptr, n[])
+    end
+    return out
+end
+
+export FormulaBank
