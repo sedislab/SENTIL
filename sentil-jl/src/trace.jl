@@ -128,4 +128,20 @@ function resample(p::PreparedTrace, times::AbstractVector{<:Real})
                 (Ptr{Cvoid}, Ptr{Float64}, Csize_t), _ptr(p), tt, length(tt)))
 end
 
+"""Read a trace from a file, taking the format from the `.csv` or `.tsv` extension."""
+read_trace(path::AbstractString) =
+    Trace(ccall((:sentil_trace_from_path, libsentil[]), Ptr{Cvoid}, (Cstring,), path))
+
+"""Parse a trace from in-memory delimited text, `:csv` or `:tsv`."""
+function parse_trace(text::AbstractString; format::Symbol = :csv)
+    if format === :csv
+        Trace(ccall((:sentil_trace_from_csv, libsentil[]), Ptr{Cvoid}, (Cstring,), text))
+    elseif format === :tsv
+        Trace(ccall((:sentil_trace_from_tsv, libsentil[]), Ptr{Cvoid}, (Cstring,), text))
+    else
+        throw(ArgumentError("format must be :csv or :tsv, got :$format"))
+    end
+end
+
 export Trace, indexed_trace, add_signal!, times, signal, resample, prepare
+export read_trace, parse_trace
