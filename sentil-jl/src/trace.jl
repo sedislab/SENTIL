@@ -91,4 +91,41 @@ end
 
 Base.haskey(t::Trace, name::AbstractString) = signal(t, name) !== nothing
 
-export Trace, indexed_trace, add_signal!, times, signal
+"""Resample onto a new time grid, interpolating between the trace's samples."""
+function resample(t::Trace, times::AbstractVector{<:Real}; interp::Interpolation.T = Interpolation.Linear)
+    tt = convert(Vector{Float64}, times)
+    Trace(ccall((:sentil_trace_resample, libsentil[]), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Int32), _ptr(t), tt, length(tt), Int32(interp)))
+end
+
+mutable struct PreparedTrace
+    ptr::Ptr{Cvoid}
+    function PreparedTrace(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        p = new(ptr)
+        finalizer(_destroy, p)
+        return p
+    end
+end
+
+function _destroy(p::PreparedTrace)
+    if p.ptr != C_NULL
+        ccall((:sentil_prepared_trace_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), p.ptr)
+        p.ptr = C_NULL
+    end
+end
+
+close!(p::PreparedTrace) = _destroy(p)
+
+"""Fix an interpolation so the trace can be resampled onto many grids cheaply."""
+prepare(t::Trace; interp::Interpolation.T = Interpolation.Linear) =
+    PreparedTrace(ccall((:sentil_trace_prepare, libsentil[]), Ptr{Cvoid},
+                        (Ptr{Cvoid}, Int32), _ptr(t), Int32(interp)))
+
+function resample(p::PreparedTrace, times::AbstractVector{<:Real})
+    tt = convert(Vector{Float64}, times)
+    Trace(ccall((:sentil_prepared_trace_resample, libsentil[]), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Float64}, Csize_t), _ptr(p), tt, length(tt)))
+end
+
+export Trace, indexed_trace, add_signal!, times, signal, resample, prepare
