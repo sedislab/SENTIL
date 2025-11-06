@@ -238,3 +238,54 @@ function probability(f::Formula, op::ProbabilityOp.T, threshold::Real)
 end
 
 export always, eventually, historically, once, until, since, probability
+
+"""The robustness of `f` over `trace`, positive when satisfied."""
+function robustness(f::Formula, trace::Trace; dense::Bool = false)
+    out = Ref{Float64}(0.0)
+    code = if dense
+        ccall((:sentil_formula_robustness_dense, libsentil[]), Int32,
+              (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}), _ptr(f), _ptr(trace), out)
+    else
+        ccall((:sentil_formula_robustness, libsentil[]), Int32,
+              (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}), _ptr(f), _ptr(trace), out)
+    end
+    check_error(code)
+    return out[]
+end
+
+"""The robustness at every sample of `trace`."""
+function robustness_signal(f::Formula, trace::Trace; dense::Bool = false)
+    n = Ref{Csize_t}(0)
+    ptr = if dense
+        ccall((:sentil_formula_robustness_dense_signal, libsentil[]), Ptr{Float64},
+              (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), _ptr(trace), n)
+    else
+        ccall((:sentil_formula_robustness_signal, libsentil[]), Ptr{Float64},
+              (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), _ptr(trace), n)
+    end
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    return _take_doubles(ptr, n[])
+end
+
+"""The time spans over which `f` does not hold."""
+function violations(f::Formula, trace::Trace)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_formula_violations, libsentil[]), Ptr{Interval},
+                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), _ptr(trace), n)
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    return _take_intervals(ptr, n[])
+end
+
+"""The spans where a robustness `values` signal sampled at `times` is negative."""
+function violation_intervals(times::AbstractVector{<:Real}, values::AbstractVector{<:Real})
+    tt = convert(Vector{Float64}, times)
+    vv = convert(Vector{Float64}, values)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_violation_intervals, libsentil[]), Ptr{Interval},
+                (Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Csize_t}),
+                tt, length(tt), vv, length(vv), n)
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    return _take_intervals(ptr, n[])
+end
+
+export robustness, robustness_signal, violations, violation_intervals
