@@ -31,6 +31,16 @@ time_mode(c::Config) =
 
 export Config, time_mode
 
+function _split_samples(samples::AbstractDict)
+    names = Vector{String}(undef, length(samples))
+    vals = Vector{Float64}(undef, length(samples))
+    for (i, (k, v)) in enumerate(samples)
+        names[i] = string(k)
+        vals[i] = Float64(v)
+    end
+    return names, vals
+end
+
 mutable struct Monitor
     ptr::Ptr{Cvoid}
     function Monitor(ptr::Ptr{Cvoid})
@@ -101,12 +111,7 @@ end
 
 """Fold one sample given as a `name => value` mapping."""
 function update!(m::Monitor, time::Real, samples::AbstractDict)
-    names = Vector{String}(undef, length(samples))
-    vals = Vector{Float64}(undef, length(samples))
-    for (i, (k, v)) in enumerate(samples)
-        names[i] = string(k)
-        vals[i] = Float64(v)
-    end
+    names, vals = _split_samples(samples)
     out = Ref(Robustness(false, false, 0.0, 0.0, 0.0))
     check_error(ccall((:sentil_monitor_update, libsentil[]), Int32,
                       (Ptr{Cvoid}, Cdouble, Ptr{Cstring}, Ptr{Float64}, Csize_t, Ptr{Robustness}),
@@ -128,3 +133,74 @@ end
 reset!(m::Monitor) = (ccall((:sentil_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
 
 export Monitor, formula, config, symbol_index, update!, update_packed!, reset!
+
+mutable struct OnlineMonitor
+    ptr::Ptr{Cvoid}
+    function OnlineMonitor(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        m = new(ptr)
+        finalizer(_destroy, m)
+        return m
+    end
+end
+
+function _destroy(m::OnlineMonitor)
+    if m.ptr != C_NULL
+        ccall((:sentil_stream_monitor_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), m.ptr)
+        m.ptr = C_NULL
+    end
+end
+
+close!(m::OnlineMonitor) = _destroy(m)
+
+"""A streaming monitor for a formula given as text or as a borrowed `Formula`."""
+OnlineMonitor(text::AbstractString) =
+    OnlineMonitor(ccall((:sentil_stream_monitor_create, libsentil[]), Ptr{Cvoid}, (Cstring,), text))
+
+OnlineMonitor(f::Formula) =
+    OnlineMonitor(ccall((:sentil_stream_monitor_from_formula, libsentil[]), Ptr{Cvoid},
+                        (Ptr{Cvoid},), _ptr(f)))
+
+"""The number of distinct variables the monitor reads."""
+variable_count(m::OnlineMonitor) =
+    Int(ccall((:sentil_stream_monitor_variable_count, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(m)))
+
+function symbol_index(m::OnlineMonitor, name::AbstractString)
+    idx = Ref{Csize_t}(0)
+    found = Ref{Bool}(false)
+    check_error(ccall((:sentil_stream_monitor_symbol_index, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Ptr{Csize_t}, Ptr{Bool}), _ptr(m), name, idx, found))
+    return found[] ? Int(idx[]) + 1 : nothing
+end
+
+function update!(m::OnlineMonitor, time::Real, samples::AbstractDict)
+    names, vals = _split_samples(samples)
+    out = Ref(Robustness(false, false, 0.0, 0.0, 0.0))
+    check_error(ccall((:sentil_stream_monitor_update, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cdouble, Ptr{Cstring}, Ptr{Float64}, Csize_t, Ptr{Robustness}),
+                      _ptr(m), time, names, vals, length(names), out))
+    return out[]
+end
+
+function update_packed!(m::OnlineMonitor, time::Real, values::AbstractVector{<:Real})
+    vals = convert(Vector{Float64}, values)
+    out = Ref(Robustness(false, false, 0.0, 0.0, 0.0))
+    check_error(ccall((:sentil_stream_monitor_update_packed, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cdouble, Ptr{Float64}, Csize_t, Ptr{Robustness}),
+                      _ptr(m), time, vals, length(vals), out))
+    return out[]
+end
+
+"""Replay a whole trace through the streaming monitor."""
+function run!(m::OnlineMonitor, trace::Trace)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_stream_monitor_run, libsentil[]), Ptr{Robustness},
+                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(m), _ptr(trace), n)
+    ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
+    return _take_robustness(ptr, n[])
+end
+
+reset!(m::OnlineMonitor) =
+    (ccall((:sentil_stream_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
+
+export OnlineMonitor, variable_count, run!

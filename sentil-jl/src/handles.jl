@@ -74,3 +74,11 @@ function _take_samples(ptr::Ptr{Sample}, count::Integer)
     ccall((:sentil_free_samples, libsentil[]), Cvoid, (Ptr{Sample}, Csize_t), ptr, count)
     return out
 end
+
+function _take_robustness(ptr::Ptr{Robustness}, count::Integer)
+    ptr == C_NULL && return Robustness[]
+    out = Vector{Robustness}(undef, count)
+    unsafe_copyto!(pointer(out), ptr, count)
+    ccall((:sentil_free_robustness, libsentil[]), Cvoid, (Ptr{Robustness}, Csize_t), ptr, count)
+    return out
+end
