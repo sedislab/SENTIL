@@ -150,6 +150,6 @@ from_file(::Type{NoiseModel}, path::AbstractString) =
     NoiseModel(ccall((:sentil_noise_from_file, libsentil[]), Ptr{Cvoid}, (Cstring,), path))
 
 export NoiseModel, dirac, gaussian, uniform, log_normal, exponential, gamma, beta
-export weibull, rayleigh, gumbel, cauchy, student_t, truncated_normal, poisson, binomial
+export weibull, rayleigh, gumbel, cauchy, student_t, truncated_normal, poisson
 export bootstrap, mixture, fit_gaussian, fit_bootstrap, fit_bootstrap_reservoir
 export fit_gaussian_mixture, residuals
