@@ -153,3 +153,52 @@ export NoiseModel, dirac, gaussian, uniform, log_normal, exponential, gamma, bet
 export weibull, rayleigh, gumbel, cauchy, student_t, truncated_normal, poisson
 export bootstrap, mixture, fit_gaussian, fit_bootstrap, fit_bootstrap_reservoir
 export fit_gaussian_mixture, residuals
+
+mutable struct LiftingRegistry
+    ptr::Ptr{Cvoid}
+    function LiftingRegistry(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        r = new(ptr)
+        finalizer(_destroy, r)
+        return r
+    end
+end
+
+function _destroy(r::LiftingRegistry)
+    if r.ptr != C_NULL
+        ccall((:sentil_lifting_registry_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), r.ptr)
+        r.ptr = C_NULL
+    end
+end
+
+close!(r::LiftingRegistry) = _destroy(r)
+
+"""An empty registry mapping variables to noise models."""
+LiftingRegistry() =
+    LiftingRegistry(ccall((:sentil_lifting_registry_create, libsentil[]), Ptr{Cvoid}, ()))
+
+"""Register a noise model for a variable, consuming the model."""
+function register_noise!(r::LiftingRegistry, variable::AbstractString, model::NoiseModel;
+                         interaction::NoiseInteraction.T = NoiseInteraction.Additive)
+    check_error(ccall((:sentil_lifting_registry_register, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Ptr{Cvoid}, Int32),
+                      _ptr(r), variable, _consume!(model), Int32(interaction)))
+    return r
+end
+
+function variables(r::LiftingRegistry)
+    n = Ref{Csize_t}(0)
+    ptr = ccall((:sentil_lifting_registry_variables, libsentil[]), Ptr{Ptr{UInt8}},
+                (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(r), n)
+    return _take_string_array(ptr, n[])
+end
+
+Base.isempty(r::LiftingRegistry) =
+    ccall((:sentil_lifting_registry_is_empty, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(r))
+
+"""One seeded noisy realization of the trace under the registered models."""
+lift(r::LiftingRegistry, trace::Trace; seed::Integer = 42) =
+    Trace(ccall((:sentil_lifting_registry_lift, libsentil[]), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Cvoid}, UInt64), _ptr(r), _ptr(trace), seed))
+
+export LiftingRegistry, register_noise!, lift
