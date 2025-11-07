@@ -99,3 +99,22 @@ function check_distribution(f::Formula, trace::Trace, lifting::LiftingRegistry; 
 end
 
 export SmcConfig, check, check_conservative, check_distribution
+
+"""A streaming monitor that tracks a `P~p` formula online, lifting each reading through the registry."""
+function OnlineMonitor(f::Formula, lifting::LiftingRegistry; config::SmcConfig = SmcConfig())
+    cfg = Ref(config)
+    OnlineMonitor(ccall((:sentil_stream_monitor_with_lifting, libsentil[]), Ptr{Cvoid},
+                        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmcConfig}), _ptr(f), _ptr(lifting), cfg))
+end
+
+"""Add a `P~p` formula to a multi-monitor, tracked online through a lifted ensemble."""
+function add_probabilistic!(m::MultiMonitor, id::AbstractString, f::Formula,
+                            lifting::LiftingRegistry; config::SmcConfig = SmcConfig())
+    cfg = Ref(config)
+    check_error(ccall((:sentil_multi_monitor_add_probabilistic, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Cstring, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmcConfig}),
+                      _ptr(m), id, _ptr(f), _ptr(lifting), cfg))
+    return m
+end
+
+export add_probabilistic!
