@@ -17,6 +17,7 @@ include("monitor.jl")
 include("noise.jl")
 include("stats.jl")
 include("sequential.jl")
+include("simulation.jl")
 
 function __init__()
     libsentil[] = _Loader.resolve()
