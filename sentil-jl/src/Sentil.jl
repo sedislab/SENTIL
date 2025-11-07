@@ -7,13 +7,6 @@ include("loader.jl")
 
 const libsentil = Ref{String}()
 
-function __init__()
-    libsentil[] = _Loader.resolve()
-    # Host-callback trampolines must be built at run time, not baked into the
-    # precompiled image, or the engine would call through a stale pointer.
-    _C_BERNOULLI[] = @cfunction(_bernoulli_trampoline, Bool, (Ptr{Cvoid},))
-end
-
 include("errors.jl")
 include("enums.jl")
 include("value_structs.jl")
@@ -24,6 +17,11 @@ include("monitor.jl")
 include("noise.jl")
 include("stats.jl")
 include("sequential.jl")
+
+function __init__()
+    libsentil[] = _Loader.resolve()
+    _C_BERNOULLI[] = @cfunction(_bernoulli_trampoline, Bool, (Ptr{Cvoid},))
+end
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
 function version()
