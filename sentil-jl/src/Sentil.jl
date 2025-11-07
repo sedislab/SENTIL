@@ -19,6 +19,7 @@ include("trace.jl")
 include("formula.jl")
 include("monitor.jl")
 include("noise.jl")
+include("stats.jl")
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
 function version()
