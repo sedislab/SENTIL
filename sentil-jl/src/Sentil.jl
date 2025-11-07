@@ -9,6 +9,9 @@ const libsentil = Ref{String}()
 
 function __init__()
     libsentil[] = _Loader.resolve()
+    # Host-callback trampolines must be built at run time, not baked into the
+    # precompiled image, or the engine would call through a stale pointer.
+    _C_BERNOULLI[] = @cfunction(_bernoulli_trampoline, Bool, (Ptr{Cvoid},))
 end
 
 include("errors.jl")

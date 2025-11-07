@@ -70,18 +70,17 @@ function _bernoulli_trampoline(ud::Ptr{Cvoid})::Bool
     end
 end
 
-const _C_BERNOULLI = @cfunction(_bernoulli_trampoline, Bool, (Ptr{Cvoid},))
+# Filled in __init__; a @cfunction pointer baked at precompile time is invalid on load.
+const _C_BERNOULLI = Ref{Ptr{Cvoid}}(C_NULL)
 
 """Run a sequential probability ratio test driven by `draw`, a `() -> Bool` source."""
 function sequential_test(draw, config::SprtConfig)
     box = _BernoulliBox(draw, nothing)
     cfg = Ref(config)
     out = Ref{SprtResult}()
-    GC.@preserve box begin
-        code = ccall((:sentil_sequential_test, libsentil[]), Int32,
-                     (Ptr{SprtConfig}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SprtResult}),
-                     cfg, _C_BERNOULLI, pointer_from_objref(box), out)
-    end
+    code = GC.@preserve box ccall((:sentil_sequential_test, libsentil[]), Int32,
+                                  (Ptr{SprtConfig}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SprtResult}),
+                                  cfg, _C_BERNOULLI[], pointer_from_objref(box), out)
     box.err === nothing || throw(box.err)
     check_error(code)
     return out[]
@@ -92,11 +91,9 @@ function bayes_sequential_test(draw, config::BayesConfig)
     box = _BernoulliBox(draw, nothing)
     cfg = Ref(config)
     out = Ref{BayesResult}()
-    GC.@preserve box begin
-        code = ccall((:sentil_bayes_sequential_test, libsentil[]), Int32,
-                     (Ptr{BayesConfig}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{BayesResult}),
-                     cfg, _C_BERNOULLI, pointer_from_objref(box), out)
-    end
+    code = GC.@preserve box ccall((:sentil_bayes_sequential_test, libsentil[]), Int32,
+                                  (Ptr{BayesConfig}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{BayesResult}),
+                                  cfg, _C_BERNOULLI[], pointer_from_objref(box), out)
     box.err === nothing || throw(box.err)
     check_error(code)
     return out[]
