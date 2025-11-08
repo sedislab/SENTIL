@@ -526,3 +526,125 @@ function cma_es(objective, start::AbstractVector{<:Real}; bounds = nothing, conf
 end
 
 export maximize, cma_es
+
+mutable struct _BatchBox
+    objective::Any
+    err::Union{Nothing,Exception}
+end
+
+function _batch_trampoline(ud::Ptr{Cvoid}, points::Ptr{Float64}, population::Csize_t,
+                           dim::Csize_t, out_scores::Ptr{Float64})::Cvoid
+    box = unsafe_pointer_to_objref(ud)::_BatchBox
+    try
+        pts = Matrix{Float64}(undef, Int(dim), Int(population))
+        for p in 1:Int(population), d in 1:Int(dim)
+            pts[d, p] = unsafe_load(points, (p - 1) * Int(dim) + d)
+        end
+        scores = box.objective(pts)
+        for p in 1:Int(population)
+            unsafe_store!(out_scores, Float64(scores[p]), p)
+        end
+    catch e
+        box.err === nothing && (box.err = e)
+    end
+    return nothing
+end
+
+const _C_BATCH = Ref{Ptr{Cvoid}}(C_NULL)
+
+"""CMA-ES that scores the whole population at once, where each column of `points` is a candidate."""
+function cma_es_batched(objective, start::AbstractVector{<:Real}; bounds = nothing, config::CmaConfig = CmaConfig())
+    s = convert(Vector{Float64}, start)
+    n = length(s)
+    b = bounds === nothing ? unbounded_bounds(n) : bounds
+    box = _BatchBox(objective, nothing)
+    point = Vector{Float64}(undef, n)
+    value = Ref{Float64}(0.0)
+    code = GC.@preserve box b ccall((:sentil_cma_es_batched, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, CmaConfig, Ptr{Float64}, Ptr{Float64}),
+        _C_BATCH[], pointer_from_objref(box), s, n, _ptr(b), config, point, value)
+    box.err === nothing || throw(box.err)
+    check_error(code)
+    return point, value[]
+end
+
+export cma_es_batched
+
+# The vtable holds a raw pointer into box.initial, so the box has to outlive it.
+mutable struct _ModelBox
+    rollout::Any
+    initial::Vector{Float64}
+    n_vars::Int
+    samples::Int
+    err::Union{Nothing,Exception}
+end
+
+struct _ModelVtable
+    userdata::Ptr{Cvoid}
+    input_dimension::Csize_t
+    initial_state::Ptr{Float64}
+    rollout::Ptr{Cvoid}
+end
+
+function _rollout_trampoline(ud::Ptr{Cvoid}, initial::Ptr{Float64}, n_state::Csize_t,
+                            input::Ptr{Float64}, n_input::Csize_t, out_signals::Ptr{Float64})::Cvoid
+    box = unsafe_pointer_to_objref(ud)::_ModelBox
+    try
+        init = Float64[unsafe_load(initial, i) for i in 1:Int(n_state)]
+        inp = Float64[unsafe_load(input, i) for i in 1:Int(n_input)]
+        signals = box.rollout(init, inp)
+        ns = box.samples
+        for v in 1:box.n_vars, s in 1:ns
+            unsafe_store!(out_signals, Float64(signals[v, s]), (v - 1) * ns + s)
+        end
+    catch e
+        box.err === nothing && (box.err = e)
+    end
+    return nothing
+end
+
+const _C_ROLLOUT = Ref{Ptr{Cvoid}}(C_NULL)
+
+"""A model whose dynamics are the host rollout `rollout(initial, input)`, returning one row of signal values per variable."""
+function SystemModel(variables, dt::Real, horizon::Integer; input_dimension::Integer, rollout, initial::AbstractVector{<:Real})
+    names = String[String(v) for v in variables]
+    box = _ModelBox(rollout, convert(Vector{Float64}, initial), length(names), Int(horizon) + 1, nothing)
+    vtable = _ModelVtable(pointer_from_objref(box), input_dimension, pointer(box.initial), _C_ROLLOUT[])
+    ptr = GC.@preserve box ccall((:sentil_system_model_create_custom, libsentil[]), Ptr{Cvoid},
+        (Ptr{Cstring}, Csize_t, Cdouble, Csize_t, _ModelVtable),
+        names, length(names), dt, horizon, vtable)
+    SystemModel(ptr, box)
+end
+
+# The engine consumes the returned formula.
+mutable struct _FormulaFnBox
+    make::Any
+    err::Union{Nothing,Exception}
+end
+
+function _formula_fn_trampoline(ud::Ptr{Cvoid}, param::Cdouble)::Ptr{Cvoid}
+    box = unsafe_pointer_to_objref(ud)::_FormulaFnBox
+    try
+        return _consume!(box.make(param)::Formula)
+    catch e
+        box.err === nothing && (box.err = e)
+        return C_NULL
+    end
+end
+
+const _C_FORMULA_FN = Ref{Ptr{Cvoid}}(C_NULL)
+
+"""The tightest parameter in `[lower, upper]` for which `make(param)` holds on every trace."""
+function mine_tightest_parameter(make, traces::AbstractVector{Trace}, lower::Real, upper::Real)
+    box = _FormulaFnBox(make, nothing)
+    trace_ptrs = Ptr{Cvoid}[_ptr(t) for t in traces]
+    out = Ref{Float64}(0.0)
+    code = GC.@preserve box traces ccall((:sentil_mine_tightest_parameter, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Ptr{Cvoid}}, Csize_t, Cdouble, Cdouble, Ptr{Float64}),
+        _C_FORMULA_FN[], pointer_from_objref(box), trace_ptrs, length(trace_ptrs), lower, upper, out)
+    box.err === nothing || throw(box.err)
+    check_error(code)
+    return out[]
+end
+
+export SystemModel, mine_tightest_parameter

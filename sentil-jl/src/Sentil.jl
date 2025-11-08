@@ -31,6 +31,11 @@ function __init__()
     _C_GRADIENT[] = @cfunction(_gradient_trampoline, Cvoid,
                                (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}))
     _C_OBJECTIVE[] = @cfunction(_objective_trampoline, Cdouble, (Ptr{Cvoid}, Ptr{Float64}, Csize_t))
+    _C_BATCH[] = @cfunction(_batch_trampoline, Cvoid,
+                            (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Csize_t, Ptr{Float64}))
+    _C_ROLLOUT[] = @cfunction(_rollout_trampoline, Cvoid,
+                              (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Float64}))
+    _C_FORMULA_FN[] = @cfunction(_formula_fn_trampoline, Ptr{Cvoid}, (Ptr{Cvoid}, Cdouble))
 end
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
