@@ -20,6 +20,7 @@ include("sequential.jl")
 include("simulation.jl")
 include("rare_event.jl")
 include("synthesis.jl")
+include("specs.jl")
 
 function __init__()
     libsentil[] = _Loader.resolve()
