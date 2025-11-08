@@ -117,6 +117,9 @@ Base.:-(e::Expr) = _binary(_BIN_SUB, literal(0.0), e)
 
 Base.mod(a::Expr, b::Expr) = _binary(_BIN_MOD, a, b)
 Base.mod(a::Expr, b::Real) = _binary(_BIN_MOD, a, literal(b))
+Base.:%(a::Expr, b::Expr) = _binary(_BIN_MOD, a, b)
+Base.:%(a::Expr, b::Real) = _binary(_BIN_MOD, a, literal(b))
+Base.:%(a::Real, b::Expr) = _binary(_BIN_MOD, literal(a), b)
 
 """Raise one term to another."""
 pow(a::Expr, b::Expr) = _binary(_BIN_POW, a, b)
