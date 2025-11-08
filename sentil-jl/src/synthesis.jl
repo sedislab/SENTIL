@@ -155,3 +155,87 @@ end
 Base.clamp!(b::Bounds, point::AbstractVector{<:Real}) = clamp!(b, convert(Vector{Float64}, point))
 
 export Bounds, unbounded_bounds, dimension, lower, upper
+
+mutable struct SystemModel
+    ptr::Ptr{Cvoid}
+    state::Any
+    function SystemModel(ptr::Ptr{Cvoid}, state = nothing)
+        ptr == C_NULL && _raise_last()
+        m = new(ptr, state)
+        finalizer(_destroy, m)
+        return m
+    end
+end
+
+function _destroy(m::SystemModel)
+    if m.ptr != C_NULL
+        ccall((:sentil_system_model_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), m.ptr)
+        m.ptr = C_NULL
+    end
+end
+
+close!(m::SystemModel) = _destroy(m)
+
+"""
+    linear_model(A, B, x0, variables, dt, horizon) -> SystemModel
+
+A discrete-time linear model `x' = A x + B u` over the named variables. `A` is `n×n`,
+`B` is `n×b`, and `x0` is the initial state of length `n`.
+"""
+function linear_model(A::AbstractMatrix{<:Real}, B::AbstractMatrix{<:Real},
+                      x0::AbstractVector{<:Real}, variables, dt::Real, horizon::Integer)
+    n = length(x0)
+    size(A) == (n, n) || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "A must be $n by $n"))
+    size(B, 1) == n || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "B must have $n rows"))
+    names = String[String(v) for v in variables]
+    SystemModel(ccall((:sentil_linear_model_create, libsentil[]), Ptr{Cvoid},
+                      (Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Float64},
+                       Ptr{Cstring}, Csize_t, Cdouble, Csize_t),
+                      _rowmajor(A), n, _rowmajor(B), size(B, 2), convert(Vector{Float64}, x0),
+                      names, length(names), dt, horizon))
+end
+
+"""The total number of input values the model takes over the horizon."""
+input_dimension(m::SystemModel) =
+    Int(ccall((:sentil_system_model_input_dimension, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(m)))
+
+# Mirrors sentil_synthesis_result_t.
+struct _SynthesisResult
+    input::Ptr{Float64}
+    input_len::Csize_t
+    robustness::Float64
+    holds::Bool
+    backend::Backend.T
+end
+
+"""The outcome of `synthesize`."""
+struct SynthesisResult
+    input::Vector{Float64}
+    robustness::Float64
+    holds::Bool
+    backend::Backend.T
+end
+
+# A NULL SmoothConfig pointer takes the engine default.
+function _smooth_ref(smooth)
+    smooth === nothing && return Ref{SmoothConfig}(), Ptr{SmoothConfig}(C_NULL)
+    r = Ref(smooth)
+    return r, Base.unsafe_convert(Ptr{SmoothConfig}, r)
+end
+
+"""Find an input sequence for the model that best satisfies the spec."""
+function synthesize(model::SystemModel, spec::Formula; bounds = nothing, smooth = nothing,
+                    backend::Backend.T = Backend.Auto, max_iters::Integer = 0, population::Integer = 0)
+    bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
+    sref, sptr = _smooth_ref(smooth)
+    out = Ref{_SynthesisResult}()
+    code = GC.@preserve model sref ccall((:sentil_synthesize, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmoothConfig}, Csize_t, Int32, Csize_t, Ptr{_SynthesisResult}),
+        _ptr(model), _ptr(spec), bptr, sptr, max_iters, Int32(backend), population, out)
+    _rethrow_callback(model.state)
+    check_error(code)
+    r = out[]
+    return SynthesisResult(_take_doubles(r.input, r.input_len), r.robustness, r.holds, r.backend)
+end
+
+export SystemModel, linear_model, input_dimension, SynthesisResult, synthesize
