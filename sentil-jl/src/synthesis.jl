@@ -327,13 +327,14 @@ SafetyFilter(bounds::Bounds) =
     SafetyFilter(ccall((:sentil_safety_filter_create, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(bounds)))
 
 """
-    filter(safety_filter, nominal; barriers=[]) -> Vector{Float64}
+    safe_input(safety_filter, nominal; barriers=[]) -> Vector{Float64}
 
 The input closest to `nominal` that satisfies the bounds and each barrier `(coeff, bound)`
-meaning `coeff · u ≥ bound`. Each coeff has the same length as `nominal`.
+meaning `coeff · u ≥ bound`. Each coeff has the same length as `nominal`. Named to avoid
+clashing with `Base.filter`.
 """
-function Base.filter(sf::SafetyFilter, nominal::AbstractVector{<:Real};
-                     barriers::AbstractVector = Tuple{Vector{Float64},Float64}[])
+function safe_input(sf::SafetyFilter, nominal::AbstractVector{<:Real};
+                    barriers::AbstractVector = Tuple{Vector{Float64},Float64}[])
     nom = convert(Vector{Float64}, nominal)
     n = length(nom)
     m = length(barriers)
@@ -352,7 +353,7 @@ function Base.filter(sf::SafetyFilter, nominal::AbstractVector{<:Real};
     return out
 end
 
-export SafetyFilter
+export SafetyFilter, safe_input
 
 mutable struct ChanceConstraint
     ptr::Ptr{Cvoid}
