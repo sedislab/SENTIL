@@ -28,6 +28,9 @@ function __init__()
                                   (Ptr{Cvoid}, UInt64, Ptr{Float64}, Csize_t))
     _C_SYSTEM_STEP[] = @cfunction(_system_step_trampoline, Cvoid,
                                   (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Cdouble, UInt64, Ptr{Float64}))
+    _C_GRADIENT[] = @cfunction(_gradient_trampoline, Cvoid,
+                               (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}))
+    _C_OBJECTIVE[] = @cfunction(_objective_trampoline, Cdouble, (Ptr{Cvoid}, Ptr{Float64}, Csize_t))
 end
 
 """The version of the SENTIL core as `(major, minor, patch)`."""

@@ -434,3 +434,95 @@ function falsify(f::Formula, model::SystemModel, bounds::Bounds; config::CmaConf
 end
 
 export Witness, find_counterexample, falsify
+
+"""The smooth robustness of the trajectory the model rolls from `initial` under `input`, and its gradient."""
+function smooth_gradient(f::Formula, model::SystemModel, initial::AbstractVector{<:Real},
+                         input::AbstractVector{<:Real}; config::SmoothConfig = SmoothConfig())
+    init = convert(Vector{Float64}, initial)
+    inp = convert(Vector{Float64}, input)
+    cfg = Ref(config)
+    value = Ref{Float64}(0.0)
+    grad = Vector{Float64}(undef, length(inp))
+    code = GC.@preserve model ccall((:sentil_formula_smooth_gradient, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{SmoothConfig}, Ptr{Float64}, Ptr{Float64}),
+        _ptr(f), _ptr(model), init, length(init), inp, length(inp), cfg, value, grad)
+    _rethrow_callback(model.state)
+    check_error(code)
+    return value[], grad
+end
+
+export smooth_gradient
+
+mutable struct _GradientBox
+    objective::Any
+    err::Union{Nothing,Exception}
+end
+
+function _gradient_trampoline(ud::Ptr{Cvoid}, x::Ptr{Float64}, n::Csize_t,
+                              out_value::Ptr{Float64}, out_gradient::Ptr{Float64})::Cvoid
+    box = unsafe_pointer_to_objref(ud)::_GradientBox
+    try
+        xv = Float64[unsafe_load(x, i) for i in 1:Int(n)]
+        value, grad = box.objective(xv)
+        unsafe_store!(out_value, Float64(value))
+        for i in 1:Int(n)
+            unsafe_store!(out_gradient, Float64(grad[i]), i)
+        end
+    catch e
+        box.err === nothing && (box.err = e)
+    end
+    return nothing
+end
+
+mutable struct _ObjectiveBox
+    objective::Any
+    err::Union{Nothing,Exception}
+end
+
+function _objective_trampoline(ud::Ptr{Cvoid}, x::Ptr{Float64}, n::Csize_t)::Cdouble
+    box = unsafe_pointer_to_objref(ud)::_ObjectiveBox
+    try
+        xv = Float64[unsafe_load(x, i) for i in 1:Int(n)]
+        return Float64(box.objective(xv))
+    catch e
+        box.err === nothing && (box.err = e)
+        return NaN
+    end
+end
+
+const _C_GRADIENT = Ref{Ptr{Cvoid}}(C_NULL)
+const _C_OBJECTIVE = Ref{Ptr{Cvoid}}(C_NULL)
+
+"""Maximize a differentiable objective by gradient ascent, where `objective(x)` returns `(value, gradient)`."""
+function maximize(objective, start::AbstractVector{<:Real}; bounds = nothing, max_iters::Integer = 0)
+    s = convert(Vector{Float64}, start)
+    n = length(s)
+    bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
+    box = _GradientBox(objective, nothing)
+    point = Vector{Float64}(undef, n)
+    value = Ref{Float64}(0.0)
+    code = GC.@preserve box ccall((:sentil_maximize, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, Csize_t, Ptr{Float64}, Ptr{Float64}),
+        _C_GRADIENT[], pointer_from_objref(box), s, n, bptr, max_iters, point, value)
+    box.err === nothing || throw(box.err)
+    check_error(code)
+    return point, value[]
+end
+
+"""Maximize a black-box objective with CMA-ES, where `objective(x)` returns a scalar."""
+function cma_es(objective, start::AbstractVector{<:Real}; bounds = nothing, config::CmaConfig = CmaConfig())
+    s = convert(Vector{Float64}, start)
+    n = length(s)
+    bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
+    box = _ObjectiveBox(objective, nothing)
+    point = Vector{Float64}(undef, n)
+    value = Ref{Float64}(0.0)
+    code = GC.@preserve box ccall((:sentil_cma_es, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, CmaConfig, Ptr{Float64}, Ptr{Float64}),
+        _C_OBJECTIVE[], pointer_from_objref(box), s, n, bptr, config, point, value)
+    box.err === nothing || throw(box.err)
+    check_error(code)
+    return point, value[]
+end
+
+export maximize, cma_es
