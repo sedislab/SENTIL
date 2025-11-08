@@ -239,3 +239,197 @@ function synthesize(model::SystemModel, spec::Formula; bounds = nothing, smooth 
 end
 
 export SystemModel, linear_model, input_dimension, SynthesisResult, synthesize
+
+"""Settings for the CMA-ES search."""
+struct CmaConfig
+    population::Csize_t
+    max_generations::Csize_t
+    initial_step::Float64
+    tol_step::Float64
+    seed::UInt64
+end
+
+CmaConfig(; population::Integer = 0, max_generations::Integer = 300, initial_step::Real = 0.3,
+          tol_step::Real = 1e-11, seed::Integer = 42) =
+    CmaConfig(population, max_generations, initial_step, tol_step, seed)
+
+export CmaConfig
+
+mutable struct Controller
+    ptr::Ptr{Cvoid}
+    state::Any
+    input_width::Int
+    function Controller(ptr::Ptr{Cvoid}, state, input_width)
+        ptr == C_NULL && _raise_last()
+        c = new(ptr, state, input_width)
+        finalizer(_destroy, c)
+        return c
+    end
+end
+
+function _destroy(c::Controller)
+    if c.ptr != C_NULL
+        ccall((:sentil_controller_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), c.ptr)
+        c.ptr = C_NULL
+    end
+end
+
+close!(c::Controller) = _destroy(c)
+
+"""A controller that plans a short horizon each step and emits an input within the `budget_ns` deadline."""
+function Controller(model::SystemModel, spec::Formula, input_width::Integer, budget_ns::Integer;
+                    bounds = nothing, smooth = nothing)
+    bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
+    sref, sptr = _smooth_ref(smooth)
+    box = model.state
+    mptr = _consume!(model)
+    spptr = _consume!(spec)
+    ptr = GC.@preserve sref ccall((:sentil_controller_create, libsentil[]), Ptr{Cvoid},
+        (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, UInt64, Ptr{Cvoid}, Ptr{SmoothConfig}),
+        mptr, spptr, input_width, budget_ns, bptr, sptr)
+    Controller(ptr, box, Int(input_width))
+end
+
+"""Plan from the current state and return the control input."""
+function control(c::Controller, state::AbstractVector{<:Real})
+    s = convert(Vector{Float64}, state)
+    out = Vector{Float64}(undef, c.input_width)
+    code = GC.@preserve c ccall((:sentil_controller_control, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}), _ptr(c), s, length(s), out)
+    _rethrow_callback(c.state)
+    check_error(code)
+    return out
+end
+
+export Controller, control
+
+mutable struct SafetyFilter
+    ptr::Ptr{Cvoid}
+    function SafetyFilter(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        f = new(ptr)
+        finalizer(_destroy, f)
+        return f
+    end
+end
+
+function _destroy(f::SafetyFilter)
+    if f.ptr != C_NULL
+        ccall((:sentil_safety_filter_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), f.ptr)
+        f.ptr = C_NULL
+    end
+end
+
+close!(f::SafetyFilter) = _destroy(f)
+
+"""A safety filter that keeps inputs inside a box, consuming the bounds."""
+SafetyFilter(bounds::Bounds) =
+    SafetyFilter(ccall((:sentil_safety_filter_create, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(bounds)))
+
+"""
+    filter(safety_filter, nominal; barriers=[]) -> Vector{Float64}
+
+The input closest to `nominal` that satisfies the bounds and each barrier `(coeff, bound)`
+meaning `coeff · u ≥ bound`. Each coeff has the same length as `nominal`.
+"""
+function Base.filter(sf::SafetyFilter, nominal::AbstractVector{<:Real};
+                     barriers::AbstractVector = Tuple{Vector{Float64},Float64}[])
+    nom = convert(Vector{Float64}, nominal)
+    n = length(nom)
+    m = length(barriers)
+    a = Float64[]
+    bvec = Float64[]
+    for (coeff, bound) in barriers
+        length(coeff) == n ||
+            throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "each barrier coefficient must have length $n"))
+        append!(a, Float64.(coeff))
+        push!(bvec, Float64(bound))
+    end
+    out = Vector{Float64}(undef, n)
+    check_error(ccall((:sentil_safety_filter_filter, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}, Csize_t, Ptr{Float64}),
+        _ptr(sf), nom, n, isempty(a) ? C_NULL : a, isempty(bvec) ? C_NULL : bvec, m, out))
+    return out
+end
+
+export SafetyFilter
+
+mutable struct ChanceConstraint
+    ptr::Ptr{Cvoid}
+    function ChanceConstraint(ptr::Ptr{Cvoid})
+        ptr == C_NULL && _raise_last()
+        c = new(ptr)
+        finalizer(_destroy, c)
+        return c
+    end
+end
+
+function _destroy(c::ChanceConstraint)
+    if c.ptr != C_NULL
+        ccall((:sentil_chance_constraint_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), c.ptr)
+        c.ptr = C_NULL
+    end
+end
+
+close!(c::ChanceConstraint) = _destroy(c)
+
+"""A constraint that the spec holds with at least `probability`, consuming the spec."""
+ChanceConstraint(spec::Formula, probability::Real; confidence::Real = 0.0, tightening::Real = 0.0) =
+    ChanceConstraint(ccall((:sentil_chance_constraint_create, libsentil[]), Ptr{Cvoid},
+                           (Ptr{Cvoid}, Cdouble, Cdouble, Cdouble),
+                           _consume!(spec), probability, confidence, tightening))
+
+"""Validate the constraint over a stochastic system by sampling."""
+function validate(cc::ChanceConstraint, system::StochasticSystem; samples::Integer = 1000, seed::Integer = 42)
+    out = Ref{ChanceReport}()
+    code = GC.@preserve system ccall((:sentil_chance_constraint_validate, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, UInt64, UInt64, Ptr{ChanceReport}), _ptr(cc), _ptr(system), samples, seed, out)
+    _rethrow_callback(system.state)
+    check_error(code)
+    return out[]
+end
+
+export ChanceConstraint, validate
+
+# Mirrors sentil_witness_t.
+struct _Witness
+    input::Ptr{Float64}
+    input_len::Csize_t
+    robustness::Float64
+    trace::Ptr{Cvoid}
+end
+
+"""A witnessing run found by a search."""
+struct Witness
+    input::Vector{Float64}
+    robustness::Float64
+    trace::Trace
+end
+
+_witness(w::_Witness) = Witness(_take_doubles(w.input, w.input_len), w.robustness, Trace(w.trace))
+
+"""Descend the smooth robustness from the model's initial state to find a witnessing run."""
+function find_counterexample(f::Formula, model::SystemModel, bounds::Bounds;
+                             max_iters::Integer = 200, smooth = nothing)
+    sref, sptr = _smooth_ref(smooth)
+    out = Ref{_Witness}()
+    code = GC.@preserve model sref ccall((:sentil_formula_find_counterexample, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, Ptr{SmoothConfig}, Ptr{_Witness}),
+        _ptr(f), _ptr(model), _ptr(bounds), max_iters, sptr, out)
+    _rethrow_callback(model.state)
+    check_error(code)
+    return _witness(out[])
+end
+
+"""Minimize the exact robustness with restarted CMA-ES to falsify the spec."""
+function falsify(f::Formula, model::SystemModel, bounds::Bounds; config::CmaConfig = CmaConfig(), restarts::Integer = 1)
+    out = Ref{_Witness}()
+    code = GC.@preserve model ccall((:sentil_formula_falsify, libsentil[]), Int32,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, CmaConfig, Csize_t, Ptr{_Witness}),
+        _ptr(f), _ptr(model), _ptr(bounds), config, restarts, out)
+    _rethrow_callback(model.state)
+    check_error(code)
+    return _witness(out[])
+end
+
+export Witness, find_counterexample, falsify
