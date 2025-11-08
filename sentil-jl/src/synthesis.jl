@@ -497,13 +497,13 @@ const _C_OBJECTIVE = Ref{Ptr{Cvoid}}(C_NULL)
 function maximize(objective, start::AbstractVector{<:Real}; bounds = nothing, max_iters::Integer = 0)
     s = convert(Vector{Float64}, start)
     n = length(s)
-    bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
+    b = bounds === nothing ? unbounded_bounds(n) : bounds
     box = _GradientBox(objective, nothing)
     point = Vector{Float64}(undef, n)
     value = Ref{Float64}(0.0)
-    code = GC.@preserve box ccall((:sentil_maximize, libsentil[]), Int32,
+    code = GC.@preserve box b ccall((:sentil_maximize, libsentil[]), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, Csize_t, Ptr{Float64}, Ptr{Float64}),
-        _C_GRADIENT[], pointer_from_objref(box), s, n, bptr, max_iters, point, value)
+        _C_GRADIENT[], pointer_from_objref(box), s, n, _ptr(b), max_iters, point, value)
     box.err === nothing || throw(box.err)
     check_error(code)
     return point, value[]
@@ -513,13 +513,13 @@ end
 function cma_es(objective, start::AbstractVector{<:Real}; bounds = nothing, config::CmaConfig = CmaConfig())
     s = convert(Vector{Float64}, start)
     n = length(s)
-    bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
+    b = bounds === nothing ? unbounded_bounds(n) : bounds
     box = _ObjectiveBox(objective, nothing)
     point = Vector{Float64}(undef, n)
     value = Ref{Float64}(0.0)
-    code = GC.@preserve box ccall((:sentil_cma_es, libsentil[]), Int32,
+    code = GC.@preserve box b ccall((:sentil_cma_es, libsentil[]), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, CmaConfig, Ptr{Float64}, Ptr{Float64}),
-        _C_OBJECTIVE[], pointer_from_objref(box), s, n, bptr, config, point, value)
+        _C_OBJECTIVE[], pointer_from_objref(box), s, n, _ptr(b), config, point, value)
     box.err === nothing || throw(box.err)
     check_error(code)
     return point, value[]
