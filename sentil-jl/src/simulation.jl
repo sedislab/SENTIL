@@ -82,8 +82,8 @@ close!(s::StochasticSystem) = _destroy(s)
 
 """One simulated trajectory of the system from a seed."""
 function simulate(s::StochasticSystem; seed::Integer = 42)
-    ptr = ccall((:sentil_stochastic_system_simulate, libsentil[]), Ptr{Cvoid},
-                (Ptr{Cvoid}, UInt64), _ptr(s), seed)
+    ptr = GC.@preserve s ccall((:sentil_stochastic_system_simulate, libsentil[]), Ptr{Cvoid},
+                               (Ptr{Cvoid}, UInt64), _ptr(s), seed)
     _rethrow_callback(s.state)
     return Trace(ptr)
 end
@@ -159,3 +159,66 @@ to_stochastic_system(m::SimModel) =
                            (Ptr{Cvoid},), _ptr(m)))
 
 export SimModel, to_stochastic_system
+
+mutable struct _SystemBox
+    init::Any
+    step::Any
+    err::Union{Nothing,Exception}
+end
+
+# Mirrors sentil_system_callbacks_t.
+struct _SystemCallbacks
+    userdata::Ptr{Cvoid}
+    init::Ptr{Cvoid}
+    step::Ptr{Cvoid}
+end
+
+function _system_init_trampoline(ud::Ptr{Cvoid}, seed::UInt64, out_state::Ptr{Float64}, n::Csize_t)::Cvoid
+    box = unsafe_pointer_to_objref(ud)::_SystemBox
+    try
+        state = box.init(seed)
+        for i in 1:Int(n)
+            unsafe_store!(out_state, Float64(state[i]), i)
+        end
+    catch e
+        box.err === nothing && (box.err = e)
+    end
+    return nothing
+end
+
+function _system_step_trampoline(ud::Ptr{Cvoid}, prev::Ptr{Float64}, n::Csize_t,
+                                 time::Cdouble, seed::UInt64, out_state::Ptr{Float64})::Cvoid
+    box = unsafe_pointer_to_objref(ud)::_SystemBox
+    try
+        prev_state = Float64[unsafe_load(prev, i) for i in 1:Int(n)]
+        state = box.step(prev_state, time, seed)
+        for i in 1:Int(n)
+            unsafe_store!(out_state, Float64(state[i]), i)
+        end
+    catch e
+        box.err === nothing && (box.err = e)
+    end
+    return nothing
+end
+
+const _C_SYSTEM_INIT = Ref{Ptr{Cvoid}}(C_NULL)
+const _C_SYSTEM_STEP = Ref{Ptr{Cvoid}}(C_NULL)
+
+_rethrow_callback(box::_SystemBox) = (box.err === nothing || throw(box.err))
+
+"""
+    StochasticSystem(variables, dt, horizon; init, step) -> StochasticSystem
+
+A stochastic system whose dynamics are host callbacks: `init(seed)` returns the initial
+state vector, and `step(prev, time, seed)` returns the next state from the previous one.
+During a parallel rare-event check these run on several worker threads, so keep them
+thread-safe and free of shared mutable state.
+"""
+function StochasticSystem(variables, dt::Real, horizon::Integer; init, step)
+    names = String[String(v) for v in variables]
+    box = _SystemBox(init, step, nothing)
+    callbacks = _SystemCallbacks(pointer_from_objref(box), _C_SYSTEM_INIT[], _C_SYSTEM_STEP[])
+    StochasticSystem(ccall((:sentil_stochastic_system_create, libsentil[]), Ptr{Cvoid},
+                           (Ptr{Cstring}, Csize_t, Cdouble, Csize_t, _SystemCallbacks),
+                           names, length(names), dt, horizon, callbacks), box)
+end

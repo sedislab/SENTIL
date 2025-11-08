@@ -23,6 +23,10 @@ include("rare_event.jl")
 function __init__()
     libsentil[] = _Loader.resolve()
     _C_BERNOULLI[] = @cfunction(_bernoulli_trampoline, Bool, (Ptr{Cvoid},))
+    _C_SYSTEM_INIT[] = @cfunction(_system_init_trampoline, Cvoid,
+                                  (Ptr{Cvoid}, UInt64, Ptr{Float64}, Csize_t))
+    _C_SYSTEM_STEP[] = @cfunction(_system_step_trampoline, Cvoid,
+                                  (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Cdouble, UInt64, Ptr{Float64}))
 end
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
