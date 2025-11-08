@@ -36,6 +36,10 @@ function __init__()
     _C_ROLLOUT[] = @cfunction(_rollout_trampoline, Cvoid,
                               (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Float64}))
     _C_FORMULA_FN[] = @cfunction(_formula_fn_trampoline, Ptr{Cvoid}, (Ptr{Cvoid}, Cdouble))
+    _C_AMS_INIT[] = @cfunction(_ams_initial_trampoline, Cvoid, (Ptr{Cvoid}, UInt64, Ptr{Cvoid}))
+    _C_AMS_STEP[] = @cfunction(_ams_step_trampoline, Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, UInt64, Ptr{Cvoid}))
+    _C_AMS_TERMINAL[] = @cfunction(_ams_terminal_trampoline, Bool, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Bool}))
+    _C_AMS_SCORE[] = @cfunction(_ams_score_trampoline, Cdouble, (Ptr{Cvoid}, Ptr{Cvoid}))
 end
 
 """The version of the SENTIL core as `(major, minor, patch)`."""
