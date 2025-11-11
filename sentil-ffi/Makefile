@@ -24,7 +24,7 @@ GPU_TEST := tests/gpu_test.c
 CPU_TESTS := $(filter-out $(GPU_TEST),$(TESTS))
 LINK := -L$(LIBDIR) -lsentil -Wl,-rpath,$(LIBDIR) -lm
 
-.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-cpp bench-py dist install clean
+.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-cpp bench-py bench-jl dist install clean
 
 build:
 	$(CARGO) build --release -p sentil-ffi
@@ -62,6 +62,10 @@ bench-cpp: build
 
 bench-py: build
 	cd ../benchmarks && python runners/sentil_runner.py
+
+bench-jl: build
+	cd ../benchmarks && SENTIL_LIB=$(LIBDIR)/$(SHARED) julia --project=../sentil-jl runners/sentil_runner.jl scalability
+	cd ../benchmarks && SENTIL_LIB=$(LIBDIR)/$(SHARED) julia --project=../sentil-jl runners/sentil_runner.jl streaming
 
 dist: build
 	rm -rf $(DIST)/$(BUNDLE)
