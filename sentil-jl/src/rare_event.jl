@@ -93,6 +93,7 @@ end
 
 function _ams_terminal_trampoline(ud::Ptr{Cvoid}, state::Ptr{Cvoid}, out_rare::Ptr{Bool})::Bool
     box = unsafe_pointer_to_objref(ud)::_AmsBox
+    unsafe_store!(out_rare, false)
     try
         terminal, in_rare = box.is_terminal(unsafe_load(Ptr{box.State}(state)))
         unsafe_store!(out_rare, Bool(in_rare))
