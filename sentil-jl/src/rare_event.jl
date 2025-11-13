@@ -126,7 +126,8 @@ const _C_AMS_SCORE = Ref{Ptr{Cvoid}}(C_NULL)
 Estimate a rare-event probability over a host simulator. `state_type` must be an isbits
 type. `initial_state(seed)` and `step(state, seed)` return a state; `is_terminal(state)`
 returns `(terminal, in_rare_event)`; `score(state)` returns a real. The callbacks run on
-worker threads, so keep them thread-safe and free of shared mutable state.
+worker threads, so keep them thread-safe and free of shared mutable state; the runtime
+adopts those threads, so allocating and the garbage collector are safe inside them.
 """
 function adaptive_multilevel_splitting(; state_type::Type, initial_state, step, is_terminal,
                                        score, particles::Integer, target_score::Real,
