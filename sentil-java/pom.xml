@@ -122,8 +122,7 @@
               <arguments>
                 <argument>build</argument>
                 <argument>--release</argument>
-                <argument>-p</argument>
-                <argument>sentil-ffi</argument>
+                <argument>--package=sentil-ffi</argument>
               </arguments>
               <workingDirectory>${project.basedir}/..</workingDirectory>
             </configuration>
@@ -135,8 +134,8 @@
             <configuration>
               <executable>${cmake}</executable>
               <arguments>
-                <argument>-S</argument><argument>${project.basedir}/native</argument>
-                <argument>-B</argument><argument>${sentil.native.build}</argument>
+                <argument>-S${project.basedir}/native</argument>
+                <argument>-B${sentil.native.build}</argument>
                 <argument>-DCMAKE_BUILD_TYPE=Release</argument>
                 <argument>-DSENTIL_LIB_DIR=${sentil.lib.dir}</argument>
                 <argument>-DSENTIL_HEADER_DIR=${sentil.ffi.dir}/include</argument>
