@@ -410,24 +410,26 @@ end
 _witness(w::_Witness) = Witness(_take_doubles(w.input, w.input_len), w.robustness, Trace(w.trace))
 
 """Descend the smooth robustness from the model's initial state to find a witnessing run."""
-function find_counterexample(f::Formula, model::SystemModel, bounds::Bounds;
+function find_counterexample(f::Formula, model::SystemModel, bounds = nothing;
                              max_iters::Integer = 200, smooth = nothing)
+    b = bounds === nothing ? unbounded_bounds(input_dimension(model)) : bounds
     sref, sptr = _smooth_ref(smooth)
     out = Ref{_Witness}()
-    code = GC.@preserve model sref ccall((:sentil_formula_find_counterexample, libsentil[]), Int32,
+    code = GC.@preserve model sref b ccall((:sentil_formula_find_counterexample, libsentil[]), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, Ptr{SmoothConfig}, Ptr{_Witness}),
-        _ptr(f), _ptr(model), _ptr(bounds), max_iters, sptr, out)
+        _ptr(f), _ptr(model), _ptr(b), max_iters, sptr, out)
     _rethrow_callback(model.state)
     check_error(code)
     return _witness(out[])
 end
 
 """Minimize the exact robustness with restarted CMA-ES to falsify the spec."""
-function falsify(f::Formula, model::SystemModel, bounds::Bounds; config::CmaConfig = CmaConfig(), restarts::Integer = 1)
+function falsify(f::Formula, model::SystemModel, bounds = nothing; config::CmaConfig = CmaConfig(), restarts::Integer = 1)
+    b = bounds === nothing ? unbounded_bounds(input_dimension(model)) : bounds
     out = Ref{_Witness}()
-    code = GC.@preserve model ccall((:sentil_formula_falsify, libsentil[]), Int32,
+    code = GC.@preserve model b ccall((:sentil_formula_falsify, libsentil[]), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, CmaConfig, Csize_t, Ptr{_Witness}),
-        _ptr(f), _ptr(model), _ptr(bounds), config, restarts, out)
+        _ptr(f), _ptr(model), _ptr(b), config, restarts, out)
     _rethrow_callback(model.state)
     check_error(code)
     return _witness(out[])

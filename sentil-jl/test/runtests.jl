@@ -12,6 +12,7 @@ using Sentil
     include("test_errors.jl")
 
     @testset "simulation and rare-event" begin
+        @test version() == (1, 0, 0)   # the loaded core is the one this package binds
         model = SimModel(["x"], 0.1, 20, [sim_const(0.0)], [sim_prev(1) + sim_noise(1)], [gaussian(0.0, 0.1)])
         @test simulate(model; seed = 42) isa Trace
         sys = to_stochastic_system(model)

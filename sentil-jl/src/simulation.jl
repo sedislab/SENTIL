@@ -211,8 +211,9 @@ _rethrow_callback(box::_SystemBox) = (box.err === nothing || throw(box.err))
 
 A stochastic system whose dynamics are host callbacks: `init(seed)` returns the initial
 state vector, and `step(prev, time, seed)` returns the next state from the previous one.
-During a parallel rare-event check these run on several worker threads, so keep them
-thread-safe and free of shared mutable state.
+The callbacks run on the calling thread for a single `simulate`. A parallel rare-event
+check may drive them from several worker threads; for that case build the system from a
+`SimModel` instead, whose dynamics run entirely inside the core with no host callback.
 """
 function StochasticSystem(variables, dt::Real, horizon::Integer; init, step)
     names = String[String(v) for v in variables]
