@@ -71,4 +71,14 @@ final class NativeLib {
     static native long formulaParse(String formula) throws SentilException;
 
     static native void formulaDestroy(long handle);
+
+    static native String formulaToJson(long handle) throws SentilException;
+
+    static native long formulaFromJson(String json) throws SentilException;
+
+    static native long formulaDepth(long handle);
+
+    static native boolean formulaHasTemporal(long handle);
+
+    static native String[] formulaVariables(long handle) throws SentilException;
 }

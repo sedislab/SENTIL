@@ -15,6 +15,7 @@ jmethodID ctor_base = nullptr;
 jmethodID ctor_parse = nullptr;
 jmethodID ctor_semantic = nullptr;
 jmethodID ctor_evaluation = nullptr;
+jclass cls_string = nullptr;
 
 // sentil_get_last_error_message sizes on a null first call and counts the NUL.
 std::string last_error_message() {
@@ -88,6 +89,25 @@ T* as_ptr(jlong handle) {
     return reinterpret_cast<T*>(handle);
 }
 
+jstring owned_string(JNIEnv* env, char* owned) {
+    jstring result = env->NewStringUTF(owned);
+    sentil_free_string(owned);
+    return result;
+}
+
+jobjectArray owned_string_array(JNIEnv* env, char** owned, size_t count) {
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_string, nullptr);
+    if (result != nullptr) {
+        for (size_t i = 0; i < count; ++i) {
+            jstring element = env->NewStringUTF(owned[i]);
+            env->SetObjectArrayElement(result, static_cast<jsize>(i), element);
+            env->DeleteLocalRef(element);
+        }
+    }
+    sentil_free_string_array(owned, count);
+    return result;
+}
+
 }  // namespace
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -115,6 +135,12 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
             return JNI_ERR;
         }
     }
+    jclass string_local = env->FindClass("java/lang/String");
+    if (string_local == nullptr) {
+        return JNI_ERR;
+    }
+    cls_string = static_cast<jclass>(env->NewGlobalRef(string_local));
+    env->DeleteLocalRef(string_local);
     return JNI_VERSION_1_8;
 }
 
@@ -123,7 +149,7 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8) != JNI_OK) {
         return;
     }
-    for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation}) {
+    for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -158,4 +184,51 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaParse(JN
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaDestroy(JNIEnv*, jclass,
                                                                               jlong handle) {
     sentil_formula_destroy(as_ptr<sentil_formula_t>(handle));
+}
+
+JNIEXPORT jstring JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaToJson(JNIEnv* env, jclass,
+                                                                                jlong handle) {
+    char* json = sentil_formula_to_json(as_ptr<const sentil_formula_t>(handle));
+    if (json == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_string(env, json);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaFromJson(JNIEnv* env, jclass,
+                                                                                jstring json) {
+    Utf8 text(env, json);
+    sentil_formula_t* parsed = sentil_formula_from_json(text.c());
+    if (parsed == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(parsed);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaDepth(JNIEnv*, jclass,
+                                                                             jlong handle) {
+    return static_cast<jlong>(sentil_formula_depth(as_ptr<const sentil_formula_t>(handle)));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaHasTemporal(JNIEnv*,
+                                                                                      jclass,
+                                                                                      jlong handle) {
+    return sentil_formula_has_temporal(as_ptr<const sentil_formula_t>(handle)) ? JNI_TRUE
+                                                                               : JNI_FALSE;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaVariables(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** vars = sentil_formula_variables(as_ptr<const sentil_formula_t>(handle), &count);
+    if (vars == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, vars, count);
 }
