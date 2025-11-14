@@ -67,4 +67,8 @@ final class NativeLib {
     }
 
     static native int[] version();
+
+    static native long formulaParse(String formula) throws SentilException;
+
+    static native void formulaDestroy(long handle);
 }
