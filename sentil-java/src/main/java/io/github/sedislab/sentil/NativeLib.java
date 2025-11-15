@@ -103,4 +103,13 @@ final class NativeLib {
     static native double[] traceSignal(long handle, String name);
 
     static native void traceDestroy(long handle);
+
+    static native double formulaRobustness(long formula, long trace) throws SentilException;
+
+    static native double formulaRobustnessDense(long formula, long trace) throws SentilException;
+
+    static native double[] formulaRobustnessSignal(long formula, long trace) throws SentilException;
+
+    static native double[] formulaRobustnessDenseSignal(long formula, long trace)
+            throws SentilException;
 }

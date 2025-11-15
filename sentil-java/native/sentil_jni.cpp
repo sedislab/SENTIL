@@ -152,6 +152,12 @@ jdoubleArray copy_doubles(JNIEnv* env, const double* data, size_t count) {
     return result;
 }
 
+jdoubleArray owned_doubles(JNIEnv* env, double* data, size_t count) {
+    jdoubleArray result = copy_doubles(env, data, count);
+    sentil_free_doubles(data, count);
+    return result;
+}
+
 }  // namespace
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -373,4 +379,50 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_traceSig
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_traceDestroy(JNIEnv*, jclass,
                                                                             jlong handle) {
     sentil_trace_destroy(as_ptr<sentil_trace_t>(handle));
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaRobustness(
+    JNIEnv* env, jclass, jlong formula, jlong trace) {
+    double out = 0.0;
+    sentil_error_t code = sentil_formula_robustness(as_ptr<const sentil_formula_t>(formula),
+                                                    as_ptr<const sentil_trace_t>(trace), &out);
+    if (failed(env, code)) {
+        return 0.0;
+    }
+    return out;
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaRobustnessDense(
+    JNIEnv* env, jclass, jlong formula, jlong trace) {
+    double out = 0.0;
+    sentil_error_t code = sentil_formula_robustness_dense(as_ptr<const sentil_formula_t>(formula),
+                                                          as_ptr<const sentil_trace_t>(trace), &out);
+    if (failed(env, code)) {
+        return 0.0;
+    }
+    return out;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaRobustnessSignal(
+    JNIEnv* env, jclass, jlong formula, jlong trace) {
+    size_t length = 0;
+    double* signal = sentil_formula_robustness_signal(as_ptr<const sentil_formula_t>(formula),
+                                                      as_ptr<const sentil_trace_t>(trace), &length);
+    if (signal == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_doubles(env, signal, length);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaRobustnessDenseSignal(
+    JNIEnv* env, jclass, jlong formula, jlong trace) {
+    size_t length = 0;
+    double* signal = sentil_formula_robustness_dense_signal(
+        as_ptr<const sentil_formula_t>(formula), as_ptr<const sentil_trace_t>(trace), &length);
+    if (signal == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_doubles(env, signal, length);
 }

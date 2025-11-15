@@ -38,4 +38,24 @@ public final class Formula extends NativeResource {
     public List<String> variables() throws SentilException {
         return Arrays.asList(NativeLib.formulaVariables(handle()));
     }
+
+    /** The robustness of the formula over a trace, reading the sample grid. */
+    public double robustness(Trace trace) throws SentilException {
+        return NativeLib.formulaRobustness(handle(), trace.handle());
+    }
+
+    /** The robustness over a trace, catching threshold crossings between samples. */
+    public double robustnessDense(Trace trace) throws SentilException {
+        return NativeLib.formulaRobustnessDense(handle(), trace.handle());
+    }
+
+    /** The robustness at every sample of the trace, reading the grid. */
+    public double[] robustnessSignal(Trace trace) throws SentilException {
+        return NativeLib.formulaRobustnessSignal(handle(), trace.handle());
+    }
+
+    /** The dense robustness at every sample of the trace. */
+    public double[] robustnessDenseSignal(Trace trace) throws SentilException {
+        return NativeLib.formulaRobustnessDenseSignal(handle(), trace.handle());
+    }
 }
