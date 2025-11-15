@@ -5,7 +5,7 @@ import java.util.List;
 
 /** A parsed PrSTL formula. The combinators consume their operands. */
 public final class Formula extends NativeResource {
-    private Formula(long handle) {
+    Formula(long handle) {
         super(handle, NativeLib::formulaDestroy);
     }
 

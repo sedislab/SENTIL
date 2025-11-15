@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -425,4 +426,77 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaR
         return nullptr;
     }
     return owned_doubles(env, signal, length);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_exprVariable(JNIEnv* env, jclass,
+                                                                             jstring name) {
+    Utf8 variable(env, name);
+    sentil_expr_t* expr = sentil_expr_variable(variable.c());
+    if (expr == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(expr);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_exprLiteral(JNIEnv* env, jclass,
+                                                                            jdouble value) {
+    sentil_expr_t* expr = sentil_expr_literal(value);
+    if (expr == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(expr);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_exprBinary(JNIEnv* env, jclass,
+                                                                           jint op, jlong left,
+                                                                           jlong right) {
+    sentil_expr_t* expr = sentil_expr_binary(static_cast<sentil_binary_op_t>(op),
+                                             as_ptr<sentil_expr_t>(left),
+                                             as_ptr<sentil_expr_t>(right));
+    if (expr == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(expr);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_exprCall(JNIEnv* env, jclass,
+                                                                         jstring name,
+                                                                         jlongArray args) {
+    Utf8 function(env, name);
+    jsize count = env->GetArrayLength(args);
+    jlong* handles = env->GetLongArrayElements(args, nullptr);
+    std::vector<sentil_expr_t*> operands(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        operands[static_cast<size_t>(i)] = as_ptr<sentil_expr_t>(handles[i]);
+    }
+    env->ReleaseLongArrayElements(args, handles, JNI_ABORT);
+    sentil_expr_t* expr =
+        sentil_expr_call(function.c(), operands.data(), static_cast<size_t>(count));
+    if (expr == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(expr);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_exprDestroy(JNIEnv*, jclass,
+                                                                           jlong handle) {
+    sentil_expr_destroy(as_ptr<sentil_expr_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaPredicate(JNIEnv* env, jclass,
+                                                                                 jlong left, jint op,
+                                                                                 jlong right) {
+    sentil_formula_t* formula =
+        sentil_formula_predicate(as_ptr<sentil_expr_t>(left),
+                                 static_cast<sentil_comparison_op_t>(op),
+                                 as_ptr<sentil_expr_t>(right));
+    if (formula == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(formula);
 }

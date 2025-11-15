@@ -112,4 +112,16 @@ final class NativeLib {
 
     static native double[] formulaRobustnessDenseSignal(long formula, long trace)
             throws SentilException;
+
+    static native long exprVariable(String name) throws SentilException;
+
+    static native long exprLiteral(double value) throws SentilException;
+
+    static native long exprBinary(int op, long left, long right) throws SentilException;
+
+    static native long exprCall(String name, long[] args) throws SentilException;
+
+    static native void exprDestroy(long handle);
+
+    static native long formulaPredicate(long left, int op, long right) throws SentilException;
 }
