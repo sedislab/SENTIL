@@ -108,6 +108,50 @@ jobjectArray owned_string_array(JNIEnv* env, char** owned, size_t count) {
     return result;
 }
 
+bool failed(JNIEnv* env, sentil_error_t code) {
+    if (code == SENTIL_OK) {
+        return false;
+    }
+    std::string message = last_error_message();
+    if (message.empty()) {
+        message = "SENTIL error";
+    }
+    throw_sentil(env, code, message);
+    return true;
+}
+
+struct DoubleArray {
+    JNIEnv* env;
+    jdoubleArray array;
+    jdouble* elements;
+    jsize length;
+
+    DoubleArray(JNIEnv* env, jdoubleArray array) : env(env), array(array) {
+        if (array != nullptr) {
+            length = env->GetArrayLength(array);
+            elements = env->GetDoubleArrayElements(array, nullptr);
+        } else {
+            length = 0;
+            elements = nullptr;
+        }
+    }
+    ~DoubleArray() {
+        if (array != nullptr && elements != nullptr) {
+            env->ReleaseDoubleArrayElements(array, elements, JNI_ABORT);
+        }
+    }
+    const double* data() const { return elements; }
+    size_t size() const { return static_cast<size_t>(length); }
+};
+
+jdoubleArray copy_doubles(JNIEnv* env, const double* data, size_t count) {
+    jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(count));
+    if (result != nullptr && count > 0) {
+        env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(count), data);
+    }
+    return result;
+}
+
 }  // namespace
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -231,4 +275,102 @@ JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaV
         return env->NewObjectArray(0, cls_string, nullptr);
     }
     return owned_string_array(env, vars, count);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceCreate(JNIEnv* env, jclass,
+                                                                            jdoubleArray times) {
+    DoubleArray t(env, times);
+    sentil_trace_t* trace = sentil_trace_create(t.data(), t.size());
+    if (trace == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(trace);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceFromSignal(
+    JNIEnv* env, jclass, jdoubleArray times, jstring name, jdoubleArray values) {
+    DoubleArray t(env, times);
+    Utf8 signal_name(env, name);
+    DoubleArray v(env, values);
+    sentil_trace_t* trace =
+        sentil_trace_from_signal(t.data(), t.size(), signal_name.c(), v.data(), v.size());
+    if (trace == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(trace);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceIndexed(JNIEnv* env, jclass,
+                                                                             jlong length) {
+    sentil_trace_t* trace = sentil_trace_indexed(static_cast<size_t>(length));
+    if (trace == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(trace);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_traceAddSignal(
+    JNIEnv* env, jclass, jlong handle, jstring name, jdoubleArray values) {
+    Utf8 signal_name(env, name);
+    DoubleArray v(env, values);
+    sentil_error_t code = sentil_trace_add_signal(as_ptr<sentil_trace_t>(handle), signal_name.c(),
+                                                  v.data(), v.size());
+    failed(env, code);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceLen(JNIEnv*, jclass,
+                                                                         jlong handle) {
+    return static_cast<jlong>(sentil_trace_len(as_ptr<const sentil_trace_t>(handle)));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_traceIsEmpty(JNIEnv*, jclass,
+                                                                                jlong handle) {
+    return sentil_trace_is_empty(as_ptr<const sentil_trace_t>(handle)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_traceTimes(JNIEnv* env,
+                                                                                  jclass,
+                                                                                  jlong handle) {
+    size_t length = 0;
+    const double* times = sentil_trace_times(as_ptr<const sentil_trace_t>(handle), &length);
+    if (times == nullptr) {
+        return copy_doubles(env, nullptr, 0);
+    }
+    return copy_doubles(env, times, length);
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_traceVariables(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** vars = sentil_trace_variables(as_ptr<const sentil_trace_t>(handle), &count);
+    if (vars == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, vars, count);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_traceSignal(JNIEnv* env,
+                                                                                   jclass,
+                                                                                   jlong handle,
+                                                                                   jstring name) {
+    Utf8 signal_name(env, name);
+    size_t length = 0;
+    const double* signal =
+        sentil_trace_signal(as_ptr<const sentil_trace_t>(handle), signal_name.c(), &length);
+    if (signal == nullptr) {
+        return nullptr;
+    }
+    return copy_doubles(env, signal, length);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_traceDestroy(JNIEnv*, jclass,
+                                                                            jlong handle) {
+    sentil_trace_destroy(as_ptr<sentil_trace_t>(handle));
 }

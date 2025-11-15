@@ -81,4 +81,26 @@ final class NativeLib {
     static native boolean formulaHasTemporal(long handle);
 
     static native String[] formulaVariables(long handle) throws SentilException;
+
+    static native long traceCreate(double[] times) throws SentilException;
+
+    static native long traceFromSignal(double[] times, String name, double[] values)
+            throws SentilException;
+
+    static native long traceIndexed(long length) throws SentilException;
+
+    static native void traceAddSignal(long handle, String name, double[] values)
+            throws SentilException;
+
+    static native long traceLen(long handle);
+
+    static native boolean traceIsEmpty(long handle);
+
+    static native double[] traceTimes(long handle);
+
+    static native String[] traceVariables(long handle) throws SentilException;
+
+    static native double[] traceSignal(long handle, String name);
+
+    static native void traceDestroy(long handle);
 }
