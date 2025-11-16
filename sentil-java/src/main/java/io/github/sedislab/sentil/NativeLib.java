@@ -320,4 +320,21 @@ final class NativeLib {
             throws SentilException;
 
     static native void formulaBankDestroy(long handle);
+
+    static native ConfidenceInterval wilsonInterval(long successes, long trials, double level);
+
+    static native ConfidenceInterval clopperPearson(long successes, long trials, double level);
+
+    static native ConfidenceInterval jeffreysInterval(long successes, long trials, double level);
+
+    static native ConfidenceInterval agrestiCoull(long successes, long trials, double level);
+
+    static native ConfidenceInterval intervalByMethod(int method, long successes, long trials,
+            double level);
+
+    static native double zScore(double level);
+
+    static native long chernoffHoeffdingSamples(double epsilon, double delta) throws SentilException;
+
+    static native long wilsonSamples(double epsilon, double level) throws SentilException;
 }

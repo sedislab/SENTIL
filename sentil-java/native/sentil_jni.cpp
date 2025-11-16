@@ -24,6 +24,8 @@ jclass cls_robustness = nullptr;
 jmethodID ctor_robustness = nullptr;
 jclass cls_interval = nullptr;
 jmethodID ctor_interval = nullptr;
+jclass cls_confidence = nullptr;
+jmethodID ctor_confidence = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -215,6 +217,10 @@ jobject make_robustness(JNIEnv* env, const sentil_robustness_t& r) {
                           r.satisfied ? JNI_TRUE : JNI_FALSE, r.value, r.lower, r.upper);
 }
 
+jobject make_confidence(JNIEnv* env, const sentil_confidence_interval_t& c) {
+    return env->NewObject(cls_confidence, ctor_confidence, c.lower, c.upper, c.level);
+}
+
 jobjectArray owned_robustness_array(JNIEnv* env, sentil_robustness_t* owned, size_t count) {
     jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_robustness, nullptr);
     if (result != nullptr) {
@@ -351,6 +357,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &ctor_interval)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/ConfidenceInterval", "(DDD)V",
+                          &cls_confidence, &ctor_confidence)) {
+        return JNI_ERR;
+    }
     if (!cache_class_ctor(env, "java/util/LinkedHashMap", "()V", &cls_linked_map,
                           &ctor_linked_map)) {
         return JNI_ERR;
@@ -379,8 +389,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
         return;
     }
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
-                         &cls_sample, &cls_robustness, &cls_interval, &cls_linked_map,
-                         &cls_double}) {
+                         &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
+                         &cls_linked_map, &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -1438,4 +1448,58 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankRo
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankDestroy(JNIEnv*, jclass,
                                                                                   jlong handle) {
     sentil_formula_bank_destroy(as_ptr<sentil_formula_bank_t>(handle));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_wilsonInterval(
+    JNIEnv* env, jclass, jlong successes, jlong trials, jdouble level) {
+    return make_confidence(env, sentil_wilson_interval(static_cast<uint64_t>(successes),
+                                                       static_cast<uint64_t>(trials), level));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_clopperPearson(
+    JNIEnv* env, jclass, jlong successes, jlong trials, jdouble level) {
+    return make_confidence(env, sentil_clopper_pearson(static_cast<uint64_t>(successes),
+                                                       static_cast<uint64_t>(trials), level));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_jeffreysInterval(
+    JNIEnv* env, jclass, jlong successes, jlong trials, jdouble level) {
+    return make_confidence(env, sentil_jeffreys_interval(static_cast<uint64_t>(successes),
+                                                         static_cast<uint64_t>(trials), level));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_agrestiCoull(
+    JNIEnv* env, jclass, jlong successes, jlong trials, jdouble level) {
+    return make_confidence(env, sentil_agresti_coull(static_cast<uint64_t>(successes),
+                                                     static_cast<uint64_t>(trials), level));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_intervalByMethod(
+    JNIEnv* env, jclass, jint method, jlong successes, jlong trials, jdouble level) {
+    return make_confidence(env, sentil_interval(static_cast<sentil_interval_method_t>(method),
+                                                static_cast<uint64_t>(successes),
+                                                static_cast<uint64_t>(trials), level));
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_zScore(JNIEnv*, jclass,
+                                                                         jdouble level) {
+    return sentil_z_score(level);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_chernoffHoeffdingSamples(
+    JNIEnv* env, jclass, jdouble epsilon, jdouble delta) {
+    uint64_t out = 0;
+    if (failed(env, sentil_chernoff_hoeffding_samples(epsilon, delta, &out))) {
+        return 0;
+    }
+    return static_cast<jlong>(out);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_wilsonSamples(
+    JNIEnv* env, jclass, jdouble epsilon, jdouble level) {
+    uint64_t out = 0;
+    if (failed(env, sentil_wilson_samples(epsilon, level, &out))) {
+        return 0;
+    }
+    return static_cast<jlong>(out);
 }
