@@ -21,6 +21,17 @@ public final class OnlineMonitor extends NativeResource {
         return new OnlineMonitor(NativeLib.streamMonitorFromFormula(formula.handle()));
     }
 
+    /**
+     * A streaming monitor for a P~p(phi) formula, lifting each reading through the
+     * registry. The formula and registry are borrowed.
+     */
+    public static OnlineMonitor withLifting(Formula formula, LiftingRegistry lifting,
+            SmcConfig config) throws SentilException {
+        return new OnlineMonitor(NativeLib.streamMonitorWithLifting(formula.handle(),
+                lifting.handle(), config.samples, config.confidence, config.seed,
+                config.method.code()));
+    }
+
     /** The number of variables the formula reads. */
     public long variableCount() {
         return NativeLib.streamMonitorVariableCount(handle());

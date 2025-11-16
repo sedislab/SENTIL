@@ -1941,3 +1941,28 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckB
     }
     return make_bayes_result(env, out);
 }
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorWithLifting(
+    JNIEnv* env, jclass, jlong formula, jlong lifting, jlong samples, jdouble confidence, jlong seed,
+    jint method) {
+    sentil_smc_config_t config = smc_config(samples, confidence, seed, method);
+    sentil_stream_monitor_t* monitor = sentil_stream_monitor_with_lifting(
+        as_ptr<const sentil_formula_t>(formula),
+        as_ptr<const sentil_lifting_registry_t>(lifting), &config);
+    if (monitor == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(monitor);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorAddProbabilistic(
+    JNIEnv* env, jclass, jlong monitor, jstring id, jlong formula, jlong lifting, jlong samples,
+    jdouble confidence, jlong seed, jint method) {
+    Utf8 key(env, id);
+    sentil_smc_config_t config = smc_config(samples, confidence, seed, method);
+    failed(env, sentil_multi_monitor_add_probabilistic(
+                    as_ptr<sentil_multi_monitor_t>(monitor), key.c(),
+                    as_ptr<const sentil_formula_t>(formula),
+                    as_ptr<const sentil_lifting_registry_t>(lifting), &config));
+}

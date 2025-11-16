@@ -433,4 +433,11 @@ final class NativeLib {
 
     static native BayesResult formulaCheckBayesian(long formula, long trace, long lifting,
             double threshold, double bayesFactor, long maxSamples, long seed) throws SentilException;
+
+    static native long streamMonitorWithLifting(long formula, long lifting, long samples,
+            double confidence, long seed, int method) throws SentilException;
+
+    static native void multiMonitorAddProbabilistic(long monitor, String id, long formula,
+            long lifting, long samples, double confidence, long seed, int method)
+            throws SentilException;
 }

@@ -45,6 +45,16 @@ public final class MultiMonitor extends NativeResource {
         return Arrays.asList(NativeLib.multiMonitorIds(handle()));
     }
 
+    /**
+     * Add a P~p(phi) formula tracked online through a lifted particle ensemble. The
+     * formula and registry are borrowed.
+     */
+    public void addProbabilistic(String id, Formula formula, LiftingRegistry lifting,
+            SmcConfig config) throws SentilException {
+        NativeLib.multiMonitorAddProbabilistic(handle(), id, formula.handle(), lifting.handle(),
+                config.samples, config.confidence, config.seed, config.method.code());
+    }
+
     /** Advance every monitor at this sample, returning the verdict for each id. */
     public Map<String, Robustness> update(double time, Map<String, Double> values)
             throws SentilException {
