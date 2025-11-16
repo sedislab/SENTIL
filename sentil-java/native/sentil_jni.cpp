@@ -25,6 +25,12 @@ jmethodID ctor_robustness = nullptr;
 jclass cls_interval = nullptr;
 jmethodID ctor_interval = nullptr;
 
+jclass cls_linked_map = nullptr;
+jmethodID ctor_linked_map = nullptr;
+jmethodID mid_map_put = nullptr;
+jclass cls_double = nullptr;
+jmethodID mid_double_value_of = nullptr;
+
 // sentil_get_last_error_message sizes on a null first call and counts the NUL.
 std::string last_error_message() {
     size_t needed = sentil_get_last_error_message(nullptr, 0);
@@ -222,6 +228,34 @@ jobjectArray owned_robustness_array(JNIEnv* env, sentil_robustness_t* owned, siz
     return result;
 }
 
+jobject owned_named_robustness_map(JNIEnv* env, sentil_named_robustness_t* owned, size_t count) {
+    jobject map = env->NewObject(cls_linked_map, ctor_linked_map);
+    for (size_t i = 0; i < count; ++i) {
+        jstring id = env->NewStringUTF(owned[i].id);
+        jobject robustness = make_robustness(env, owned[i].robustness);
+        env->CallObjectMethod(map, mid_map_put, id, robustness);
+        env->DeleteLocalRef(id);
+        env->DeleteLocalRef(robustness);
+    }
+    sentil_free_named_robustness(owned, count);
+    return map;
+}
+
+// Build a LinkedHashMap from id to robustness value, in insertion order, and free the
+// source. A formula that errored carries NaN, mirroring the core's bank result.
+jobject owned_bank_map(JNIEnv* env, sentil_bank_result_t* owned, size_t count) {
+    jobject map = env->NewObject(cls_linked_map, ctor_linked_map);
+    for (size_t i = 0; i < count; ++i) {
+        jstring id = env->NewStringUTF(owned[i].id);
+        jobject value = env->CallStaticObjectMethod(cls_double, mid_double_value_of, owned[i].value);
+        env->CallObjectMethod(map, mid_map_put, id, value);
+        env->DeleteLocalRef(id);
+        env->DeleteLocalRef(value);
+    }
+    sentil_free_bank_results(owned, count);
+    return map;
+}
+
 jobjectArray owned_interval_array(JNIEnv* env, sentil_interval_t* owned, size_t count) {
     jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_interval, nullptr);
     if (result != nullptr) {
@@ -317,6 +351,25 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &ctor_interval)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "java/util/LinkedHashMap", "()V", &cls_linked_map,
+                          &ctor_linked_map)) {
+        return JNI_ERR;
+    }
+    mid_map_put = env->GetMethodID(cls_linked_map, "put",
+                                   "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    if (mid_map_put == nullptr) {
+        return JNI_ERR;
+    }
+    jclass double_local = env->FindClass("java/lang/Double");
+    if (double_local == nullptr) {
+        return JNI_ERR;
+    }
+    cls_double = static_cast<jclass>(env->NewGlobalRef(double_local));
+    env->DeleteLocalRef(double_local);
+    mid_double_value_of = env->GetStaticMethodID(cls_double, "valueOf", "(D)Ljava/lang/Double;");
+    if (mid_double_value_of == nullptr) {
+        return JNI_ERR;
+    }
     return JNI_VERSION_1_8;
 }
 
@@ -326,7 +379,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
         return;
     }
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
-                         &cls_sample, &cls_robustness, &cls_interval}) {
+                         &cls_sample, &cls_robustness, &cls_interval, &cls_linked_map,
+                         &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -1214,4 +1268,174 @@ JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorRes
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorDestroy(JNIEnv*, jclass,
                                                                                     jlong handle) {
     sentil_stream_monitor_destroy(as_ptr<sentil_stream_monitor_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorCreate(JNIEnv* env,
+                                                                                   jclass) {
+    sentil_multi_monitor_t* monitor = sentil_multi_monitor_create();
+    if (monitor == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(monitor);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorAdd(
+    JNIEnv* env, jclass, jlong handle, jstring id, jstring formula) {
+    Utf8 key(env, id);
+    Utf8 text(env, formula);
+    failed(env, sentil_multi_monitor_add(as_ptr<sentil_multi_monitor_t>(handle), key.c(), text.c()));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorAddFormula(
+    JNIEnv* env, jclass, jlong handle, jstring id, jlong formula) {
+    Utf8 key(env, id);
+    failed(env, sentil_multi_monitor_add_formula(as_ptr<sentil_multi_monitor_t>(handle), key.c(),
+                                                 as_ptr<const sentil_formula_t>(formula)));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorRemove(
+    JNIEnv* env, jclass, jlong handle, jstring id) {
+    Utf8 key(env, id);
+    return sentil_multi_monitor_remove(as_ptr<sentil_multi_monitor_t>(handle), key.c()) ? JNI_TRUE
+                                                                                        : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorReset(JNIEnv*, jclass,
+                                                                                 jlong handle) {
+    sentil_multi_monitor_reset(as_ptr<sentil_multi_monitor_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorLen(JNIEnv*, jclass,
+                                                                                jlong handle) {
+    return static_cast<jlong>(
+        sentil_multi_monitor_len(as_ptr<const sentil_multi_monitor_t>(handle)));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorIsEmpty(
+    JNIEnv*, jclass, jlong handle) {
+    return sentil_multi_monitor_is_empty(as_ptr<const sentil_multi_monitor_t>(handle)) ? JNI_TRUE
+                                                                                       : JNI_FALSE;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorIds(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** ids = sentil_multi_monitor_ids(as_ptr<const sentil_multi_monitor_t>(handle), &count);
+    if (ids == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, ids, count);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorUpdate(
+    JNIEnv* env, jclass, jlong handle, jdouble time, jobjectArray names, jdoubleArray values) {
+    StringArray name_guard(env, names);
+    DoubleArray value_guard(env, values);
+    size_t count = 0;
+    sentil_named_robustness_t* verdicts = sentil_multi_monitor_update(
+        as_ptr<sentil_multi_monitor_t>(handle), time, name_guard.data(), value_guard.data(),
+        value_guard.size(), &count);
+    if (verdicts == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObject(cls_linked_map, ctor_linked_map);
+    }
+    return owned_named_robustness_map(env, verdicts, count);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorDestroy(JNIEnv*, jclass,
+                                                                                   jlong handle) {
+    sentil_multi_monitor_destroy(as_ptr<sentil_multi_monitor_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankCreate(JNIEnv* env,
+                                                                                  jclass) {
+    sentil_formula_bank_t* bank = sentil_formula_bank_create();
+    if (bank == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(bank);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankAdd(
+    JNIEnv* env, jclass, jlong handle, jstring id, jstring formula) {
+    Utf8 key(env, id);
+    Utf8 text(env, formula);
+    failed(env, sentil_formula_bank_add(as_ptr<sentil_formula_bank_t>(handle), key.c(), text.c()));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankAddFormula(
+    JNIEnv* env, jclass, jlong handle, jstring id, jlong formula) {
+    Utf8 key(env, id);
+    failed(env, sentil_formula_bank_add_formula(as_ptr<sentil_formula_bank_t>(handle), key.c(),
+                                                as_ptr<const sentil_formula_t>(formula)));
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankIds(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** ids = sentil_formula_bank_ids(as_ptr<const sentil_formula_bank_t>(handle), &count);
+    if (ids == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, ids, count);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankLen(JNIEnv*, jclass,
+                                                                               jlong handle) {
+    return static_cast<jlong>(
+        sentil_formula_bank_len(as_ptr<const sentil_formula_bank_t>(handle)));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankIsEmpty(
+    JNIEnv*, jclass, jlong handle) {
+    return sentil_formula_bank_is_empty(as_ptr<const sentil_formula_bank_t>(handle)) ? JNI_TRUE
+                                                                                     : JNI_FALSE;
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankRobustness(
+    JNIEnv* env, jclass, jlong handle, jlong trace) {
+    size_t count = 0;
+    sentil_bank_result_t* results = sentil_formula_bank_robustness(
+        as_ptr<const sentil_formula_bank_t>(handle), as_ptr<const sentil_trace_t>(trace), &count);
+    if (results == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObject(cls_linked_map, ctor_linked_map);
+    }
+    return owned_bank_map(env, results, count);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankRobustnessDense(
+    JNIEnv* env, jclass, jlong handle, jlong trace) {
+    size_t count = 0;
+    sentil_bank_result_t* results = sentil_formula_bank_robustness_dense(
+        as_ptr<const sentil_formula_bank_t>(handle), as_ptr<const sentil_trace_t>(trace), &count);
+    if (results == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObject(cls_linked_map, ctor_linked_map);
+    }
+    return owned_bank_map(env, results, count);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaBankDestroy(JNIEnv*, jclass,
+                                                                                  jlong handle) {
+    sentil_formula_bank_destroy(as_ptr<sentil_formula_bank_t>(handle));
 }

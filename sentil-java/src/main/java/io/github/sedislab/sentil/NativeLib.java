@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
+import java.util.Map;
 
 /** The loader for the native library and the raw native methods behind the typed classes. */
 final class NativeLib {
@@ -274,4 +275,49 @@ final class NativeLib {
     static native void streamMonitorReset(long handle);
 
     static native void streamMonitorDestroy(long handle);
+
+    static native long multiMonitorCreate() throws SentilException;
+
+    static native void multiMonitorAdd(long handle, String id, String formula)
+            throws SentilException;
+
+    static native void multiMonitorAddFormula(long handle, String id, long formula)
+            throws SentilException;
+
+    static native boolean multiMonitorRemove(long handle, String id);
+
+    static native void multiMonitorReset(long handle);
+
+    static native long multiMonitorLen(long handle);
+
+    static native boolean multiMonitorIsEmpty(long handle);
+
+    static native String[] multiMonitorIds(long handle) throws SentilException;
+
+    static native Map<String, Robustness> multiMonitorUpdate(long handle, double time, String[] names,
+            double[] values) throws SentilException;
+
+    static native void multiMonitorDestroy(long handle);
+
+    static native long formulaBankCreate() throws SentilException;
+
+    static native void formulaBankAdd(long handle, String id, String formula)
+            throws SentilException;
+
+    static native void formulaBankAddFormula(long handle, String id, long formula)
+            throws SentilException;
+
+    static native String[] formulaBankIds(long handle) throws SentilException;
+
+    static native long formulaBankLen(long handle);
+
+    static native boolean formulaBankIsEmpty(long handle);
+
+    static native Map<String, Double> formulaBankRobustness(long handle, long trace)
+            throws SentilException;
+
+    static native Map<String, Double> formulaBankRobustnessDense(long handle, long trace)
+            throws SentilException;
+
+    static native void formulaBankDestroy(long handle);
 }
