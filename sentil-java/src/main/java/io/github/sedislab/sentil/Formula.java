@@ -100,6 +100,20 @@ public final class Formula extends NativeResource {
         return new SmcDistribution((SmcResult) pair[0], (RobustnessDistribution) pair[1]);
     }
 
+    /** Decide this P-wrapped formula sequentially with Wald's SPRT. */
+    public SprtResult checkSequential(Trace trace, LiftingRegistry lifting, SprtConfig config)
+            throws SentilException {
+        return NativeLib.formulaCheckSequential(handle(), trace.handle(), lifting.handle(),
+                config.p0, config.p1, config.alpha, config.beta, config.maxSamples, config.seed);
+    }
+
+    /** Decide this P-wrapped formula with a Bayesian sequential test. */
+    public BayesResult checkBayesian(Trace trace, LiftingRegistry lifting, BayesConfig config)
+            throws SentilException {
+        return NativeLib.formulaCheckBayesian(handle(), trace.handle(), lifting.handle(),
+                config.threshold, config.bayesFactor, config.maxSamples, config.seed);
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));

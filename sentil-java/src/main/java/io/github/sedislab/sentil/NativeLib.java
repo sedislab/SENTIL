@@ -422,4 +422,15 @@ final class NativeLib {
 
     static native SmcResult monitorCheck(long monitor, long trace, long lifting)
             throws SentilException;
+
+    static native SprtResult formulaCheckSequential(long formula, long trace, long lifting,
+            double p0, double p1, double alpha, double beta, long maxSamples, long seed)
+            throws SentilException;
+
+    static native SprtResult monitorCheckSequential(long monitor, long trace, long lifting,
+            double p0, double p1, double alpha, double beta, long maxSamples, long seed)
+            throws SentilException;
+
+    static native BayesResult formulaCheckBayesian(long formula, long trace, long lifting,
+            double threshold, double bayesFactor, long maxSamples, long seed) throws SentilException;
 }

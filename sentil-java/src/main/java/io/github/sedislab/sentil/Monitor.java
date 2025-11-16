@@ -82,4 +82,11 @@ public final class Monitor extends NativeResource {
     public SmcResult check(Trace trace, LiftingRegistry lifting) throws SentilException {
         return NativeLib.monitorCheck(handle(), trace.handle(), lifting.handle());
     }
+
+    /** Decide this monitor's probabilistic formula sequentially with Wald's SPRT. */
+    public SprtResult checkSequential(Trace trace, LiftingRegistry lifting, SprtConfig config)
+            throws SentilException {
+        return NativeLib.monitorCheckSequential(handle(), trace.handle(), lifting.handle(),
+                config.p0, config.p1, config.alpha, config.beta, config.maxSamples, config.seed);
+    }
 }

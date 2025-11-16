@@ -30,6 +30,10 @@ jclass cls_smc_result = nullptr;
 jmethodID ctor_smc_result = nullptr;
 jclass cls_distribution = nullptr;
 jmethodID ctor_distribution = nullptr;
+jclass cls_sprt_result = nullptr;
+jmethodID ctor_sprt_result = nullptr;
+jclass cls_bayes_result = nullptr;
+jmethodID ctor_bayes_result = nullptr;
 jclass cls_object = nullptr;
 
 jclass cls_linked_map = nullptr;
@@ -240,6 +244,28 @@ jobject make_distribution(JNIEnv* env, const sentil_robustness_distribution_t& d
                           d.variance, d.std_dev, d.min, d.max);
 }
 
+jobject make_sprt_result(JNIEnv* env, const sentil_sprt_result_t& r) {
+    return env->NewObject(cls_sprt_result, ctor_sprt_result, static_cast<jint>(r.verdict),
+                          static_cast<jlong>(r.samples), r.log_likelihood);
+}
+
+jobject make_bayes_result(JNIEnv* env, const sentil_bayes_result_t& r) {
+    return env->NewObject(cls_bayes_result, ctor_bayes_result, static_cast<jint>(r.verdict),
+                          static_cast<jlong>(r.samples), r.posterior);
+}
+
+sentil_sprt_config_t sprt_config(jdouble p0, jdouble p1, jdouble alpha, jdouble beta,
+                                 jlong maxSamples, jlong seed) {
+    sentil_sprt_config_t config;
+    config.p0 = p0;
+    config.p1 = p1;
+    config.alpha = alpha;
+    config.beta = beta;
+    config.max_samples = static_cast<uint64_t>(maxSamples);
+    config.seed = static_cast<uint64_t>(seed);
+    return config;
+}
+
 sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
     sentil_smc_config_t config;
     config.samples = static_cast<uint64_t>(samples);
@@ -397,6 +423,14 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &cls_distribution, &ctor_distribution)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/SprtResult", "(IJD)V", &cls_sprt_result,
+                          &ctor_sprt_result)) {
+        return JNI_ERR;
+    }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/BayesResult", "(IJD)V", &cls_bayes_result,
+                          &ctor_bayes_result)) {
+        return JNI_ERR;
+    }
     jclass object_local = env->FindClass("java/lang/Object");
     if (object_local == nullptr) {
         return JNI_ERR;
@@ -432,8 +466,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     }
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
-                         &cls_smc_result, &cls_distribution, &cls_object, &cls_linked_map,
-                         &cls_double}) {
+                         &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
+                         &cls_object, &cls_linked_map, &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -1860,4 +1894,50 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorCheck(
         return nullptr;
     }
     return make_smc_result(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckSequential(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jlong lifting, jdouble p0, jdouble p1,
+    jdouble alpha, jdouble beta, jlong maxSamples, jlong seed) {
+    sentil_sprt_config_t config = sprt_config(p0, p1, alpha, beta, maxSamples, seed);
+    sentil_sprt_result_t out;
+    if (failed(env, sentil_formula_check_sequential(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_trace_t>(trace),
+                        as_ptr<const sentil_lifting_registry_t>(lifting), &config, &out))) {
+        return nullptr;
+    }
+    return make_sprt_result(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorCheckSequential(
+    JNIEnv* env, jclass, jlong monitor, jlong trace, jlong lifting, jdouble p0, jdouble p1,
+    jdouble alpha, jdouble beta, jlong maxSamples, jlong seed) {
+    sentil_sprt_config_t config = sprt_config(p0, p1, alpha, beta, maxSamples, seed);
+    sentil_sprt_result_t out;
+    if (failed(env, sentil_monitor_check_sequential(
+                        as_ptr<const sentil_monitor_t>(monitor),
+                        as_ptr<const sentil_trace_t>(trace),
+                        as_ptr<const sentil_lifting_registry_t>(lifting), &config, &out))) {
+        return nullptr;
+    }
+    return make_sprt_result(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckBayesian(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jlong lifting, jdouble threshold,
+    jdouble bayesFactor, jlong maxSamples, jlong seed) {
+    sentil_bayes_config_t config;
+    config.threshold = threshold;
+    config.bayes_factor = bayesFactor;
+    config.max_samples = static_cast<uint64_t>(maxSamples);
+    config.seed = static_cast<uint64_t>(seed);
+    sentil_bayes_result_t out;
+    if (failed(env, sentil_formula_check_bayesian(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_trace_t>(trace),
+                        as_ptr<const sentil_lifting_registry_t>(lifting), &config, &out))) {
+        return nullptr;
+    }
+    return make_bayes_result(env, out);
 }
