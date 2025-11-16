@@ -124,4 +124,35 @@ final class NativeLib {
     static native void exprDestroy(long handle);
 
     static native long formulaPredicate(long left, int op, long right) throws SentilException;
+
+    static native long formulaNot(long child) throws SentilException;
+
+    static native long formulaAnd(long left, long right) throws SentilException;
+
+    static native long formulaOr(long left, long right) throws SentilException;
+
+    static native long formulaImplies(long left, long right) throws SentilException;
+
+    static native long formulaNext(long child) throws SentilException;
+
+    static native long formulaAlways(double lower, double upper, boolean hasUpper, long child)
+            throws SentilException;
+
+    static native long formulaEventually(double lower, double upper, boolean hasUpper, long child)
+            throws SentilException;
+
+    static native long formulaHistorically(double lower, double upper, boolean hasUpper, long child)
+            throws SentilException;
+
+    static native long formulaOnce(double lower, double upper, boolean hasUpper, long child)
+            throws SentilException;
+
+    static native long formulaUntil(double lower, double upper, boolean hasUpper, long left,
+            long right) throws SentilException;
+
+    static native long formulaSince(double lower, double upper, boolean hasUpper, long left,
+            long right) throws SentilException;
+
+    static native long formulaProbabilistic(int op, double threshold, long child)
+            throws SentilException;
 }

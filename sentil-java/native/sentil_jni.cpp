@@ -500,3 +500,87 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaPredicat
     }
     return reinterpret_cast<jlong>(formula);
 }
+
+static jlong return_formula(JNIEnv* env, sentil_formula_t* formula) {
+    if (formula == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(formula);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaNot(JNIEnv* env, jclass,
+                                                                           jlong child) {
+    return return_formula(env, sentil_formula_not(as_ptr<sentil_formula_t>(child)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaAnd(JNIEnv* env, jclass,
+                                                                           jlong left, jlong right) {
+    return return_formula(env, sentil_formula_and(as_ptr<sentil_formula_t>(left),
+                                                  as_ptr<sentil_formula_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaOr(JNIEnv* env, jclass,
+                                                                          jlong left, jlong right) {
+    return return_formula(env, sentil_formula_or(as_ptr<sentil_formula_t>(left),
+                                                 as_ptr<sentil_formula_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaImplies(JNIEnv* env, jclass,
+                                                                               jlong left,
+                                                                               jlong right) {
+    return return_formula(env, sentil_formula_implies(as_ptr<sentil_formula_t>(left),
+                                                      as_ptr<sentil_formula_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaNext(JNIEnv* env, jclass,
+                                                                            jlong child) {
+    return return_formula(env, sentil_formula_next(as_ptr<sentil_formula_t>(child)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaAlways(
+    JNIEnv* env, jclass, jdouble lower, jdouble upper, jboolean has_upper, jlong child) {
+    return return_formula(env, sentil_formula_always(lower, upper, has_upper == JNI_TRUE,
+                                                     as_ptr<sentil_formula_t>(child)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaEventually(
+    JNIEnv* env, jclass, jdouble lower, jdouble upper, jboolean has_upper, jlong child) {
+    return return_formula(env, sentil_formula_eventually(lower, upper, has_upper == JNI_TRUE,
+                                                         as_ptr<sentil_formula_t>(child)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaHistorically(
+    JNIEnv* env, jclass, jdouble lower, jdouble upper, jboolean has_upper, jlong child) {
+    return return_formula(env, sentil_formula_historically(lower, upper, has_upper == JNI_TRUE,
+                                                           as_ptr<sentil_formula_t>(child)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaOnce(
+    JNIEnv* env, jclass, jdouble lower, jdouble upper, jboolean has_upper, jlong child) {
+    return return_formula(env, sentil_formula_once(lower, upper, has_upper == JNI_TRUE,
+                                                   as_ptr<sentil_formula_t>(child)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaUntil(
+    JNIEnv* env, jclass, jdouble lower, jdouble upper, jboolean has_upper, jlong left,
+    jlong right) {
+    return return_formula(env, sentil_formula_until(lower, upper, has_upper == JNI_TRUE,
+                                                    as_ptr<sentil_formula_t>(left),
+                                                    as_ptr<sentil_formula_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaSince(
+    JNIEnv* env, jclass, jdouble lower, jdouble upper, jboolean has_upper, jlong left,
+    jlong right) {
+    return return_formula(env, sentil_formula_since(lower, upper, has_upper == JNI_TRUE,
+                                                    as_ptr<sentil_formula_t>(left),
+                                                    as_ptr<sentil_formula_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaProbabilistic(
+    JNIEnv* env, jclass, jint op, jdouble threshold, jlong child) {
+    return return_formula(env, sentil_formula_probabilistic(
+                                   static_cast<sentil_probability_op_t>(op), threshold,
+                                   as_ptr<sentil_formula_t>(child)));
+}
