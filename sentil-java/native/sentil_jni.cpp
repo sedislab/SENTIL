@@ -209,6 +209,19 @@ jobject make_robustness(JNIEnv* env, const sentil_robustness_t& r) {
                           r.satisfied ? JNI_TRUE : JNI_FALSE, r.value, r.lower, r.upper);
 }
 
+jobjectArray owned_robustness_array(JNIEnv* env, sentil_robustness_t* owned, size_t count) {
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_robustness, nullptr);
+    if (result != nullptr) {
+        for (size_t i = 0; i < count; ++i) {
+            jobject element = make_robustness(env, owned[i]);
+            env->SetObjectArrayElement(result, static_cast<jsize>(i), element);
+            env->DeleteLocalRef(element);
+        }
+    }
+    sentil_free_robustness(owned, count);
+    return result;
+}
+
 jobjectArray owned_interval_array(JNIEnv* env, sentil_interval_t* owned, size_t count) {
     jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_interval, nullptr);
     if (result != nullptr) {
@@ -1107,4 +1120,98 @@ JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorReset(JNI
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorDestroy(JNIEnv*, jclass,
                                                                               jlong handle) {
     sentil_monitor_destroy(as_ptr<sentil_monitor_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorCreate(
+    JNIEnv* env, jclass, jstring formula) {
+    Utf8 text(env, formula);
+    sentil_stream_monitor_t* monitor = sentil_stream_monitor_create(text.c());
+    if (monitor == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(monitor);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorFromFormula(
+    JNIEnv* env, jclass, jlong formula) {
+    sentil_stream_monitor_t* monitor =
+        sentil_stream_monitor_from_formula(as_ptr<const sentil_formula_t>(formula));
+    if (monitor == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(monitor);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorVariableCount(
+    JNIEnv*, jclass, jlong handle) {
+    return static_cast<jlong>(
+        sentil_stream_monitor_variable_count(as_ptr<const sentil_stream_monitor_t>(handle)));
+}
+
+JNIEXPORT jlongArray JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorSymbolIndex(
+    JNIEnv* env, jclass, jlong handle, jstring name) {
+    Utf8 variable(env, name);
+    size_t index = 0;
+    bool found = false;
+    sentil_error_t code = sentil_stream_monitor_symbol_index(
+        as_ptr<const sentil_stream_monitor_t>(handle), variable.c(), &index, &found);
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    jlongArray result = env->NewLongArray(found ? 1 : 0);
+    if (found && result != nullptr) {
+        jlong value = static_cast<jlong>(index);
+        env->SetLongArrayRegion(result, 0, 1, &value);
+    }
+    return result;
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorUpdate(
+    JNIEnv* env, jclass, jlong handle, jdouble time, jobjectArray names, jdoubleArray values) {
+    StringArray name_guard(env, names);
+    DoubleArray value_guard(env, values);
+    sentil_robustness_t out;
+    sentil_error_t code = sentil_stream_monitor_update(as_ptr<sentil_stream_monitor_t>(handle), time,
+                                                       name_guard.data(), value_guard.data(),
+                                                       value_guard.size(), &out);
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return make_robustness(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorUpdatePacked(
+    JNIEnv* env, jclass, jlong handle, jdouble time, jdoubleArray values) {
+    DoubleArray value_guard(env, values);
+    sentil_robustness_t out;
+    sentil_error_t code = sentil_stream_monitor_update_packed(
+        as_ptr<sentil_stream_monitor_t>(handle), time, value_guard.data(), value_guard.size(), &out);
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return make_robustness(env, out);
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorRun(
+    JNIEnv* env, jclass, jlong handle, jlong trace) {
+    size_t count = 0;
+    sentil_robustness_t* verdicts = sentil_stream_monitor_run(
+        as_ptr<sentil_stream_monitor_t>(handle), as_ptr<const sentil_trace_t>(trace), &count);
+    if (verdicts == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_robustness_array(env, verdicts, count);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorReset(JNIEnv*, jclass,
+                                                                                  jlong handle) {
+    sentil_stream_monitor_reset(as_ptr<sentil_stream_monitor_t>(handle));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorDestroy(JNIEnv*, jclass,
+                                                                                    jlong handle) {
+    sentil_stream_monitor_destroy(as_ptr<sentil_stream_monitor_t>(handle));
 }

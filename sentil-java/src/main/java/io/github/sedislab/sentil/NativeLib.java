@@ -254,4 +254,24 @@ final class NativeLib {
     static native void monitorReset(long handle);
 
     static native void monitorDestroy(long handle);
+
+    static native long streamMonitorCreate(String formula) throws SentilException;
+
+    static native long streamMonitorFromFormula(long formula) throws SentilException;
+
+    static native long streamMonitorVariableCount(long handle);
+
+    static native long[] streamMonitorSymbolIndex(long handle, String name) throws SentilException;
+
+    static native Robustness streamMonitorUpdate(long handle, double time, String[] names,
+            double[] values) throws SentilException;
+
+    static native Robustness streamMonitorUpdatePacked(long handle, double time, double[] values)
+            throws SentilException;
+
+    static native Robustness[] streamMonitorRun(long handle, long trace) throws SentilException;
+
+    static native void streamMonitorReset(long handle);
+
+    static native void streamMonitorDestroy(long handle);
 }
