@@ -90,6 +90,50 @@ public final class NoiseModel extends NativeResource {
         return new NoiseModel(NativeLib.noiseBootstrap(residuals));
     }
 
+    /** A weighted mixture of component models, which are consumed. */
+    public static NoiseModel mixture(double[] weights, NoiseModel... models)
+            throws SentilException {
+        long[] handles = new long[models.length];
+        for (int i = 0; i < models.length; i++) {
+            handles[i] = models[i].handle();
+        }
+        for (NoiseModel model : models) {
+            model.disown();
+        }
+        return new NoiseModel(NativeLib.noiseMixture(weights, handles));
+    }
+
+    /** A maximum-likelihood Gaussian fit of the samples. */
+    public static NoiseModel fitGaussian(double[] samples) throws SentilException {
+        return new NoiseModel(NativeLib.noiseFitGaussian(samples));
+    }
+
+    /** The empirical bootstrap of the samples. */
+    public static NoiseModel fitBootstrap(double[] samples) throws SentilException {
+        return new NoiseModel(NativeLib.noiseFitBootstrap(samples));
+    }
+
+    /** A reservoir-sampled bootstrap that caps the retained residuals. */
+    public static NoiseModel fitBootstrapReservoir(double[] samples, long maxSamples)
+            throws SentilException {
+        return new NoiseModel(NativeLib.noiseFitBootstrapReservoir(samples, maxSamples));
+    }
+
+    /** A Gaussian mixture fit by expectation-maximization. */
+    public static NoiseModel fitGaussianMixture(double[] samples, long components, long maxIters)
+            throws SentilException {
+        return new NoiseModel(NativeLib.noiseFitGaussianMixture(samples, components, maxIters));
+    }
+
+    /**
+     * The residuals between paired ground-truth and sensor readings, additive y - g or
+     * multiplicative y / g.
+     */
+    public static double[] residuals(double[] groundTruth, double[] sensor,
+            NoiseInteraction interaction) throws SentilException {
+        return NativeLib.noiseResiduals(groundTruth, sensor, interaction.code());
+    }
+
     /** Rebuild a model from JSON. */
     public static NoiseModel fromJson(String json) throws SentilException {
         return new NoiseModel(NativeLib.noiseFromJson(json));

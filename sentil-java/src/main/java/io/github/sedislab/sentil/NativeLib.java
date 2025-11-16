@@ -382,4 +382,19 @@ final class NativeLib {
     static native long noiseFromFile(String path) throws SentilException;
 
     static native void noiseDestroy(long handle);
+
+    static native long noiseFitGaussian(double[] samples) throws SentilException;
+
+    static native long noiseFitBootstrap(double[] samples) throws SentilException;
+
+    static native long noiseFitBootstrapReservoir(double[] samples, long maxSamples)
+            throws SentilException;
+
+    static native long noiseFitGaussianMixture(double[] samples, long components, long maxIters)
+            throws SentilException;
+
+    static native double[] noiseResiduals(double[] groundTruth, double[] sensor, int interaction)
+            throws SentilException;
+
+    static native long noiseMixture(double[] weights, long[] models) throws SentilException;
 }

@@ -285,8 +285,7 @@ struct StringArray {
     StringArray(JNIEnv* env, jobjectArray array) : env(env), array(array) {
         if (array != nullptr) {
             jsize count = env->GetArrayLength(array);
-            // Every element stays a live local ref until the destructor, and the JNI
-            // spec only guarantees room for 16, so ask for the whole run up front.
+            // The JNI spec only guarantees room for 16 local refs.
             env->EnsureLocalCapacity(count);
             strings.reserve(static_cast<size_t>(count));
             chars.reserve(static_cast<size_t>(count));
@@ -1639,4 +1638,66 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFromFile(J
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseDestroy(JNIEnv*, jclass,
                                                                             jlong handle) {
     sentil_noise_destroy(as_ptr<sentil_noise_model_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFitGaussian(
+    JNIEnv* env, jclass, jdoubleArray samples) {
+    DoubleArray data(env, samples);
+    return return_noise(env, sentil_noise_fit_gaussian(data.data(), data.size()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFitBootstrap(
+    JNIEnv* env, jclass, jdoubleArray samples) {
+    DoubleArray data(env, samples);
+    return return_noise(env, sentil_noise_fit_bootstrap(data.data(), data.size()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFitBootstrapReservoir(
+    JNIEnv* env, jclass, jdoubleArray samples, jlong maxSamples) {
+    DoubleArray data(env, samples);
+    return return_noise(env, sentil_noise_fit_bootstrap_reservoir(data.data(), data.size(),
+                                                                  static_cast<size_t>(maxSamples)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFitGaussianMixture(
+    JNIEnv* env, jclass, jdoubleArray samples, jlong components, jlong maxIters) {
+    DoubleArray data(env, samples);
+    return return_noise(env, sentil_noise_fit_gaussian_mixture(data.data(), data.size(),
+                                                               static_cast<size_t>(components),
+                                                               static_cast<size_t>(maxIters)));
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseResiduals(
+    JNIEnv* env, jclass, jdoubleArray groundTruth, jdoubleArray sensor, jint interaction) {
+    DoubleArray truth(env, groundTruth);
+    DoubleArray reading(env, sensor);
+    size_t length = 0;
+    double* residuals = sentil_noise_residuals(
+        truth.data(), truth.size(), reading.data(), reading.size(),
+        static_cast<sentil_noise_interaction_t>(interaction), &length);
+    if (residuals == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_doubles(env, residuals, length);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseMixture(JNIEnv* env, jclass,
+                                                                             jdoubleArray weights,
+                                                                             jlongArray models) {
+    DoubleArray weight_guard(env, weights);
+    jsize count = env->GetArrayLength(models);
+    if (weight_guard.size() != static_cast<size_t>(count)) {
+        throw_sentil(env, SENTIL_ERR_INVALID_CONFIG,
+                     "a mixture needs one weight per component model");
+        return 0;
+    }
+    jlong* handles = env->GetLongArrayElements(models, nullptr);
+    std::vector<sentil_noise_model_t*> components(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        components[static_cast<size_t>(i)] = as_ptr<sentil_noise_model_t>(handles[i]);
+    }
+    env->ReleaseLongArrayElements(models, handles, JNI_ABORT);
+    return return_noise(env, sentil_noise_mixture(weight_guard.data(), components.data(),
+                                                  static_cast<size_t>(count)));
 }
