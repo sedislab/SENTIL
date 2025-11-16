@@ -337,4 +337,49 @@ final class NativeLib {
     static native long chernoffHoeffdingSamples(double epsilon, double delta) throws SentilException;
 
     static native long wilsonSamples(double epsilon, double level) throws SentilException;
+
+    static native long noiseDirac(double value) throws SentilException;
+
+    static native long noiseGaussian(double mean, double stdDev) throws SentilException;
+
+    static native long noiseUniform(double low, double high) throws SentilException;
+
+    static native long noiseLogNormal(double mu, double sigma) throws SentilException;
+
+    static native long noiseExponential(double rate) throws SentilException;
+
+    static native long noiseGamma(double shape, double scale) throws SentilException;
+
+    static native long noiseBeta(double alpha, double beta) throws SentilException;
+
+    static native long noiseWeibull(double shape, double scale) throws SentilException;
+
+    static native long noiseRayleigh(double scale) throws SentilException;
+
+    static native long noiseGumbel(double location, double scale) throws SentilException;
+
+    static native long noiseCauchy(double location, double scale) throws SentilException;
+
+    static native long noiseStudentT(double df, double location, double scale) throws SentilException;
+
+    static native long noiseTruncatedNormal(double mean, double stdDev, double lower, double upper)
+            throws SentilException;
+
+    static native long noisePoisson(double rate) throws SentilException;
+
+    static native long noiseBinomial(long n, double p) throws SentilException;
+
+    static native long noiseBootstrap(double[] residuals) throws SentilException;
+
+    static native double[] noiseMean(long handle);
+
+    static native double[] noiseVariance(long handle);
+
+    static native String noiseToJson(long handle) throws SentilException;
+
+    static native long noiseFromJson(String json) throws SentilException;
+
+    static native long noiseFromFile(String path) throws SentilException;
+
+    static native void noiseDestroy(long handle);
 }

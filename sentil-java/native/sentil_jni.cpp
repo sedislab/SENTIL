@@ -1503,3 +1503,140 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_wilsonSamples(
     }
     return static_cast<jlong>(out);
 }
+
+static jlong return_noise(JNIEnv* env, sentil_noise_model_t* model) {
+    if (model == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(model);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseDirac(JNIEnv* env, jclass,
+                                                                           jdouble value) {
+    return return_noise(env, sentil_noise_dirac(value));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseGaussian(
+    JNIEnv* env, jclass, jdouble mean, jdouble stdDev) {
+    return return_noise(env, sentil_noise_gaussian(mean, stdDev));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseUniform(JNIEnv* env, jclass,
+                                                                             jdouble low,
+                                                                             jdouble high) {
+    return return_noise(env, sentil_noise_uniform(low, high));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseLogNormal(JNIEnv* env, jclass,
+                                                                               jdouble mu,
+                                                                               jdouble sigma) {
+    return return_noise(env, sentil_noise_log_normal(mu, sigma));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseExponential(JNIEnv* env, jclass,
+                                                                                 jdouble rate) {
+    return return_noise(env, sentil_noise_exponential(rate));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseGamma(JNIEnv* env, jclass,
+                                                                           jdouble shape,
+                                                                           jdouble scale) {
+    return return_noise(env, sentil_noise_gamma(shape, scale));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseBeta(JNIEnv* env, jclass,
+                                                                          jdouble alpha,
+                                                                          jdouble beta) {
+    return return_noise(env, sentil_noise_beta(alpha, beta));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseWeibull(JNIEnv* env, jclass,
+                                                                             jdouble shape,
+                                                                             jdouble scale) {
+    return return_noise(env, sentil_noise_weibull(shape, scale));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseRayleigh(JNIEnv* env, jclass,
+                                                                              jdouble scale) {
+    return return_noise(env, sentil_noise_rayleigh(scale));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseGumbel(JNIEnv* env, jclass,
+                                                                            jdouble location,
+                                                                            jdouble scale) {
+    return return_noise(env, sentil_noise_gumbel(location, scale));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseCauchy(JNIEnv* env, jclass,
+                                                                            jdouble location,
+                                                                            jdouble scale) {
+    return return_noise(env, sentil_noise_cauchy(location, scale));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseStudentT(
+    JNIEnv* env, jclass, jdouble df, jdouble location, jdouble scale) {
+    return return_noise(env, sentil_noise_student_t(df, location, scale));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseTruncatedNormal(
+    JNIEnv* env, jclass, jdouble mean, jdouble stdDev, jdouble lower, jdouble upper) {
+    return return_noise(env, sentil_noise_truncated_normal(mean, stdDev, lower, upper));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noisePoisson(JNIEnv* env, jclass,
+                                                                             jdouble rate) {
+    return return_noise(env, sentil_noise_poisson(rate));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseBinomial(JNIEnv* env, jclass,
+                                                                              jlong n, jdouble p) {
+    return return_noise(env, sentil_noise_binomial(static_cast<uint64_t>(n), p));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseBootstrap(
+    JNIEnv* env, jclass, jdoubleArray residuals) {
+    DoubleArray data(env, residuals);
+    return return_noise(env, sentil_noise_bootstrap(data.data(), data.size()));
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseMean(JNIEnv* env, jclass,
+                                                                                 jlong handle) {
+    double out = 0.0;
+    bool present = sentil_noise_mean(as_ptr<const sentil_noise_model_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseVariance(
+    JNIEnv* env, jclass, jlong handle) {
+    double out = 0.0;
+    bool present = sentil_noise_variance(as_ptr<const sentil_noise_model_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jstring JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseToJson(JNIEnv* env, jclass,
+                                                                              jlong handle) {
+    char* json = sentil_noise_to_json(as_ptr<const sentil_noise_model_t>(handle));
+    if (json == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_string(env, json);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFromJson(JNIEnv* env, jclass,
+                                                                              jstring json) {
+    Utf8 text(env, json);
+    return return_noise(env, sentil_noise_from_json(text.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseFromFile(JNIEnv* env, jclass,
+                                                                              jstring path) {
+    Utf8 location(env, path);
+    return return_noise(env, sentil_noise_from_file(location.c()));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseDestroy(JNIEnv*, jclass,
+                                                                            jlong handle) {
+    sentil_noise_destroy(as_ptr<sentil_noise_model_t>(handle));
+}
