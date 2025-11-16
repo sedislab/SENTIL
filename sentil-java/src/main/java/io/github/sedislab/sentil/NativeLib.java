@@ -198,5 +198,24 @@ final class NativeLib {
 
     static native Sample ringBufferClosestToTime(long handle, double time);
 
+    static native double[] ringBufferMean(long handle);
+
+    static native double[] ringBufferVariance(long handle);
+
+    static native double[] ringBufferStdDev(long handle);
+
+    static native double[] ringBufferMin(long handle);
+
+    static native double[] ringBufferMax(long handle);
+
+    static native void ringBufferRecomputeStatistics(long handle);
+
+    static native double[] ringBufferAtTime(long handle, double time);
+
+    static native double[] ringBufferTimeRange(long handle);
+
+    static native Sample[] ringBufferBetween(long handle, double start, double end)
+            throws SentilException;
+
     static native void ringBufferDestroy(long handle);
 }

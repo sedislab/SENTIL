@@ -179,6 +179,27 @@ jobject make_sample(JNIEnv* env, const sentil_sample_t& sample) {
                           sample.value);
 }
 
+jdoubleArray optional_double(JNIEnv* env, bool present, double value) {
+    jdoubleArray result = env->NewDoubleArray(present ? 1 : 0);
+    if (present && result != nullptr) {
+        env->SetDoubleArrayRegion(result, 0, 1, &value);
+    }
+    return result;
+}
+
+jobjectArray owned_sample_array(JNIEnv* env, sentil_sample_t* owned, size_t count) {
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_sample, nullptr);
+    if (result != nullptr) {
+        for (size_t i = 0; i < count; ++i) {
+            jobject element = make_sample(env, owned[i]);
+            env->SetObjectArrayElement(result, static_cast<jsize>(i), element);
+            env->DeleteLocalRef(element);
+        }
+    }
+    sentil_free_samples(owned, count);
+    return result;
+}
+
 }  // namespace
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -753,6 +774,82 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferClo
     JNIEnv* env, jclass, jlong handle, jdouble time) {
     return make_sample(
         env, sentil_ring_buffer_closest_to_time(as_ptr<const sentil_ring_buffer_t>(handle), time));
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferMean(
+    JNIEnv* env, jclass, jlong handle) {
+    double out = 0.0;
+    bool present = sentil_ring_buffer_mean(as_ptr<const sentil_ring_buffer_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferVariance(
+    JNIEnv* env, jclass, jlong handle) {
+    double out = 0.0;
+    bool present = sentil_ring_buffer_variance(as_ptr<const sentil_ring_buffer_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferStdDev(
+    JNIEnv* env, jclass, jlong handle) {
+    double out = 0.0;
+    bool present = sentil_ring_buffer_std_dev(as_ptr<const sentil_ring_buffer_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferMin(
+    JNIEnv* env, jclass, jlong handle) {
+    double out = 0.0;
+    bool present = sentil_ring_buffer_min(as_ptr<const sentil_ring_buffer_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferMax(
+    JNIEnv* env, jclass, jlong handle) {
+    double out = 0.0;
+    bool present = sentil_ring_buffer_max(as_ptr<const sentil_ring_buffer_t>(handle), &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferRecomputeStatistics(
+    JNIEnv*, jclass, jlong handle) {
+    sentil_ring_buffer_recompute_statistics(as_ptr<sentil_ring_buffer_t>(handle));
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferAtTime(
+    JNIEnv* env, jclass, jlong handle, jdouble time) {
+    double out = 0.0;
+    bool present = sentil_ring_buffer_at_time(as_ptr<const sentil_ring_buffer_t>(handle), time, &out);
+    return optional_double(env, present, out);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferTimeRange(
+    JNIEnv* env, jclass, jlong handle) {
+    double start = 0.0;
+    double end = 0.0;
+    bool present =
+        sentil_ring_buffer_time_range(as_ptr<const sentil_ring_buffer_t>(handle), &start, &end);
+    jdoubleArray result = env->NewDoubleArray(present ? 2 : 0);
+    if (present && result != nullptr) {
+        double bounds[2] = {start, end};
+        env->SetDoubleArrayRegion(result, 0, 2, bounds);
+    }
+    return result;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferBetween(
+    JNIEnv* env, jclass, jlong handle, jdouble start, jdouble end) {
+    size_t count = 0;
+    sentil_sample_t* samples =
+        sentil_ring_buffer_between(as_ptr<const sentil_ring_buffer_t>(handle), start, end, &count);
+    if (samples == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_sample, nullptr);
+    }
+    return owned_sample_array(env, samples, count);
 }
 
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferDestroy(JNIEnv*, jclass,
