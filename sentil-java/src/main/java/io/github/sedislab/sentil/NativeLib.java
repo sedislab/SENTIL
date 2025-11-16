@@ -226,4 +226,32 @@ final class NativeLib {
     static native int configTimeMode(long handle);
 
     static native void configDestroy(long handle);
+
+    static native Interval[] formulaViolations(long formula, long trace) throws SentilException;
+
+    static native long monitorCreate(long formula, long config) throws SentilException;
+
+    static native long monitorParse(String formula, long config) throws SentilException;
+
+    static native long monitorFormula(long handle) throws SentilException;
+
+    static native long monitorConfig(long handle) throws SentilException;
+
+    static native double monitorRobustness(long handle, long trace) throws SentilException;
+
+    static native double[] monitorRobustnessSignal(long handle, long trace) throws SentilException;
+
+    static native Interval[] monitorViolations(long handle, long trace) throws SentilException;
+
+    static native long[] monitorSymbolIndex(long handle, String name) throws SentilException;
+
+    static native Robustness monitorUpdate(long handle, double time, String[] names, double[] values)
+            throws SentilException;
+
+    static native Robustness monitorUpdatePacked(long handle, double time, double[] values)
+            throws SentilException;
+
+    static native void monitorReset(long handle);
+
+    static native void monitorDestroy(long handle);
 }

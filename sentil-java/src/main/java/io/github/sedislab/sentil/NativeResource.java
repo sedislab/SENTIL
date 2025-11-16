@@ -49,6 +49,12 @@ public abstract class NativeResource implements AutoCloseable {
         return state.handle.getAndSet(0L);
     }
 
+    final long consume() {
+        long h = handle();
+        state.handle.set(0L);
+        return h;
+    }
+
     /** Free the native handle. Idempotent. */
     @Override
     public final void close() {

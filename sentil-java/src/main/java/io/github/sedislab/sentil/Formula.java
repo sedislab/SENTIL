@@ -59,6 +59,11 @@ public final class Formula extends NativeResource {
         return NativeLib.formulaRobustnessDenseSignal(handle(), trace.handle());
     }
 
+    /** The time spans where the formula does not hold over the trace. */
+    public List<Interval> violations(Trace trace) throws SentilException {
+        return Arrays.asList(NativeLib.formulaViolations(handle(), trace.handle()));
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));
