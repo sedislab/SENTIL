@@ -218,4 +218,12 @@ final class NativeLib {
             throws SentilException;
 
     static native void ringBufferDestroy(long handle);
+
+    static native long configCreate() throws SentilException;
+
+    static native void configSetTime(long handle, int mode) throws SentilException;
+
+    static native int configTimeMode(long handle);
+
+    static native void configDestroy(long handle);
 }

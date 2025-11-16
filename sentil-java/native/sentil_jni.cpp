@@ -856,3 +856,31 @@ JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferDestro
                                                                                  jlong handle) {
     sentil_ring_buffer_destroy(as_ptr<sentil_ring_buffer_t>(handle));
 }
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_configCreate(JNIEnv* env, jclass) {
+    sentil_monitor_config_t* config = sentil_monitor_config_create();
+    if (config == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(config);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_configSetTime(JNIEnv* env, jclass,
+                                                                             jlong handle,
+                                                                             jint mode) {
+    sentil_error_t code = sentil_monitor_config_set_time(as_ptr<sentil_monitor_config_t>(handle),
+                                                         static_cast<sentil_time_mode_t>(mode));
+    failed(env, code);
+}
+
+JNIEXPORT jint JNICALL Java_io_github_sedislab_sentil_NativeLib_configTimeMode(JNIEnv*, jclass,
+                                                                              jlong handle) {
+    return static_cast<jint>(
+        sentil_monitor_config_time_mode(as_ptr<const sentil_monitor_config_t>(handle)));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_configDestroy(JNIEnv*, jclass,
+                                                                             jlong handle) {
+    sentil_monitor_config_destroy(as_ptr<sentil_monitor_config_t>(handle));
+}
