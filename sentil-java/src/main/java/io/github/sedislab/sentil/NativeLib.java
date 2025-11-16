@@ -170,4 +170,33 @@ final class NativeLib {
     static native long traceFromTsv(String text) throws SentilException;
 
     static native long traceFromPath(String path) throws SentilException;
+
+    static native long ringBufferCreate(long capacity) throws SentilException;
+
+    static native Sample ringBufferPush(long handle, double time, double value)
+            throws SentilException;
+
+    static native void ringBufferClear(long handle);
+
+    static native long ringBufferLen(long handle);
+
+    static native long ringBufferCapacity(long handle);
+
+    static native boolean ringBufferIsEmpty(long handle);
+
+    static native boolean ringBufferIsFull(long handle);
+
+    static native Sample ringBufferFront(long handle);
+
+    static native Sample ringBufferBack(long handle);
+
+    static native Sample ringBufferGet(long handle, long index);
+
+    static native Sample ringBufferPopFront(long handle);
+
+    static native Sample ringBufferPopBack(long handle);
+
+    static native Sample ringBufferClosestToTime(long handle, double time);
+
+    static native void ringBufferDestroy(long handle);
 }

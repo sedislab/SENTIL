@@ -18,6 +18,9 @@ jmethodID ctor_semantic = nullptr;
 jmethodID ctor_evaluation = nullptr;
 jclass cls_string = nullptr;
 
+jclass cls_sample = nullptr;
+jmethodID ctor_sample = nullptr;
+
 // sentil_get_last_error_message sizes on a null first call and counts the NUL.
 std::string last_error_message() {
     size_t needed = sentil_get_last_error_message(nullptr, 0);
@@ -159,6 +162,23 @@ jdoubleArray owned_doubles(JNIEnv* env, double* data, size_t count) {
     return result;
 }
 
+bool cache_class_ctor(JNIEnv* env, const char* name, const char* sig, jclass* cls,
+                      jmethodID* ctor) {
+    jclass local = env->FindClass(name);
+    if (local == nullptr) {
+        return false;
+    }
+    *cls = static_cast<jclass>(env->NewGlobalRef(local));
+    env->DeleteLocalRef(local);
+    *ctor = env->GetMethodID(*cls, "<init>", sig);
+    return *ctor != nullptr;
+}
+
+jobject make_sample(JNIEnv* env, const sentil_sample_t& sample) {
+    return env->NewObject(cls_sample, ctor_sample, sample.found ? JNI_TRUE : JNI_FALSE, sample.time,
+                          sample.value);
+}
+
 }  // namespace
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -192,6 +212,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     }
     cls_string = static_cast<jclass>(env->NewGlobalRef(string_local));
     env->DeleteLocalRef(string_local);
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/Sample", "(ZDD)V", &cls_sample,
+                          &ctor_sample)) {
+        return JNI_ERR;
+    }
     return JNI_VERSION_1_8;
 }
 
@@ -200,7 +224,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8) != JNI_OK) {
         return;
     }
-    for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string}) {
+    for (jclass* slot :
+         {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string, &cls_sample}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -642,4 +667,95 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceFromPath(J
                                                                               jstring path) {
     Utf8 location(env, path);
     return return_trace(env, sentil_trace_from_path(location.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferCreate(JNIEnv* env, jclass,
+                                                                                 jlong capacity) {
+    sentil_ring_buffer_t* buffer = sentil_ring_buffer_create(static_cast<size_t>(capacity));
+    if (buffer == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(buffer);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferPush(
+    JNIEnv* env, jclass, jlong handle, jdouble time, jdouble value) {
+    sentil_sample_t evicted = {false, 0.0, 0.0};
+    sentil_error_t code =
+        sentil_ring_buffer_push(as_ptr<sentil_ring_buffer_t>(handle), time, value, &evicted);
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return make_sample(env, evicted);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferClear(JNIEnv*, jclass,
+                                                                               jlong handle) {
+    sentil_ring_buffer_clear(as_ptr<sentil_ring_buffer_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferLen(JNIEnv*, jclass,
+                                                                              jlong handle) {
+    return static_cast<jlong>(sentil_ring_buffer_len(as_ptr<const sentil_ring_buffer_t>(handle)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferCapacity(JNIEnv*, jclass,
+                                                                                   jlong handle) {
+    return static_cast<jlong>(
+        sentil_ring_buffer_capacity(as_ptr<const sentil_ring_buffer_t>(handle)));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferIsEmpty(JNIEnv*,
+                                                                                     jclass,
+                                                                                     jlong handle) {
+    return sentil_ring_buffer_is_empty(as_ptr<const sentil_ring_buffer_t>(handle)) ? JNI_TRUE
+                                                                                   : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferIsFull(JNIEnv*, jclass,
+                                                                                    jlong handle) {
+    return sentil_ring_buffer_is_full(as_ptr<const sentil_ring_buffer_t>(handle)) ? JNI_TRUE
+                                                                                  : JNI_FALSE;
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferFront(JNIEnv* env,
+                                                                                  jclass,
+                                                                                  jlong handle) {
+    return make_sample(env, sentil_ring_buffer_front(as_ptr<const sentil_ring_buffer_t>(handle)));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferBack(JNIEnv* env, jclass,
+                                                                                 jlong handle) {
+    return make_sample(env, sentil_ring_buffer_back(as_ptr<const sentil_ring_buffer_t>(handle)));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferGet(JNIEnv* env, jclass,
+                                                                                jlong handle,
+                                                                                jlong index) {
+    return make_sample(env, sentil_ring_buffer_get(as_ptr<const sentil_ring_buffer_t>(handle),
+                                                   static_cast<size_t>(index)));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferPopFront(JNIEnv* env,
+                                                                                     jclass,
+                                                                                     jlong handle) {
+    return make_sample(env, sentil_ring_buffer_pop_front(as_ptr<sentil_ring_buffer_t>(handle)));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferPopBack(JNIEnv* env,
+                                                                                    jclass,
+                                                                                    jlong handle) {
+    return make_sample(env, sentil_ring_buffer_pop_back(as_ptr<sentil_ring_buffer_t>(handle)));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferClosestToTime(
+    JNIEnv* env, jclass, jlong handle, jdouble time) {
+    return make_sample(
+        env, sentil_ring_buffer_closest_to_time(as_ptr<const sentil_ring_buffer_t>(handle), time));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_ringBufferDestroy(JNIEnv*, jclass,
+                                                                                 jlong handle) {
+    sentil_ring_buffer_destroy(as_ptr<sentil_ring_buffer_t>(handle));
 }
