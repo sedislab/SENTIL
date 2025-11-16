@@ -1,6 +1,5 @@
 package io.github.sedislab.sentil;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -65,14 +64,8 @@ public final class Monitor extends NativeResource {
 
     /** Fold one timestamped sample given as a map from variable name to value. */
     public Robustness update(double time, Map<String, Double> values) throws SentilException {
-        List<String> names = new ArrayList<>(values.size());
-        double[] data = new double[values.size()];
-        int i = 0;
-        for (Map.Entry<String, Double> entry : values.entrySet()) {
-            names.add(entry.getKey());
-            data[i++] = entry.getValue();
-        }
-        return NativeLib.monitorUpdate(handle(), time, names.toArray(new String[0]), data);
+        NamedSample sample = NamedSample.of(values);
+        return NativeLib.monitorUpdate(handle(), time, sample.names, sample.values);
     }
 
     /** Fold one sample with values already in {@link #symbolIndex} order. */
