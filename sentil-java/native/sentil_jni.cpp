@@ -1701,3 +1701,57 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_noiseMixture(JN
     return return_noise(env, sentil_noise_mixture(weight_guard.data(), components.data(),
                                                   static_cast<size_t>(count)));
 }
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingCreate(JNIEnv* env, jclass) {
+    sentil_lifting_registry_t* registry = sentil_lifting_registry_create();
+    if (registry == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(registry);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingRegister(
+    JNIEnv* env, jclass, jlong handle, jstring variable, jlong model, jint interaction) {
+    Utf8 name(env, variable);
+    failed(env, sentil_lifting_registry_register(
+                    as_ptr<sentil_lifting_registry_t>(handle), name.c(),
+                    as_ptr<sentil_noise_model_t>(model),
+                    static_cast<sentil_noise_interaction_t>(interaction)));
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingVariables(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** variables =
+        sentil_lifting_registry_variables(as_ptr<const sentil_lifting_registry_t>(handle), &count);
+    if (variables == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, variables, count);
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingIsEmpty(JNIEnv*, jclass,
+                                                                                  jlong handle) {
+    return sentil_lifting_registry_is_empty(as_ptr<const sentil_lifting_registry_t>(handle))
+               ? JNI_TRUE
+               : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingLift(JNIEnv* env, jclass,
+                                                                            jlong handle,
+                                                                            jlong trace,
+                                                                            jlong seed) {
+    return return_trace(env, sentil_lifting_registry_lift(
+                                 as_ptr<const sentil_lifting_registry_t>(handle),
+                                 as_ptr<const sentil_trace_t>(trace), static_cast<uint64_t>(seed)));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingDestroy(JNIEnv*, jclass,
+                                                                              jlong handle) {
+    sentil_lifting_registry_destroy(as_ptr<sentil_lifting_registry_t>(handle));
+}

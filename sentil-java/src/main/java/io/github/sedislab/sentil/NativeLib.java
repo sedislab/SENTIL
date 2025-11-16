@@ -397,4 +397,17 @@ final class NativeLib {
             throws SentilException;
 
     static native long noiseMixture(double[] weights, long[] models) throws SentilException;
+
+    static native long liftingCreate() throws SentilException;
+
+    static native void liftingRegister(long handle, String variable, long model, int interaction)
+            throws SentilException;
+
+    static native String[] liftingVariables(long handle) throws SentilException;
+
+    static native boolean liftingIsEmpty(long handle);
+
+    static native long liftingLift(long handle, long trace, long seed) throws SentilException;
+
+    static native void liftingDestroy(long handle);
 }
