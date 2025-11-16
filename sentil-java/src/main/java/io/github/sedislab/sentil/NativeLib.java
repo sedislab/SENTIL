@@ -410,4 +410,16 @@ final class NativeLib {
     static native long liftingLift(long handle, long trace, long seed) throws SentilException;
 
     static native void liftingDestroy(long handle);
+
+    static native SmcResult formulaCheck(long formula, long trace, long lifting, long samples,
+            double confidence, long seed, int method) throws SentilException;
+
+    static native SmcResult formulaCheckConservative(long formula, long trace, long lifting,
+            long samples, double confidence, long seed, int method) throws SentilException;
+
+    static native Object[] formulaCheckDistribution(long formula, long trace, long lifting,
+            long samples, double confidence, long seed, int method) throws SentilException;
+
+    static native SmcResult monitorCheck(long monitor, long trace, long lifting)
+            throws SentilException;
 }

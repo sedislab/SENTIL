@@ -64,6 +64,42 @@ public final class Formula extends NativeResource {
         return Arrays.asList(NativeLib.formulaViolations(handle(), trace.handle()));
     }
 
+    /**
+     * Estimate the satisfaction probability of this P-wrapped formula with the default
+     * SMC settings.
+     */
+    public SmcResult check(Trace trace, LiftingRegistry lifting) throws SentilException {
+        return check(trace, lifting, new SmcConfig());
+    }
+
+    /** Estimate the satisfaction probability with the given SMC settings. */
+    public SmcResult check(Trace trace, LiftingRegistry lifting, SmcConfig config)
+            throws SentilException {
+        return NativeLib.formulaCheck(handle(), trace.handle(), lifting.handle(), config.samples,
+                config.confidence, config.seed, config.method.code());
+    }
+
+    /** The check reported with the Clopper-Pearson interval. */
+    public SmcResult checkConservative(Trace trace, LiftingRegistry lifting) throws SentilException {
+        return checkConservative(trace, lifting, new SmcConfig());
+    }
+
+    /** The conservative check with the given SMC settings. */
+    public SmcResult checkConservative(Trace trace, LiftingRegistry lifting, SmcConfig config)
+            throws SentilException {
+        return NativeLib.formulaCheckConservative(handle(), trace.handle(), lifting.handle(),
+                config.samples, config.confidence, config.seed, config.method.code());
+    }
+
+    /** The check with the robustness distribution across the ensemble. */
+    public SmcDistribution checkDistribution(Trace trace, LiftingRegistry lifting, SmcConfig config)
+            throws SentilException {
+        Object[] pair = NativeLib.formulaCheckDistribution(handle(), trace.handle(),
+                lifting.handle(), config.samples, config.confidence, config.seed,
+                config.method.code());
+        return new SmcDistribution((SmcResult) pair[0], (RobustnessDistribution) pair[1]);
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));

@@ -77,4 +77,9 @@ public final class Monitor extends NativeResource {
     public void reset() {
         NativeLib.monitorReset(handle());
     }
+
+    /** Check this monitor's probabilistic formula against the lifted trace ensemble. */
+    public SmcResult check(Trace trace, LiftingRegistry lifting) throws SentilException {
+        return NativeLib.monitorCheck(handle(), trace.handle(), lifting.handle());
+    }
 }

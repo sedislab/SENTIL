@@ -26,6 +26,11 @@ jclass cls_interval = nullptr;
 jmethodID ctor_interval = nullptr;
 jclass cls_confidence = nullptr;
 jmethodID ctor_confidence = nullptr;
+jclass cls_smc_result = nullptr;
+jmethodID ctor_smc_result = nullptr;
+jclass cls_distribution = nullptr;
+jmethodID ctor_distribution = nullptr;
+jclass cls_object = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -221,6 +226,29 @@ jobject make_confidence(JNIEnv* env, const sentil_confidence_interval_t& c) {
     return env->NewObject(cls_confidence, ctor_confidence, c.lower, c.upper, c.level);
 }
 
+jobject make_smc_result(JNIEnv* env, const sentil_smc_result_t& r) {
+    jobject interval = make_confidence(env, r.interval);
+    jobject result = env->NewObject(cls_smc_result, ctor_smc_result, r.probability, interval,
+                                    static_cast<jlong>(r.satisfactions),
+                                    static_cast<jlong>(r.samples), r.holds ? JNI_TRUE : JNI_FALSE);
+    env->DeleteLocalRef(interval);
+    return result;
+}
+
+jobject make_distribution(JNIEnv* env, const sentil_robustness_distribution_t& d) {
+    return env->NewObject(cls_distribution, ctor_distribution, static_cast<jlong>(d.count), d.mean,
+                          d.variance, d.std_dev, d.min, d.max);
+}
+
+sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
+    sentil_smc_config_t config;
+    config.samples = static_cast<uint64_t>(samples);
+    config.confidence = confidence;
+    config.seed = static_cast<uint64_t>(seed);
+    config.interval_method = static_cast<sentil_interval_method_t>(method);
+    return config;
+}
+
 jobjectArray owned_robustness_array(JNIEnv* env, sentil_robustness_t* owned, size_t count) {
     jobjectArray result = env->NewObjectArray(static_cast<jsize>(count), cls_robustness, nullptr);
     if (result != nullptr) {
@@ -360,6 +388,21 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &cls_confidence, &ctor_confidence)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/SmcResult",
+                          "(DLio/github/sedislab/sentil/ConfidenceInterval;JJZ)V", &cls_smc_result,
+                          &ctor_smc_result)) {
+        return JNI_ERR;
+    }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/RobustnessDistribution", "(JDDDDD)V",
+                          &cls_distribution, &ctor_distribution)) {
+        return JNI_ERR;
+    }
+    jclass object_local = env->FindClass("java/lang/Object");
+    if (object_local == nullptr) {
+        return JNI_ERR;
+    }
+    cls_object = static_cast<jclass>(env->NewGlobalRef(object_local));
+    env->DeleteLocalRef(object_local);
     if (!cache_class_ctor(env, "java/util/LinkedHashMap", "()V", &cls_linked_map,
                           &ctor_linked_map)) {
         return JNI_ERR;
@@ -389,7 +432,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     }
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
-                         &cls_linked_map, &cls_double}) {
+                         &cls_smc_result, &cls_distribution, &cls_object, &cls_linked_map,
+                         &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -1754,4 +1798,66 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingLift(JNI
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_liftingDestroy(JNIEnv*, jclass,
                                                                               jlong handle) {
     sentil_lifting_registry_destroy(as_ptr<sentil_lifting_registry_t>(handle));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheck(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jlong lifting, jlong samples,
+    jdouble confidence, jlong seed, jint method) {
+    sentil_smc_config_t config = smc_config(samples, confidence, seed, method);
+    sentil_smc_result_t out;
+    if (failed(env, sentil_formula_check(as_ptr<const sentil_formula_t>(formula),
+                                         as_ptr<const sentil_trace_t>(trace),
+                                         as_ptr<const sentil_lifting_registry_t>(lifting), &config,
+                                         &out))) {
+        return nullptr;
+    }
+    return make_smc_result(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckConservative(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jlong lifting, jlong samples,
+    jdouble confidence, jlong seed, jint method) {
+    sentil_smc_config_t config = smc_config(samples, confidence, seed, method);
+    sentil_smc_result_t out;
+    if (failed(env, sentil_formula_check_conservative(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_trace_t>(trace),
+                        as_ptr<const sentil_lifting_registry_t>(lifting), &config, &out))) {
+        return nullptr;
+    }
+    return make_smc_result(env, out);
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckDistribution(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jlong lifting, jlong samples,
+    jdouble confidence, jlong seed, jint method) {
+    sentil_smc_config_t config = smc_config(samples, confidence, seed, method);
+    sentil_smc_result_t result;
+    sentil_robustness_distribution_t distribution;
+    if (failed(env, sentil_formula_check_distribution(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_trace_t>(trace),
+                        as_ptr<const sentil_lifting_registry_t>(lifting), &config, &result,
+                        &distribution))) {
+        return nullptr;
+    }
+    jobjectArray pair = env->NewObjectArray(2, cls_object, nullptr);
+    jobject smc = make_smc_result(env, result);
+    jobject dist = make_distribution(env, distribution);
+    env->SetObjectArrayElement(pair, 0, smc);
+    env->SetObjectArrayElement(pair, 1, dist);
+    env->DeleteLocalRef(smc);
+    env->DeleteLocalRef(dist);
+    return pair;
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorCheck(
+    JNIEnv* env, jclass, jlong monitor, jlong trace, jlong lifting) {
+    sentil_smc_result_t out;
+    if (failed(env, sentil_monitor_check(as_ptr<const sentil_monitor_t>(monitor),
+                                         as_ptr<const sentil_trace_t>(trace),
+                                         as_ptr<const sentil_lifting_registry_t>(lifting), &out))) {
+        return nullptr;
+    }
+    return make_smc_result(env, out);
 }
