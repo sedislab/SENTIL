@@ -155,4 +155,19 @@ final class NativeLib {
 
     static native long formulaProbabilistic(int op, double threshold, long child)
             throws SentilException;
+
+    static native long traceResample(long handle, double[] times, int interp)
+            throws SentilException;
+
+    static native long tracePrepare(long handle, int interp) throws SentilException;
+
+    static native long preparedTraceResample(long prepared, double[] times) throws SentilException;
+
+    static native void preparedTraceDestroy(long handle);
+
+    static native long traceFromCsv(String text) throws SentilException;
+
+    static native long traceFromTsv(String text) throws SentilException;
+
+    static native long traceFromPath(String path) throws SentilException;
 }

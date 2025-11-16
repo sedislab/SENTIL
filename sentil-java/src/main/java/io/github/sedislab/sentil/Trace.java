@@ -6,7 +6,7 @@ import java.util.Optional;
 
 /** One or more named signals sampled over a strictly increasing sequence of times. */
 public final class Trace extends NativeResource {
-    private Trace(long handle) {
+    Trace(long handle) {
         super(handle, NativeLib::traceDestroy);
     }
 
@@ -24,6 +24,21 @@ public final class Trace extends NativeResource {
     /** A trace with integer times 0, 1, ..., length - 1 and no signals yet. */
     public static Trace indexed(long length) throws SentilException {
         return new Trace(NativeLib.traceIndexed(length));
+    }
+
+    /** A trace parsed from CSV text, with the time column auto-detected. */
+    public static Trace fromCsv(String text) throws SentilException {
+        return new Trace(NativeLib.traceFromCsv(text));
+    }
+
+    /** A trace parsed from tab-separated text. */
+    public static Trace fromTsv(String text) throws SentilException {
+        return new Trace(NativeLib.traceFromTsv(text));
+    }
+
+    /** A trace read from a file, dispatching on the extension. */
+    public static Trace fromPath(String path) throws SentilException {
+        return new Trace(NativeLib.traceFromPath(path));
     }
 
     /** Add or replace a named signal, whose length must equal the trace length. */
@@ -54,5 +69,15 @@ public final class Trace extends NativeResource {
     /** A copy of a named signal's values, or empty if the trace has no such signal. */
     public Optional<double[]> signal(String name) {
         return Optional.ofNullable(NativeLib.traceSignal(handle(), name));
+    }
+
+    /** A new trace resampled onto the given times with the given interpolation. */
+    public Trace resample(double[] times, Interpolation interpolation) throws SentilException {
+        return new Trace(NativeLib.traceResample(handle(), times, interpolation.code()));
+    }
+
+    /** Fix this trace's interpolation coefficients once. */
+    public PreparedTrace prepare(Interpolation interpolation) throws SentilException {
+        return new PreparedTrace(NativeLib.tracePrepare(handle(), interpolation.code()));
     }
 }

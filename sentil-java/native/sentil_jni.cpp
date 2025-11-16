@@ -584,3 +584,62 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaProbabil
                                    static_cast<sentil_probability_op_t>(op), threshold,
                                    as_ptr<sentil_formula_t>(child)));
 }
+
+static jlong return_trace(JNIEnv* env, sentil_trace_t* trace) {
+    if (trace == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(trace);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceResample(
+    JNIEnv* env, jclass, jlong handle, jdoubleArray times, jint interp) {
+    DoubleArray grid(env, times);
+    return return_trace(env, sentil_trace_resample(as_ptr<const sentil_trace_t>(handle),
+                                                   grid.data(), grid.size(),
+                                                   static_cast<sentil_interpolation_t>(interp)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_tracePrepare(JNIEnv* env, jclass,
+                                                                             jlong handle,
+                                                                             jint interp) {
+    sentil_prepared_trace_t* prepared = sentil_trace_prepare(
+        as_ptr<const sentil_trace_t>(handle), static_cast<sentil_interpolation_t>(interp));
+    if (prepared == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(prepared);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_preparedTraceResample(
+    JNIEnv* env, jclass, jlong prepared, jdoubleArray times) {
+    DoubleArray grid(env, times);
+    return return_trace(env, sentil_prepared_trace_resample(
+                                 as_ptr<const sentil_prepared_trace_t>(prepared), grid.data(),
+                                 grid.size()));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_preparedTraceDestroy(JNIEnv*, jclass,
+                                                                                    jlong handle) {
+    sentil_prepared_trace_destroy(as_ptr<sentil_prepared_trace_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceFromCsv(JNIEnv* env, jclass,
+                                                                             jstring text) {
+    Utf8 source(env, text);
+    return return_trace(env, sentil_trace_from_csv(source.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceFromTsv(JNIEnv* env, jclass,
+                                                                             jstring text) {
+    Utf8 source(env, text);
+    return return_trace(env, sentil_trace_from_tsv(source.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_traceFromPath(JNIEnv* env, jclass,
+                                                                              jstring path) {
+    Utf8 location(env, path);
+    return return_trace(env, sentil_trace_from_path(location.c()));
+}
