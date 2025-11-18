@@ -38,6 +38,8 @@ jclass cls_rare_result = nullptr;
 jmethodID ctor_rare_result = nullptr;
 jclass cls_synth_result = nullptr;
 jmethodID ctor_synth_result = nullptr;
+jclass cls_chance_report = nullptr;
+jmethodID ctor_chance_report = nullptr;
 jclass cls_object = nullptr;
 
 jmethodID mid_bernoulli = nullptr;
@@ -265,6 +267,11 @@ jobject make_rare_event_result(JNIEnv* env, const sentil_rare_event_result_t& r)
                           r.holds ? JNI_TRUE : JNI_FALSE, static_cast<jlong>(r.simulations));
 }
 
+jobject make_chance_report(JNIEnv* env, const sentil_chance_report_t& r) {
+    return env->NewObject(cls_chance_report, ctor_chance_report, r.estimate, r.lower_bound,
+                          static_cast<jlong>(r.samples), r.holds ? JNI_TRUE : JNI_FALSE);
+}
+
 sentil_sprt_config_t sprt_config(jdouble p0, jdouble p1, jdouble alpha, jdouble beta,
                                  jlong maxSamples, jlong seed) {
     sentil_sprt_config_t config;
@@ -485,6 +492,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &cls_synth_result, &ctor_synth_result)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/ChanceReport", "(DDJZ)V",
+                          &cls_chance_report, &ctor_chance_report)) {
+        return JNI_ERR;
+    }
     jclass object_local = env->FindClass("java/lang/Object");
     if (object_local == nullptr) {
         return JNI_ERR;
@@ -530,8 +541,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
-                         &cls_rare_result, &cls_synth_result, &cls_object, &cls_linked_map,
-                         &cls_double}) {
+                         &cls_rare_result, &cls_synth_result, &cls_chance_report, &cls_object,
+                         &cls_linked_map, &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -2477,4 +2488,100 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_symmetri
         packed[dim + i] = vectors[i];
     }
     return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_safetyFilterCreate(JNIEnv* env,
+                                                                                   jclass,
+                                                                                   jlong bounds) {
+    sentil_safety_filter_t* filter = sentil_safety_filter_create(as_ptr<sentil_bounds_t>(bounds));
+    if (filter == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(filter);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_safetyFilterFilter(
+    JNIEnv* env, jclass, jlong filter, jdoubleArray nominal, jdoubleArray barrierA,
+    jdoubleArray barrierB, jlong m) {
+    DoubleArray nominalInput(env, nominal);
+    DoubleArray a(env, barrierA);
+    DoubleArray b(env, barrierB);
+    std::vector<double> out(nominalInput.size());
+    if (failed(env, sentil_safety_filter_filter(as_ptr<const sentil_safety_filter_t>(filter),
+                                                nominalInput.data(), nominalInput.size(), a.data(),
+                                                b.data(), static_cast<size_t>(m), out.data()))) {
+        return nullptr;
+    }
+    return copy_doubles(env, out.data(), out.size());
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_safetyFilterDestroy(JNIEnv*, jclass,
+                                                                                   jlong handle) {
+    sentil_safety_filter_destroy(as_ptr<sentil_safety_filter_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_chanceConstraintCreate(
+    JNIEnv* env, jclass, jlong spec, jdouble probability, jdouble confidence, jdouble tightening) {
+    sentil_chance_constraint_t* constraint = sentil_chance_constraint_create(
+        as_ptr<sentil_formula_t>(spec), probability, confidence, tightening);
+    if (constraint == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(constraint);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_chanceConstraintValidate(
+    JNIEnv* env, jclass, jlong constraint, jlong system, jlong samples, jlong seed) {
+    sentil_chance_report_t out;
+    if (failed(env, sentil_chance_constraint_validate(
+                        as_ptr<const sentil_chance_constraint_t>(constraint),
+                        as_ptr<const sentil_stochastic_system_t>(system),
+                        static_cast<uint64_t>(samples), static_cast<uint64_t>(seed), &out))) {
+        return nullptr;
+    }
+    return make_chance_report(env, out);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_chanceConstraintDestroy(
+    JNIEnv*, jclass, jlong handle) {
+    sentil_chance_constraint_destroy(as_ptr<sentil_chance_constraint_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_controllerCreate(
+    JNIEnv* env, jclass, jlong model, jlong spec, jlong inputWidth, jlong budgetNs, jlong bounds,
+    jdouble smoothTemperature, jint smoothKind, jboolean hasSmooth) {
+    const sentil_bounds_t* boundsPtr = bounds == 0 ? nullptr : as_ptr<const sentil_bounds_t>(bounds);
+    sentil_smooth_config_t smooth;
+    const sentil_smooth_config_t* smoothPtr = nullptr;
+    if (hasSmooth == JNI_TRUE) {
+        smooth.temperature = smoothTemperature;
+        smooth.kind = static_cast<sentil_soft_kind_t>(smoothKind);
+        smoothPtr = &smooth;
+    }
+    sentil_controller_t* controller = sentil_controller_create(
+        as_ptr<sentil_system_model_t>(model), as_ptr<sentil_formula_t>(spec),
+        static_cast<size_t>(inputWidth), static_cast<uint64_t>(budgetNs), boundsPtr, smoothPtr);
+    if (controller == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(controller);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_controllerControl(
+    JNIEnv* env, jclass, jlong controller, jdoubleArray state, jlong inputWidth) {
+    DoubleArray current(env, state);
+    std::vector<double> out(static_cast<size_t>(inputWidth));
+    if (failed(env, sentil_controller_control(as_ptr<sentil_controller_t>(controller),
+                                              current.data(), current.size(), out.data()))) {
+        return nullptr;
+    }
+    return copy_doubles(env, out.data(), out.size());
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_controllerDestroy(JNIEnv*, jclass,
+                                                                                 jlong handle) {
+    sentil_controller_destroy(as_ptr<sentil_controller_t>(handle));
 }

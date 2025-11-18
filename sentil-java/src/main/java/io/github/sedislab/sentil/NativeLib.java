@@ -537,4 +537,28 @@ final class NativeLib {
     static native double[] solveSpd(double[] matrix, long n, double[] rhs) throws SentilException;
 
     static native double[] symmetricEigen(double[] matrix, long n) throws SentilException;
+
+    static native long safetyFilterCreate(long bounds) throws SentilException;
+
+    static native double[] safetyFilterFilter(long filter, double[] nominal, double[] barrierA,
+            double[] barrierB, long m) throws SentilException;
+
+    static native void safetyFilterDestroy(long handle);
+
+    static native long chanceConstraintCreate(long spec, double probability, double confidence,
+            double tightening) throws SentilException;
+
+    static native ChanceReport chanceConstraintValidate(long constraint, long system, long samples,
+            long seed) throws SentilException;
+
+    static native void chanceConstraintDestroy(long handle);
+
+    static native long controllerCreate(long model, long spec, long inputWidth, long budgetNs,
+            long bounds, double smoothTemperature, int smoothKind, boolean hasSmooth)
+            throws SentilException;
+
+    static native double[] controllerControl(long controller, double[] state, long inputWidth)
+            throws SentilException;
+
+    static native void controllerDestroy(long handle);
 }
