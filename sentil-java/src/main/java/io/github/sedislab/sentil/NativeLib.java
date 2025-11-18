@@ -493,4 +493,9 @@ final class NativeLib {
     static native long stochasticSystemHorizon(long handle);
 
     static native void stochasticSystemDestroy(long handle);
+
+    static native RareEventResult formulaCheckRareEvent(long formula, long system, long particles,
+            double margin, long seed) throws SentilException;
+
+    static native RareEventResult monitorCheckRare(long monitor, long system) throws SentilException;
 }

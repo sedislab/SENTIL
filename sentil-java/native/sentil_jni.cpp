@@ -34,6 +34,8 @@ jclass cls_sprt_result = nullptr;
 jmethodID ctor_sprt_result = nullptr;
 jclass cls_bayes_result = nullptr;
 jmethodID ctor_bayes_result = nullptr;
+jclass cls_rare_result = nullptr;
+jmethodID ctor_rare_result = nullptr;
 jclass cls_object = nullptr;
 
 jmethodID mid_bernoulli = nullptr;
@@ -256,6 +258,11 @@ jobject make_bayes_result(JNIEnv* env, const sentil_bayes_result_t& r) {
                           static_cast<jlong>(r.samples), r.posterior);
 }
 
+jobject make_rare_event_result(JNIEnv* env, const sentil_rare_event_result_t& r) {
+    return env->NewObject(cls_rare_result, ctor_rare_result, r.probability, r.violation_probability,
+                          r.holds ? JNI_TRUE : JNI_FALSE, static_cast<jlong>(r.simulations));
+}
+
 sentil_sprt_config_t sprt_config(jdouble p0, jdouble p1, jdouble alpha, jdouble beta,
                                  jlong maxSamples, jlong seed) {
     sentil_sprt_config_t config;
@@ -468,6 +475,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &ctor_bayes_result)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/RareEventResult", "(DDZJ)V",
+                          &cls_rare_result, &ctor_rare_result)) {
+        return JNI_ERR;
+    }
     jclass object_local = env->FindClass("java/lang/Object");
     if (object_local == nullptr) {
         return JNI_ERR;
@@ -513,7 +524,7 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
-                         &cls_object, &cls_linked_map, &cls_double}) {
+                         &cls_rare_result, &cls_object, &cls_linked_map, &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -2243,4 +2254,30 @@ JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSyste
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemDestroy(
     JNIEnv*, jclass, jlong handle) {
     sentil_stochastic_system_destroy(as_ptr<sentil_stochastic_system_t>(handle));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckRareEvent(
+    JNIEnv* env, jclass, jlong formula, jlong system, jlong particles, jdouble margin, jlong seed) {
+    sentil_rare_event_config_t config;
+    config.particles = static_cast<size_t>(particles);
+    config.margin = margin;
+    config.seed = static_cast<uint64_t>(seed);
+    sentil_rare_event_result_t out;
+    if (failed(env, sentil_formula_check_rare_event(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_stochastic_system_t>(system), &config, &out))) {
+        return nullptr;
+    }
+    return make_rare_event_result(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorCheckRare(
+    JNIEnv* env, jclass, jlong monitor, jlong system) {
+    sentil_rare_event_result_t out;
+    if (failed(env, sentil_monitor_check_rare(as_ptr<const sentil_monitor_t>(monitor),
+                                              as_ptr<const sentil_stochastic_system_t>(system),
+                                              &out))) {
+        return nullptr;
+    }
+    return make_rare_event_result(env, out);
 }

@@ -89,4 +89,9 @@ public final class Monitor extends NativeResource {
         return NativeLib.monitorCheckSequential(handle(), trace.handle(), lifting.handle(),
                 config.p0, config.p1, config.alpha, config.beta, config.maxSamples, config.seed);
     }
+
+    /** Estimate this monitor's probabilistic formula over a stochastic system by splitting. */
+    public RareEventResult checkRare(StochasticSystem system) throws SentilException {
+        return NativeLib.monitorCheckRare(handle(), system.handle());
+    }
 }

@@ -114,6 +114,21 @@ public final class Formula extends NativeResource {
                 config.threshold, config.bayesFactor, config.maxSamples, config.seed);
     }
 
+    /**
+     * Estimate this P-wrapped formula over a stochastic system by adaptive multilevel
+     * splitting.
+     */
+    public RareEventResult checkRareEvent(StochasticSystem system) throws SentilException {
+        return checkRareEvent(system, new RareEventConfig());
+    }
+
+    /** Estimate this P-wrapped formula by rare-event splitting with the given settings. */
+    public RareEventResult checkRareEvent(StochasticSystem system, RareEventConfig config)
+            throws SentilException {
+        return NativeLib.formulaCheckRareEvent(handle(), system.handle(), config.particles,
+                config.margin, config.seed);
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));
