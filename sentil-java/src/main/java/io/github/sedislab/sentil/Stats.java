@@ -1,10 +1,8 @@
 package io.github.sedislab.sentil;
 
-/**
- * The statistical primitives behind probabilistic monitoring: binomial confidence
- * intervals and the a priori sample sizes that reach a target error. All methods are
- * static; there is nothing to construct.
- */
+import java.util.function.BooleanSupplier;
+
+/** The statistical primitives behind probabilistic monitoring. */
 public final class Stats {
     private Stats() {
     }
@@ -54,5 +52,19 @@ public final class Stats {
     /** The sample count for a target Wilson half-width at a confidence level. */
     public static long wilsonSamples(double epsilon, double level) throws SentilException {
         return NativeLib.wilsonSamples(epsilon, level);
+    }
+
+    /** Run Wald's SPRT over a caller-supplied Bernoulli source. */
+    public static SprtResult sequentialTest(SprtConfig config, BooleanSupplier draw)
+            throws SentilException {
+        return NativeLib.sequentialTest(config.p0, config.p1, config.alpha, config.beta,
+                config.maxSamples, config.seed, draw);
+    }
+
+    /** Run the Bayesian sequential test over a caller-supplied Bernoulli source. */
+    public static BayesResult bayesSequentialTest(BayesConfig config, BooleanSupplier draw)
+            throws SentilException {
+        return NativeLib.bayesSequentialTest(config.threshold, config.bayesFactor, config.maxSamples,
+                config.seed, draw);
     }
 }

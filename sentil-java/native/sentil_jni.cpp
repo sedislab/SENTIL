@@ -36,6 +36,8 @@ jclass cls_bayes_result = nullptr;
 jmethodID ctor_bayes_result = nullptr;
 jclass cls_object = nullptr;
 
+jmethodID mid_bernoulli = nullptr;
+
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
 jmethodID mid_map_put = nullptr;
@@ -266,6 +268,41 @@ sentil_sprt_config_t sprt_config(jdouble p0, jdouble p1, jdouble alpha, jdouble 
     return config;
 }
 
+void take_pending(JNIEnv* env, jthrowable& slot) {
+    if (slot == nullptr) {
+        jthrowable thrown = env->ExceptionOccurred();
+        slot = static_cast<jthrowable>(env->NewGlobalRef(thrown));
+        env->DeleteLocalRef(thrown);
+    }
+    env->ExceptionClear();
+}
+
+bool rethrow_captured(JNIEnv* env, jthrowable& slot) {
+    if (slot == nullptr) {
+        return false;
+    }
+    env->Throw(slot);
+    env->DeleteGlobalRef(slot);
+    slot = nullptr;
+    return true;
+}
+
+struct BernoulliBox {
+    JNIEnv* env;
+    jobject callable;
+    jthrowable captured;
+};
+
+bool bernoulli_trampoline(void* userdata) {
+    BernoulliBox* box = static_cast<BernoulliBox*>(userdata);
+    jboolean draw = box->env->CallBooleanMethod(box->callable, mid_bernoulli);
+    if (box->env->ExceptionCheck()) {
+        take_pending(box->env, box->captured);
+        return false;
+    }
+    return draw == JNI_TRUE;
+}
+
 sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
     sentil_smc_config_t config;
     config.samples = static_cast<uint64_t>(samples);
@@ -454,6 +491,15 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     env->DeleteLocalRef(double_local);
     mid_double_value_of = env->GetStaticMethodID(cls_double, "valueOf", "(D)Ljava/lang/Double;");
     if (mid_double_value_of == nullptr) {
+        return JNI_ERR;
+    }
+    jclass supplier = env->FindClass("java/util/function/BooleanSupplier");
+    if (supplier == nullptr) {
+        return JNI_ERR;
+    }
+    mid_bernoulli = env->GetMethodID(supplier, "getAsBoolean", "()Z");
+    env->DeleteLocalRef(supplier);
+    if (mid_bernoulli == nullptr) {
         return JNI_ERR;
     }
     return JNI_VERSION_1_8;
@@ -1965,4 +2011,44 @@ JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorAddP
                     as_ptr<sentil_multi_monitor_t>(monitor), key.c(),
                     as_ptr<const sentil_formula_t>(formula),
                     as_ptr<const sentil_lifting_registry_t>(lifting), &config));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_sequentialTest(
+    JNIEnv* env, jclass, jdouble p0, jdouble p1, jdouble alpha, jdouble beta, jlong maxSamples,
+    jlong seed, jobject draw) {
+    sentil_sprt_config_t config = sprt_config(p0, p1, alpha, beta, maxSamples, seed);
+    BernoulliBox box{env, env->NewGlobalRef(draw), nullptr};
+    sentil_sprt_result_t out;
+    sentil_error_t code =
+        sentil_sequential_test(&config, bernoulli_trampoline, &box, &out);
+    env->DeleteGlobalRef(box.callable);
+    if (rethrow_captured(env, box.captured)) {
+        return nullptr;
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return make_sprt_result(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_bayesSequentialTest(
+    JNIEnv* env, jclass, jdouble threshold, jdouble bayesFactor, jlong maxSamples, jlong seed,
+    jobject draw) {
+    sentil_bayes_config_t config;
+    config.threshold = threshold;
+    config.bayes_factor = bayesFactor;
+    config.max_samples = static_cast<uint64_t>(maxSamples);
+    config.seed = static_cast<uint64_t>(seed);
+    BernoulliBox box{env, env->NewGlobalRef(draw), nullptr};
+    sentil_bayes_result_t out;
+    sentil_error_t code =
+        sentil_bayes_sequential_test(&config, bernoulli_trampoline, &box, &out);
+    env->DeleteGlobalRef(box.callable);
+    if (rethrow_captured(env, box.captured)) {
+        return nullptr;
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return make_bayes_result(env, out);
 }

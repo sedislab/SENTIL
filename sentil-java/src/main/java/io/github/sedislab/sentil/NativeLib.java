@@ -440,4 +440,12 @@ final class NativeLib {
     static native void multiMonitorAddProbabilistic(long monitor, String id, long formula,
             long lifting, long samples, double confidence, long seed, int method)
             throws SentilException;
+
+    static native SprtResult sequentialTest(double p0, double p1, double alpha, double beta,
+            long maxSamples, long seed, java.util.function.BooleanSupplier draw)
+            throws SentilException;
+
+    static native BayesResult bayesSequentialTest(double threshold, double bayesFactor,
+            long maxSamples, long seed, java.util.function.BooleanSupplier draw)
+            throws SentilException;
 }
