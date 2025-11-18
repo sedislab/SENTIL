@@ -18,4 +18,24 @@ public final class Synthesis {
     public static double softMax(double[] values, double temperature) {
         return NativeLib.softMax(values, temperature);
     }
+
+    /** Find an input sequence for the model that best satisfies the spec. */
+    public static SynthesisResult synthesize(SystemModel model, Formula spec)
+            throws SentilException {
+        return synthesize(model, spec, null, null, Backend.AUTO, 0, 0);
+    }
+
+    /**
+     * Find an input sequence for the model that best satisfies the spec. bounds and
+     * smooth may be null, and maxIters and population of 0 take the defaults.
+     */
+    public static SynthesisResult synthesize(SystemModel model, Formula spec, Bounds bounds,
+            SmoothConfig smooth, Backend backend, long maxIters, long population)
+            throws SentilException {
+        long boundsHandle = bounds == null ? 0L : bounds.handle();
+        double temperature = smooth == null ? 0.0 : smooth.temperature;
+        int kind = smooth == null ? 0 : smooth.kind.code();
+        return NativeLib.synthesize(model.handle(), spec.handle(), boundsHandle, temperature, kind,
+                smooth != null, maxIters, backend.code(), population);
+    }
 }

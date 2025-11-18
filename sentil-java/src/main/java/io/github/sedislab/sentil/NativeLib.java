@@ -519,4 +519,15 @@ final class NativeLib {
     static native double[] boundsClamp(long handle, double[] point);
 
     static native void boundsDestroy(long handle);
+
+    static native long linearModelCreate(double[] a, long n, double[] b, long bCols, double[] x0,
+            String[] variables, double dt, long horizon) throws SentilException;
+
+    static native long systemModelInputDimension(long handle);
+
+    static native void systemModelDestroy(long handle);
+
+    static native SynthesisResult synthesize(long model, long spec, long bounds,
+            double smoothTemperature, int smoothKind, boolean hasSmooth, long maxIters, int backend,
+            long population) throws SentilException;
 }

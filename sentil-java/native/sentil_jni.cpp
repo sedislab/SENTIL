@@ -36,6 +36,8 @@ jclass cls_bayes_result = nullptr;
 jmethodID ctor_bayes_result = nullptr;
 jclass cls_rare_result = nullptr;
 jmethodID ctor_rare_result = nullptr;
+jclass cls_synth_result = nullptr;
+jmethodID ctor_synth_result = nullptr;
 jclass cls_object = nullptr;
 
 jmethodID mid_bernoulli = nullptr;
@@ -479,6 +481,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &cls_rare_result, &ctor_rare_result)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/SynthesisResult", "([DDZI)V",
+                          &cls_synth_result, &ctor_synth_result)) {
+        return JNI_ERR;
+    }
     jclass object_local = env->FindClass("java/lang/Object");
     if (object_local == nullptr) {
         return JNI_ERR;
@@ -524,7 +530,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
-                         &cls_rare_result, &cls_object, &cls_linked_map, &cls_double}) {
+                         &cls_rare_result, &cls_synth_result, &cls_object, &cls_linked_map,
+                         &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -2367,4 +2374,60 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsCl
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsDestroy(JNIEnv*, jclass,
                                                                              jlong handle) {
     sentil_bounds_destroy(as_ptr<sentil_bounds_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_linearModelCreate(
+    JNIEnv* env, jclass, jdoubleArray a, jlong n, jdoubleArray b, jlong bCols, jdoubleArray x0,
+    jobjectArray variables, jdouble dt, jlong horizon) {
+    DoubleArray matrixA(env, a);
+    DoubleArray matrixB(env, b);
+    DoubleArray initial(env, x0);
+    StringArray names(env, variables);
+    sentil_system_model_t* model = sentil_linear_model_create(
+        matrixA.data(), static_cast<size_t>(n), matrixB.data(), static_cast<size_t>(bCols),
+        initial.data(), names.data(), names.size(), dt, static_cast<size_t>(horizon));
+    if (model == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(model);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_systemModelInputDimension(
+    JNIEnv*, jclass, jlong handle) {
+    return static_cast<jlong>(
+        sentil_system_model_input_dimension(as_ptr<const sentil_system_model_t>(handle)));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_systemModelDestroy(JNIEnv*, jclass,
+                                                                                  jlong handle) {
+    sentil_system_model_destroy(as_ptr<sentil_system_model_t>(handle));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_synthesize(
+    JNIEnv* env, jclass, jlong model, jlong spec, jlong bounds, jdouble smoothTemperature,
+    jint smoothKind, jboolean hasSmooth, jlong maxIters, jint backend, jlong population) {
+    const sentil_bounds_t* boundsPtr = bounds == 0 ? nullptr : as_ptr<const sentil_bounds_t>(bounds);
+    sentil_smooth_config_t smooth;
+    const sentil_smooth_config_t* smoothPtr = nullptr;
+    if (hasSmooth == JNI_TRUE) {
+        smooth.temperature = smoothTemperature;
+        smooth.kind = static_cast<sentil_soft_kind_t>(smoothKind);
+        smoothPtr = &smooth;
+    }
+    sentil_synthesis_result_t out = {nullptr, 0, 0.0, false, SENTIL_BACKEND_AUTO};
+    sentil_error_t code = sentil_synthesize(
+        as_ptr<const sentil_system_model_t>(model), as_ptr<const sentil_formula_t>(spec), boundsPtr,
+        smoothPtr, static_cast<size_t>(maxIters), static_cast<sentil_backend_t>(backend),
+        static_cast<size_t>(population), &out);
+    jdoubleArray input = nullptr;
+    if (out.input != nullptr) {
+        input = copy_doubles(env, out.input, out.input_len);
+        sentil_free_doubles(out.input, out.input_len);
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return env->NewObject(cls_synth_result, ctor_synth_result, input, out.robustness,
+                          out.holds ? JNI_TRUE : JNI_FALSE, static_cast<jint>(out.backend));
 }
