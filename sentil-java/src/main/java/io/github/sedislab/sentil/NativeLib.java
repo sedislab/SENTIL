@@ -530,4 +530,11 @@ final class NativeLib {
     static native SynthesisResult synthesize(long model, long spec, long bounds,
             double smoothTemperature, int smoothKind, boolean hasSmooth, long maxIters, int backend,
             long population) throws SentilException;
+
+    static native double[] solveQp(double[] p, long n, double[] q, double[] g, long m, double[] h,
+            long maxIters) throws SentilException;
+
+    static native double[] solveSpd(double[] matrix, long n, double[] rhs) throws SentilException;
+
+    static native double[] symmetricEigen(double[] matrix, long n) throws SentilException;
 }

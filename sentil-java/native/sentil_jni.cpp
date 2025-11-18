@@ -2431,3 +2431,50 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_synthesize(
     return env->NewObject(cls_synth_result, ctor_synth_result, input, out.robustness,
                           out.holds ? JNI_TRUE : JNI_FALSE, static_cast<jint>(out.backend));
 }
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_solveQp(
+    JNIEnv* env, jclass, jdoubleArray p, jlong n, jdoubleArray q, jdoubleArray g, jlong m,
+    jdoubleArray h, jlong maxIters) {
+    DoubleArray matrixP(env, p);
+    DoubleArray vectorQ(env, q);
+    DoubleArray matrixG(env, g);
+    DoubleArray vectorH(env, h);
+    std::vector<double> out(static_cast<size_t>(n));
+    if (failed(env, sentil_solve_qp(matrixP.data(), static_cast<size_t>(n), vectorQ.data(),
+                                    matrixG.data(), static_cast<size_t>(m), vectorH.data(),
+                                    static_cast<size_t>(maxIters), out.data()))) {
+        return nullptr;
+    }
+    return copy_doubles(env, out.data(), out.size());
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_solveSpd(
+    JNIEnv* env, jclass, jdoubleArray matrix, jlong n, jdoubleArray rhs) {
+    DoubleArray matrixA(env, matrix);
+    DoubleArray vectorB(env, rhs);
+    std::vector<double> out(static_cast<size_t>(n));
+    if (failed(env, sentil_solve_spd(matrixA.data(), static_cast<size_t>(n), vectorB.data(),
+                                     out.data()))) {
+        return nullptr;
+    }
+    return copy_doubles(env, out.data(), out.size());
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_symmetricEigen(
+    JNIEnv* env, jclass, jdoubleArray matrix, jlong n) {
+    DoubleArray matrixA(env, matrix);
+    size_t dim = static_cast<size_t>(n);
+    std::vector<double> values(dim);
+    std::vector<double> vectors(dim * dim);
+    if (failed(env, sentil_symmetric_eigen(matrixA.data(), dim, values.data(), vectors.data()))) {
+        return nullptr;
+    }
+    std::vector<double> packed(dim + dim * dim);
+    for (size_t i = 0; i < dim; ++i) {
+        packed[i] = values[i];
+    }
+    for (size_t i = 0; i < dim * dim; ++i) {
+        packed[dim + i] = vectors[i];
+    }
+    return copy_doubles(env, packed.data(), packed.size());
+}
