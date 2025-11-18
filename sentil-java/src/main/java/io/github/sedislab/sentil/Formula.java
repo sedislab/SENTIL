@@ -129,6 +129,17 @@ public final class Formula extends NativeResource {
                 config.margin, config.seed);
     }
 
+    /** The differentiable surrogate for robustness, with the default smoothing. */
+    public double smoothRobustness(Trace trace) throws SentilException {
+        return smoothRobustness(trace, new SmoothConfig());
+    }
+
+    /** The smooth robustness over a trace with the given smoothing settings. */
+    public double smoothRobustness(Trace trace, SmoothConfig config) throws SentilException {
+        return NativeLib.formulaSmoothRobustness(handle(), trace.handle(), config.temperature,
+                config.kind.code());
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));

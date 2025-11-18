@@ -2281,3 +2281,90 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorCheckR
     }
     return make_rare_event_result(env, out);
 }
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_softMin(JNIEnv* env, jclass,
+                                                                          jdoubleArray values,
+                                                                          jdouble temperature) {
+    DoubleArray data(env, values);
+    return sentil_soft_min(data.data(), data.size(), temperature);
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_softMax(JNIEnv* env, jclass,
+                                                                          jdoubleArray values,
+                                                                          jdouble temperature) {
+    DoubleArray data(env, values);
+    return sentil_soft_max(data.data(), data.size(), temperature);
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaSmoothRobustness(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jdouble temperature, jint kind) {
+    sentil_smooth_config_t config;
+    config.temperature = temperature;
+    config.kind = static_cast<sentil_soft_kind_t>(kind);
+    double out = 0.0;
+    if (failed(env, sentil_formula_smooth_robustness(as_ptr<const sentil_formula_t>(formula),
+                                                     as_ptr<const sentil_trace_t>(trace), &config,
+                                                     &out))) {
+        return 0.0;
+    }
+    return out;
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsCreate(JNIEnv* env, jclass,
+                                                                             jdoubleArray lower,
+                                                                             jdoubleArray upper) {
+    DoubleArray low(env, lower);
+    DoubleArray high(env, upper);
+    sentil_bounds_t* bounds = sentil_bounds_create(low.data(), high.data(), low.size());
+    if (bounds == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(bounds);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsUnbounded(JNIEnv* env, jclass,
+                                                                                jlong dimension) {
+    sentil_bounds_t* bounds = sentil_bounds_unbounded(static_cast<size_t>(dimension));
+    if (bounds == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(bounds);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsDimension(JNIEnv*, jclass,
+                                                                                jlong handle) {
+    return static_cast<jlong>(sentil_bounds_dimension(as_ptr<const sentil_bounds_t>(handle)));
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsLower(JNIEnv* env,
+                                                                                   jclass,
+                                                                                   jlong handle) {
+    size_t dimension = sentil_bounds_dimension(as_ptr<const sentil_bounds_t>(handle));
+    std::vector<double> out(dimension);
+    sentil_bounds_lower(as_ptr<const sentil_bounds_t>(handle), out.data());
+    return copy_doubles(env, out.data(), dimension);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsUpper(JNIEnv* env,
+                                                                                   jclass,
+                                                                                   jlong handle) {
+    size_t dimension = sentil_bounds_dimension(as_ptr<const sentil_bounds_t>(handle));
+    std::vector<double> out(dimension);
+    sentil_bounds_upper(as_ptr<const sentil_bounds_t>(handle), out.data());
+    return copy_doubles(env, out.data(), dimension);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsClamp(
+    JNIEnv* env, jclass, jlong handle, jdoubleArray point) {
+    DoubleArray data(env, point);
+    std::vector<double> clamped(data.data(), data.data() + data.size());
+    sentil_bounds_clamp(as_ptr<const sentil_bounds_t>(handle), clamped.data(), clamped.size());
+    return copy_doubles(env, clamped.data(), clamped.size());
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_boundsDestroy(JNIEnv*, jclass,
+                                                                             jlong handle) {
+    sentil_bounds_destroy(as_ptr<sentil_bounds_t>(handle));
+}

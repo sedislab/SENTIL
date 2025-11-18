@@ -498,4 +498,25 @@ final class NativeLib {
             double margin, long seed) throws SentilException;
 
     static native RareEventResult monitorCheckRare(long monitor, long system) throws SentilException;
+
+    static native double softMin(double[] values, double temperature);
+
+    static native double softMax(double[] values, double temperature);
+
+    static native double formulaSmoothRobustness(long formula, long trace, double temperature,
+            int kind) throws SentilException;
+
+    static native long boundsCreate(double[] lower, double[] upper) throws SentilException;
+
+    static native long boundsUnbounded(long dimension) throws SentilException;
+
+    static native long boundsDimension(long handle);
+
+    static native double[] boundsLower(long handle);
+
+    static native double[] boundsUpper(long handle);
+
+    static native double[] boundsClamp(long handle, double[] point);
+
+    static native void boundsDestroy(long handle);
 }
