@@ -2052,3 +2052,195 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_bayesSequenti
     }
     return make_bayes_result(env, out);
 }
+
+static jlong return_sim_expr(JNIEnv* env, sentil_sim_expr_t* expr) {
+    if (expr == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(expr);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprPrev(JNIEnv* env, jclass,
+                                                                            jlong variable) {
+    return return_sim_expr(env, sentil_sim_expr_prev(static_cast<size_t>(variable)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprTime(JNIEnv* env, jclass) {
+    return return_sim_expr(env, sentil_sim_expr_time());
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprConst(JNIEnv* env, jclass,
+                                                                             jdouble value) {
+    return return_sim_expr(env, sentil_sim_expr_const(value));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprNoise(JNIEnv* env, jclass,
+                                                                             jlong source) {
+    return return_sim_expr(env, sentil_sim_expr_noise(static_cast<size_t>(source)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprAdd(JNIEnv* env, jclass,
+                                                                           jlong left, jlong right) {
+    return return_sim_expr(env, sentil_sim_expr_add(as_ptr<sentil_sim_expr_t>(left),
+                                                    as_ptr<sentil_sim_expr_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprSub(JNIEnv* env, jclass,
+                                                                           jlong left, jlong right) {
+    return return_sim_expr(env, sentil_sim_expr_sub(as_ptr<sentil_sim_expr_t>(left),
+                                                    as_ptr<sentil_sim_expr_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprMul(JNIEnv* env, jclass,
+                                                                           jlong left, jlong right) {
+    return return_sim_expr(env, sentil_sim_expr_mul(as_ptr<sentil_sim_expr_t>(left),
+                                                    as_ptr<sentil_sim_expr_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprDiv(JNIEnv* env, jclass,
+                                                                           jlong left, jlong right) {
+    return return_sim_expr(env, sentil_sim_expr_div(as_ptr<sentil_sim_expr_t>(left),
+                                                    as_ptr<sentil_sim_expr_t>(right)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprCall(JNIEnv* env, jclass,
+                                                                            jstring name,
+                                                                            jlongArray args) {
+    Utf8 function(env, name);
+    jsize count = env->GetArrayLength(args);
+    jlong* handles = env->GetLongArrayElements(args, nullptr);
+    std::vector<sentil_sim_expr_t*> operands(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        operands[static_cast<size_t>(i)] = as_ptr<sentil_sim_expr_t>(handles[i]);
+    }
+    env->ReleaseLongArrayElements(args, handles, JNI_ABORT);
+    return return_sim_expr(env, sentil_sim_expr_call(function.c(), operands.data(),
+                                                     static_cast<size_t>(count)));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_simExprDestroy(JNIEnv*, jclass,
+                                                                              jlong handle) {
+    sentil_sim_expr_destroy(as_ptr<sentil_sim_expr_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelCreate(
+    JNIEnv* env, jclass, jobjectArray variables, jdouble dt, jlong horizon, jlongArray init,
+    jlongArray advance, jlongArray noise) {
+    StringArray names(env, variables);
+    jsize initCount = env->GetArrayLength(init);
+    jsize advanceCount = env->GetArrayLength(advance);
+    jsize noiseCount = env->GetArrayLength(noise);
+    jlong* initHandles = env->GetLongArrayElements(init, nullptr);
+    jlong* advanceHandles = env->GetLongArrayElements(advance, nullptr);
+    jlong* noiseHandles = env->GetLongArrayElements(noise, nullptr);
+    std::vector<sentil_sim_expr_t*> initExprs(static_cast<size_t>(initCount));
+    std::vector<sentil_sim_expr_t*> advanceExprs(static_cast<size_t>(advanceCount));
+    std::vector<sentil_noise_model_t*> noiseModels(static_cast<size_t>(noiseCount));
+    for (jsize i = 0; i < initCount; ++i) {
+        initExprs[static_cast<size_t>(i)] = as_ptr<sentil_sim_expr_t>(initHandles[i]);
+    }
+    for (jsize i = 0; i < advanceCount; ++i) {
+        advanceExprs[static_cast<size_t>(i)] = as_ptr<sentil_sim_expr_t>(advanceHandles[i]);
+    }
+    for (jsize i = 0; i < noiseCount; ++i) {
+        noiseModels[static_cast<size_t>(i)] = as_ptr<sentil_noise_model_t>(noiseHandles[i]);
+    }
+    env->ReleaseLongArrayElements(init, initHandles, JNI_ABORT);
+    env->ReleaseLongArrayElements(advance, advanceHandles, JNI_ABORT);
+    env->ReleaseLongArrayElements(noise, noiseHandles, JNI_ABORT);
+    sentil_sim_model_t* model = sentil_sim_model_create(
+        names.data(), names.size(), dt, static_cast<size_t>(horizon), initExprs.data(),
+        initExprs.size(), advanceExprs.data(), advanceExprs.size(), noiseModels.data(),
+        noiseModels.size());
+    if (model == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(model);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelSimulate(JNIEnv* env, jclass,
+                                                                                 jlong handle,
+                                                                                 jlong seed) {
+    return return_trace(env, sentil_sim_model_simulate(as_ptr<const sentil_sim_model_t>(handle),
+                                                       static_cast<uint64_t>(seed)));
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelVariables(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** variables = sentil_sim_model_variables(as_ptr<const sentil_sim_model_t>(handle), &count);
+    if (variables == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, variables, count);
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelDt(JNIEnv*, jclass,
+                                                                             jlong handle) {
+    return sentil_sim_model_dt(as_ptr<const sentil_sim_model_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelHorizon(JNIEnv*, jclass,
+                                                                                jlong handle) {
+    return static_cast<jlong>(sentil_sim_model_horizon(as_ptr<const sentil_sim_model_t>(handle)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelToStochasticSystem(
+    JNIEnv* env, jclass, jlong handle) {
+    sentil_stochastic_system_t* system =
+        sentil_sim_model_to_stochastic_system(as_ptr<const sentil_sim_model_t>(handle));
+    if (system == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(system);
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_simModelDestroy(JNIEnv*, jclass,
+                                                                               jlong handle) {
+    sentil_sim_model_destroy(as_ptr<sentil_sim_model_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemSimulate(
+    JNIEnv* env, jclass, jlong handle, jlong seed) {
+    return return_trace(env, sentil_stochastic_system_simulate(
+                                 as_ptr<const sentil_stochastic_system_t>(handle),
+                                 static_cast<uint64_t>(seed)));
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemVariables(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** variables =
+        sentil_stochastic_system_variables(as_ptr<const sentil_stochastic_system_t>(handle), &count);
+    if (variables == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, variables, count);
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemDt(JNIEnv*, jclass,
+                                                                                     jlong handle) {
+    return sentil_stochastic_system_dt(as_ptr<const sentil_stochastic_system_t>(handle));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemHorizon(
+    JNIEnv*, jclass, jlong handle) {
+    return static_cast<jlong>(
+        sentil_stochastic_system_horizon(as_ptr<const sentil_stochastic_system_t>(handle)));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemDestroy(
+    JNIEnv*, jclass, jlong handle) {
+    sentil_stochastic_system_destroy(as_ptr<sentil_stochastic_system_t>(handle));
+}

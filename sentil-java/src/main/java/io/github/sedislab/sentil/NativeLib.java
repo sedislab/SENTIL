@@ -448,4 +448,49 @@ final class NativeLib {
     static native BayesResult bayesSequentialTest(double threshold, double bayesFactor,
             long maxSamples, long seed, java.util.function.BooleanSupplier draw)
             throws SentilException;
+
+    static native long simExprPrev(long variable) throws SentilException;
+
+    static native long simExprTime() throws SentilException;
+
+    static native long simExprConst(double value) throws SentilException;
+
+    static native long simExprNoise(long source) throws SentilException;
+
+    static native long simExprAdd(long left, long right) throws SentilException;
+
+    static native long simExprSub(long left, long right) throws SentilException;
+
+    static native long simExprMul(long left, long right) throws SentilException;
+
+    static native long simExprDiv(long left, long right) throws SentilException;
+
+    static native long simExprCall(String name, long[] args) throws SentilException;
+
+    static native void simExprDestroy(long handle);
+
+    static native long simModelCreate(String[] variables, double dt, long horizon, long[] init,
+            long[] advance, long[] noise) throws SentilException;
+
+    static native long simModelSimulate(long handle, long seed) throws SentilException;
+
+    static native String[] simModelVariables(long handle) throws SentilException;
+
+    static native double simModelDt(long handle);
+
+    static native long simModelHorizon(long handle);
+
+    static native long simModelToStochasticSystem(long handle) throws SentilException;
+
+    static native void simModelDestroy(long handle);
+
+    static native long stochasticSystemSimulate(long handle, long seed) throws SentilException;
+
+    static native String[] stochasticSystemVariables(long handle) throws SentilException;
+
+    static native double stochasticSystemDt(long handle);
+
+    static native long stochasticSystemHorizon(long handle);
+
+    static native void stochasticSystemDestroy(long handle);
 }
