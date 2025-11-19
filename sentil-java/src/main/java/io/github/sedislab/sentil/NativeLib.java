@@ -568,4 +568,10 @@ final class NativeLib {
     static native Witness falsify(long formula, long model, long bounds, long population,
             long maxGenerations, double initialStep, double tolStep, long seed, long restarts)
             throws SentilException;
+
+    static native double[] formulaSmoothValueAndGradient(long formula, long trace,
+            double temperature, int kind) throws SentilException;
+
+    static native double[] formulaSmoothGradient(long formula, long model, double[] initial,
+            double[] input, double temperature, int kind) throws SentilException;
 }

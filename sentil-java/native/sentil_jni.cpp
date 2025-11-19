@@ -2654,3 +2654,55 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_falsify(
     }
     return make_witness(env, out);
 }
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaSmoothValueAndGradient(
+    JNIEnv* env, jclass, jlong formula, jlong trace, jdouble temperature, jint kind) {
+    size_t nVars = 0;
+    char** names = sentil_formula_variables(as_ptr<const sentil_formula_t>(formula), &nVars);
+    if (names != nullptr) {
+        sentil_free_string_array(names, nVars);
+    }
+    size_t nSamples = sentil_trace_len(as_ptr<const sentil_trace_t>(trace));
+    sentil_smooth_config_t config;
+    config.temperature = temperature;
+    config.kind = static_cast<sentil_soft_kind_t>(kind);
+    double value = 0.0;
+    std::vector<double> gradient(nVars * nSamples);
+    if (failed(env, sentil_formula_smooth_value_and_gradient(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_trace_t>(trace), &config, &value, gradient.data(), nVars,
+                        nSamples))) {
+        return nullptr;
+    }
+    std::vector<double> packed(1 + nVars * nSamples);
+    packed[0] = value;
+    for (size_t i = 0; i < nVars * nSamples; ++i) {
+        packed[1 + i] = gradient[i];
+    }
+    return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaSmoothGradient(
+    JNIEnv* env, jclass, jlong formula, jlong model, jdoubleArray initial, jdoubleArray input,
+    jdouble temperature, jint kind) {
+    DoubleArray initialState(env, initial);
+    DoubleArray inputSequence(env, input);
+    sentil_smooth_config_t config;
+    config.temperature = temperature;
+    config.kind = static_cast<sentil_soft_kind_t>(kind);
+    double value = 0.0;
+    std::vector<double> gradient(inputSequence.size());
+    if (failed(env, sentil_formula_smooth_gradient(
+                        as_ptr<const sentil_formula_t>(formula),
+                        as_ptr<const sentil_system_model_t>(model), initialState.data(),
+                        initialState.size(), inputSequence.data(), inputSequence.size(), &config,
+                        &value, gradient.data()))) {
+        return nullptr;
+    }
+    std::vector<double> packed(1 + gradient.size());
+    packed[0] = value;
+    for (size_t i = 0; i < gradient.size(); ++i) {
+        packed[1 + i] = gradient[i];
+    }
+    return copy_doubles(env, packed.data(), packed.size());
+}

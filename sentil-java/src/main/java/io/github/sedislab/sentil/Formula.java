@@ -159,6 +159,36 @@ public final class Formula extends NativeResource {
                 config.maxGenerations, config.initialStep, config.tolStep, config.seed, restarts);
     }
 
+    /**
+     * The smooth robustness over a trace and its gradient, as [variable][sample] in
+     * sorted variable order.
+     */
+    public SignalGradient smoothValueAndGradient(Trace trace, SmoothConfig config)
+            throws SentilException {
+        double[] packed = NativeLib.formulaSmoothValueAndGradient(handle(), trace.handle(),
+                config.temperature, config.kind.code());
+        int nVars = variables().size();
+        int nSamples = packed.length == 0 || nVars == 0 ? 0 : (packed.length - 1) / nVars;
+        double[][] gradient = new double[nVars][nSamples];
+        for (int i = 0; i < nVars; i++) {
+            System.arraycopy(packed, 1 + i * nSamples, gradient[i], 0, nSamples);
+        }
+        return new SignalGradient(packed[0], gradient);
+    }
+
+    /**
+     * The smooth robustness of the trajectory the model rolls from initial under input,
+     * with the gradient per input coordinate.
+     */
+    public InputGradient smoothGradient(SystemModel model, double[] initial, double[] input,
+            SmoothConfig config) throws SentilException {
+        double[] packed = NativeLib.formulaSmoothGradient(handle(), model.handle(), initial, input,
+                config.temperature, config.kind.code());
+        double[] gradient = new double[packed.length - 1];
+        System.arraycopy(packed, 1, gradient, 0, gradient.length);
+        return new InputGradient(packed[0], gradient);
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));
