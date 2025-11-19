@@ -40,6 +40,8 @@ jclass cls_synth_result = nullptr;
 jmethodID ctor_synth_result = nullptr;
 jclass cls_chance_report = nullptr;
 jmethodID ctor_chance_report = nullptr;
+jclass cls_witness = nullptr;
+jmethodID ctor_witness = nullptr;
 jclass cls_object = nullptr;
 
 jmethodID mid_bernoulli = nullptr;
@@ -272,6 +274,28 @@ jobject make_chance_report(JNIEnv* env, const sentil_chance_report_t& r) {
                           static_cast<jlong>(r.samples), r.holds ? JNI_TRUE : JNI_FALSE);
 }
 
+jobject make_witness(JNIEnv* env, sentil_witness_t& w) {
+    jdoubleArray input = copy_doubles(env, w.input, w.input_len);
+    if (w.input != nullptr) {
+        sentil_free_doubles(w.input, w.input_len);
+        w.input = nullptr;
+    }
+    jlong trace = reinterpret_cast<jlong>(w.trace);
+    w.trace = nullptr;
+    return env->NewObject(cls_witness, ctor_witness, input, w.robustness, trace);
+}
+
+void free_witness(sentil_witness_t& w) {
+    if (w.input != nullptr) {
+        sentil_free_doubles(w.input, w.input_len);
+        w.input = nullptr;
+    }
+    if (w.trace != nullptr) {
+        sentil_trace_destroy(w.trace);
+        w.trace = nullptr;
+    }
+}
+
 sentil_sprt_config_t sprt_config(jdouble p0, jdouble p1, jdouble alpha, jdouble beta,
                                  jlong maxSamples, jlong seed) {
     sentil_sprt_config_t config;
@@ -496,6 +520,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &cls_chance_report, &ctor_chance_report)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/Witness", "([DDJ)V", &cls_witness,
+                          &ctor_witness)) {
+        return JNI_ERR;
+    }
     jclass object_local = env->FindClass("java/lang/Object");
     if (object_local == nullptr) {
         return JNI_ERR;
@@ -541,8 +569,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     for (jclass* slot : {&cls_base, &cls_parse, &cls_semantic, &cls_evaluation, &cls_string,
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
-                         &cls_rare_result, &cls_synth_result, &cls_chance_report, &cls_object,
-                         &cls_linked_map, &cls_double}) {
+                         &cls_rare_result, &cls_synth_result, &cls_chance_report, &cls_witness,
+                         &cls_object, &cls_linked_map, &cls_double}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -2584,4 +2612,45 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_controll
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_controllerDestroy(JNIEnv*, jclass,
                                                                                  jlong handle) {
     sentil_controller_destroy(as_ptr<sentil_controller_t>(handle));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_findCounterexample(
+    JNIEnv* env, jclass, jlong formula, jlong model, jlong bounds, jlong maxIters,
+    jdouble smoothTemperature, jint smoothKind, jboolean hasSmooth) {
+    sentil_smooth_config_t smooth;
+    const sentil_smooth_config_t* smoothPtr = nullptr;
+    if (hasSmooth == JNI_TRUE) {
+        smooth.temperature = smoothTemperature;
+        smooth.kind = static_cast<sentil_soft_kind_t>(smoothKind);
+        smoothPtr = &smooth;
+    }
+    sentil_witness_t out = {nullptr, 0, 0.0, nullptr};
+    sentil_error_t code = sentil_formula_find_counterexample(
+        as_ptr<const sentil_formula_t>(formula), as_ptr<const sentil_system_model_t>(model),
+        as_ptr<const sentil_bounds_t>(bounds), static_cast<size_t>(maxIters), smoothPtr, &out);
+    if (failed(env, code)) {
+        free_witness(out);
+        return nullptr;
+    }
+    return make_witness(env, out);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_falsify(
+    JNIEnv* env, jclass, jlong formula, jlong model, jlong bounds, jlong population,
+    jlong maxGenerations, jdouble initialStep, jdouble tolStep, jlong seed, jlong restarts) {
+    sentil_cma_config_t config;
+    config.population = static_cast<size_t>(population);
+    config.max_generations = static_cast<size_t>(maxGenerations);
+    config.initial_step = initialStep;
+    config.tol_step = tolStep;
+    config.seed = static_cast<uint64_t>(seed);
+    sentil_witness_t out = {nullptr, 0, 0.0, nullptr};
+    sentil_error_t code = sentil_formula_falsify(
+        as_ptr<const sentil_formula_t>(formula), as_ptr<const sentil_system_model_t>(model),
+        as_ptr<const sentil_bounds_t>(bounds), config, static_cast<size_t>(restarts), &out);
+    if (failed(env, code)) {
+        free_witness(out);
+        return nullptr;
+    }
+    return make_witness(env, out);
 }

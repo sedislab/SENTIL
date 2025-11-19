@@ -561,4 +561,11 @@ final class NativeLib {
             throws SentilException;
 
     static native void controllerDestroy(long handle);
+
+    static native Witness findCounterexample(long formula, long model, long bounds, long maxIters,
+            double smoothTemperature, int smoothKind, boolean hasSmooth) throws SentilException;
+
+    static native Witness falsify(long formula, long model, long bounds, long population,
+            long maxGenerations, double initialStep, double tolStep, long seed, long restarts)
+            throws SentilException;
 }

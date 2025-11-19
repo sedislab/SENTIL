@@ -140,6 +140,25 @@ public final class Formula extends NativeResource {
                 config.kind.code());
     }
 
+    /**
+     * Search for a trajectory that violates this formula on the model by descending the
+     * smooth robustness.
+     */
+    public Witness findCounterexample(SystemModel model, Bounds bounds, long maxIters,
+            SmoothConfig smooth) throws SentilException {
+        double temperature = smooth == null ? 0.0 : smooth.temperature;
+        int kind = smooth == null ? 0 : smooth.kind.code();
+        return NativeLib.findCounterexample(handle(), model.handle(), bounds.handle(), maxIters,
+                temperature, kind, smooth != null);
+    }
+
+    /** Search for a violating trajectory globally with restarted CMA-ES on exact robustness. */
+    public Witness falsify(SystemModel model, Bounds bounds, CmaConfig config, long restarts)
+            throws SentilException {
+        return NativeLib.falsify(handle(), model.handle(), bounds.handle(), config.population,
+                config.maxGenerations, config.initialStep, config.tolStep, config.seed, restarts);
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));
