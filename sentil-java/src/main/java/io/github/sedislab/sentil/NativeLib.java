@@ -581,4 +581,8 @@ final class NativeLib {
     static native double[] cmaEs(java.util.function.ToDoubleFunction<double[]> objective,
             double[] start, long bounds, long population, long maxGenerations, double initialStep,
             double tolStep, long seed) throws SentilException;
+
+    static native double[] cmaEsBatched(BatchObjective objective, double[] start, long bounds,
+            long population, long maxGenerations, double initialStep, double tolStep, long seed)
+            throws SentilException;
 }

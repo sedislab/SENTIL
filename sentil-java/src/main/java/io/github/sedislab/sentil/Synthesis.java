@@ -103,4 +103,16 @@ public final class Synthesis {
         return optimum(NativeLib.cmaEs(objective, start, bounds.handle(), config.population,
                 config.maxGenerations, config.initialStep, config.tolStep, config.seed));
     }
+
+    /** Maximize a batch objective with CMA-ES, scoring a whole population at once. */
+    public static Optimum cmaEsBatched(BatchObjective objective, double[] start, Bounds bounds,
+            CmaConfig config) throws SentilException {
+        if (bounds == null) {
+            try (Bounds unbounded = Bounds.unbounded(start.length)) {
+                return cmaEsBatched(objective, start, unbounded, config);
+            }
+        }
+        return optimum(NativeLib.cmaEsBatched(objective, start, bounds.handle(), config.population,
+                config.maxGenerations, config.initialStep, config.tolStep, config.seed));
+    }
 }

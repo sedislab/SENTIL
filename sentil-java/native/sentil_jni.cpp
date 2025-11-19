@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,10 @@ jclass cls_object = nullptr;
 jmethodID mid_bernoulli = nullptr;
 jmethodID mid_gradient_objective = nullptr;
 jmethodID mid_objective = nullptr;
+
+JavaVM* g_vm = nullptr;
+jclass cls_double_array = nullptr;
+jmethodID mid_batch_objective = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -400,6 +405,83 @@ double objective_trampoline(void* userdata, const double* x, size_t n) {
     return value;
 }
 
+JNIEnv* acquire_env(bool* attached) {
+    *attached = false;
+    JNIEnv* env = nullptr;
+    jint status = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if (g_vm->AttachCurrentThread(reinterpret_cast<void**>(&env), nullptr) != JNI_OK) {
+            return nullptr;
+        }
+        *attached = true;
+    }
+    return env;
+}
+
+struct ThreadedBox {
+    jobject callable;
+    jthrowable captured;
+    std::mutex mutex;
+
+    explicit ThreadedBox(jobject callable) : callable(callable), captured(nullptr) {}
+
+    void capture(JNIEnv* env) {
+        std::lock_guard<std::mutex> lock(mutex);
+        take_pending(env, captured);
+    }
+
+    bool errored() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return captured != nullptr;
+    }
+};
+
+void batch_trampoline(void* userdata, const double* points, size_t population, size_t dim,
+                      double* out_scores) {
+    ThreadedBox* box = static_cast<ThreadedBox*>(userdata);
+    double worst = -std::numeric_limits<double>::infinity();
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env == nullptr || box->errored()) {
+        for (size_t i = 0; i < population; ++i) {
+            out_scores[i] = worst;
+        }
+        if (attached) {
+            g_vm->DetachCurrentThread();
+        }
+        return;
+    }
+    jobjectArray grid =
+        env->NewObjectArray(static_cast<jsize>(population), cls_double_array, nullptr);
+    for (size_t i = 0; i < population; ++i) {
+        jdoubleArray row = env->NewDoubleArray(static_cast<jsize>(dim));
+        env->SetDoubleArrayRegion(row, 0, static_cast<jsize>(dim), points + i * dim);
+        env->SetObjectArrayElement(grid, static_cast<jsize>(i), row);
+        env->DeleteLocalRef(row);
+    }
+    jdoubleArray scores =
+        static_cast<jdoubleArray>(env->CallObjectMethod(box->callable, mid_batch_objective, grid));
+    if (env->ExceptionCheck()) {
+        box->capture(env);
+        for (size_t i = 0; i < population; ++i) {
+            out_scores[i] = worst;
+        }
+    } else {
+        jsize length = env->GetArrayLength(scores);
+        jsize count = length < static_cast<jsize>(population) ? length
+                                                              : static_cast<jsize>(population);
+        env->GetDoubleArrayRegion(scores, 0, count, out_scores);
+        for (size_t i = static_cast<size_t>(count); i < population; ++i) {
+            out_scores[i] = worst;
+        }
+        env->DeleteLocalRef(scores);
+    }
+    env->DeleteLocalRef(grid);
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+}
+
 sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
     sentil_smc_config_t config;
     config.samples = static_cast<uint64_t>(samples);
@@ -633,6 +715,22 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     if (mid_objective == nullptr) {
         return JNI_ERR;
     }
+    g_vm = vm;
+    jclass doubleArray = env->FindClass("[D");
+    if (doubleArray == nullptr) {
+        return JNI_ERR;
+    }
+    cls_double_array = static_cast<jclass>(env->NewGlobalRef(doubleArray));
+    env->DeleteLocalRef(doubleArray);
+    jclass batchObjective = env->FindClass("io/github/sedislab/sentil/BatchObjective");
+    if (batchObjective == nullptr) {
+        return JNI_ERR;
+    }
+    mid_batch_objective = env->GetMethodID(batchObjective, "evaluate", "([[D)[D");
+    env->DeleteLocalRef(batchObjective);
+    if (mid_batch_objective == nullptr) {
+        return JNI_ERR;
+    }
     return JNI_VERSION_1_8;
 }
 
@@ -645,7 +743,7 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
                          &cls_rare_result, &cls_synth_result, &cls_chance_report, &cls_witness,
-                         &cls_object, &cls_linked_map, &cls_double}) {
+                         &cls_object, &cls_linked_map, &cls_double, &cls_double_array}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -2824,6 +2922,38 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_cmaEs(
     sentil_error_t code = sentil_cma_es(objective_trampoline, &box, startPoint.data(),
                                         startPoint.size(), boundsPtr, config, outPoint.data(),
                                         &outValue);
+    env->DeleteGlobalRef(box.callable);
+    if (rethrow_captured(env, box.captured)) {
+        return nullptr;
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    std::vector<double> packed(1 + outPoint.size());
+    packed[0] = outValue;
+    for (size_t i = 0; i < outPoint.size(); ++i) {
+        packed[1 + i] = outPoint[i];
+    }
+    return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_cmaEsBatched(
+    JNIEnv* env, jclass, jobject objective, jdoubleArray start, jlong bounds, jlong population,
+    jlong maxGenerations, jdouble initialStep, jdouble tolStep, jlong seed) {
+    DoubleArray startPoint(env, start);
+    const sentil_bounds_t* boundsPtr = bounds == 0 ? nullptr : as_ptr<const sentil_bounds_t>(bounds);
+    sentil_cma_config_t config;
+    config.population = static_cast<size_t>(population);
+    config.max_generations = static_cast<size_t>(maxGenerations);
+    config.initial_step = initialStep;
+    config.tol_step = tolStep;
+    config.seed = static_cast<uint64_t>(seed);
+    ThreadedBox box(env->NewGlobalRef(objective));
+    std::vector<double> outPoint(startPoint.size());
+    double outValue = 0.0;
+    sentil_error_t code = sentil_cma_es_batched(batch_trampoline, &box, startPoint.data(),
+                                                startPoint.size(), boundsPtr, config,
+                                                outPoint.data(), &outValue);
     env->DeleteGlobalRef(box.callable);
     if (rethrow_captured(env, box.captured)) {
         return nullptr;
