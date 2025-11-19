@@ -1,10 +1,8 @@
 package io.github.sedislab.sentil;
 
-/**
- * The smooth-robustness primitives and synthesis numerics the synthesizer, the
- * controller, and the witness search build on. All methods are static; there is
- * nothing to construct.
- */
+import java.util.function.ToDoubleFunction;
+
+/** The smooth-robustness primitives, the synthesis numerics, and the black-box optimizers. */
 public final class Synthesis {
     private Synthesis() {
     }
@@ -72,5 +70,37 @@ public final class Synthesis {
             System.arraycopy(packed, n + i * n, vectors[i], 0, n);
         }
         return new EigenDecomposition(values, vectors);
+    }
+
+    private static Optimum optimum(double[] packed) {
+        double[] point = new double[packed.length - 1];
+        System.arraycopy(packed, 1, point, 0, point.length);
+        return new Optimum(point, packed[0]);
+    }
+
+    /** Maximize a gradient objective from start, optionally inside bounds. */
+    public static Optimum maximize(GradientObjective objective, double[] start, Bounds bounds,
+            long maxIters) throws SentilException {
+        if (bounds == null) {
+            try (Bounds unbounded = Bounds.unbounded(start.length)) {
+                return optimum(NativeLib.maximize(objective, start, unbounded.handle(), maxIters));
+            }
+        }
+        return optimum(NativeLib.maximize(objective, start, bounds.handle(), maxIters));
+    }
+
+    /**
+     * Maximize a scalar objective with gradient-free CMA-ES from start, optionally
+     * inside bounds.
+     */
+    public static Optimum cmaEs(ToDoubleFunction<double[]> objective, double[] start, Bounds bounds,
+            CmaConfig config) throws SentilException {
+        if (bounds == null) {
+            try (Bounds unbounded = Bounds.unbounded(start.length)) {
+                return cmaEs(objective, start, unbounded, config);
+            }
+        }
+        return optimum(NativeLib.cmaEs(objective, start, bounds.handle(), config.population,
+                config.maxGenerations, config.initialStep, config.tolStep, config.seed));
     }
 }

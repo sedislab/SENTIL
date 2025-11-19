@@ -574,4 +574,11 @@ final class NativeLib {
 
     static native double[] formulaSmoothGradient(long formula, long model, double[] initial,
             double[] input, double temperature, int kind) throws SentilException;
+
+    static native double[] maximize(GradientObjective objective, double[] start, long bounds,
+            long maxIters) throws SentilException;
+
+    static native double[] cmaEs(java.util.function.ToDoubleFunction<double[]> objective,
+            double[] start, long bounds, long population, long maxGenerations, double initialStep,
+            double tolStep, long seed) throws SentilException;
 }

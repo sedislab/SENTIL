@@ -3,6 +3,7 @@
 #include <sentil.h>
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,8 @@ jmethodID ctor_witness = nullptr;
 jclass cls_object = nullptr;
 
 jmethodID mid_bernoulli = nullptr;
+jmethodID mid_gradient_objective = nullptr;
+jmethodID mid_objective = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -343,6 +346,60 @@ bool bernoulli_trampoline(void* userdata) {
     return draw == JNI_TRUE;
 }
 
+struct ObjectiveBox {
+    JNIEnv* env;
+    jobject callable;
+    jthrowable captured;
+
+    void capture() {
+        take_pending(env, captured);
+    }
+};
+
+void gradient_trampoline(void* userdata, const double* x, size_t n, double* out_value,
+                         double* out_gradient) {
+    ObjectiveBox* box = static_cast<ObjectiveBox*>(userdata);
+    double worst = -std::numeric_limits<double>::infinity();
+    if (box->captured != nullptr) {
+        *out_value = worst;
+        return;
+    }
+    jdoubleArray point = box->env->NewDoubleArray(static_cast<jsize>(n));
+    jdoubleArray gradient = box->env->NewDoubleArray(static_cast<jsize>(n));
+    box->env->SetDoubleArrayRegion(point, 0, static_cast<jsize>(n), x);
+    jdouble value =
+        box->env->CallDoubleMethod(box->callable, mid_gradient_objective, point, gradient);
+    if (box->env->ExceptionCheck()) {
+        box->capture();
+        *out_value = worst;
+        for (size_t i = 0; i < n; ++i) {
+            out_gradient[i] = 0.0;
+        }
+    } else {
+        *out_value = value;
+        box->env->GetDoubleArrayRegion(gradient, 0, static_cast<jsize>(n), out_gradient);
+    }
+    box->env->DeleteLocalRef(point);
+    box->env->DeleteLocalRef(gradient);
+}
+
+double objective_trampoline(void* userdata, const double* x, size_t n) {
+    ObjectiveBox* box = static_cast<ObjectiveBox*>(userdata);
+    double worst = -std::numeric_limits<double>::infinity();
+    if (box->captured != nullptr) {
+        return worst;
+    }
+    jdoubleArray point = box->env->NewDoubleArray(static_cast<jsize>(n));
+    box->env->SetDoubleArrayRegion(point, 0, static_cast<jsize>(n), x);
+    jdouble value = box->env->CallDoubleMethod(box->callable, mid_objective, point);
+    box->env->DeleteLocalRef(point);
+    if (box->env->ExceptionCheck()) {
+        box->capture();
+        return worst;
+    }
+    return value;
+}
+
 sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
     sentil_smc_config_t config;
     config.samples = static_cast<uint64_t>(samples);
@@ -556,6 +613,24 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     mid_bernoulli = env->GetMethodID(supplier, "getAsBoolean", "()Z");
     env->DeleteLocalRef(supplier);
     if (mid_bernoulli == nullptr) {
+        return JNI_ERR;
+    }
+    jclass gradientObjective = env->FindClass("io/github/sedislab/sentil/GradientObjective");
+    if (gradientObjective == nullptr) {
+        return JNI_ERR;
+    }
+    mid_gradient_objective = env->GetMethodID(gradientObjective, "evaluate", "([D[D)D");
+    env->DeleteLocalRef(gradientObjective);
+    if (mid_gradient_objective == nullptr) {
+        return JNI_ERR;
+    }
+    jclass objective = env->FindClass("java/util/function/ToDoubleFunction");
+    if (objective == nullptr) {
+        return JNI_ERR;
+    }
+    mid_objective = env->GetMethodID(objective, "applyAsDouble", "(Ljava/lang/Object;)D");
+    env->DeleteLocalRef(objective);
+    if (mid_objective == nullptr) {
         return JNI_ERR;
     }
     return JNI_VERSION_1_8;
@@ -2703,6 +2778,63 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaS
     packed[0] = value;
     for (size_t i = 0; i < gradient.size(); ++i) {
         packed[1 + i] = gradient[i];
+    }
+    return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_maximize(
+    JNIEnv* env, jclass, jobject objective, jdoubleArray start, jlong bounds, jlong maxIters) {
+    DoubleArray startPoint(env, start);
+    const sentil_bounds_t* boundsPtr = bounds == 0 ? nullptr : as_ptr<const sentil_bounds_t>(bounds);
+    ObjectiveBox box{env, env->NewGlobalRef(objective), nullptr};
+    std::vector<double> outPoint(startPoint.size());
+    double outValue = 0.0;
+    sentil_error_t code =
+        sentil_maximize(gradient_trampoline, &box, startPoint.data(), startPoint.size(), boundsPtr,
+                        static_cast<size_t>(maxIters), outPoint.data(), &outValue);
+    env->DeleteGlobalRef(box.callable);
+    if (rethrow_captured(env, box.captured)) {
+        return nullptr;
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    std::vector<double> packed(1 + outPoint.size());
+    packed[0] = outValue;
+    for (size_t i = 0; i < outPoint.size(); ++i) {
+        packed[1 + i] = outPoint[i];
+    }
+    return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_cmaEs(
+    JNIEnv* env, jclass, jobject objective, jdoubleArray start, jlong bounds, jlong population,
+    jlong maxGenerations, jdouble initialStep, jdouble tolStep, jlong seed) {
+    DoubleArray startPoint(env, start);
+    const sentil_bounds_t* boundsPtr = bounds == 0 ? nullptr : as_ptr<const sentil_bounds_t>(bounds);
+    sentil_cma_config_t config;
+    config.population = static_cast<size_t>(population);
+    config.max_generations = static_cast<size_t>(maxGenerations);
+    config.initial_step = initialStep;
+    config.tol_step = tolStep;
+    config.seed = static_cast<uint64_t>(seed);
+    ObjectiveBox box{env, env->NewGlobalRef(objective), nullptr};
+    std::vector<double> outPoint(startPoint.size());
+    double outValue = 0.0;
+    sentil_error_t code = sentil_cma_es(objective_trampoline, &box, startPoint.data(),
+                                        startPoint.size(), boundsPtr, config, outPoint.data(),
+                                        &outValue);
+    env->DeleteGlobalRef(box.callable);
+    if (rethrow_captured(env, box.captured)) {
+        return nullptr;
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    std::vector<double> packed(1 + outPoint.size());
+    packed[0] = outValue;
+    for (size_t i = 0; i < outPoint.size(); ++i) {
+        packed[1 + i] = outPoint[i];
     }
     return copy_doubles(env, packed.data(), packed.size());
 }
