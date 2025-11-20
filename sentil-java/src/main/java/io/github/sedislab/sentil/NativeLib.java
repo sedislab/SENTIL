@@ -595,4 +595,11 @@ final class NativeLib {
 
     static native double mineTightestParameter(ParameterFormula make, long[] traces, double lower,
             double upper) throws SentilException;
+
+    static native long[] systemModelCreateCustom(String[] variables, double dt, long horizon,
+            double[] initialState, long inputDimension, Rollout rollout) throws SentilException;
+
+    static native void freeModelBox(long boxPointer);
+
+    static native void rethrowModelError(long boxPointer);
 }

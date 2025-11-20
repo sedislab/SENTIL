@@ -150,15 +150,28 @@ public final class Formula extends NativeResource {
             SmoothConfig smooth) throws SentilException {
         double temperature = smooth == null ? 0.0 : smooth.temperature;
         int kind = smooth == null ? 0 : smooth.kind.code();
-        return NativeLib.findCounterexample(handle(), model.handle(), bounds.handle(), maxIters,
-                temperature, kind, smooth != null);
+        Witness witness = NativeLib.findCounterexample(handle(), model.handle(), bounds.handle(),
+                maxIters, temperature, kind, smooth != null);
+        return surface(model, witness);
     }
 
     /** Search for a violating trajectory globally with restarted CMA-ES on exact robustness. */
     public Witness falsify(SystemModel model, Bounds bounds, CmaConfig config, long restarts)
             throws SentilException {
-        return NativeLib.falsify(handle(), model.handle(), bounds.handle(), config.population,
-                config.maxGenerations, config.initialStep, config.tolStep, config.seed, restarts);
+        Witness witness = NativeLib.falsify(handle(), model.handle(), bounds.handle(),
+                config.population, config.maxGenerations, config.initialStep, config.tolStep,
+                config.seed, restarts);
+        return surface(model, witness);
+    }
+
+    private static Witness surface(SystemModel model, Witness witness) {
+        try {
+            model.rethrowCallbackError();
+        } catch (RuntimeException error) {
+            witness.close();
+            throw error;
+        }
+        return witness;
     }
 
     /**

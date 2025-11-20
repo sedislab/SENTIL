@@ -34,8 +34,10 @@ public final class Synthesis {
         long boundsHandle = bounds == null ? 0L : bounds.handle();
         double temperature = smooth == null ? 0.0 : smooth.temperature;
         int kind = smooth == null ? 0 : smooth.kind.code();
-        return NativeLib.synthesize(model.handle(), spec.handle(), boundsHandle, temperature, kind,
-                smooth != null, maxIters, backend.code(), population);
+        SynthesisResult result = NativeLib.synthesize(model.handle(), spec.handle(), boundsHandle,
+                temperature, kind, smooth != null, maxIters, backend.code(), population);
+        model.rethrowCallbackError();
+        return result;
     }
 
     private static double[] flatten(double[][] matrix, int cols) {

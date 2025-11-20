@@ -1,13 +1,23 @@
 package io.github.sedislab.sentil;
 
 /**
- * A dynamical system the synthesizer drives. Today it is a linear time-invariant
- * model x_{t+1} = A x_t + B u_t. Pass it to {@link Synthesis#synthesize} or a
- * {@link Controller}. A model owns a native handle, so close it when done.
+ * A dynamical system the synthesizer drives, either linear x_{t+1} = A x_t + B u_t or
+ * a host rollout.
  */
 public final class SystemModel extends NativeResource {
+    private final long box;
+
     SystemModel(long handle) {
         super(handle, NativeLib::systemModelDestroy);
+        this.box = 0L;
+    }
+
+    private SystemModel(long handle, long box) {
+        super(handle, h -> {
+            NativeLib.systemModelDestroy(h);
+            NativeLib.freeModelBox(box);
+        });
+        this.box = box;
     }
 
     /** A linear model x_{t+1} = A x_t + B u_t. */
@@ -27,8 +37,26 @@ public final class SystemModel extends NativeResource {
         return flat;
     }
 
+    /** A model whose rollout is a host function. It must be thread-safe. */
+    public static SystemModel custom(String[] variables, double dt, long horizon,
+            double[] initialState, long inputDimension, Rollout rollout) throws SentilException {
+        long[] result = NativeLib.systemModelCreateCustom(variables, dt, horizon, initialState,
+                inputDimension, rollout);
+        return new SystemModel(result[0], result[1]);
+    }
+
     /** The total length of the input sequence the synthesizer optimizes. */
     public long inputDimension() {
         return NativeLib.systemModelInputDimension(handle());
+    }
+
+    long modelBox() {
+        return box;
+    }
+
+    void rethrowCallbackError() {
+        if (box != 0L) {
+            NativeLib.rethrowModelError(box);
+        }
     }
 }
