@@ -131,4 +131,14 @@ public final class Synthesis {
         }
         return NativeLib.mineTightestParameter(make, handles, lower, upper);
     }
+
+    /**
+     * Estimate a rare-event probability over a user-defined simulator by adaptive
+     * multilevel splitting.
+     */
+    public static RareEventEstimate adaptiveMultilevelSplitting(AmsInterface simulator,
+            long particles, double targetScore, long maxSteps, long seed) throws SentilException {
+        return NativeLib.adaptiveMultilevelSplitting(simulator, particles, targetScore, maxSteps,
+                seed);
+    }
 }

@@ -58,6 +58,13 @@ jmethodID mid_system_step = nullptr;
 jmethodID mid_parameter_formula = nullptr;
 jmethodID mid_consume = nullptr;
 jmethodID mid_rollout = nullptr;
+jmethodID mid_ams_state_size = nullptr;
+jmethodID mid_ams_initial = nullptr;
+jmethodID mid_ams_step = nullptr;
+jmethodID mid_ams_terminal = nullptr;
+jmethodID mid_ams_score = nullptr;
+jclass cls_rare_estimate = nullptr;
+jmethodID ctor_rare_estimate = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -675,6 +682,131 @@ void rollout_trampoline(void* userdata, const double* initial, size_t n_state, c
     }
 }
 
+struct AmsBox {
+    jobject simulator;
+    jthrowable captured;
+    std::mutex mutex;
+    size_t state_size;
+
+    AmsBox(jobject simulator, size_t state_size)
+        : simulator(simulator), captured(nullptr), state_size(state_size) {}
+
+    void capture(JNIEnv* env) {
+        std::lock_guard<std::mutex> lock(mutex);
+        take_pending(env, captured);
+    }
+
+    bool errored() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return captured != nullptr;
+    }
+};
+
+void fill_bytes(JNIEnv* env, jbyteArray result, void* out_state, size_t size) {
+    jbyte* bytes = static_cast<jbyte*>(out_state);
+    jsize length = env->GetArrayLength(result);
+    jsize count = length < static_cast<jsize>(size) ? length : static_cast<jsize>(size);
+    env->GetByteArrayRegion(result, 0, count, bytes);
+    for (size_t i = static_cast<size_t>(count); i < size; ++i) {
+        bytes[i] = 0;
+    }
+    env->DeleteLocalRef(result);
+}
+
+jbyteArray state_array(JNIEnv* env, const void* state, size_t size) {
+    jbyteArray array = env->NewByteArray(static_cast<jsize>(size));
+    env->SetByteArrayRegion(array, 0, static_cast<jsize>(size),
+                            static_cast<const jbyte*>(state));
+    return array;
+}
+
+void ams_initial_trampoline(void* userdata, uint64_t seed, void* out_state) {
+    AmsBox* box = static_cast<AmsBox*>(userdata);
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env != nullptr && !box->errored()) {
+        jbyteArray result = static_cast<jbyteArray>(
+            env->CallObjectMethod(box->simulator, mid_ams_initial, static_cast<jlong>(seed)));
+        if (env->ExceptionCheck()) {
+            box->capture(env);
+        } else {
+            fill_bytes(env, result, out_state, box->state_size);
+        }
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+}
+
+void ams_step_trampoline(void* userdata, const void* state, uint64_t seed, void* out_state) {
+    AmsBox* box = static_cast<AmsBox*>(userdata);
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env != nullptr && !box->errored()) {
+        jbyteArray current = state_array(env, state, box->state_size);
+        jbyteArray result = static_cast<jbyteArray>(
+            env->CallObjectMethod(box->simulator, mid_ams_step, current, static_cast<jlong>(seed)));
+        if (env->ExceptionCheck()) {
+            box->capture(env);
+        } else {
+            fill_bytes(env, result, out_state, box->state_size);
+        }
+        env->DeleteLocalRef(current);
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+}
+
+bool ams_terminal_trampoline(void* userdata, const void* state, bool* out_in_rare_event) {
+    AmsBox* box = static_cast<AmsBox*>(userdata);
+    *out_in_rare_event = false;
+    bool ended = false;
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env != nullptr && !box->errored()) {
+        jbyteArray current = state_array(env, state, box->state_size);
+        jbooleanArray inRareEvent = env->NewBooleanArray(1);
+        jboolean terminal =
+            env->CallBooleanMethod(box->simulator, mid_ams_terminal, current, inRareEvent);
+        if (env->ExceptionCheck()) {
+            box->capture(env);
+        } else {
+            ended = terminal == JNI_TRUE;
+            jboolean rare = JNI_FALSE;
+            env->GetBooleanArrayRegion(inRareEvent, 0, 1, &rare);
+            *out_in_rare_event = rare == JNI_TRUE;
+        }
+        env->DeleteLocalRef(current);
+        env->DeleteLocalRef(inRareEvent);
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+    return ended;
+}
+
+double ams_score_trampoline(void* userdata, const void* state) {
+    AmsBox* box = static_cast<AmsBox*>(userdata);
+    double score = -std::numeric_limits<double>::infinity();
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env != nullptr && !box->errored()) {
+        jbyteArray current = state_array(env, state, box->state_size);
+        jdouble value = env->CallDoubleMethod(box->simulator, mid_ams_score, current);
+        if (env->ExceptionCheck()) {
+            box->capture(env);
+        } else {
+            score = value;
+        }
+        env->DeleteLocalRef(current);
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+    return score;
+}
+
 sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
     sentil_smc_config_t config;
     config.samples = static_cast<uint64_t>(samples);
@@ -970,6 +1102,24 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     if (mid_rollout == nullptr) {
         return JNI_ERR;
     }
+    jclass ams = env->FindClass("io/github/sedislab/sentil/AmsInterface");
+    if (ams == nullptr) {
+        return JNI_ERR;
+    }
+    mid_ams_state_size = env->GetMethodID(ams, "stateSize", "()I");
+    mid_ams_initial = env->GetMethodID(ams, "initialState", "(J)[B");
+    mid_ams_step = env->GetMethodID(ams, "step", "([BJ)[B");
+    mid_ams_terminal = env->GetMethodID(ams, "isTerminal", "([B[Z)Z");
+    mid_ams_score = env->GetMethodID(ams, "score", "([B)D");
+    env->DeleteLocalRef(ams);
+    if (mid_ams_state_size == nullptr || mid_ams_initial == nullptr || mid_ams_step == nullptr ||
+        mid_ams_terminal == nullptr || mid_ams_score == nullptr) {
+        return JNI_ERR;
+    }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/RareEventEstimate", "(DJ)V",
+                          &cls_rare_estimate, &ctor_rare_estimate)) {
+        return JNI_ERR;
+    }
     return JNI_VERSION_1_8;
 }
 
@@ -982,7 +1132,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
                          &cls_rare_result, &cls_synth_result, &cls_chance_report, &cls_witness,
-                         &cls_object, &cls_linked_map, &cls_double, &cls_double_array}) {
+                         &cls_rare_estimate, &cls_object, &cls_linked_map, &cls_double,
+                         &cls_double_array}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
             *slot = nullptr;
@@ -3328,4 +3479,34 @@ JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_mineTightestP
         return 0.0;
     }
     return out;
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_adaptiveMultilevelSplitting(
+    JNIEnv* env, jclass, jobject simulator, jlong particles, jdouble targetScore, jlong maxSteps,
+    jlong seed) {
+    jint stateSize = env->CallIntMethod(simulator, mid_ams_state_size);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    AmsBox box(env->NewGlobalRef(simulator), static_cast<size_t>(stateSize));
+    sentil_ams_interface_t interface;
+    interface.state_size = static_cast<size_t>(stateSize);
+    interface.userdata = &box;
+    interface.initial_state = ams_initial_trampoline;
+    interface.step = ams_step_trampoline;
+    interface.is_terminal = ams_terminal_trampoline;
+    interface.score = ams_score_trampoline;
+    sentil_rare_event_estimate_t out;
+    sentil_error_t code = sentil_adaptive_multilevel_splitting(
+        interface, static_cast<size_t>(particles), targetScore, static_cast<uint64_t>(maxSteps),
+        static_cast<uint64_t>(seed), &out);
+    env->DeleteGlobalRef(box.simulator);
+    if (rethrow_captured(env, box.captured)) {
+        return nullptr;
+    }
+    if (failed(env, code)) {
+        return nullptr;
+    }
+    return env->NewObject(cls_rare_estimate, ctor_rare_estimate, out.probability,
+                          static_cast<jlong>(out.simulations));
 }

@@ -602,4 +602,7 @@ final class NativeLib {
     static native void freeModelBox(long boxPointer);
 
     static native void rethrowModelError(long boxPointer);
+
+    static native RareEventEstimate adaptiveMultilevelSplitting(AmsInterface simulator,
+            long particles, double targetScore, long maxSteps, long seed) throws SentilException;
 }
