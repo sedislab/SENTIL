@@ -125,8 +125,10 @@ public final class Formula extends NativeResource {
     /** Estimate this P-wrapped formula by rare-event splitting with the given settings. */
     public RareEventResult checkRareEvent(StochasticSystem system, RareEventConfig config)
             throws SentilException {
-        return NativeLib.formulaCheckRareEvent(handle(), system.handle(), config.particles,
-                config.margin, config.seed);
+        RareEventResult result = NativeLib.formulaCheckRareEvent(handle(), system.handle(),
+                config.particles, config.margin, config.seed);
+        system.rethrowCallbackError();
+        return result;
     }
 
     /** The differentiable surrogate for robustness, with the default smoothing. */

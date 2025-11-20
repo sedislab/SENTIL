@@ -585,4 +585,11 @@ final class NativeLib {
     static native double[] cmaEsBatched(BatchObjective objective, double[] start, long bounds,
             long population, long maxGenerations, double initialStep, double tolStep, long seed)
             throws SentilException;
+
+    static native long[] stochasticSystemCreateCustom(String[] variables, double dt, long horizon,
+            SystemInit init, SystemStep step) throws SentilException;
+
+    static native void freeSystemBox(long boxPointer);
+
+    static native void rethrowSystemError(long boxPointer);
 }

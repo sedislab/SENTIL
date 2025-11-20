@@ -25,6 +25,9 @@ public final class ChanceConstraint extends NativeResource {
     /** Validate the constraint over a given number of sampled trajectories. */
     public ChanceReport validate(StochasticSystem system, long samples, long seed)
             throws SentilException {
-        return NativeLib.chanceConstraintValidate(handle(), system.handle(), samples, seed);
+        ChanceReport report =
+                NativeLib.chanceConstraintValidate(handle(), system.handle(), samples, seed);
+        system.rethrowCallbackError();
+        return report;
     }
 }

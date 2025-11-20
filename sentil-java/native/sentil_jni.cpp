@@ -53,6 +53,8 @@ jmethodID mid_objective = nullptr;
 JavaVM* g_vm = nullptr;
 jclass cls_double_array = nullptr;
 jmethodID mid_batch_objective = nullptr;
+jmethodID mid_system_init = nullptr;
+jmethodID mid_system_step = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -482,6 +484,87 @@ void batch_trampoline(void* userdata, const double* points, size_t population, s
     }
 }
 
+struct SystemBox {
+    jobject init;
+    jobject step;
+    jthrowable captured;
+    std::mutex mutex;
+
+    SystemBox(jobject init, jobject step) : init(init), step(step), captured(nullptr) {}
+
+    void capture(JNIEnv* env) {
+        std::lock_guard<std::mutex> lock(mutex);
+        take_pending(env, captured);
+    }
+
+    bool errored() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return captured != nullptr;
+    }
+};
+
+void fill_state(JNIEnv* env, jdoubleArray result, double* out_state, size_t n) {
+    jsize length = env->GetArrayLength(result);
+    jsize count = length < static_cast<jsize>(n) ? length : static_cast<jsize>(n);
+    env->GetDoubleArrayRegion(result, 0, count, out_state);
+    for (size_t i = static_cast<size_t>(count); i < n; ++i) {
+        out_state[i] = 0.0;
+    }
+    env->DeleteLocalRef(result);
+}
+
+void zero_state(double* out_state, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        out_state[i] = 0.0;
+    }
+}
+
+void system_init_trampoline(void* userdata, uint64_t seed, double* out_state, size_t n) {
+    SystemBox* box = static_cast<SystemBox*>(userdata);
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env == nullptr || box->errored()) {
+        zero_state(out_state, n);
+    } else {
+        jdoubleArray result = static_cast<jdoubleArray>(
+            env->CallObjectMethod(box->init, mid_system_init, static_cast<jlong>(seed)));
+        if (env->ExceptionCheck()) {
+            box->capture(env);
+            zero_state(out_state, n);
+        } else {
+            fill_state(env, result, out_state, n);
+        }
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+}
+
+void system_step_trampoline(void* userdata, const double* prev, size_t n, double time,
+                            uint64_t seed, double* out_state) {
+    SystemBox* box = static_cast<SystemBox*>(userdata);
+    bool attached = false;
+    JNIEnv* env = acquire_env(&attached);
+    if (env == nullptr || box->errored()) {
+        zero_state(out_state, n);
+    } else {
+        jdoubleArray previous = env->NewDoubleArray(static_cast<jsize>(n));
+        env->SetDoubleArrayRegion(previous, 0, static_cast<jsize>(n), prev);
+        jdoubleArray result = static_cast<jdoubleArray>(env->CallObjectMethod(
+            box->step, mid_system_step, previous, time, static_cast<jlong>(seed)));
+        if (env->ExceptionCheck()) {
+            box->capture(env);
+            zero_state(out_state, n);
+        } else {
+            fill_state(env, result, out_state, n);
+        }
+        env->DeleteLocalRef(previous);
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+}
+
 sentil_smc_config_t smc_config(jlong samples, jdouble confidence, jlong seed, jint method) {
     sentil_smc_config_t config;
     config.samples = static_cast<uint64_t>(samples);
@@ -729,6 +812,24 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     mid_batch_objective = env->GetMethodID(batchObjective, "evaluate", "([[D)[D");
     env->DeleteLocalRef(batchObjective);
     if (mid_batch_objective == nullptr) {
+        return JNI_ERR;
+    }
+    jclass systemInit = env->FindClass("io/github/sedislab/sentil/SystemInit");
+    if (systemInit == nullptr) {
+        return JNI_ERR;
+    }
+    mid_system_init = env->GetMethodID(systemInit, "init", "(J)[D");
+    env->DeleteLocalRef(systemInit);
+    if (mid_system_init == nullptr) {
+        return JNI_ERR;
+    }
+    jclass systemStep = env->FindClass("io/github/sedislab/sentil/SystemStep");
+    if (systemStep == nullptr) {
+        return JNI_ERR;
+    }
+    mid_system_step = env->GetMethodID(systemStep, "step", "([DDJ)[D");
+    env->DeleteLocalRef(systemStep);
+    if (mid_system_step == nullptr) {
         return JNI_ERR;
     }
     return JNI_VERSION_1_8;
@@ -2935,6 +3036,56 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_cmaEs(
         packed[1 + i] = outPoint[i];
     }
     return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jlongArray JNICALL Java_io_github_sedislab_sentil_NativeLib_stochasticSystemCreateCustom(
+    JNIEnv* env, jclass, jobjectArray variables, jdouble dt, jlong horizon, jobject init,
+    jobject step) {
+    SystemBox* box = new SystemBox(env->NewGlobalRef(init), env->NewGlobalRef(step));
+    sentil_system_callbacks_t callbacks;
+    callbacks.userdata = box;
+    callbacks.init = system_init_trampoline;
+    callbacks.step = system_step_trampoline;
+    StringArray names(env, variables);
+    sentil_stochastic_system_t* system = sentil_stochastic_system_create(
+        names.data(), names.size(), dt, static_cast<size_t>(horizon), callbacks);
+    if (system == nullptr) {
+        env->DeleteGlobalRef(box->init);
+        env->DeleteGlobalRef(box->step);
+        delete box;
+        raise_last(env);
+        return nullptr;
+    }
+    jlong out[2] = {reinterpret_cast<jlong>(system), reinterpret_cast<jlong>(box)};
+    jlongArray result = env->NewLongArray(2);
+    env->SetLongArrayRegion(result, 0, 2, out);
+    return result;
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_freeSystemBox(JNIEnv* env, jclass,
+                                                                             jlong boxPointer) {
+    SystemBox* box = reinterpret_cast<SystemBox*>(boxPointer);
+    if (box == nullptr) {
+        return;
+    }
+    if (box->init != nullptr) {
+        env->DeleteGlobalRef(box->init);
+    }
+    if (box->step != nullptr) {
+        env->DeleteGlobalRef(box->step);
+    }
+    if (box->captured != nullptr) {
+        env->DeleteGlobalRef(box->captured);
+    }
+    delete box;
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_rethrowSystemError(JNIEnv* env,
+                                                                                  jclass,
+                                                                                  jlong boxPointer) {
+    SystemBox* box = reinterpret_cast<SystemBox*>(boxPointer);
+    std::lock_guard<std::mutex> lock(box->mutex);
+    rethrow_captured(env, box->captured);
 }
 
 JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_cmaEsBatched(
