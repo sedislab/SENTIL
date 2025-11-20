@@ -55,6 +55,8 @@ jclass cls_double_array = nullptr;
 jmethodID mid_batch_objective = nullptr;
 jmethodID mid_system_init = nullptr;
 jmethodID mid_system_step = nullptr;
+jmethodID mid_parameter_formula = nullptr;
+jmethodID mid_consume = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -405,6 +407,28 @@ double objective_trampoline(void* userdata, const double* x, size_t n) {
         return worst;
     }
     return value;
+}
+
+sentil_formula_t* make_trampoline(void* userdata, double param) {
+    ObjectiveBox* box = static_cast<ObjectiveBox*>(userdata);
+    if (box->captured != nullptr) {
+        return nullptr;
+    }
+    jobject formula = box->env->CallObjectMethod(box->callable, mid_parameter_formula, param);
+    if (box->env->ExceptionCheck()) {
+        box->capture();
+        return nullptr;
+    }
+    if (formula == nullptr) {
+        return nullptr;
+    }
+    jlong handle = box->env->CallLongMethod(formula, mid_consume);
+    box->env->DeleteLocalRef(formula);
+    if (box->env->ExceptionCheck()) {
+        box->capture();
+        return nullptr;
+    }
+    return reinterpret_cast<sentil_formula_t*>(handle);
 }
 
 JNIEnv* acquire_env(bool* attached) {
@@ -830,6 +854,25 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     mid_system_step = env->GetMethodID(systemStep, "step", "([DDJ)[D");
     env->DeleteLocalRef(systemStep);
     if (mid_system_step == nullptr) {
+        return JNI_ERR;
+    }
+    jclass parameterFormula = env->FindClass("io/github/sedislab/sentil/ParameterFormula");
+    if (parameterFormula == nullptr) {
+        return JNI_ERR;
+    }
+    mid_parameter_formula = env->GetMethodID(parameterFormula, "make",
+                                             "(D)Lio/github/sedislab/sentil/Formula;");
+    env->DeleteLocalRef(parameterFormula);
+    if (mid_parameter_formula == nullptr) {
+        return JNI_ERR;
+    }
+    jclass resource = env->FindClass("io/github/sedislab/sentil/NativeResource");
+    if (resource == nullptr) {
+        return JNI_ERR;
+    }
+    mid_consume = env->GetMethodID(resource, "consume", "()J");
+    env->DeleteLocalRef(resource);
+    if (mid_consume == nullptr) {
         return JNI_ERR;
     }
     return JNI_VERSION_1_8;
@@ -3118,4 +3161,27 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_sedislab_sentil_NativeLib_cmaEsBat
         packed[1 + i] = outPoint[i];
     }
     return copy_doubles(env, packed.data(), packed.size());
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_mineTightestParameter(
+    JNIEnv* env, jclass, jobject make, jlongArray traces, jdouble lower, jdouble upper) {
+    ObjectiveBox box{env, env->NewGlobalRef(make), nullptr};
+    jsize count = env->GetArrayLength(traces);
+    jlong* handles = env->GetLongArrayElements(traces, nullptr);
+    std::vector<const sentil_trace_t*> traceList(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        traceList[static_cast<size_t>(i)] = as_ptr<const sentil_trace_t>(handles[i]);
+    }
+    env->ReleaseLongArrayElements(traces, handles, JNI_ABORT);
+    double out = 0.0;
+    sentil_error_t code = sentil_mine_tightest_parameter(
+        make_trampoline, &box, traceList.data(), static_cast<size_t>(count), lower, upper, &out);
+    env->DeleteGlobalRef(box.callable);
+    if (rethrow_captured(env, box.captured)) {
+        return 0.0;
+    }
+    if (failed(env, code)) {
+        return 0.0;
+    }
+    return out;
 }

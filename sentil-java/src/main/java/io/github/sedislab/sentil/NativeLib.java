@@ -592,4 +592,7 @@ final class NativeLib {
     static native void freeSystemBox(long boxPointer);
 
     static native void rethrowSystemError(long boxPointer);
+
+    static native double mineTightestParameter(ParameterFormula make, long[] traces, double lower,
+            double upper) throws SentilException;
 }

@@ -1,5 +1,6 @@
 package io.github.sedislab.sentil;
 
+import java.util.List;
 import java.util.function.ToDoubleFunction;
 
 /** The smooth-robustness primitives, the synthesis numerics, and the black-box optimizers. */
@@ -114,5 +115,18 @@ public final class Synthesis {
         }
         return optimum(NativeLib.cmaEsBatched(objective, start, bounds.handle(), config.population,
                 config.maxGenerations, config.initialStep, config.tolStep, config.seed));
+    }
+
+    /**
+     * The tightest parameter in [lower, upper] for which the formula make builds holds
+     * on every trace.
+     */
+    public static double mineTightestParameter(ParameterFormula make, List<Trace> traces,
+            double lower, double upper) throws SentilException {
+        long[] handles = new long[traces.size()];
+        for (int i = 0; i < handles.length; i++) {
+            handles[i] = traces.get(i).handle();
+        }
+        return NativeLib.mineTightestParameter(make, handles, lower, upper);
     }
 }
