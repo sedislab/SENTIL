@@ -65,6 +65,14 @@ jmethodID mid_ams_terminal = nullptr;
 jmethodID mid_ams_score = nullptr;
 jclass cls_rare_estimate = nullptr;
 jmethodID ctor_rare_estimate = nullptr;
+jclass cls_spec_smc = nullptr;
+jmethodID ctor_spec_smc = nullptr;
+jclass cls_spec_sprt = nullptr;
+jmethodID ctor_spec_sprt = nullptr;
+jclass cls_spec_ams = nullptr;
+jmethodID ctor_spec_ams = nullptr;
+jclass cls_gpu_estimate = nullptr;
+jmethodID ctor_gpu_estimate = nullptr;
 
 jclass cls_linked_map = nullptr;
 jmethodID ctor_linked_map = nullptr;
@@ -1120,6 +1128,22 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
                           &cls_rare_estimate, &ctor_rare_estimate)) {
         return JNI_ERR;
     }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/SpecSmcSettings", "(DJ)V", &cls_spec_smc,
+                          &ctor_spec_smc)) {
+        return JNI_ERR;
+    }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/SpecSprtSettings", "(DDDDJ)V",
+                          &cls_spec_sprt, &ctor_spec_sprt)) {
+        return JNI_ERR;
+    }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/SpecAmsSettings", "(JJ)V", &cls_spec_ams,
+                          &ctor_spec_ams)) {
+        return JNI_ERR;
+    }
+    if (!cache_class_ctor(env, "io/github/sedislab/sentil/GpuSplittingEstimate", "(DJI)V",
+                          &cls_gpu_estimate, &ctor_gpu_estimate)) {
+        return JNI_ERR;
+    }
     return JNI_VERSION_1_8;
 }
 
@@ -1132,7 +1156,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
                          &cls_sample, &cls_robustness, &cls_interval, &cls_confidence,
                          &cls_smc_result, &cls_distribution, &cls_sprt_result, &cls_bayes_result,
                          &cls_rare_result, &cls_synth_result, &cls_chance_report, &cls_witness,
-                         &cls_rare_estimate, &cls_object, &cls_linked_map, &cls_double,
+                         &cls_rare_estimate, &cls_spec_smc, &cls_spec_sprt, &cls_spec_ams,
+                         &cls_gpu_estimate, &cls_object, &cls_linked_map, &cls_double,
                          &cls_double_array}) {
         if (*slot != nullptr) {
             env->DeleteGlobalRef(*slot);
@@ -3509,4 +3534,189 @@ JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_adaptiveMulti
     }
     return env->NewObject(cls_rare_estimate, ctor_rare_estimate, out.probability,
                           static_cast<jlong>(out.simulations));
+}
+
+static jlong return_spec_builder(JNIEnv* env, sentil_spec_builder_t* builder) {
+    if (builder == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(builder);
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_specRegistryAvailable(
+    JNIEnv* env, jclass) {
+    size_t count = 0;
+    char** names = sentil_spec_registry_available(&count);
+    if (names == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, names, count);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderCreate(JNIEnv* env,
+                                                                                  jclass,
+                                                                                  jstring name) {
+    Utf8 spec(env, name);
+    return return_spec_builder(env, sentil_spec_builder_create(spec.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderFromFile(JNIEnv* env,
+                                                                                    jclass,
+                                                                                    jstring path) {
+    Utf8 location(env, path);
+    return return_spec_builder(env, sentil_spec_builder_from_file(location.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderWithVariant(
+    JNIEnv* env, jclass, jlong handle, jstring variant) {
+    Utf8 name(env, variant);
+    return return_spec_builder(
+        env, sentil_spec_builder_with_variant(as_ptr<sentil_spec_builder_t>(handle), name.c()));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderWithParam(
+    JNIEnv* env, jclass, jlong handle, jstring name, jdouble value) {
+    Utf8 parameter(env, name);
+    return return_spec_builder(env, sentil_spec_builder_with_param(
+                                        as_ptr<sentil_spec_builder_t>(handle), parameter.c(), value));
+}
+
+JNIEXPORT jobjectArray JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderAvailableVariants(
+    JNIEnv* env, jclass, jlong handle) {
+    size_t count = 0;
+    char** variants =
+        sentil_spec_builder_available_variants(as_ptr<const sentil_spec_builder_t>(handle), &count);
+    if (variants == nullptr) {
+        if (sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(env);
+            return nullptr;
+        }
+        return env->NewObjectArray(0, cls_string, nullptr);
+    }
+    return owned_string_array(env, variants, count);
+}
+
+JNIEXPORT jstring JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderBuildDeterministic(
+    JNIEnv* env, jclass, jlong handle) {
+    char* text = sentil_spec_builder_build_deterministic(as_ptr<const sentil_spec_builder_t>(handle));
+    if (text == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_string(env, text);
+}
+
+JNIEXPORT jstring JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderBuildProbabilistic(
+    JNIEnv* env, jclass, jlong handle) {
+    char* text = sentil_spec_builder_build_probabilistic(as_ptr<const sentil_spec_builder_t>(handle));
+    if (text == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_string(env, text);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderBuildFormula(
+    JNIEnv* env, jclass, jlong handle) {
+    return return_formula(
+        env, sentil_spec_builder_build_formula(as_ptr<const sentil_spec_builder_t>(handle)));
+}
+
+JNIEXPORT jlong JNICALL
+Java_io_github_sedislab_sentil_NativeLib_specBuilderBuildProbabilisticFormula(JNIEnv* env, jclass,
+                                                                              jlong handle) {
+    return return_formula(env, sentil_spec_builder_build_probabilistic_formula(
+                                   as_ptr<const sentil_spec_builder_t>(handle)));
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderBuildLiftingRegistry(
+    JNIEnv* env, jclass, jlong handle) {
+    sentil_lifting_registry_t* registry =
+        sentil_spec_builder_build_lifting_registry(as_ptr<const sentil_spec_builder_t>(handle));
+    if (registry == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(registry);
+}
+
+JNIEXPORT jstring JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderParametersJson(
+    JNIEnv* env, jclass, jlong handle) {
+    char* json = sentil_spec_builder_parameters_json(as_ptr<const sentil_spec_builder_t>(handle));
+    if (json == nullptr) {
+        raise_last(env);
+        return nullptr;
+    }
+    return owned_string(env, json);
+}
+
+JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderIntoMonitor(
+    JNIEnv* env, jclass, jlong handle) {
+    sentil_monitor_t* monitor =
+        sentil_spec_builder_into_monitor(as_ptr<sentil_spec_builder_t>(handle));
+    if (monitor == nullptr) {
+        raise_last(env);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(monitor);
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderSmcSettings(
+    JNIEnv* env, jclass, jlong handle) {
+    sentil_spec_smc_settings_t out;
+    if (!sentil_spec_builder_smc_settings(as_ptr<const sentil_spec_builder_t>(handle), &out)) {
+        return nullptr;
+    }
+    return env->NewObject(cls_spec_smc, ctor_spec_smc, out.confidence,
+                          static_cast<jlong>(out.sample_budget));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderSprtSettings(
+    JNIEnv* env, jclass, jlong handle) {
+    sentil_spec_sprt_settings_t out;
+    if (!sentil_spec_builder_sprt_settings(as_ptr<const sentil_spec_builder_t>(handle), &out)) {
+        return nullptr;
+    }
+    return env->NewObject(cls_spec_sprt, ctor_spec_sprt, out.p0, out.p1, out.alpha, out.beta,
+                          static_cast<jlong>(out.max_samples));
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderAmsSettings(
+    JNIEnv* env, jclass, jlong handle) {
+    sentil_spec_ams_settings_t out;
+    if (!sentil_spec_builder_ams_settings(as_ptr<const sentil_spec_builder_t>(handle), &out)) {
+        return nullptr;
+    }
+    return env->NewObject(cls_spec_ams, ctor_spec_ams, static_cast<jlong>(out.num_particles),
+                          static_cast<jlong>(out.max_steps));
+}
+
+JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_specBuilderDestroy(JNIEnv*, jclass,
+                                                                                  jlong handle) {
+    sentil_spec_builder_destroy(as_ptr<sentil_spec_builder_t>(handle));
+}
+
+JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_gpuIsAvailable(JNIEnv*, jclass) {
+    return sentil_gpu_is_available() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jobject JNICALL Java_io_github_sedislab_sentil_NativeLib_formulaCheckRareEventGpu(
+    JNIEnv* env, jclass, jlong formula, jlong model, jlong particles, jdouble margin, jlong seed) {
+    sentil_rare_event_config_t config;
+    config.particles = static_cast<size_t>(particles);
+    config.margin = margin;
+    config.seed = static_cast<uint64_t>(seed);
+    sentil_gpu_splitting_estimate_t out;
+    if (failed(env, sentil_formula_check_rare_event_gpu(as_ptr<const sentil_formula_t>(formula),
+                                                        as_ptr<const sentil_sim_model_t>(model),
+                                                        &config, &out))) {
+        return nullptr;
+    }
+    return env->NewObject(cls_gpu_estimate, ctor_gpu_estimate, out.violation_probability,
+                          static_cast<jlong>(out.particles), static_cast<jint>(out.levels));
 }

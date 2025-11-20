@@ -605,4 +605,44 @@ final class NativeLib {
 
     static native RareEventEstimate adaptiveMultilevelSplitting(AmsInterface simulator,
             long particles, double targetScore, long maxSteps, long seed) throws SentilException;
+
+    static native String[] specRegistryAvailable() throws SentilException;
+
+    static native long specBuilderCreate(String name) throws SentilException;
+
+    static native long specBuilderFromFile(String path) throws SentilException;
+
+    static native long specBuilderWithVariant(long handle, String variant) throws SentilException;
+
+    static native long specBuilderWithParam(long handle, String name, double value)
+            throws SentilException;
+
+    static native String[] specBuilderAvailableVariants(long handle) throws SentilException;
+
+    static native String specBuilderBuildDeterministic(long handle) throws SentilException;
+
+    static native String specBuilderBuildProbabilistic(long handle) throws SentilException;
+
+    static native long specBuilderBuildFormula(long handle) throws SentilException;
+
+    static native long specBuilderBuildProbabilisticFormula(long handle) throws SentilException;
+
+    static native long specBuilderBuildLiftingRegistry(long handle) throws SentilException;
+
+    static native String specBuilderParametersJson(long handle) throws SentilException;
+
+    static native long specBuilderIntoMonitor(long handle) throws SentilException;
+
+    static native SpecSmcSettings specBuilderSmcSettings(long handle);
+
+    static native SpecSprtSettings specBuilderSprtSettings(long handle);
+
+    static native SpecAmsSettings specBuilderAmsSettings(long handle);
+
+    static native void specBuilderDestroy(long handle);
+
+    static native boolean gpuIsAvailable();
+
+    static native GpuSplittingEstimate formulaCheckRareEventGpu(long formula, long model,
+            long particles, double margin, long seed) throws SentilException;
 }

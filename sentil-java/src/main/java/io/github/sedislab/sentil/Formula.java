@@ -204,6 +204,16 @@ public final class Formula extends NativeResource {
         return new InputGradient(packed[0], gradient);
     }
 
+    /**
+     * Estimate this P &gt;= p (always[0, b] psi) formula on the GPU by fixed-effort
+     * multilevel splitting.
+     */
+    public GpuSplittingEstimate checkRareEventGpu(SimModel model, RareEventConfig config)
+            throws SentilException {
+        return NativeLib.formulaCheckRareEventGpu(handle(), model.handle(), config.particles,
+                config.margin, config.seed);
+    }
+
     /** The negation of this formula. */
     public Formula not() throws SentilException {
         return new Formula(NativeLib.formulaNot(consume()));

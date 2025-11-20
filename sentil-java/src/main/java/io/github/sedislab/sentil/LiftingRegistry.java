@@ -5,8 +5,12 @@ import java.util.List;
 
 /** The per-variable noise models that lift a deterministic trace to a stochastic ensemble. */
 public final class LiftingRegistry extends NativeResource {
+    LiftingRegistry(long handle) {
+        super(handle, NativeLib::liftingDestroy);
+    }
+
     public LiftingRegistry() throws SentilException {
-        super(NativeLib.liftingCreate(), NativeLib::liftingDestroy);
+        this(NativeLib.liftingCreate());
     }
 
     /** Attach a noise model to a variable. The model is consumed. */
