@@ -36,6 +36,36 @@ classdef Formula < handle
             obj.assertOpen();
             s = sentil_mex('formula_to_json', obj.Handle);
         end
+
+        function r = robustness(obj, trace)
+            %ROBUSTNESS The robustness margin over a trace.
+            obj.assertOpen();
+            r = sentil_mex('formula_robustness', obj.Handle, trace.Handle);
+        end
+
+        function r = robustness_dense(obj, trace)
+            %ROBUSTNESS_DENSE The dense-time robustness margin over a trace.
+            obj.assertOpen();
+            r = sentil_mex('formula_robustness_dense', obj.Handle, trace.Handle);
+        end
+
+        function r = robustness_signal(obj, trace)
+            %ROBUSTNESS_SIGNAL The robustness at every sample, as a row vector.
+            obj.assertOpen();
+            r = sentil_mex('formula_robustness_signal', obj.Handle, trace.Handle);
+        end
+
+        function r = robustness_dense_signal(obj, trace)
+            %ROBUSTNESS_DENSE_SIGNAL Dense robustness at every sample, as a row vector.
+            obj.assertOpen();
+            r = sentil_mex('formula_robustness_dense_signal', obj.Handle, trace.Handle);
+        end
+
+        function v = violations(obj, trace)
+            %VIOLATIONS The time spans where the formula fails, as [start, end] rows.
+            obj.assertOpen();
+            v = sentil_mex('formula_violations', obj.Handle, trace.Handle);
+        end
     end
 
     methods (Access = private)

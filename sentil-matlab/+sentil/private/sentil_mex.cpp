@@ -139,6 +139,52 @@ mxArray* make_string_array(char** strings, size_t count) {
     return cell;
 }
 
+const double* get_doubles(const mxArray* arr, size_t* count) {
+    if (arr == nullptr || !mxIsDouble(arr) || mxIsComplex(arr)) {
+        fail("expected a real double array");
+    }
+    *count = mxGetNumberOfElements(arr);
+    return mxGetDoubles(arr);
+}
+
+double get_scalar(const mxArray* arr) {
+    // mxIsDouble holds for a complex array, and mxGetDoubles returns null for one,
+    // so the complex test has to come before the dereference.
+    if (arr == nullptr || !mxIsDouble(arr) || mxIsComplex(arr) ||
+        mxGetNumberOfElements(arr) != 1) {
+        fail("expected a real scalar");
+    }
+    return *mxGetDoubles(arr);
+}
+
+// A caller-declared dimension has to agree with the array it describes, or the
+// engine reads past the end of a MATLAB-owned buffer.
+void need_length(size_t actual, size_t declared, const char* what) {
+    if (actual != declared) {
+        fail(std::string("expected ") + std::to_string(declared) + " elements in " + what +
+             " but got " + std::to_string(actual));
+    }
+}
+
+mxArray* make_doubles(const double* data, size_t n) {
+    mxArray* arr = mxCreateDoubleMatrix(1, static_cast<mwSize>(n), mxREAL);
+    double* out = mxGetDoubles(arr);
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = data[i];
+    }
+    return arr;
+}
+
+mxArray* make_intervals(const sentil_interval_t* spans, size_t count) {
+    mxArray* arr = mxCreateDoubleMatrix(static_cast<mwSize>(count), 2, mxREAL);
+    double* out = mxGetDoubles(arr);
+    for (size_t i = 0; i < count; ++i) {
+        out[i] = spans[i].start;
+        out[count + i] = spans[i].end;
+    }
+    return arr;
+}
+
 }  // namespace
 
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -179,6 +225,118 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         char* json = sentil_formula_to_json(get_handle<sentil_formula_t>(prhs[1]));
         plhs[0] = make_string(json);
         sentil_free_string(json);
+    } else if (cmd == "formula_robustness") {
+        need(nrhs, 3);
+        double value = 0.0;
+        check(sentil_formula_robustness(get_handle<sentil_formula_t>(prhs[1]),
+                                        get_handle<sentil_trace_t>(prhs[2]), &value));
+        plhs[0] = mxCreateDoubleScalar(value);
+    } else if (cmd == "formula_robustness_dense") {
+        need(nrhs, 3);
+        double value = 0.0;
+        check(sentil_formula_robustness_dense(get_handle<sentil_formula_t>(prhs[1]),
+                                              get_handle<sentil_trace_t>(prhs[2]), &value));
+        plhs[0] = mxCreateDoubleScalar(value);
+    } else if (cmd == "formula_robustness_signal") {
+        need(nrhs, 3);
+        size_t len = 0;
+        double* signal = sentil_formula_robustness_signal(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &len);
+        if (signal == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_doubles(signal, len);
+        sentil_free_doubles(signal, len);
+    } else if (cmd == "formula_robustness_dense_signal") {
+        need(nrhs, 3);
+        size_t len = 0;
+        double* signal = sentil_formula_robustness_dense_signal(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &len);
+        if (signal == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_doubles(signal, len);
+        sentil_free_doubles(signal, len);
+    } else if (cmd == "formula_violations") {
+        need(nrhs, 3);
+        size_t count = 0;
+        sentil_interval_t* spans = sentil_formula_violations(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &count);
+        if (spans == nullptr && sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_intervals(spans, count);
+        if (spans != nullptr) {
+            sentil_free_intervals(spans, count);
+        }
+    } else if (cmd == "trace_create") {
+        need(nrhs, 2);
+        size_t n = 0;
+        const double* times = get_doubles(prhs[1], &n);
+        plhs[0] = make_handle(checked(sentil_trace_create(times, n)));
+    } else if (cmd == "trace_from_signal") {
+        need(nrhs, 4);
+        size_t n = 0, m = 0;
+        const double* times = get_doubles(prhs[1], &n);
+        std::string name = get_string(prhs[2]);
+        const double* values = get_doubles(prhs[3], &m);
+        if (n != m) {
+            fail("the time and value vectors must have the same length");
+        }
+        plhs[0] = make_handle(checked(sentil_trace_from_signal(times, n, name.c_str(), values, m)));
+    } else if (cmd == "trace_add_signal") {
+        need(nrhs, 4);
+        size_t m = 0;
+        std::string name = get_string(prhs[2]);
+        const double* values = get_doubles(prhs[3], &m);
+        check(sentil_trace_add_signal(get_handle<sentil_trace_t>(prhs[1]), name.c_str(), values, m));
+    } else if (cmd == "trace_from_csv") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_trace_from_csv(get_string(prhs[1]).c_str())));
+    } else if (cmd == "trace_from_tsv") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_trace_from_tsv(get_string(prhs[1]).c_str())));
+    } else if (cmd == "trace_from_path") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_trace_from_path(get_string(prhs[1]).c_str())));
+    } else if (cmd == "trace_destroy") {
+        need(nrhs, 2);
+        sentil_trace_destroy(get_handle<sentil_trace_t>(prhs[1]));
+    } else if (cmd == "trace_len") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(
+            static_cast<double>(sentil_trace_len(get_handle<sentil_trace_t>(prhs[1]))));
+    } else if (cmd == "trace_is_empty") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateLogicalScalar(sentil_trace_is_empty(get_handle<sentil_trace_t>(prhs[1])));
+    } else if (cmd == "trace_times") {
+        need(nrhs, 2);
+        size_t len = 0;
+        const double* times = sentil_trace_times(get_handle<sentil_trace_t>(prhs[1]), &len);
+        plhs[0] = times ? make_doubles(times, len) : mxCreateDoubleMatrix(1, 0, mxREAL);
+    } else if (cmd == "trace_variables") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** names = sentil_trace_variables(get_handle<sentil_trace_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(names, count);
+        if (names != nullptr) {
+            sentil_free_string_array(names, count);
+        }
+    } else if (cmd == "trace_signal") {
+        need(nrhs, 3);
+        std::string name = get_string(prhs[2]);
+        size_t len = 0;
+        const double* signal =
+            sentil_trace_signal(get_handle<sentil_trace_t>(prhs[1]), name.c_str(), &len);
+        plhs[0] = signal ? make_doubles(signal, len) : mxCreateDoubleMatrix(1, 0, mxREAL);
+    } else if (cmd == "trace_resample") {
+        need(nrhs, 4);
+        size_t n = 0;
+        const double* times = get_doubles(prhs[2], &n);
+        int interp = static_cast<int>(get_scalar(prhs[3]));
+        plhs[0] = make_handle(checked(sentil_trace_resample(
+            get_handle<sentil_trace_t>(prhs[1]), times, n,
+            static_cast<sentil_interpolation_t>(interp))));
     } else {
         fail("unknown command: " + cmd);
     }
