@@ -260,6 +260,57 @@ mxArray* make_bank(sentil_bank_result_t* owned, size_t count) {
     return s;
 }
 
+mxArray* make_smc_result(const sentil_smc_result_t& r) {
+    static const char* fields[] = {"probability", "interval", "satisfactions", "samples", "holds"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 5, fields);
+    mxSetField(s, 0, "probability", mxCreateDoubleScalar(r.probability));
+    mxSetField(s, 0, "interval", make_confidence(r.interval));
+    mxSetField(s, 0, "satisfactions", mxCreateDoubleScalar(static_cast<double>(r.satisfactions)));
+    mxSetField(s, 0, "samples", mxCreateDoubleScalar(static_cast<double>(r.samples)));
+    mxSetField(s, 0, "holds", mxCreateLogicalScalar(r.holds));
+    return s;
+}
+
+mxArray* make_distribution(const sentil_robustness_distribution_t& d) {
+    static const char* fields[] = {"count", "mean", "variance", "std_dev", "min", "max"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 6, fields);
+    mxSetField(s, 0, "count", mxCreateDoubleScalar(static_cast<double>(d.count)));
+    mxSetField(s, 0, "mean", mxCreateDoubleScalar(d.mean));
+    mxSetField(s, 0, "variance", mxCreateDoubleScalar(d.variance));
+    mxSetField(s, 0, "std_dev", mxCreateDoubleScalar(d.std_dev));
+    mxSetField(s, 0, "min", mxCreateDoubleScalar(d.min));
+    mxSetField(s, 0, "max", mxCreateDoubleScalar(d.max));
+    return s;
+}
+
+mxArray* make_sprt_result(const sentil_sprt_result_t& r) {
+    static const char* fields[] = {"verdict", "samples", "log_likelihood"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 3, fields);
+    mxSetField(s, 0, "verdict", mxCreateDoubleScalar(static_cast<double>(r.verdict)));
+    mxSetField(s, 0, "samples", mxCreateDoubleScalar(static_cast<double>(r.samples)));
+    mxSetField(s, 0, "log_likelihood", mxCreateDoubleScalar(r.log_likelihood));
+    return s;
+}
+
+mxArray* make_bayes_result(const sentil_bayes_result_t& r) {
+    static const char* fields[] = {"verdict", "samples", "posterior"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 3, fields);
+    mxSetField(s, 0, "verdict", mxCreateDoubleScalar(static_cast<double>(r.verdict)));
+    mxSetField(s, 0, "samples", mxCreateDoubleScalar(static_cast<double>(r.samples)));
+    mxSetField(s, 0, "posterior", mxCreateDoubleScalar(r.posterior));
+    return s;
+}
+
+sentil_smc_config_t read_smc_config(const mxArray* samples, const mxArray* confidence,
+                                    const mxArray* seed, const mxArray* method) {
+    sentil_smc_config_t c;
+    c.samples = static_cast<uint64_t>(get_scalar(samples));
+    c.confidence = get_scalar(confidence);
+    c.seed = static_cast<uint64_t>(get_scalar(seed));
+    c.interval_method = static_cast<sentil_interval_method_t>(static_cast<int>(get_scalar(method)));
+    return c;
+}
+
 /* storage is filled completely before ptrs; growing it would dangle the c_str pointers. */
 void get_string_cell(const mxArray* cell, std::vector<std::string>& storage,
                      std::vector<const char*>& ptrs) {
@@ -898,6 +949,90 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "lifting_destroy") {
         need(nrhs, 2);
         sentil_lifting_registry_destroy(get_handle<sentil_lifting_registry_t>(prhs[1]));
+    } else if (cmd == "formula_check" || cmd == "formula_check_conservative") {
+        need(nrhs, 8);
+        sentil_smc_config_t config = read_smc_config(prhs[4], prhs[5], prhs[6], prhs[7]);
+        sentil_smc_result_t out;
+        sentil_formula_t* f = get_handle<sentil_formula_t>(prhs[1]);
+        const sentil_trace_t* trace = get_handle<sentil_trace_t>(prhs[2]);
+        const sentil_lifting_registry_t* lifting = get_handle<sentil_lifting_registry_t>(prhs[3]);
+        check(cmd == "formula_check"
+                  ? sentil_formula_check(f, trace, lifting, &config, &out)
+                  : sentil_formula_check_conservative(f, trace, lifting, &config, &out));
+        plhs[0] = make_smc_result(out);
+    } else if (cmd == "formula_check_distribution") {
+        need(nrhs, 8);
+        sentil_smc_config_t config = read_smc_config(prhs[4], prhs[5], prhs[6], prhs[7]);
+        sentil_smc_result_t out;
+        sentil_robustness_distribution_t dist;
+        check(sentil_formula_check_distribution(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]),
+            get_handle<sentil_lifting_registry_t>(prhs[3]), &config, &out, &dist));
+        static const char* fields[] = {"result", "distribution"};
+        plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
+        mxSetField(plhs[0], 0, "result", make_smc_result(out));
+        mxSetField(plhs[0], 0, "distribution", make_distribution(dist));
+    } else if (cmd == "formula_check_sequential") {
+        need(nrhs, 10);
+        sentil_sprt_config_t config;
+        config.p0 = get_scalar(prhs[4]);
+        config.p1 = get_scalar(prhs[5]);
+        config.alpha = get_scalar(prhs[6]);
+        config.beta = get_scalar(prhs[7]);
+        config.max_samples = static_cast<uint64_t>(get_scalar(prhs[8]));
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[9]));
+        sentil_sprt_result_t out;
+        check(sentil_formula_check_sequential(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]),
+            get_handle<sentil_lifting_registry_t>(prhs[3]), &config, &out));
+        plhs[0] = make_sprt_result(out);
+    } else if (cmd == "formula_check_bayesian") {
+        need(nrhs, 8);
+        sentil_bayes_config_t config;
+        config.threshold = get_scalar(prhs[4]);
+        config.bayes_factor = get_scalar(prhs[5]);
+        config.max_samples = static_cast<uint64_t>(get_scalar(prhs[6]));
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[7]));
+        sentil_bayes_result_t out;
+        check(sentil_formula_check_bayesian(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]),
+            get_handle<sentil_lifting_registry_t>(prhs[3]), &config, &out));
+        plhs[0] = make_bayes_result(out);
+    } else if (cmd == "monitor_check") {
+        need(nrhs, 4);
+        sentil_smc_result_t out;
+        check(sentil_monitor_check(get_handle<sentil_monitor_t>(prhs[1]),
+                                   get_handle<sentil_trace_t>(prhs[2]),
+                                   get_handle<sentil_lifting_registry_t>(prhs[3]), &out));
+        plhs[0] = make_smc_result(out);
+    } else if (cmd == "monitor_check_sequential") {
+        need(nrhs, 10);
+        sentil_sprt_config_t config;
+        config.p0 = get_scalar(prhs[4]);
+        config.p1 = get_scalar(prhs[5]);
+        config.alpha = get_scalar(prhs[6]);
+        config.beta = get_scalar(prhs[7]);
+        config.max_samples = static_cast<uint64_t>(get_scalar(prhs[8]));
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[9]));
+        sentil_sprt_result_t out;
+        check(sentil_monitor_check_sequential(
+            get_handle<sentil_monitor_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]),
+            get_handle<sentil_lifting_registry_t>(prhs[3]), &config, &out));
+        plhs[0] = make_sprt_result(out);
+    } else if (cmd == "stream_monitor_with_lifting") {
+        need(nrhs, 7);
+        sentil_smc_config_t config = read_smc_config(prhs[3], prhs[4], prhs[5], prhs[6]);
+        plhs[0] = make_handle(checked(sentil_stream_monitor_with_lifting(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_lifting_registry_t>(prhs[2]),
+            &config)));
+    } else if (cmd == "multi_monitor_add_probabilistic") {
+        need(nrhs, 9);
+        std::string id = get_string(prhs[2]);
+        sentil_smc_config_t config = read_smc_config(prhs[5], prhs[6], prhs[7], prhs[8]);
+        check(sentil_multi_monitor_add_probabilistic(
+            get_handle<sentil_multi_monitor_t>(prhs[1]), id.c_str(),
+            get_handle<sentil_formula_t>(prhs[3]), get_handle<sentil_lifting_registry_t>(prhs[4]),
+            &config));
     } else {
         fail("unknown command: " + cmd);
     }
