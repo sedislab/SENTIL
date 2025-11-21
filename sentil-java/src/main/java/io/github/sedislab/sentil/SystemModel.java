@@ -24,17 +24,14 @@ public final class SystemModel extends NativeResource {
     public static SystemModel linear(double[][] a, double[][] b, double[] x0, String[] variables,
             double dt, long horizon) throws SentilException {
         int n = a.length;
-        int bCols = b.length == 0 ? 0 : b[0].length;
-        return new SystemModel(NativeLib.linearModelCreate(flatten(a, n), n, flatten(b, bCols),
-                bCols, x0, variables, dt, horizon));
-    }
-
-    private static double[] flatten(double[][] matrix, int cols) {
-        double[] flat = new double[matrix.length * cols];
-        for (int i = 0; i < matrix.length; i++) {
-            System.arraycopy(matrix[i], 0, flat, i * cols, cols);
+        if (x0.length != n || variables.length != n || b.length != n) {
+            throw new EvaluationException(
+                    "A is n-by-n, B has n rows, and x0 and variables have length n",
+                    ErrorCode.INVALID_CONFIG.code());
         }
-        return flat;
+        int bCols = (b.length == 0 || b[0] == null) ? 0 : b[0].length;
+        return new SystemModel(NativeLib.linearModelCreate(Matrices.flatten(a, n), n,
+                Matrices.flatten(b, bCols), bCols, x0, variables, dt, horizon));
     }
 
     /** A model whose rollout is a host function. It must be thread-safe. */

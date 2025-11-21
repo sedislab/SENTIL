@@ -40,32 +40,24 @@ public final class Synthesis {
         return result;
     }
 
-    private static double[] flatten(double[][] matrix, int cols) {
-        double[] flat = new double[matrix.length * cols];
-        for (int i = 0; i < matrix.length; i++) {
-            System.arraycopy(matrix[i], 0, flat, i * cols, cols);
-        }
-        return flat;
-    }
-
     /** Minimize 1/2 u'Pu + q'u subject to Gu &lt;= h, with P symmetric positive-definite. */
     public static double[] solveQp(double[][] p, double[] q, double[][] g, double[] h, long maxIters)
             throws SentilException {
         int n = p.length;
         int m = g.length;
-        return NativeLib.solveQp(flatten(p, n), n, q, flatten(g, n), m, h, maxIters);
+        return NativeLib.solveQp(Matrices.flatten(p, n), n, q, Matrices.flatten(g, n), m, h, maxIters);
     }
 
     /** Solve Ax = b for a symmetric positive-definite A. */
     public static double[] solveSpd(double[][] matrix, double[] rhs) throws SentilException {
         int n = matrix.length;
-        return NativeLib.solveSpd(flatten(matrix, n), n, rhs);
+        return NativeLib.solveSpd(Matrices.flatten(matrix, n), n, rhs);
     }
 
     /** The eigendecomposition of a symmetric matrix. */
     public static EigenDecomposition symmetricEigen(double[][] matrix) throws SentilException {
         int n = matrix.length;
-        double[] packed = NativeLib.symmetricEigen(flatten(matrix, n), n);
+        double[] packed = NativeLib.symmetricEigen(Matrices.flatten(matrix, n), n);
         double[] values = new double[n];
         System.arraycopy(packed, 0, values, 0, n);
         double[][] vectors = new double[n][n];
