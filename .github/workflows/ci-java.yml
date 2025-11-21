@@ -1,0 +1,26 @@
+name: ci-java
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['11', '17', '21']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: run the tests
+        working-directory: sentil-java
+        run: mvn -B test
