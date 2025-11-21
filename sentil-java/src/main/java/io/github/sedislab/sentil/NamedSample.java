@@ -13,12 +13,19 @@ final class NamedSample {
     }
 
     static NamedSample of(Map<String, Double> values) {
+        if (values == null) {
+            throw new IllegalArgumentException("the values map must not be null");
+        }
         String[] names = new String[values.size()];
         double[] data = new double[values.size()];
         int i = 0;
         for (Map.Entry<String, Double> entry : values.entrySet()) {
+            Double value = entry.getValue();
+            if (value == null) {
+                throw new IllegalArgumentException("no value for variable '" + entry.getKey() + "'");
+            }
             names[i] = entry.getKey();
-            data[i] = entry.getValue();
+            data[i] = value;
             i++;
         }
         return new NamedSample(names, data);

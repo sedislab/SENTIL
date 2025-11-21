@@ -16,8 +16,9 @@ public final class LiftingRegistry extends NativeResource {
     /** Attach a noise model to a variable. The model is consumed. */
     public void register(String variable, NoiseModel model, NoiseInteraction interaction)
             throws SentilException {
+        long registry = handle();
         long modelHandle = model.consume();
-        NativeLib.liftingRegister(handle(), variable, modelHandle, interaction.code());
+        NativeLib.liftingRegister(registry, variable, modelHandle, interaction.code());
     }
 
     /** Attach a noise model to a variable with the default additive interaction. */
