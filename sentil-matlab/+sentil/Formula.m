@@ -110,6 +110,14 @@ classdef Formula < handle
                 config.threshold, config.bayes_factor, config.max_samples, config.seed);
             r.verdict = sentil.BayesVerdict(r.verdict);
         end
+
+        function r = check_rare_event(obj, system, config)
+            %CHECK_RARE_EVENT Estimate a P-wrapped formula by adaptive multilevel splitting.
+            obj.assertOpen();
+            if nargin < 3, config = sentil.RareEventConfig; end
+            r = sentil_mex('formula_check_rare_event', obj.Handle, system.Handle, system.Box, ...
+                config.particles, config.margin, config.seed);
+        end
     end
 
     methods (Hidden)

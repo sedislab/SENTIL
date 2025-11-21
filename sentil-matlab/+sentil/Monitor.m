@@ -98,6 +98,12 @@ classdef Monitor < handle
                 config.p0, config.p1, config.alpha, config.beta, config.max_samples, config.seed);
             r.verdict = sentil.SprtVerdict(r.verdict);
         end
+
+        function r = check_rare(obj, system)
+            %CHECK_RARE Estimate the probabilistic formula by adaptive multilevel splitting.
+            obj.assertOpen();
+            r = sentil_mex('monitor_check_rare', obj.Handle, system.Handle, system.Box);
+        end
     end
 
     methods (Access = private)
