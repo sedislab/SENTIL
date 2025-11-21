@@ -736,6 +736,168 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         uint64_t out = 0;
         check(sentil_wilson_samples(get_scalar(prhs[1]), get_scalar(prhs[2]), &out));
         plhs[0] = mxCreateDoubleScalar(static_cast<double>(out));
+    } else if (cmd == "noise_dirac") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_noise_dirac(get_scalar(prhs[1]))));
+    } else if (cmd == "noise_gaussian") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_gaussian(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_uniform") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_uniform(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_log_normal") {
+        need(nrhs, 3);
+        plhs[0] =
+            make_handle(checked(sentil_noise_log_normal(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_exponential") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_noise_exponential(get_scalar(prhs[1]))));
+    } else if (cmd == "noise_gamma") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_gamma(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_beta") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_beta(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_weibull") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_weibull(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_rayleigh") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_noise_rayleigh(get_scalar(prhs[1]))));
+    } else if (cmd == "noise_gumbel") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_gumbel(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_cauchy") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_noise_cauchy(get_scalar(prhs[1]), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_student_t") {
+        need(nrhs, 4);
+        plhs[0] = make_handle(checked(
+            sentil_noise_student_t(get_scalar(prhs[1]), get_scalar(prhs[2]), get_scalar(prhs[3]))));
+    } else if (cmd == "noise_truncated_normal") {
+        need(nrhs, 5);
+        plhs[0] = make_handle(checked(sentil_noise_truncated_normal(
+            get_scalar(prhs[1]), get_scalar(prhs[2]), get_scalar(prhs[3]), get_scalar(prhs[4]))));
+    } else if (cmd == "noise_poisson") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_noise_poisson(get_scalar(prhs[1]))));
+    } else if (cmd == "noise_binomial") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(
+            sentil_noise_binomial(static_cast<uint64_t>(get_scalar(prhs[1])), get_scalar(prhs[2]))));
+    } else if (cmd == "noise_bootstrap") {
+        need(nrhs, 2);
+        size_t n = 0;
+        const double* residuals = get_doubles(prhs[1], &n);
+        plhs[0] = make_handle(checked(sentil_noise_bootstrap(residuals, n)));
+    } else if (cmd == "noise_mixture") {
+        need(nrhs, 3);
+        size_t wn = 0;
+        const double* weights = get_doubles(prhs[1], &wn);
+        if (!mxIsUint64(prhs[2])) {
+            fail("expected an array of model handles");
+        }
+        size_t mn = mxGetNumberOfElements(prhs[2]);
+        if (wn != mn) {
+            fail("the weights and models must have the same length");
+        }
+        uint64_t* raw = static_cast<uint64_t*>(mxGetData(prhs[2]));
+        std::vector<sentil_noise_model_t*> models(mn);
+        for (size_t i = 0; i < mn; ++i) {
+            models[i] = reinterpret_cast<sentil_noise_model_t*>(raw[i]);
+        }
+        plhs[0] = make_handle(checked(sentil_noise_mixture(weights, models.data(), mn)));
+    } else if (cmd == "noise_mean") {
+        need(nrhs, 2);
+        double out = 0.0;
+        bool defined = sentil_noise_mean(get_handle<sentil_noise_model_t>(prhs[1]), &out);
+        plhs[0] = defined ? mxCreateDoubleScalar(out) : mxCreateDoubleMatrix(1, 0, mxREAL);
+    } else if (cmd == "noise_variance") {
+        need(nrhs, 2);
+        double out = 0.0;
+        bool defined = sentil_noise_variance(get_handle<sentil_noise_model_t>(prhs[1]), &out);
+        plhs[0] = defined ? mxCreateDoubleScalar(out) : mxCreateDoubleMatrix(1, 0, mxREAL);
+    } else if (cmd == "noise_residuals") {
+        need(nrhs, 4);
+        size_t n = 0, m = 0;
+        const double* truth = get_doubles(prhs[1], &n);
+        const double* sensor = get_doubles(prhs[2], &m);
+        size_t len = 0;
+        double* residuals = sentil_noise_residuals(
+            truth, n, sensor, m, static_cast<sentil_noise_interaction_t>(static_cast<int>(get_scalar(prhs[3]))),
+            &len);
+        if (residuals == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_doubles(residuals, len);
+        sentil_free_doubles(residuals, len);
+    } else if (cmd == "noise_fit_gaussian") {
+        need(nrhs, 2);
+        size_t n = 0;
+        const double* samples = get_doubles(prhs[1], &n);
+        plhs[0] = make_handle(checked(sentil_noise_fit_gaussian(samples, n)));
+    } else if (cmd == "noise_fit_bootstrap") {
+        need(nrhs, 2);
+        size_t n = 0;
+        const double* samples = get_doubles(prhs[1], &n);
+        plhs[0] = make_handle(checked(sentil_noise_fit_bootstrap(samples, n)));
+    } else if (cmd == "noise_fit_bootstrap_reservoir") {
+        need(nrhs, 3);
+        size_t n = 0;
+        const double* samples = get_doubles(prhs[1], &n);
+        plhs[0] = make_handle(checked(sentil_noise_fit_bootstrap_reservoir(
+            samples, n, static_cast<size_t>(get_scalar(prhs[2])))));
+    } else if (cmd == "noise_fit_gaussian_mixture") {
+        need(nrhs, 4);
+        size_t n = 0;
+        const double* samples = get_doubles(prhs[1], &n);
+        plhs[0] = make_handle(checked(sentil_noise_fit_gaussian_mixture(
+            samples, n, static_cast<size_t>(get_scalar(prhs[2])),
+            static_cast<size_t>(get_scalar(prhs[3])))));
+    } else if (cmd == "noise_to_json") {
+        need(nrhs, 2);
+        char* json = sentil_noise_to_json(get_handle<sentil_noise_model_t>(prhs[1]));
+        plhs[0] = make_string(json);
+        sentil_free_string(json);
+    } else if (cmd == "noise_from_json") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_noise_from_json(get_string(prhs[1]).c_str())));
+    } else if (cmd == "noise_from_file") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_noise_from_file(get_string(prhs[1]).c_str())));
+    } else if (cmd == "noise_destroy") {
+        need(nrhs, 2);
+        sentil_noise_destroy(get_handle<sentil_noise_model_t>(prhs[1]));
+    } else if (cmd == "lifting_create") {
+        plhs[0] = make_handle(checked(sentil_lifting_registry_create()));
+    } else if (cmd == "lifting_register") {
+        need(nrhs, 5);
+        std::string variable = get_string(prhs[2]);
+        check(sentil_lifting_registry_register(
+            get_handle<sentil_lifting_registry_t>(prhs[1]), variable.c_str(),
+            get_handle<sentil_noise_model_t>(prhs[3]),
+            static_cast<sentil_noise_interaction_t>(static_cast<int>(get_scalar(prhs[4])))));
+    } else if (cmd == "lifting_variables") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** names =
+            sentil_lifting_registry_variables(get_handle<sentil_lifting_registry_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(names, count);
+        if (names != nullptr) {
+            sentil_free_string_array(names, count);
+        }
+    } else if (cmd == "lifting_is_empty") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateLogicalScalar(
+            sentil_lifting_registry_is_empty(get_handle<sentil_lifting_registry_t>(prhs[1])));
+    } else if (cmd == "lifting_lift") {
+        need(nrhs, 4);
+        plhs[0] = make_handle(checked(sentil_lifting_registry_lift(
+            get_handle<sentil_lifting_registry_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]),
+            static_cast<uint64_t>(get_scalar(prhs[3])))));
+    } else if (cmd == "lifting_destroy") {
+        need(nrhs, 2);
+        sentil_lifting_registry_destroy(get_handle<sentil_lifting_registry_t>(prhs[1]));
     } else {
         fail("unknown command: " + cmd);
     }
