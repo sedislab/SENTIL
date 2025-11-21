@@ -206,15 +206,7 @@ const _C_SYSTEM_STEP = Ref{Ptr{Cvoid}}(C_NULL)
 
 _rethrow_callback(box::_SystemBox) = (box.err === nothing || throw(box.err))
 
-"""
-    StochasticSystem(variables, dt, horizon; init, step) -> StochasticSystem
-
-A stochastic system whose dynamics are host callbacks: `init(seed)` returns the initial
-state vector, and `step(prev, time, seed)` returns the next state from the previous one.
-A parallel rare-event check runs the callbacks on several worker threads, so keep them
-thread-safe and free of shared mutable state; the runtime adopts those threads, so
-allocating and the garbage collector are safe inside them.
-"""
+"""A stochastic system whose dynamics are the host callbacks `init(seed)` and `step(prev, time, seed)`."""
 function StochasticSystem(variables, dt::Real, horizon::Integer; init, step)
     names = String[String(v) for v in variables]
     box = _SystemBox(init, step, nothing)

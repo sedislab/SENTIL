@@ -65,7 +65,7 @@ function _bernoulli_trampoline(ud::Ptr{Cvoid})::Bool
     try
         return box.draw()::Bool
     catch e
-        box.err = e
+        box.err === nothing && (box.err = e)
         return false
     end
 end
