@@ -1,6 +1,7 @@
 CARGO ?= cargo
 CC ?= cc
 CXX ?= c++
+MVN ?= mvn
 CFLAGS ?= -std=c11 -Wall -Wextra -O2
 CXXFLAGS ?= -std=c++17 -O2
 PREFIX ?= /usr/local
@@ -24,7 +25,7 @@ GPU_TEST := tests/gpu_test.c
 CPU_TESTS := $(filter-out $(GPU_TEST),$(TESTS))
 LINK := -L$(LIBDIR) -lsentil -Wl,-rpath,$(LIBDIR) -lm
 
-.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-cpp bench-py bench-jl dist install clean
+.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-cpp bench-py bench-jl bench-java dist install clean
 
 build:
 	$(CARGO) build --release -p sentil-ffi
@@ -66,6 +67,11 @@ bench-py: build
 bench-jl: build
 	cd ../benchmarks && SENTIL_LIB=$(LIBDIR)/$(SHARED) julia --project=../sentil-jl runners/sentil_runner.jl scalability
 	cd ../benchmarks && SENTIL_LIB=$(LIBDIR)/$(SHARED) julia --project=../sentil-jl runners/sentil_runner.jl streaming
+
+bench-java:
+	cd ../sentil-java && $(MVN) -o -DskipTests package
+	cd ../benchmarks && java -cp ../sentil-java/target/sentil-$(VERSION).jar runners/sentil_runner.java scalability
+	cd ../benchmarks && java -cp ../sentil-java/target/sentil-$(VERSION).jar runners/sentil_runner.java streaming
 
 dist: build
 	rm -rf $(DIST)/$(BUNDLE)
