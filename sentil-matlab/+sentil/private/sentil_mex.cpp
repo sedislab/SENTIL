@@ -185,6 +185,47 @@ mxArray* make_intervals(const sentil_interval_t* spans, size_t count) {
     return arr;
 }
 
+const char* kRobustnessFields[] = {"resolved", "satisfied", "value", "lower", "upper"};
+
+void set_robustness(mxArray* target, mwIndex i, const sentil_robustness_t& r) {
+    mxSetField(target, i, "resolved", mxCreateLogicalScalar(r.resolved));
+    mxSetField(target, i, "satisfied", mxCreateLogicalScalar(r.satisfied));
+    mxSetField(target, i, "value", mxCreateDoubleScalar(r.value));
+    mxSetField(target, i, "lower", mxCreateDoubleScalar(r.lower));
+    mxSetField(target, i, "upper", mxCreateDoubleScalar(r.upper));
+}
+
+mxArray* make_robustness(const sentil_robustness_t& r) {
+    mxArray* s = mxCreateStructMatrix(1, 1, 5, kRobustnessFields);
+    set_robustness(s, 0, r);
+    return s;
+}
+
+mxArray* make_robustness_array(const sentil_robustness_t* arr, size_t count) {
+    mxArray* s = mxCreateStructMatrix(1, static_cast<mwSize>(count), 5, kRobustnessFields);
+    for (size_t i = 0; i < count; ++i) {
+        set_robustness(s, static_cast<mwIndex>(i), arr[i]);
+    }
+    return s;
+}
+
+/* storage is filled completely before ptrs; growing it would dangle the c_str pointers. */
+void get_string_cell(const mxArray* cell, std::vector<std::string>& storage,
+                     std::vector<const char*>& ptrs) {
+    if (cell == nullptr || !mxIsCell(cell)) {
+        fail("expected a cell array of names");
+    }
+    size_t n = mxGetNumberOfElements(cell);
+    storage.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        storage.push_back(get_string(mxGetCell(cell, static_cast<mwIndex>(i))));
+    }
+    ptrs.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        ptrs.push_back(storage[i].c_str());
+    }
+}
+
 }  // namespace
 
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -337,6 +378,165 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         plhs[0] = make_handle(checked(sentil_trace_resample(
             get_handle<sentil_trace_t>(prhs[1]), times, n,
             static_cast<sentil_interpolation_t>(interp))));
+    } else if (cmd == "monitor_config_create") {
+        plhs[0] = make_handle(checked(sentil_monitor_config_create()));
+    } else if (cmd == "monitor_config_set_time") {
+        need(nrhs, 3);
+        check(sentil_monitor_config_set_time(
+            get_handle<sentil_monitor_config_t>(prhs[1]),
+            static_cast<sentil_time_mode_t>(static_cast<int>(get_scalar(prhs[2])))));
+    } else if (cmd == "monitor_config_time_mode") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(
+            sentil_monitor_config_time_mode(get_handle<sentil_monitor_config_t>(prhs[1]))));
+    } else if (cmd == "monitor_config_destroy") {
+        need(nrhs, 2);
+        sentil_monitor_config_destroy(get_handle<sentil_monitor_config_t>(prhs[1]));
+    } else if (cmd == "monitor_create") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_monitor_create(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_monitor_config_t>(prhs[2]))));
+    } else if (cmd == "monitor_parse") {
+        need(nrhs, 3);
+        std::string text = get_string(prhs[1]);
+        plhs[0] = make_handle(checked(
+            sentil_monitor_parse(text.c_str(), get_handle<sentil_monitor_config_t>(prhs[2]))));
+    } else if (cmd == "monitor_destroy") {
+        need(nrhs, 2);
+        sentil_monitor_destroy(get_handle<sentil_monitor_t>(prhs[1]));
+    } else if (cmd == "monitor_robustness") {
+        need(nrhs, 3);
+        double value = 0.0;
+        check(sentil_monitor_robustness(get_handle<sentil_monitor_t>(prhs[1]),
+                                        get_handle<sentil_trace_t>(prhs[2]), &value));
+        plhs[0] = mxCreateDoubleScalar(value);
+    } else if (cmd == "monitor_robustness_signal") {
+        need(nrhs, 3);
+        size_t len = 0;
+        double* signal = sentil_monitor_robustness_signal(
+            get_handle<sentil_monitor_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &len);
+        if (signal == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_doubles(signal, len);
+        sentil_free_doubles(signal, len);
+    } else if (cmd == "monitor_violations") {
+        need(nrhs, 3);
+        size_t count = 0;
+        sentil_interval_t* spans = sentil_monitor_violations(
+            get_handle<sentil_monitor_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &count);
+        if (spans == nullptr && sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_intervals(spans, count);
+        if (spans != nullptr) {
+            sentil_free_intervals(spans, count);
+        }
+    } else if (cmd == "monitor_symbol_index") {
+        need(nrhs, 3);
+        std::string name = get_string(prhs[2]);
+        size_t index = 0;
+        bool found = false;
+        check(sentil_monitor_symbol_index(get_handle<sentil_monitor_t>(prhs[1]), name.c_str(),
+                                          &index, &found));
+        plhs[0] = found ? mxCreateDoubleScalar(static_cast<double>(index + 1))
+                        : mxCreateDoubleMatrix(1, 0, mxREAL);
+    } else if (cmd == "monitor_update") {
+        need(nrhs, 5);
+        sentil_monitor_t* monitor = get_handle<sentil_monitor_t>(prhs[1]);
+        double time = get_scalar(prhs[2]);
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[3], storage, names);
+        size_t m = 0;
+        const double* values = get_doubles(prhs[4], &m);
+        if (m != names.size()) {
+            fail("the names and values must have the same length");
+        }
+        sentil_robustness_t out;
+        check(sentil_monitor_update(monitor, time, names.data(), values, m, &out));
+        plhs[0] = make_robustness(out);
+    } else if (cmd == "monitor_update_packed") {
+        need(nrhs, 4);
+        size_t m = 0;
+        double time = get_scalar(prhs[2]);
+        const double* values = get_doubles(prhs[3], &m);
+        sentil_robustness_t out;
+        check(sentil_monitor_update_packed(get_handle<sentil_monitor_t>(prhs[1]), time, values, m,
+                                           &out));
+        plhs[0] = make_robustness(out);
+    } else if (cmd == "monitor_reset") {
+        need(nrhs, 2);
+        sentil_monitor_reset(get_handle<sentil_monitor_t>(prhs[1]));
+    } else if (cmd == "monitor_formula") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_monitor_formula(get_handle<sentil_monitor_t>(prhs[1]))));
+    } else if (cmd == "monitor_config_of") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_monitor_config(get_handle<sentil_monitor_t>(prhs[1]))));
+    } else if (cmd == "stream_monitor_create") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_stream_monitor_create(get_string(prhs[1]).c_str())));
+    } else if (cmd == "stream_monitor_from_formula") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(
+            checked(sentil_stream_monitor_from_formula(get_handle<sentil_formula_t>(prhs[1]))));
+    } else if (cmd == "stream_monitor_variable_count") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(
+            sentil_stream_monitor_variable_count(get_handle<sentil_stream_monitor_t>(prhs[1]))));
+    } else if (cmd == "stream_monitor_symbol_index") {
+        need(nrhs, 3);
+        std::string name = get_string(prhs[2]);
+        size_t index = 0;
+        bool found = false;
+        check(sentil_stream_monitor_symbol_index(get_handle<sentil_stream_monitor_t>(prhs[1]),
+                                                 name.c_str(), &index, &found));
+        plhs[0] = found ? mxCreateDoubleScalar(static_cast<double>(index + 1))
+                        : mxCreateDoubleMatrix(1, 0, mxREAL);
+    } else if (cmd == "stream_monitor_update") {
+        need(nrhs, 5);
+        sentil_stream_monitor_t* monitor = get_handle<sentil_stream_monitor_t>(prhs[1]);
+        double time = get_scalar(prhs[2]);
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[3], storage, names);
+        size_t m = 0;
+        const double* values = get_doubles(prhs[4], &m);
+        if (m != names.size()) {
+            fail("the names and values must have the same length");
+        }
+        sentil_robustness_t out;
+        check(sentil_stream_monitor_update(monitor, time, names.data(), values, m, &out));
+        plhs[0] = make_robustness(out);
+    } else if (cmd == "stream_monitor_update_packed") {
+        need(nrhs, 4);
+        size_t m = 0;
+        double time = get_scalar(prhs[2]);
+        const double* values = get_doubles(prhs[3], &m);
+        sentil_robustness_t out;
+        check(sentil_stream_monitor_update_packed(get_handle<sentil_stream_monitor_t>(prhs[1]), time,
+                                                  values, m, &out));
+        plhs[0] = make_robustness(out);
+    } else if (cmd == "stream_monitor_run") {
+        need(nrhs, 3);
+        size_t count = 0;
+        sentil_robustness_t* run = sentil_stream_monitor_run(
+            get_handle<sentil_stream_monitor_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]),
+            &count);
+        if (run == nullptr && sentil_get_last_error_code() != SENTIL_OK) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_robustness_array(run, count);
+        if (run != nullptr) {
+            sentil_free_robustness(run, count);
+        }
+    } else if (cmd == "stream_monitor_reset") {
+        need(nrhs, 2);
+        sentil_stream_monitor_reset(get_handle<sentil_stream_monitor_t>(prhs[1]));
+    } else if (cmd == "stream_monitor_destroy") {
+        need(nrhs, 2);
+        sentil_stream_monitor_destroy(get_handle<sentil_stream_monitor_t>(prhs[1]));
     } else {
         fail("unknown command: " + cmd);
     }

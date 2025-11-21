@@ -68,6 +68,15 @@ classdef Formula < handle
         end
     end
 
+    methods (Hidden)
+        function h = consume(obj)
+            %CONSUME Surrender the native handle, leaving this formula closed.
+            obj.assertOpen();
+            h = obj.Handle;
+            obj.Handle = uint64(0);
+        end
+    end
+
     methods (Access = private)
         function assertOpen(obj)
             if obj.Handle == 0
