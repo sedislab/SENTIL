@@ -11,6 +11,14 @@ classdef OnlineMonitor < handle
             m = sentil.OnlineMonitor(uint64(sentil_mex('stream_monitor_from_formula', ...
                 formula.Handle)));
         end
+
+        function m = with_lifting(formula, lifting, config)
+            %WITH_LIFTING A probabilistic streaming monitor over a lifted particle ensemble.
+            if nargin < 3, config = sentil.SmcConfig; end
+            m = sentil.OnlineMonitor(uint64(sentil_mex('stream_monitor_with_lifting', ...
+                formula.Handle, lifting.Handle, config.samples, config.confidence, ...
+                config.seed, double(int32(config.method)))));
+        end
     end
 
     methods

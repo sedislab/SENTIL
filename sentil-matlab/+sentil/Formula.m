@@ -66,6 +66,50 @@ classdef Formula < handle
             obj.assertOpen();
             v = sentil_mex('formula_violations', obj.Handle, trace.Handle);
         end
+
+        function r = check(obj, trace, lifting, config)
+            %CHECK Estimate the satisfaction probability of a P-wrapped formula.
+            obj.assertOpen();
+            if nargin < 4, config = sentil.SmcConfig; end
+            r = sentil_mex('formula_check', obj.Handle, trace.Handle, lifting.Handle, ...
+                config.samples, config.confidence, config.seed, double(int32(config.method)));
+        end
+
+        function r = check_conservative(obj, trace, lifting, config)
+            %CHECK_CONSERVATIVE Estimate with the Clopper-Pearson interval.
+            obj.assertOpen();
+            if nargin < 4, config = sentil.SmcConfig; end
+            r = sentil_mex('formula_check_conservative', obj.Handle, trace.Handle, ...
+                lifting.Handle, config.samples, config.confidence, config.seed, ...
+                double(int32(config.method)));
+        end
+
+        function [result, distribution] = check_distribution(obj, trace, lifting, config)
+            %CHECK_DISTRIBUTION Estimate, returning the robustness distribution as well.
+            obj.assertOpen();
+            if nargin < 4, config = sentil.SmcConfig; end
+            out = sentil_mex('formula_check_distribution', obj.Handle, trace.Handle, ...
+                lifting.Handle, config.samples, config.confidence, config.seed, ...
+                double(int32(config.method)));
+            result = out.result;
+            distribution = out.distribution;
+        end
+
+        function r = check_sequential(obj, trace, lifting, config)
+            %CHECK_SEQUENTIAL Decide a P-wrapped formula by SPRT.
+            obj.assertOpen();
+            r = sentil_mex('formula_check_sequential', obj.Handle, trace.Handle, lifting.Handle, ...
+                config.p0, config.p1, config.alpha, config.beta, config.max_samples, config.seed);
+            r.verdict = sentil.SprtVerdict(r.verdict);
+        end
+
+        function r = check_bayesian(obj, trace, lifting, config)
+            %CHECK_BAYESIAN Decide a P-wrapped formula by Bayesian sequential testing.
+            obj.assertOpen();
+            r = sentil_mex('formula_check_bayesian', obj.Handle, trace.Handle, lifting.Handle, ...
+                config.threshold, config.bayes_factor, config.max_samples, config.seed);
+            r.verdict = sentil.BayesVerdict(r.verdict);
+        end
     end
 
     methods (Hidden)

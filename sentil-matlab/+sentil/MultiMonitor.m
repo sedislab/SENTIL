@@ -27,6 +27,15 @@ classdef MultiMonitor < handle
             end
         end
 
+        function add_probabilistic(obj, id, formula, lifting, config)
+            %ADD_PROBABILISTIC Register a P-wrapped formula tracked with a lifted ensemble.
+            obj.assertOpen();
+            if nargin < 5, config = sentil.SmcConfig; end
+            sentil_mex('multi_monitor_add_probabilistic', obj.Handle, char(id), formula.Handle, ...
+                lifting.Handle, config.samples, config.confidence, config.seed, ...
+                double(int32(config.method)));
+        end
+
         function tf = remove(obj, id)
             %REMOVE Drop a monitor by id.
             obj.assertOpen();

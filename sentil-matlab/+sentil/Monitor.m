@@ -84,6 +84,20 @@ classdef Monitor < handle
             obj.assertOpen();
             c = sentil.Config(sentil_mex('monitor_config_of', obj.Handle));
         end
+
+        function r = check(obj, trace, lifting)
+            %CHECK Estimate the monitor's probabilistic formula using its SMC settings.
+            obj.assertOpen();
+            r = sentil_mex('monitor_check', obj.Handle, trace.Handle, lifting.Handle);
+        end
+
+        function r = check_sequential(obj, trace, lifting, config)
+            %CHECK_SEQUENTIAL Decide the monitor's probabilistic formula by SPRT.
+            obj.assertOpen();
+            r = sentil_mex('monitor_check_sequential', obj.Handle, trace.Handle, lifting.Handle, ...
+                config.p0, config.p1, config.alpha, config.beta, config.max_samples, config.seed);
+            r.verdict = sentil.SprtVerdict(r.verdict);
+        end
     end
 
     methods (Access = private)
