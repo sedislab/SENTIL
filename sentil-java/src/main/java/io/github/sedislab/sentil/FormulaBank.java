@@ -4,12 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-/**
- * A batch of named formulas evaluated together over one trace, the offline
- * counterpart to {@link MultiMonitor}. One formula's failure never hides the others;
- * a formula that errored carries NaN in the result. A bank owns a native handle, so
- * close it when done.
- */
+/** A batch of named formulas evaluated together over one trace. */
 public final class FormulaBank extends NativeResource {
     public FormulaBank() throws SentilException {
         super(NativeLib.formulaBankCreate(), NativeLib::formulaBankDestroy);

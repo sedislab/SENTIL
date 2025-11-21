@@ -363,6 +363,9 @@ struct BernoulliBox {
 
 bool bernoulli_trampoline(void* userdata) {
     BernoulliBox* box = static_cast<BernoulliBox*>(userdata);
+    if (box->captured != nullptr) {
+        return false;
+    }
     jboolean draw = box->env->CallBooleanMethod(box->callable, mid_bernoulli);
     if (box->env->ExceptionCheck()) {
         take_pending(box->env, box->captured);
@@ -850,9 +853,17 @@ jobject owned_named_robustness_map(JNIEnv* env, sentil_named_robustness_t* owned
     return map;
 }
 
-// Build a LinkedHashMap from id to robustness value, in insertion order, and free the
-// source. A formula that errored carries NaN, mirroring the core's bank result.
 jobject owned_bank_map(JNIEnv* env, sentil_bank_result_t* owned, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (!owned[i].ok) {
+            std::string message =
+                std::string("formula '") + (owned[i].id ? owned[i].id : "") + "' failed to evaluate";
+            sentil_error_t code = owned[i].code;
+            sentil_free_bank_results(owned, count);
+            throw_sentil(env, code, message);
+            return nullptr;
+        }
+    }
     jobject map = env->NewObject(cls_linked_map, ctor_linked_map);
     for (size_t i = 0; i < count; ++i) {
         jstring id = env->NewStringUTF(owned[i].id);

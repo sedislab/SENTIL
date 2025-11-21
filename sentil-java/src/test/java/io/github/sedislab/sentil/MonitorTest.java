@@ -3,6 +3,7 @@ package io.github.sedislab.sentil;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
@@ -64,10 +65,10 @@ class MonitorTest {
         try (FormulaBank b = new FormulaBank(); Trace t = Trace.create(new double[] {0, 1, 2})) {
             t.addSignal("x", new double[] {3, -1, 4});
             b.add("p1", "always(x > 0)");
+            assertEquals(-1.0, b.robustness(t).get("p1"));
             b.add("bad", "x > q");
-            Map<String, Double> result = b.robustness(t);
-            assertEquals(-1.0, result.get("p1"));
-            assertTrue(Double.isNaN(result.get("bad")));
+            SentilException e = assertThrows(SentilException.class, () -> b.robustness(t));
+            assertTrue(e.getMessage().contains("bad"));
         }
     }
 }
