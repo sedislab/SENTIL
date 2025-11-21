@@ -20,6 +20,7 @@ pub struct StochasticSystem {
     horizon: usize,
     init: InitFn,
     step: StepFn,
+    thread_confined: bool,
 }
 
 impl StochasticSystem {
@@ -59,7 +60,21 @@ impl StochasticSystem {
             horizon,
             init: Box::new(init),
             step: Box::new(step),
+            thread_confined: false,
         })
+    }
+
+    /// Marks the system's closures as callable only from the driving thread.
+    #[must_use]
+    pub fn thread_confined(mut self) -> Self {
+        self.thread_confined = true;
+        self
+    }
+
+    /// Whether the closures must run on the driving thread rather than a worker pool.
+    #[must_use]
+    pub fn is_thread_confined(&self) -> bool {
+        self.thread_confined
     }
 
     /// The packed signal order both closures emit.

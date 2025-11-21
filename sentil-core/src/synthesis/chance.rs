@@ -104,9 +104,12 @@ impl ChanceConstraint {
         })
     }
 
-    /// Counts the trajectories the formula holds on; per-index seeding keeps the count thread-count independent.
+    /// Counts the trajectories the formula holds on, seeded per index.
     #[cfg(feature = "parallel")]
     fn count_successes(&self, system: &StochasticSystem, samples: u64, seed: u64) -> Result<u64> {
+        if system.is_thread_confined() {
+            return self.count_successes_serial(system, samples, seed);
+        }
         use rayon::prelude::*;
         let hits: Vec<u64> = (0..samples)
             .into_par_iter()
@@ -119,9 +122,17 @@ impl ChanceConstraint {
         Ok(hits.iter().sum())
     }
 
-    /// Single-threaded count, identical sample for sample.
     #[cfg(not(feature = "parallel"))]
     fn count_successes(&self, system: &StochasticSystem, samples: u64, seed: u64) -> Result<u64> {
+        self.count_successes_serial(system, samples, seed)
+    }
+
+    fn count_successes_serial(
+        &self,
+        system: &StochasticSystem,
+        samples: u64,
+        seed: u64,
+    ) -> Result<u64> {
         let mut successes = 0u64;
         for i in 0..samples {
             let mut rng = ChaCha8Rng::seed_from_u64(seed.wrapping_add(i));

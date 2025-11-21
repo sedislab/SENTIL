@@ -1226,7 +1226,7 @@ pub extern "C" fn sentil_stochastic_system_create(
             state
         };
         match StochasticSystem::new(variables, dt, horizon, init, step) {
-            Ok(system) => into_handle(system),
+            Ok(system) => into_handle(system.thread_confined()),
             Err(e) => {
                 let _: SentilError = e.into();
                 ptr::null_mut()
