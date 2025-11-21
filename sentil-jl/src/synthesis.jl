@@ -29,11 +29,11 @@ function smooth_value_and_gradient(f::Formula, trace::Trace; config::SmoothConfi
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmoothConfig}, Ptr{Float64}, Ptr{Float64}, Csize_t, Csize_t),
                       _ptr(f), _ptr(trace), cfg, value, grad, nv, ns))
     # The gradient comes back variable-major.
-    perVar = Dict{String,Vector{Float64}}()
+    per_var = Dict{String,Vector{Float64}}()
     for (vi, name) in enumerate(vars)
-        perVar[name] = grad[((vi - 1) * ns + 1):(vi * ns)]
+        per_var[name] = grad[((vi - 1) * ns + 1):(vi * ns)]
     end
-    return value[], perVar
+    return value[], per_var
 end
 
 export SmoothConfig, smooth_robustness, smooth_value_and_gradient
@@ -282,8 +282,7 @@ function Controller(model::SystemModel, spec::Formula, input_width::Integer, bud
     bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
     sref, sptr = _smooth_ref(smooth)
     box = model.state
-    mptr = _consume!(model)
-    spptr = _consume!(spec)
+    mptr, spptr = _consume_all!(model, spec)
     ptr = GC.@preserve sref ccall((:sentil_controller_create, libsentil[]), Ptr{Cvoid},
         (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, UInt64, Ptr{Cvoid}, Ptr{SmoothConfig}),
         mptr, spptr, input_width, budget_ns, bptr, sptr)
