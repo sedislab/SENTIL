@@ -1,0 +1,9 @@
+*.mexa64
+*.mexmaca64
+*.mexw64
+*.o
+*.asv
+*.mltbx
+slprj/
+*.slxc
+octave-workspace
