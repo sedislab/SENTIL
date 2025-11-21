@@ -98,6 +98,15 @@ function check_distribution(f::Formula, trace::Trace, lifting::LiftingRegistry; 
     return out[], dist[]
 end
 
+"""Estimate the satisfaction probability of a monitor's probabilistic formula."""
+function check(m::Monitor, trace::Trace, lifting::LiftingRegistry)
+    out = Ref{SmcResult}()
+    check_error(ccall((:sentil_monitor_check, libsentil[]), Int32,
+                      (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmcResult}),
+                      _ptr(m), _ptr(trace), _ptr(lifting), out))
+    return out[]
+end
+
 export SmcConfig, check, check_conservative, check_distribution
 
 """A streaming monitor that tracks a `P~p` formula online, lifting each reading through the registry."""

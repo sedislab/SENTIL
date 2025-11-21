@@ -22,6 +22,9 @@ end
     _, dist = check_distribution(phi, trace, lifting)
     @test dist.count > 0
     @test_throws SemanticError check(formula("x > 0"), trace, lifting)
+    mon = Monitor("P>=0.8 (always (x > 0))")
+    mr = check(mon, trace, lifting)
+    @test mr.holds && mr.probability > 0.9
 end
 
 @testset "sequential testing" begin
