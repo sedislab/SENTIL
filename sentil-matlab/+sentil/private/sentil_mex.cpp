@@ -328,6 +328,139 @@ void get_string_cell(const mxArray* cell, std::vector<std::string>& storage,
     }
 }
 
+mxArray* make_rare_event_result(const sentil_rare_event_result_t& r) {
+    static const char* fields[] = {"probability", "violation_probability", "holds", "simulations"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 4, fields);
+    mxSetField(s, 0, "probability", mxCreateDoubleScalar(r.probability));
+    mxSetField(s, 0, "violation_probability", mxCreateDoubleScalar(r.violation_probability));
+    mxSetField(s, 0, "holds", mxCreateLogicalScalar(r.holds));
+    mxSetField(s, 0, "simulations", mxCreateDoubleScalar(static_cast<double>(r.simulations)));
+    return s;
+}
+
+mxArray* make_uint64_scalar(uint64_t value) {
+    mxArray* a = mxCreateNumericMatrix(1, 1, mxUINT64_CLASS, mxREAL);
+    *static_cast<uint64_t*>(mxGetData(a)) = value;
+    return a;
+}
+
+mxArray* callback_error(const char* message) {
+    mxArray* args[3] = {make_string("sentil:callback"), make_string("%s"), make_string(message)};
+    mxArray* lhs[1] = {nullptr};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 3, args, "MException");
+    mxDestroyArray(args[0]);
+    mxDestroyArray(args[1]);
+    mxDestroyArray(args[2]);
+    return ex != nullptr ? ex : lhs[0];
+}
+
+bool is_real_double(const mxArray* result) {
+    return result != nullptr && mxIsDouble(result) && !mxIsComplex(result);
+}
+
+mxArray* fill_state(double* out, size_t n, const mxArray* result, const char* message) {
+    const double* d = nullptr;
+    size_t got = 0;
+    mxArray* error = nullptr;
+    if (result != nullptr && !is_real_double(result)) {
+        error = callback_error(message);
+    } else if (result != nullptr) {
+        d = mxGetDoubles(result);
+        got = mxGetNumberOfElements(result);
+    }
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = i < got ? d[i] : 0.0;
+    }
+    return error;
+}
+
+struct SystemBox {
+    mxArray* init_fn;
+    mxArray* step_fn;
+    mxArray* error;
+};
+
+void system_init_trampoline(void* userdata, uint64_t seed, double* out_state, size_t n) {
+    SystemBox* box = static_cast<SystemBox*>(userdata);
+    for (size_t i = 0; i < n; ++i) {
+        out_state[i] = 0.0;
+    }
+    if (box->error != nullptr) {
+        return;
+    }
+    mxArray* seed_arg = make_uint64_scalar(seed);
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[2] = {box->init_fn, seed_arg};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 2, rhs, "feval");
+    mxDestroyArray(seed_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return;
+    }
+    box->error = fill_state(out_state, n, lhs[0],
+                            "the init function must return a row of "
+                            "real doubles");
+    mxDestroyArray(lhs[0]);
+}
+
+void system_step_trampoline(void* userdata, const double* prev, size_t n, double time,
+                            uint64_t seed, double* out_state) {
+    SystemBox* box = static_cast<SystemBox*>(userdata);
+    for (size_t i = 0; i < n; ++i) {
+        out_state[i] = 0.0;
+    }
+    if (box->error != nullptr) {
+        return;
+    }
+    mxArray* prev_arg = mxCreateDoubleMatrix(1, static_cast<mwSize>(n), mxREAL);
+    double* pd = mxGetDoubles(prev_arg);
+    for (size_t i = 0; i < n; ++i) {
+        pd[i] = prev[i];
+    }
+    mxArray* time_arg = mxCreateDoubleScalar(time);
+    mxArray* seed_arg = make_uint64_scalar(seed);
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[4] = {box->step_fn, prev_arg, time_arg, seed_arg};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 4, rhs, "feval");
+    mxDestroyArray(prev_arg);
+    mxDestroyArray(time_arg);
+    mxDestroyArray(seed_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return;
+    }
+    box->error = fill_state(out_state, n, lhs[0],
+                            "the step function must return a row of "
+                            "real doubles");
+    mxDestroyArray(lhs[0]);
+}
+
+/* Re-raise a callback error the engine call captured, as the user's own MATLAB error. */
+void rethrow_system_error(SystemBox* box) {
+    if (box == nullptr || box->error == nullptr) {
+        return;
+    }
+    mxArray* id_arr = mxGetProperty(box->error, 0, "identifier");
+    mxArray* msg_arr = mxGetProperty(box->error, 0, "message");
+    char* id = id_arr ? mxArrayToUTF8String(id_arr) : nullptr;
+    char* msg = msg_arr ? mxArrayToUTF8String(msg_arr) : nullptr;
+    std::string identifier = (id != nullptr && id[0] != '\0') ? id : "sentil:callback";
+    std::string message = msg != nullptr ? msg : "a callback errored";
+    if (id != nullptr) {
+        mxFree(id);
+    }
+    if (msg != nullptr) {
+        mxFree(msg);
+    }
+    mxDestroyArray(box->error);
+    box->error = nullptr;
+    mexErrMsgIdAndTxt(identifier.c_str(), "%s", message.c_str());
+}
+
+SystemBox* get_box(const mxArray* arr) {
+    return reinterpret_cast<SystemBox*>(*static_cast<uint64_t*>(mxGetData(arr)));
+}
+
 }  // namespace
 
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -1033,6 +1166,190 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
             get_handle<sentil_multi_monitor_t>(prhs[1]), id.c_str(),
             get_handle<sentil_formula_t>(prhs[3]), get_handle<sentil_lifting_registry_t>(prhs[4]),
             &config));
+    } else if (cmd == "sim_expr_prev") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(
+            checked(sentil_sim_expr_prev(static_cast<size_t>(get_scalar(prhs[1])) - 1)));
+    } else if (cmd == "sim_expr_time") {
+        plhs[0] = make_handle(checked(sentil_sim_expr_time()));
+    } else if (cmd == "sim_expr_const") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_sim_expr_const(get_scalar(prhs[1]))));
+    } else if (cmd == "sim_expr_noise") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(
+            checked(sentil_sim_expr_noise(static_cast<size_t>(get_scalar(prhs[1])) - 1)));
+    } else if (cmd == "sim_expr_add" || cmd == "sim_expr_sub" || cmd == "sim_expr_mul" ||
+               cmd == "sim_expr_div") {
+        need(nrhs, 3);
+        sentil_sim_expr_t* left = get_handle<sentil_sim_expr_t>(prhs[1]);
+        sentil_sim_expr_t* right = get_handle<sentil_sim_expr_t>(prhs[2]);
+        sentil_sim_expr_t* out = cmd == "sim_expr_add"   ? sentil_sim_expr_add(left, right)
+                                 : cmd == "sim_expr_sub" ? sentil_sim_expr_sub(left, right)
+                                 : cmd == "sim_expr_mul" ? sentil_sim_expr_mul(left, right)
+                                                         : sentil_sim_expr_div(left, right);
+        plhs[0] = make_handle(checked(out));
+    } else if (cmd == "sim_expr_call") {
+        need(nrhs, 3);
+        std::string name = get_string(prhs[1]);
+        size_t n = mxGetNumberOfElements(prhs[2]);
+        uint64_t* raw = static_cast<uint64_t*>(mxGetData(prhs[2]));
+        std::vector<sentil_sim_expr_t*> args(n);
+        for (size_t i = 0; i < n; ++i) {
+            args[i] = reinterpret_cast<sentil_sim_expr_t*>(raw[i]);
+        }
+        plhs[0] = make_handle(checked(sentil_sim_expr_call(name.c_str(), args.data(), n)));
+    } else if (cmd == "sim_expr_destroy") {
+        need(nrhs, 2);
+        sentil_sim_expr_destroy(get_handle<sentil_sim_expr_t>(prhs[1]));
+    } else if (cmd == "sim_model_create") {
+        need(nrhs, 7);
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[1], storage, names);
+        double dt = get_scalar(prhs[2]);
+        size_t horizon = static_cast<size_t>(get_scalar(prhs[3]));
+        size_t ni = mxGetNumberOfElements(prhs[4]);
+        size_t na = mxGetNumberOfElements(prhs[5]);
+        size_t nn = mxGetNumberOfElements(prhs[6]);
+        uint64_t* ir = static_cast<uint64_t*>(mxGetData(prhs[4]));
+        uint64_t* ar = static_cast<uint64_t*>(mxGetData(prhs[5]));
+        uint64_t* nr = static_cast<uint64_t*>(mxGetData(prhs[6]));
+        std::vector<sentil_sim_expr_t*> init(ni), advance(na);
+        std::vector<sentil_noise_model_t*> noise(nn);
+        for (size_t i = 0; i < ni; ++i) {
+            init[i] = reinterpret_cast<sentil_sim_expr_t*>(ir[i]);
+        }
+        for (size_t i = 0; i < na; ++i) {
+            advance[i] = reinterpret_cast<sentil_sim_expr_t*>(ar[i]);
+        }
+        for (size_t i = 0; i < nn; ++i) {
+            noise[i] = reinterpret_cast<sentil_noise_model_t*>(nr[i]);
+        }
+        plhs[0] = make_handle(checked(sentil_sim_model_create(names.data(), names.size(), dt,
+                                                              horizon, init.data(), ni, advance.data(),
+                                                              na, noise.data(), nn)));
+    } else if (cmd == "sim_model_simulate") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_sim_model_simulate(
+            get_handle<sentil_sim_model_t>(prhs[1]), static_cast<uint64_t>(get_scalar(prhs[2])))));
+    } else if (cmd == "sim_model_variables") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** names = sentil_sim_model_variables(get_handle<sentil_sim_model_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(names, count);
+        if (names != nullptr) {
+            sentil_free_string_array(names, count);
+        }
+    } else if (cmd == "sim_model_dt") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(sentil_sim_model_dt(get_handle<sentil_sim_model_t>(prhs[1])));
+    } else if (cmd == "sim_model_horizon") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(
+            static_cast<double>(sentil_sim_model_horizon(get_handle<sentil_sim_model_t>(prhs[1]))));
+    } else if (cmd == "sim_model_to_stochastic_system") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(
+            sentil_sim_model_to_stochastic_system(get_handle<sentil_sim_model_t>(prhs[1]))));
+    } else if (cmd == "sim_model_destroy") {
+        need(nrhs, 2);
+        sentil_sim_model_destroy(get_handle<sentil_sim_model_t>(prhs[1]));
+    } else if (cmd == "stochastic_system_create_custom") {
+        need(nrhs, 6);
+        SystemBox* box = new SystemBox();
+        box->init_fn = mxDuplicateArray(prhs[1]);
+        mexMakeArrayPersistent(box->init_fn);
+        box->step_fn = mxDuplicateArray(prhs[2]);
+        mexMakeArrayPersistent(box->step_fn);
+        box->error = nullptr;
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[3], storage, names);
+        sentil_system_callbacks_t callbacks;
+        callbacks.userdata = box;
+        callbacks.init = system_init_trampoline;
+        callbacks.step = system_step_trampoline;
+        sentil_stochastic_system_t* system = sentil_stochastic_system_create(
+            names.data(), names.size(), get_scalar(prhs[4]),
+            static_cast<size_t>(get_scalar(prhs[5])), callbacks);
+        if (system == nullptr) {
+            mxDestroyArray(box->init_fn);
+            mxDestroyArray(box->step_fn);
+            delete box;
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_handle(system);
+        plhs[1] = make_handle(box);
+    } else if (cmd == "free_system_box") {
+        need(nrhs, 2);
+        SystemBox* box = get_box(prhs[1]);
+        if (box != nullptr) {
+            mxDestroyArray(box->init_fn);
+            mxDestroyArray(box->step_fn);
+            if (box->error != nullptr) {
+                mxDestroyArray(box->error);
+            }
+            delete box;
+        }
+    } else if (cmd == "stochastic_system_simulate") {
+        need(nrhs, 4);
+        SystemBox* box = get_box(prhs[2]);
+        sentil_trace_t* trace = sentil_stochastic_system_simulate(
+            get_handle<sentil_stochastic_system_t>(prhs[1]),
+            static_cast<uint64_t>(get_scalar(prhs[3])));
+        if (box != nullptr) {
+            rethrow_system_error(box);
+        }
+        plhs[0] = make_handle(checked(trace));
+    } else if (cmd == "stochastic_system_variables") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** names =
+            sentil_stochastic_system_variables(get_handle<sentil_stochastic_system_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(names, count);
+        if (names != nullptr) {
+            sentil_free_string_array(names, count);
+        }
+    } else if (cmd == "stochastic_system_dt") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(
+            sentil_stochastic_system_dt(get_handle<sentil_stochastic_system_t>(prhs[1])));
+    } else if (cmd == "stochastic_system_horizon") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(
+            sentil_stochastic_system_horizon(get_handle<sentil_stochastic_system_t>(prhs[1]))));
+    } else if (cmd == "stochastic_system_destroy") {
+        need(nrhs, 2);
+        sentil_stochastic_system_destroy(get_handle<sentil_stochastic_system_t>(prhs[1]));
+    } else if (cmd == "formula_check_rare_event") {
+        need(nrhs, 7);
+        sentil_rare_event_config_t config;
+        config.particles = static_cast<size_t>(get_scalar(prhs[4]));
+        config.margin = get_scalar(prhs[5]);
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[6]));
+        sentil_rare_event_result_t out;
+        SystemBox* box = get_box(prhs[3]);
+        sentil_error_t code = sentil_formula_check_rare_event(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_stochastic_system_t>(prhs[2]),
+            &config, &out);
+        if (box != nullptr) {
+            rethrow_system_error(box);
+        }
+        check(code);
+        plhs[0] = make_rare_event_result(out);
+    } else if (cmd == "monitor_check_rare") {
+        need(nrhs, 4);
+        sentil_rare_event_result_t out;
+        SystemBox* box = get_box(prhs[3]);
+        sentil_error_t code = sentil_monitor_check_rare(
+            get_handle<sentil_monitor_t>(prhs[1]), get_handle<sentil_stochastic_system_t>(prhs[2]),
+            &out);
+        if (box != nullptr) {
+            rethrow_system_error(box);
+        }
+        check(code);
+        plhs[0] = make_rare_event_result(out);
     } else {
         fail("unknown command: " + cmd);
     }
