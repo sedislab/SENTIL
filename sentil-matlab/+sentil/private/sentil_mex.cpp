@@ -9,8 +9,19 @@
 
 namespace {
 
-/* Raise the engine's last error as a typed MATLAB error so a caller can branch on the
- * identifier, mirroring the Python SentilError subclasses and the Java exceptions. */
+const char* error_id(sentil_error_t code) {
+    switch (code) {
+        case SENTIL_ERR_PARSE:
+            return "sentil:parse";
+        case SENTIL_ERR_UNKNOWN_VARIABLE:
+        case SENTIL_ERR_NOT_PROBABILISTIC:
+        case SENTIL_ERR_UNSUPPORTED:
+            return "sentil:semantic";
+        default:
+            return "sentil:evaluation";
+    }
+}
+
 void raise_last(sentil_error_t code) {
     size_t needed = sentil_get_last_error_message(nullptr, 0);
     std::string message;
@@ -19,20 +30,11 @@ void raise_last(sentil_error_t code) {
         sentil_get_last_error_message(&message[0], needed);
         message.resize(needed - 1);
     }
-    const char* id = "sentil:evaluation";
-    switch (code) {
-        case SENTIL_ERR_PARSE:
-            id = "sentil:parse";
-            break;
-        case SENTIL_ERR_UNKNOWN_VARIABLE:
-        case SENTIL_ERR_NOT_PROBABILISTIC:
-        case SENTIL_ERR_UNSUPPORTED:
-            id = "sentil:semantic";
-            break;
-        default:
-            break;
-    }
-    mexErrMsgIdAndTxt(id, "%s", message.empty() ? "sentil error" : message.c_str());
+    mexErrMsgIdAndTxt(error_id(code), "%s", message.empty() ? "sentil error" : message.c_str());
+}
+
+void throw_sentil(sentil_error_t code, const std::string& message) {
+    mexErrMsgIdAndTxt(error_id(code), "%s", message.c_str());
 }
 
 void check(sentil_error_t code) {
@@ -206,6 +208,55 @@ mxArray* make_robustness_array(const sentil_robustness_t* arr, size_t count) {
     for (size_t i = 0; i < count; ++i) {
         set_robustness(s, static_cast<mwIndex>(i), arr[i]);
     }
+    return s;
+}
+
+mxArray* make_confidence(const sentil_confidence_interval_t& ci) {
+    static const char* fields[] = {"lower", "upper", "level"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 3, fields);
+    mxSetField(s, 0, "lower", mxCreateDoubleScalar(ci.lower));
+    mxSetField(s, 0, "upper", mxCreateDoubleScalar(ci.upper));
+    mxSetField(s, 0, "level", mxCreateDoubleScalar(ci.level));
+    return s;
+}
+
+mxArray* make_named_robustness(const sentil_named_robustness_t* arr, size_t count) {
+    static const char* fields[] = {"id", "resolved", "satisfied", "value", "lower", "upper"};
+    mxArray* s = mxCreateStructMatrix(1, static_cast<mwSize>(count), 6, fields);
+    for (size_t i = 0; i < count; ++i) {
+        mwIndex j = static_cast<mwIndex>(i);
+        mxSetField(s, j, "id", make_string(arr[i].id));
+        mxSetField(s, j, "resolved", mxCreateLogicalScalar(arr[i].robustness.resolved));
+        mxSetField(s, j, "satisfied", mxCreateLogicalScalar(arr[i].robustness.satisfied));
+        mxSetField(s, j, "value", mxCreateDoubleScalar(arr[i].robustness.value));
+        mxSetField(s, j, "lower", mxCreateDoubleScalar(arr[i].robustness.lower));
+        mxSetField(s, j, "upper", mxCreateDoubleScalar(arr[i].robustness.upper));
+    }
+    return s;
+}
+
+mxArray* make_bank(sentil_bank_result_t* owned, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (!owned[i].ok) {
+            std::string message =
+                std::string("formula '") + (owned[i].id ? owned[i].id : "") + "' failed to evaluate";
+            sentil_error_t code = owned[i].code;
+            sentil_free_bank_results(owned, count);
+            throw_sentil(code, message);
+        }
+    }
+    static const char* fields[] = {"ids", "values"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 2, fields);
+    mxArray* ids = mxCreateCellMatrix(1, static_cast<mwSize>(count));
+    mxArray* values = mxCreateDoubleMatrix(1, static_cast<mwSize>(count), mxREAL);
+    double* out = mxGetDoubles(values);
+    for (size_t i = 0; i < count; ++i) {
+        mxSetCell(ids, static_cast<mwIndex>(i), make_string(owned[i].id));
+        out[i] = owned[i].value;
+    }
+    mxSetField(s, 0, "ids", ids);
+    mxSetField(s, 0, "values", values);
+    sentil_free_bank_results(owned, count);
     return s;
 }
 
@@ -537,6 +588,154 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "stream_monitor_destroy") {
         need(nrhs, 2);
         sentil_stream_monitor_destroy(get_handle<sentil_stream_monitor_t>(prhs[1]));
+    } else if (cmd == "multi_monitor_create") {
+        plhs[0] = make_handle(checked(sentil_multi_monitor_create()));
+    } else if (cmd == "multi_monitor_add") {
+        need(nrhs, 4);
+        std::string id = get_string(prhs[2]);
+        std::string formula = get_string(prhs[3]);
+        check(sentil_multi_monitor_add(get_handle<sentil_multi_monitor_t>(prhs[1]), id.c_str(),
+                                       formula.c_str()));
+    } else if (cmd == "multi_monitor_add_formula") {
+        need(nrhs, 4);
+        std::string id = get_string(prhs[2]);
+        check(sentil_multi_monitor_add_formula(get_handle<sentil_multi_monitor_t>(prhs[1]),
+                                               id.c_str(), get_handle<sentil_formula_t>(prhs[3])));
+    } else if (cmd == "multi_monitor_remove") {
+        need(nrhs, 3);
+        plhs[0] = mxCreateLogicalScalar(sentil_multi_monitor_remove(
+            get_handle<sentil_multi_monitor_t>(prhs[1]), get_string(prhs[2]).c_str()));
+    } else if (cmd == "multi_monitor_reset") {
+        need(nrhs, 2);
+        sentil_multi_monitor_reset(get_handle<sentil_multi_monitor_t>(prhs[1]));
+    } else if (cmd == "multi_monitor_len") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(
+            sentil_multi_monitor_len(get_handle<sentil_multi_monitor_t>(prhs[1]))));
+    } else if (cmd == "multi_monitor_is_empty") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateLogicalScalar(
+            sentil_multi_monitor_is_empty(get_handle<sentil_multi_monitor_t>(prhs[1])));
+    } else if (cmd == "multi_monitor_ids") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** ids = sentil_multi_monitor_ids(get_handle<sentil_multi_monitor_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(ids, count);
+        if (ids != nullptr) {
+            sentil_free_string_array(ids, count);
+        }
+    } else if (cmd == "multi_monitor_update") {
+        need(nrhs, 5);
+        sentil_multi_monitor_t* monitor = get_handle<sentil_multi_monitor_t>(prhs[1]);
+        double time = get_scalar(prhs[2]);
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[3], storage, names);
+        size_t m = 0;
+        const double* values = get_doubles(prhs[4], &m);
+        if (m != names.size()) {
+            fail("the names and values must have the same length");
+        }
+        size_t count = 0;
+        sentil_named_robustness_t* result =
+            sentil_multi_monitor_update(monitor, time, names.data(), values, m, &count);
+        if (result == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_named_robustness(result, count);
+        sentil_free_named_robustness(result, count);
+    } else if (cmd == "multi_monitor_destroy") {
+        need(nrhs, 2);
+        sentil_multi_monitor_destroy(get_handle<sentil_multi_monitor_t>(prhs[1]));
+    } else if (cmd == "formula_bank_create") {
+        plhs[0] = make_handle(checked(sentil_formula_bank_create()));
+    } else if (cmd == "formula_bank_add") {
+        need(nrhs, 4);
+        std::string id = get_string(prhs[2]);
+        std::string formula = get_string(prhs[3]);
+        check(sentil_formula_bank_add(get_handle<sentil_formula_bank_t>(prhs[1]), id.c_str(),
+                                      formula.c_str()));
+    } else if (cmd == "formula_bank_add_formula") {
+        need(nrhs, 4);
+        std::string id = get_string(prhs[2]);
+        check(sentil_formula_bank_add_formula(get_handle<sentil_formula_bank_t>(prhs[1]), id.c_str(),
+                                              get_handle<sentil_formula_t>(prhs[3])));
+    } else if (cmd == "formula_bank_ids") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** ids = sentil_formula_bank_ids(get_handle<sentil_formula_bank_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(ids, count);
+        if (ids != nullptr) {
+            sentil_free_string_array(ids, count);
+        }
+    } else if (cmd == "formula_bank_len") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(
+            sentil_formula_bank_len(get_handle<sentil_formula_bank_t>(prhs[1]))));
+    } else if (cmd == "formula_bank_is_empty") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateLogicalScalar(
+            sentil_formula_bank_is_empty(get_handle<sentil_formula_bank_t>(prhs[1])));
+    } else if (cmd == "formula_bank_robustness") {
+        need(nrhs, 3);
+        size_t count = 0;
+        sentil_bank_result_t* results = sentil_formula_bank_robustness(
+            get_handle<sentil_formula_bank_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &count);
+        if (results == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_bank(results, count);
+    } else if (cmd == "formula_bank_robustness_dense") {
+        need(nrhs, 3);
+        size_t count = 0;
+        sentil_bank_result_t* results = sentil_formula_bank_robustness_dense(
+            get_handle<sentil_formula_bank_t>(prhs[1]), get_handle<sentil_trace_t>(prhs[2]), &count);
+        if (results == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_bank(results, count);
+    } else if (cmd == "formula_bank_destroy") {
+        need(nrhs, 2);
+        sentil_formula_bank_destroy(get_handle<sentil_formula_bank_t>(prhs[1]));
+    } else if (cmd == "stats_wilson") {
+        need(nrhs, 4);
+        plhs[0] = make_confidence(sentil_wilson_interval(static_cast<uint64_t>(get_scalar(prhs[1])),
+                                                         static_cast<uint64_t>(get_scalar(prhs[2])),
+                                                         get_scalar(prhs[3])));
+    } else if (cmd == "stats_clopper_pearson") {
+        need(nrhs, 4);
+        plhs[0] = make_confidence(sentil_clopper_pearson(static_cast<uint64_t>(get_scalar(prhs[1])),
+                                                         static_cast<uint64_t>(get_scalar(prhs[2])),
+                                                         get_scalar(prhs[3])));
+    } else if (cmd == "stats_jeffreys") {
+        need(nrhs, 4);
+        plhs[0] = make_confidence(sentil_jeffreys_interval(
+            static_cast<uint64_t>(get_scalar(prhs[1])), static_cast<uint64_t>(get_scalar(prhs[2])),
+            get_scalar(prhs[3])));
+    } else if (cmd == "stats_agresti_coull") {
+        need(nrhs, 4);
+        plhs[0] = make_confidence(sentil_agresti_coull(static_cast<uint64_t>(get_scalar(prhs[1])),
+                                                       static_cast<uint64_t>(get_scalar(prhs[2])),
+                                                       get_scalar(prhs[3])));
+    } else if (cmd == "stats_interval") {
+        need(nrhs, 5);
+        plhs[0] = make_confidence(sentil_interval(
+            static_cast<sentil_interval_method_t>(static_cast<int>(get_scalar(prhs[1]))),
+            static_cast<uint64_t>(get_scalar(prhs[2])), static_cast<uint64_t>(get_scalar(prhs[3])),
+            get_scalar(prhs[4])));
+    } else if (cmd == "stats_z_score") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(sentil_z_score(get_scalar(prhs[1])));
+    } else if (cmd == "stats_chernoff_hoeffding") {
+        need(nrhs, 3);
+        uint64_t out = 0;
+        check(sentil_chernoff_hoeffding_samples(get_scalar(prhs[1]), get_scalar(prhs[2]), &out));
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(out));
+    } else if (cmd == "stats_wilson_samples") {
+        need(nrhs, 3);
+        uint64_t out = 0;
+        check(sentil_wilson_samples(get_scalar(prhs[1]), get_scalar(prhs[2]), &out));
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(out));
     } else {
         fail("unknown command: " + cmd);
     }
