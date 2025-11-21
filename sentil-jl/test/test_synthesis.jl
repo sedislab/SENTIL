@@ -51,3 +51,16 @@ end
     end
     @test p2[1] ≈ 3.0 atol = 2e-1
 end
+
+@testset "chance validation over a host system" begin
+    sys = StochasticSystem(["x"], 1.0, 8;
+        init = seed -> Float64[0.0],
+        step = (prev, t, seed) -> Float64[prev[1] + (isodd(seed) ? 0.6 : -0.4)])
+    cc = ChanceConstraint(formula("always[0, 8](x < 5)"), 0.5; confidence = 0.95)
+    rep = validate(cc, sys; samples = 400, seed = 7)
+    @test rep.estimate == validate(cc, sys; samples = 400, seed = 7).estimate
+    @test 0.0 <= rep.lower_bound <= rep.estimate <= 1.0
+    bad = StochasticSystem(["x"], 1.0, 4; init = seed -> Float64[0.0],
+                           step = (prev, t, seed) -> error("step boom"))
+    @test_throws ErrorException validate(ChanceConstraint(formula("always (x < 5)"), 0.5), bad; samples = 50)
+end
