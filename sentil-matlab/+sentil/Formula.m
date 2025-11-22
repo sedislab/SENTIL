@@ -155,6 +155,14 @@ classdef Formula < handle
             g = sentil_mex('formula_smooth_value_and_gradient', obj.Handle, trace.Handle, ...
                 smooth.temperature, double(int32(smooth.kind)));
         end
+
+        function e = check_rare_event_gpu(obj, model, config)
+            %CHECK_RARE_EVENT_GPU Estimate a P >= p (always[0, b] psi) formula on the GPU.
+            obj.assertOpen();
+            if nargin < 3, config = sentil.RareEventConfig; end
+            e = sentil_mex('formula_check_rare_event_gpu', obj.Handle, model.Handle, ...
+                config.particles, config.margin, config.seed);
+        end
     end
 
     methods (Static, Access = private)

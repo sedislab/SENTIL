@@ -1842,6 +1842,129 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
         mxSetField(plhs[0], 0, "value", mxCreateDoubleScalar(value));
         mxSetField(plhs[0], 0, "gradient", gradient);
+    } else if (cmd == "spec_registry_available") {
+        size_t count = 0;
+        char** names = sentil_spec_registry_available(&count);
+        plhs[0] = make_string_array(names, count);
+        if (names != nullptr) {
+            sentil_free_string_array(names, count);
+        }
+    } else if (cmd == "spec_builder_create") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_spec_builder_create(get_string(prhs[1]).c_str())));
+    } else if (cmd == "spec_builder_from_file") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_spec_builder_from_file(get_string(prhs[1]).c_str())));
+    } else if (cmd == "spec_builder_with_variant") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_spec_builder_with_variant(
+            get_handle<sentil_spec_builder_t>(prhs[1]), get_string(prhs[2]).c_str())));
+    } else if (cmd == "spec_builder_with_param") {
+        need(nrhs, 4);
+        plhs[0] = make_handle(checked(sentil_spec_builder_with_param(
+            get_handle<sentil_spec_builder_t>(prhs[1]), get_string(prhs[2]).c_str(),
+            get_scalar(prhs[3]))));
+    } else if (cmd == "spec_builder_available_variants") {
+        need(nrhs, 2);
+        size_t count = 0;
+        char** variants =
+            sentil_spec_builder_available_variants(get_handle<sentil_spec_builder_t>(prhs[1]), &count);
+        plhs[0] = make_string_array(variants, count);
+        if (variants != nullptr) {
+            sentil_free_string_array(variants, count);
+        }
+    } else if (cmd == "spec_builder_build_deterministic" ||
+               cmd == "spec_builder_build_probabilistic" || cmd == "spec_builder_parameters_json") {
+        need(nrhs, 2);
+        sentil_spec_builder_t* builder = get_handle<sentil_spec_builder_t>(prhs[1]);
+        char* text = cmd == "spec_builder_build_deterministic"
+                         ? sentil_spec_builder_build_deterministic(builder)
+                     : cmd == "spec_builder_build_probabilistic"
+                         ? sentil_spec_builder_build_probabilistic(builder)
+                         : sentil_spec_builder_parameters_json(builder);
+        if (text == nullptr) {
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_string(text);
+        sentil_free_string(text);
+    } else if (cmd == "spec_builder_build_formula") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(
+            checked(sentil_spec_builder_build_formula(get_handle<sentil_spec_builder_t>(prhs[1]))));
+    } else if (cmd == "spec_builder_build_probabilistic_formula") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_spec_builder_build_probabilistic_formula(
+            get_handle<sentil_spec_builder_t>(prhs[1]))));
+    } else if (cmd == "spec_builder_build_lifting_registry") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_spec_builder_build_lifting_registry(
+            get_handle<sentil_spec_builder_t>(prhs[1]))));
+    } else if (cmd == "spec_builder_into_monitor") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(
+            checked(sentil_spec_builder_into_monitor(get_handle<sentil_spec_builder_t>(prhs[1]))));
+    } else if (cmd == "spec_builder_smc_settings") {
+        need(nrhs, 2);
+        sentil_spec_smc_settings_t out;
+        if (sentil_spec_builder_smc_settings(get_handle<sentil_spec_builder_t>(prhs[1]), &out)) {
+            static const char* fields[] = {"confidence", "sample_budget"};
+            plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
+            mxSetField(plhs[0], 0, "confidence", mxCreateDoubleScalar(out.confidence));
+            mxSetField(plhs[0], 0, "sample_budget",
+                       mxCreateDoubleScalar(static_cast<double>(out.sample_budget)));
+        } else {
+            plhs[0] = mxCreateDoubleMatrix(0, 0, mxREAL);
+        }
+    } else if (cmd == "spec_builder_sprt_settings") {
+        need(nrhs, 2);
+        sentil_spec_sprt_settings_t out;
+        if (sentil_spec_builder_sprt_settings(get_handle<sentil_spec_builder_t>(prhs[1]), &out)) {
+            static const char* fields[] = {"p0", "p1", "alpha", "beta", "max_samples"};
+            plhs[0] = mxCreateStructMatrix(1, 1, 5, fields);
+            mxSetField(plhs[0], 0, "p0", mxCreateDoubleScalar(out.p0));
+            mxSetField(plhs[0], 0, "p1", mxCreateDoubleScalar(out.p1));
+            mxSetField(plhs[0], 0, "alpha", mxCreateDoubleScalar(out.alpha));
+            mxSetField(plhs[0], 0, "beta", mxCreateDoubleScalar(out.beta));
+            mxSetField(plhs[0], 0, "max_samples",
+                       mxCreateDoubleScalar(static_cast<double>(out.max_samples)));
+        } else {
+            plhs[0] = mxCreateDoubleMatrix(0, 0, mxREAL);
+        }
+    } else if (cmd == "spec_builder_ams_settings") {
+        need(nrhs, 2);
+        sentil_spec_ams_settings_t out;
+        if (sentil_spec_builder_ams_settings(get_handle<sentil_spec_builder_t>(prhs[1]), &out)) {
+            static const char* fields[] = {"num_particles", "max_steps"};
+            plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
+            mxSetField(plhs[0], 0, "num_particles",
+                       mxCreateDoubleScalar(static_cast<double>(out.num_particles)));
+            mxSetField(plhs[0], 0, "max_steps",
+                       mxCreateDoubleScalar(static_cast<double>(out.max_steps)));
+        } else {
+            plhs[0] = mxCreateDoubleMatrix(0, 0, mxREAL);
+        }
+    } else if (cmd == "spec_builder_destroy") {
+        need(nrhs, 2);
+        sentil_spec_builder_destroy(get_handle<sentil_spec_builder_t>(prhs[1]));
+    } else if (cmd == "gpu_is_available") {
+        plhs[0] = mxCreateLogicalScalar(sentil_gpu_is_available());
+    } else if (cmd == "formula_check_rare_event_gpu") {
+        need(nrhs, 6);
+        sentil_rare_event_config_t config;
+        config.particles = static_cast<size_t>(get_scalar(prhs[3]));
+        config.margin = get_scalar(prhs[4]);
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[5]));
+        sentil_gpu_splitting_estimate_t out;
+        check(sentil_formula_check_rare_event_gpu(get_handle<sentil_formula_t>(prhs[1]),
+                                                  get_handle<sentil_sim_model_t>(prhs[2]), &config,
+                                                  &out));
+        static const char* fields[] = {"violation_probability", "particles", "levels"};
+        plhs[0] = mxCreateStructMatrix(1, 1, 3, fields);
+        mxSetField(plhs[0], 0, "violation_probability",
+                   mxCreateDoubleScalar(out.violation_probability));
+        mxSetField(plhs[0], 0, "particles",
+                   mxCreateDoubleScalar(static_cast<double>(out.particles)));
+        mxSetField(plhs[0], 0, "levels", mxCreateDoubleScalar(static_cast<double>(out.levels)));
     } else {
         fail("unknown command: " + cmd);
     }
