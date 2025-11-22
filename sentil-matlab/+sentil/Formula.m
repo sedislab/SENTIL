@@ -142,7 +142,8 @@ classdef Formula < handle
             if nargin < 4, maxIters = 0; end
             if nargin < 5, smooth = sentil.SmoothConfig; end
             out = sentil_mex('formula_find_counterexample', obj.Handle, model.Handle, ...
-                bounds.Handle, double(maxIters), smooth.temperature, double(int32(smooth.kind)));
+                bounds.Handle, double(maxIters), smooth.temperature, double(int32(smooth.kind)), ...
+                model.Box);
             w = obj.wrapWitness(out);
         end
 
@@ -153,7 +154,7 @@ classdef Formula < handle
             if nargin < 5, restarts = 1; end
             out = sentil_mex('formula_falsify', obj.Handle, model.Handle, bounds.Handle, ...
                 config.population, config.max_generations, config.initial_step, config.tol_step, ...
-                config.seed, double(restarts));
+                config.seed, double(restarts), model.Box);
             w = obj.wrapWitness(out);
         end
 
@@ -162,7 +163,7 @@ classdef Formula < handle
             obj.assertOpen();
             if nargin < 5, smooth = sentil.SmoothConfig; end
             g = sentil_mex('formula_smooth_gradient', obj.Handle, model.Handle, double(initial), ...
-                double(input), smooth.temperature, double(int32(smooth.kind)));
+                double(input), smooth.temperature, double(int32(smooth.kind)), model.Box);
         end
 
         function g = smooth_value_and_gradient(obj, trace, smooth)

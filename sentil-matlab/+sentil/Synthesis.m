@@ -15,7 +15,7 @@ classdef Synthesis
             if nargin < 7, smooth = sentil.SmoothConfig; end
             r = sentil_mex('synthesize', model.Handle, spec.Handle, boundsHandle, ...
                 smooth.temperature, double(int32(smooth.kind)), double(maxIters), ...
-                double(int32(backend)), double(population));
+                double(int32(backend)), double(population), model.Box);
             r.backend = sentil.Backend(r.backend);
         end
 

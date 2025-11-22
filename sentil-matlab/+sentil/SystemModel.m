@@ -17,6 +17,16 @@ classdef SystemModel < handle
             m = sentil.SystemModel(sentil_mex('linear_model_create', A.', n, B.', bCols, ...
                 double(x0(:).'), variables, double(dt), double(horizon)));
         end
+
+        function m = custom(variables, dt, horizon, initialState, inputDimension, rollout)
+            %CUSTOM A model whose rollout(initial, input) returns a variables-by-(horizon+1) matrix.
+            if ~iscell(variables)
+                variables = cellstr(variables);
+            end
+            [handle, box] = sentil_mex('system_model_create_custom', rollout, variables, ...
+                double(dt), double(horizon), double(initialState(:).'), double(inputDimension));
+            m = sentil.SystemModel(handle, box);
+        end
     end
 
     methods
@@ -33,7 +43,7 @@ classdef SystemModel < handle
                 obj.Handle = uint64(0);
             end
             if obj.Box ~= 0
-                sentil_mex('free_system_box', obj.Box);
+                sentil_mex('free_model_box', obj.Box);
                 obj.Box = uint64(0);
             end
         end
@@ -46,10 +56,13 @@ classdef SystemModel < handle
     end
 
     methods (Hidden)
-        function h = consume(obj)
+        function [h, box] = releaseToController(obj)
+            %RELEASETOCONTROLLER Surrender the model handle and rollout box, leaving this model closed.
             obj.assertOpen();
             h = obj.Handle;
+            box = obj.Box;
             obj.Handle = uint64(0);
+            obj.Box = uint64(0);
         end
     end
 

@@ -4,6 +4,7 @@ classdef Controller < handle
     properties (SetAccess = private, Hidden)
         Handle uint64 = uint64(0)
         InputWidth double = 0
+        ModelBox uint64 = uint64(0)
     end
 
     methods
@@ -15,7 +16,10 @@ classdef Controller < handle
                 boundsHandle = bounds.Handle;
             end
             if nargin < 6, smooth = sentil.SmoothConfig; end
-            obj.Handle = sentil_mex('controller_create', model.consume(), spec.consume(), ...
+            % The C ABI consumes the model handle even on a null return.
+            [modelHandle, box] = model.releaseToController();
+            obj.ModelBox = box;
+            obj.Handle = sentil_mex('controller_create', modelHandle, spec.consume(), ...
                 double(inputWidth), double(budgetNs), boundsHandle, smooth.temperature, ...
                 double(int32(smooth.kind)));
             obj.InputWidth = double(inputWidth);
@@ -26,12 +30,17 @@ classdef Controller < handle
                 sentil_mex('controller_destroy', obj.Handle);
                 obj.Handle = uint64(0);
             end
+            if obj.ModelBox ~= 0
+                sentil_mex('free_model_box', obj.ModelBox);
+                obj.ModelBox = uint64(0);
+            end
         end
 
         function u = control(obj, state)
             %CONTROL Plan from the current state and return the control input.
             obj.assertOpen();
-            u = sentil_mex('controller_control', obj.Handle, double(state), obj.InputWidth);
+            u = sentil_mex('controller_control', obj.Handle, double(state), obj.InputWidth, ...
+                obj.ModelBox);
         end
     end
 

@@ -151,8 +151,7 @@ const double* get_doubles(const mxArray* arr, size_t* count) {
 }
 
 double get_scalar(const mxArray* arr) {
-    // mxIsDouble holds for a complex array, and mxGetDoubles returns null for one,
-    // so the complex test has to come before the dereference.
+    // mxIsDouble holds for a complex array, and mxGetDoubles returns null for one.
     if (arr == nullptr || !mxIsDouble(arr) || mxIsComplex(arr) ||
         mxGetNumberOfElements(arr) != 1) {
         fail("expected a real scalar");
@@ -160,8 +159,6 @@ double get_scalar(const mxArray* arr) {
     return *mxGetDoubles(arr);
 }
 
-// A caller-declared dimension has to agree with the array it describes, or the
-// engine reads past the end of a MATLAB-owned buffer.
 void need_length(size_t actual, size_t declared, const char* what) {
     if (actual != declared) {
         fail(std::string("expected ") + std::to_string(declared) + " elements in " + what +
@@ -345,10 +342,6 @@ mxArray* make_uint64_scalar(uint64_t value) {
     return a;
 }
 
-/* The synthesis result owns its input vector, so copy it out and free the original. */
-/* A MATLAB rollout that raised is reported after the engine call returns, and the
- * call still fills its out-parameter, so whatever it owns has to go back before the
- * error unwinds past the code that would have adopted it. */
 void discard_synthesis_result(sentil_synthesis_result_t& r) {
     sentil_free_doubles(r.input, r.input_len);
     r.input = nullptr;
@@ -744,6 +737,69 @@ sentil_formula_t* formula_fn_trampoline(void* userdata, double param) {
         mxDestroyArray(handle_lhs[0]);
     }
     return formula;
+}
+
+struct ModelBox {
+    mxArray* rollout_fn;
+    std::vector<double> initial_state;
+    size_t horizon;
+    size_t n_vars;
+    mxArray* error;
+};
+
+void model_rollout_trampoline(void* userdata, const double* initial, size_t n_state,
+                              const double* input, size_t n_input, double* out_signals) {
+    ModelBox* box = static_cast<ModelBox*>(userdata);
+    size_t total = box->n_vars * (box->horizon + 1);
+    for (size_t i = 0; i < total; ++i) {
+        out_signals[i] = 0.0;
+    }
+    if (box->error != nullptr) {
+        return;
+    }
+    mxArray* initial_arg = row_from(initial, n_state);
+    mxArray* input_arg = row_from(input, n_input);
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[3] = {box->rollout_fn, initial_arg, input_arg};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 3, rhs, "feval");
+    mxDestroyArray(initial_arg);
+    mxDestroyArray(input_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return;
+    }
+    if (lhs[0] != nullptr && !is_real_double(lhs[0])) {
+        box->error = callback_error("the rollout function must return a matrix of real doubles");
+    } else if (lhs[0] != nullptr) {
+        // The rollout returns a column-major matrix; the engine reads signals row-major.
+        const double* md = mxGetDoubles(lhs[0]);
+        size_t rows = mxGetM(lhs[0]);
+        size_t cols = mxGetN(lhs[0]);
+        for (size_t v = 0; v < box->n_vars && v < rows; ++v) {
+            for (size_t s = 0; s <= box->horizon && s < cols; ++s) {
+                out_signals[v * (box->horizon + 1) + s] = md[s * rows + v];
+            }
+        }
+    }
+    if (lhs[0] != nullptr) {
+        mxDestroyArray(lhs[0]);
+    }
+}
+
+ModelBox* get_model_box(const mxArray* arr) {
+    return reinterpret_cast<ModelBox*>(*static_cast<uint64_t*>(mxGetData(arr)));
+}
+
+void rethrow_model_error(const mxArray* arr) {
+    ModelBox* box = get_model_box(arr);
+    if (box != nullptr) {
+        raise_callback(box->error);
+    }
+}
+
+bool model_error_pending(const mxArray* arr) {
+    ModelBox* box = get_model_box(arr);
+    return box != nullptr && box->error != nullptr;
 }
 
 }  // namespace
@@ -1755,16 +1811,58 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "system_model_destroy") {
         need(nrhs, 2);
         sentil_system_model_destroy(get_handle<sentil_system_model_t>(prhs[1]));
+    } else if (cmd == "system_model_create_custom") {
+        need(nrhs, 7);
+        ModelBox* box = new ModelBox();
+        box->rollout_fn = mxDuplicateArray(prhs[1]);
+        mexMakeArrayPersistent(box->rollout_fn);
+        box->error = nullptr;
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[2], storage, names);
+        box->n_vars = names.size();
+        box->horizon = static_cast<size_t>(get_scalar(prhs[4]));
+        size_t isn = 0;
+        const double* initial = get_doubles(prhs[5], &isn);
+        box->initial_state.assign(initial, initial + isn);
+        sentil_model_vtable_t vtable;
+        vtable.userdata = box;
+        vtable.input_dimension = static_cast<size_t>(get_scalar(prhs[6]));
+        vtable.initial_state = box->initial_state.data();
+        vtable.rollout = model_rollout_trampoline;
+        sentil_system_model_t* model = sentil_system_model_create_custom(
+            names.data(), names.size(), get_scalar(prhs[3]), box->horizon, vtable);
+        if (model == nullptr) {
+            mxDestroyArray(box->rollout_fn);
+            delete box;
+            raise_last(sentil_get_last_error_code());
+        }
+        plhs[0] = make_handle(model);
+        plhs[1] = make_handle(box);
+    } else if (cmd == "free_model_box") {
+        need(nrhs, 2);
+        ModelBox* box = get_model_box(prhs[1]);
+        if (box != nullptr) {
+            mxDestroyArray(box->rollout_fn);
+            if (box->error != nullptr) {
+                mxDestroyArray(box->error);
+            }
+            delete box;
+        }
     } else if (cmd == "synthesize") {
-        need(nrhs, 9);
+        need(nrhs, 10);
         sentil_smooth_config_t smooth = read_smooth_config(prhs[4], prhs[5]);
         sentil_synthesis_result_t out;
-        check(sentil_synthesize(get_handle<sentil_system_model_t>(prhs[1]),
-                                get_handle<sentil_formula_t>(prhs[2]),
-                                get_handle<sentil_bounds_t>(prhs[3]), &smooth,
-                                static_cast<size_t>(get_scalar(prhs[6])),
-                                static_cast<sentil_backend_t>(static_cast<int>(get_scalar(prhs[7]))),
-                                static_cast<size_t>(get_scalar(prhs[1 + 7])), &out));
+        sentil_error_t code = sentil_synthesize(
+            get_handle<sentil_system_model_t>(prhs[1]), get_handle<sentil_formula_t>(prhs[2]),
+            get_handle<sentil_bounds_t>(prhs[3]), &smooth, static_cast<size_t>(get_scalar(prhs[6])),
+            static_cast<sentil_backend_t>(static_cast<int>(get_scalar(prhs[7]))),
+            static_cast<size_t>(get_scalar(prhs[8])), &out);
+        if (model_error_pending(prhs[9])) {
+            discard_synthesis_result(out);
+        }
+        rethrow_model_error(prhs[9]);
+        check(code);
         plhs[0] = make_synthesis_result(out);
     } else if (cmd == "controller_create") {
         need(nrhs, 8);
@@ -1774,13 +1872,15 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
             static_cast<size_t>(get_scalar(prhs[3])), static_cast<uint64_t>(get_scalar(prhs[4])),
             get_handle<sentil_bounds_t>(prhs[5]), &smooth)));
     } else if (cmd == "controller_control") {
-        need(nrhs, 4);
+        need(nrhs, 5);
         size_t n = 0;
         const double* state = get_doubles(prhs[2], &n);
         size_t input_width = static_cast<size_t>(get_scalar(prhs[3]));
         mxArray* out = mxCreateDoubleMatrix(1, static_cast<mwSize>(input_width), mxREAL);
-        check(sentil_controller_control(get_handle<sentil_controller_t>(prhs[1]), state, n,
-                                        mxGetDoubles(out)));
+        sentil_error_t code = sentil_controller_control(get_handle<sentil_controller_t>(prhs[1]),
+                                                        state, n, mxGetDoubles(out));
+        rethrow_model_error(prhs[4]);
+        check(code);
         plhs[0] = out;
     } else if (cmd == "controller_destroy") {
         need(nrhs, 2);
@@ -1826,34 +1926,46 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         need(nrhs, 2);
         sentil_chance_constraint_destroy(get_handle<sentil_chance_constraint_t>(prhs[1]));
     } else if (cmd == "formula_find_counterexample") {
-        need(nrhs, 7);
+        need(nrhs, 8);
         sentil_smooth_config_t smooth = read_smooth_config(prhs[5], prhs[6]);
         sentil_witness_t out{};
-        check(sentil_formula_find_counterexample(
+        sentil_error_t code = sentil_formula_find_counterexample(
             get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_system_model_t>(prhs[2]),
             get_handle<sentil_bounds_t>(prhs[3]), static_cast<size_t>(get_scalar(prhs[4])), &smooth,
-            &out));
+            &out);
+        if (model_error_pending(prhs[7])) {
+            discard_witness(out);
+        }
+        rethrow_model_error(prhs[7]);
+        check(code);
         plhs[0] = make_witness(out);
     } else if (cmd == "formula_falsify") {
-        need(nrhs, 10);
+        need(nrhs, 11);
         sentil_cma_config_t config = read_cma_config(prhs[4], prhs[5], prhs[6], prhs[7], prhs[8]);
         sentil_witness_t out{};
-        check(sentil_formula_falsify(get_handle<sentil_formula_t>(prhs[1]),
-                                     get_handle<sentil_system_model_t>(prhs[2]),
-                                     get_handle<sentil_bounds_t>(prhs[3]), config,
-                                     static_cast<size_t>(get_scalar(prhs[9])), &out));
+        sentil_error_t code = sentil_formula_falsify(get_handle<sentil_formula_t>(prhs[1]),
+                                                     get_handle<sentil_system_model_t>(prhs[2]),
+                                                     get_handle<sentil_bounds_t>(prhs[3]), config,
+                                                     static_cast<size_t>(get_scalar(prhs[9])), &out);
+        if (model_error_pending(prhs[10])) {
+            discard_witness(out);
+        }
+        rethrow_model_error(prhs[10]);
+        check(code);
         plhs[0] = make_witness(out);
     } else if (cmd == "formula_smooth_gradient") {
-        need(nrhs, 7);
+        need(nrhs, 8);
         size_t ni = 0, nu = 0;
         const double* initial = get_doubles(prhs[3], &ni);
         const double* input = get_doubles(prhs[4], &nu);
         sentil_smooth_config_t smooth = read_smooth_config(prhs[5], prhs[6]);
         double value = 0.0;
         mxArray* gradient = mxCreateDoubleMatrix(1, static_cast<mwSize>(nu), mxREAL);
-        check(sentil_formula_smooth_gradient(get_handle<sentil_formula_t>(prhs[1]),
-                                             get_handle<sentil_system_model_t>(prhs[2]), initial, ni,
-                                             input, nu, &smooth, &value, mxGetDoubles(gradient)));
+        sentil_error_t code = sentil_formula_smooth_gradient(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_system_model_t>(prhs[2]),
+            initial, ni, input, nu, &smooth, &value, mxGetDoubles(gradient));
+        rethrow_model_error(prhs[7]);
+        check(code);
         static const char* fields[] = {"value", "gradient"};
         plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
         mxSetField(plhs[0], 0, "value", mxCreateDoubleScalar(value));
