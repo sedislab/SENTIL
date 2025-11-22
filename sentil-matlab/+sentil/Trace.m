@@ -90,6 +90,16 @@ classdef Trace < handle
             t = sentil.Trace(sentil_mex('trace_resample', obj.Handle, double(newTimes), ...
                 double(int32(interp))));
         end
+
+        function p = prepare(obj, interp)
+            %PREPARE A sentil.PreparedTrace with precomputed interpolation.
+            obj.assertOpen();
+            if nargin < 2
+                interp = sentil.Interpolation.Linear;
+            end
+            p = sentil.PreparedTrace(uint64(sentil_mex('trace_prepare', obj.Handle, ...
+                double(int32(interp)))));
+        end
     end
 
     methods (Access = private)
