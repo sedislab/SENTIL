@@ -677,6 +677,9 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         need(nrhs, 2);
         std::string text = get_string(prhs[1]);
         plhs[0] = make_handle(checked(sentil_formula_parse(text.c_str())));
+    } else if (cmd == "formula_from_json") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_formula_from_json(get_string(prhs[1]).c_str())));
     } else if (cmd == "formula_destroy") {
         need(nrhs, 2);
         sentil_formula_destroy(get_handle<sentil_formula_t>(prhs[1]));
@@ -1965,6 +1968,93 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         mxSetField(plhs[0], 0, "particles",
                    mxCreateDoubleScalar(static_cast<double>(out.particles)));
         mxSetField(plhs[0], 0, "levels", mxCreateDoubleScalar(static_cast<double>(out.levels)));
+    } else if (cmd == "expr_variable") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_expr_variable(get_string(prhs[1]).c_str())));
+    } else if (cmd == "expr_literal") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_expr_literal(get_scalar(prhs[1]))));
+    } else if (cmd == "expr_binary") {
+        need(nrhs, 4);
+        plhs[0] = make_handle(checked(sentil_expr_binary(
+            static_cast<sentil_binary_op_t>(static_cast<int>(get_scalar(prhs[1]))),
+            get_handle<sentil_expr_t>(prhs[2]), get_handle<sentil_expr_t>(prhs[3]))));
+    } else if (cmd == "expr_call") {
+        need(nrhs, 3);
+        std::string name = get_string(prhs[1]);
+        size_t n = mxGetNumberOfElements(prhs[2]);
+        uint64_t* raw = static_cast<uint64_t*>(mxGetData(prhs[2]));
+        std::vector<sentil_expr_t*> args(n);
+        for (size_t i = 0; i < n; ++i) {
+            args[i] = reinterpret_cast<sentil_expr_t*>(raw[i]);
+        }
+        plhs[0] = make_handle(checked(sentil_expr_call(name.c_str(), args.data(), n)));
+    } else if (cmd == "expr_destroy") {
+        need(nrhs, 2);
+        sentil_expr_destroy(get_handle<sentil_expr_t>(prhs[1]));
+    } else if (cmd == "formula_predicate") {
+        need(nrhs, 4);
+        plhs[0] = make_handle(checked(sentil_formula_predicate(
+            get_handle<sentil_expr_t>(prhs[1]),
+            static_cast<sentil_comparison_op_t>(static_cast<int>(get_scalar(prhs[2]))),
+            get_handle<sentil_expr_t>(prhs[3]))));
+    } else if (cmd == "formula_not") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_formula_not(get_handle<sentil_formula_t>(prhs[1]))));
+    } else if (cmd == "formula_and" || cmd == "formula_or" || cmd == "formula_implies") {
+        need(nrhs, 3);
+        sentil_formula_t* left = get_handle<sentil_formula_t>(prhs[1]);
+        sentil_formula_t* right = get_handle<sentil_formula_t>(prhs[2]);
+        sentil_formula_t* out = cmd == "formula_and"  ? sentil_formula_and(left, right)
+                                : cmd == "formula_or" ? sentil_formula_or(left, right)
+                                                      : sentil_formula_implies(left, right);
+        plhs[0] = make_handle(checked(out));
+    } else if (cmd == "formula_next") {
+        need(nrhs, 2);
+        plhs[0] = make_handle(checked(sentil_formula_next(get_handle<sentil_formula_t>(prhs[1]))));
+    } else if (cmd == "formula_always" || cmd == "formula_eventually" ||
+               cmd == "formula_historically" || cmd == "formula_once") {
+        need(nrhs, 5);
+        sentil_formula_t* child = get_handle<sentil_formula_t>(prhs[1]);
+        double lower = get_scalar(prhs[2]);
+        double upper = get_scalar(prhs[3]);
+        bool has_upper = get_scalar(prhs[4]) != 0.0;
+        sentil_formula_t* out =
+            cmd == "formula_always"         ? sentil_formula_always(lower, upper, has_upper, child)
+            : cmd == "formula_eventually"   ? sentil_formula_eventually(lower, upper, has_upper, child)
+            : cmd == "formula_historically" ? sentil_formula_historically(lower, upper, has_upper, child)
+                                            : sentil_formula_once(lower, upper, has_upper, child);
+        plhs[0] = make_handle(checked(out));
+    } else if (cmd == "formula_until" || cmd == "formula_since") {
+        need(nrhs, 6);
+        sentil_formula_t* left = get_handle<sentil_formula_t>(prhs[1]);
+        sentil_formula_t* right = get_handle<sentil_formula_t>(prhs[2]);
+        double lower = get_scalar(prhs[3]);
+        double upper = get_scalar(prhs[4]);
+        bool has_upper = get_scalar(prhs[5]) != 0.0;
+        sentil_formula_t* out = cmd == "formula_until"
+                                    ? sentil_formula_until(lower, upper, has_upper, left, right)
+                                    : sentil_formula_since(lower, upper, has_upper, left, right);
+        plhs[0] = make_handle(checked(out));
+    } else if (cmd == "formula_probabilistic") {
+        need(nrhs, 4);
+        plhs[0] = make_handle(checked(sentil_formula_probabilistic(
+            static_cast<sentil_probability_op_t>(static_cast<int>(get_scalar(prhs[1]))),
+            get_scalar(prhs[2]), get_handle<sentil_formula_t>(prhs[3]))));
+    } else if (cmd == "trace_prepare") {
+        need(nrhs, 3);
+        plhs[0] = make_handle(checked(sentil_trace_prepare(
+            get_handle<sentil_trace_t>(prhs[1]),
+            static_cast<sentil_interpolation_t>(static_cast<int>(get_scalar(prhs[2]))))));
+    } else if (cmd == "prepared_trace_resample") {
+        need(nrhs, 3);
+        size_t n = 0;
+        const double* times = get_doubles(prhs[2], &n);
+        plhs[0] = make_handle(checked(
+            sentil_prepared_trace_resample(get_handle<sentil_prepared_trace_t>(prhs[1]), times, n)));
+    } else if (cmd == "prepared_trace_destroy") {
+        need(nrhs, 2);
+        sentil_prepared_trace_destroy(get_handle<sentil_prepared_trace_t>(prhs[1]));
     } else {
         fail("unknown command: " + cmd);
     }

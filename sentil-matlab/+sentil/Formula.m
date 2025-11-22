@@ -10,6 +10,23 @@ classdef Formula < handle
             %PARSE Parse a formula from its textual form.
             f = sentil.Formula(sentil_mex('formula_parse', text));
         end
+
+        function f = from_json(json)
+            %FROM_JSON Build a formula from its JSON form.
+            f = sentil.Formula(sentil_mex('formula_from_json', char(json)));
+        end
+
+        function f = predicate(lhs, op, rhs)
+            %PREDICATE A predicate lhs op rhs. The operands are consumed.
+            f = sentil.Formula(sentil_mex('formula_predicate', lhs.consume(), ...
+                double(int32(op)), rhs.consume()));
+        end
+
+        function f = probability(op, threshold, child)
+            %PROBABILITY A probabilistic operator P op threshold (child). Consumes child.
+            f = sentil.Formula(sentil_mex('formula_probabilistic', double(int32(op)), ...
+                double(threshold), child.consume()));
+        end
     end
 
     methods
@@ -162,6 +179,83 @@ classdef Formula < handle
             if nargin < 3, config = sentil.RareEventConfig; end
             e = sentil_mex('formula_check_rare_event_gpu', obj.Handle, model.Handle, ...
                 config.particles, config.margin, config.seed);
+        end
+
+        function f = negate(obj)
+            %NEGATE Logical negation. Consumes this formula.
+            f = sentil.Formula(sentil_mex('formula_not', obj.consume()));
+        end
+
+        function f = conjunction(obj, other)
+            %CONJUNCTION This formula and another. Both are consumed.
+            f = sentil.Formula(sentil_mex('formula_and', obj.consume(), other.consume()));
+        end
+
+        function f = disjunction(obj, other)
+            %DISJUNCTION This formula or another. Both are consumed.
+            f = sentil.Formula(sentil_mex('formula_or', obj.consume(), other.consume()));
+        end
+
+        function f = implies(obj, other)
+            %IMPLIES This formula implies another. Both are consumed.
+            f = sentil.Formula(sentil_mex('formula_implies', obj.consume(), other.consume()));
+        end
+
+        function f = next(obj)
+            %NEXT The next-step operator over this formula. Consumes it.
+            f = sentil.Formula(sentil_mex('formula_next', obj.consume()));
+        end
+
+        function f = always(obj, lower, upper)
+            %ALWAYS The always operator, over [lower, upper] if given.
+            f = obj.temporal('formula_always', nargin, lower, upper);
+        end
+
+        function f = eventually(obj, lower, upper)
+            %EVENTUALLY The eventually operator, over [lower, upper] if given.
+            f = obj.temporal('formula_eventually', nargin, lower, upper);
+        end
+
+        function f = historically(obj, lower, upper)
+            %HISTORICALLY The past-time historically operator.
+            f = obj.temporal('formula_historically', nargin, lower, upper);
+        end
+
+        function f = once(obj, lower, upper)
+            %ONCE The past-time once operator.
+            f = obj.temporal('formula_once', nargin, lower, upper);
+        end
+
+        function f = until(obj, other, lower, upper)
+            %UNTIL This formula until another, over [lower, upper] if given.
+            if nargin < 3
+                f = sentil.Formula(sentil_mex('formula_until', obj.consume(), other.consume(), ...
+                    0, 0, 0));
+            else
+                f = sentil.Formula(sentil_mex('formula_until', obj.consume(), other.consume(), ...
+                    double(lower), double(upper), 1));
+            end
+        end
+
+        function f = since(obj, other, lower, upper)
+            %SINCE This formula since another, over [lower, upper] if given.
+            if nargin < 3
+                f = sentil.Formula(sentil_mex('formula_since', obj.consume(), other.consume(), ...
+                    0, 0, 0));
+            else
+                f = sentil.Formula(sentil_mex('formula_since', obj.consume(), other.consume(), ...
+                    double(lower), double(upper), 1));
+            end
+        end
+    end
+
+    methods (Access = private)
+        function f = temporal(obj, cmd, argCount, lower, upper)
+            if argCount < 3
+                f = sentil.Formula(sentil_mex(cmd, obj.consume(), 0, 0, 0));
+            else
+                f = sentil.Formula(sentil_mex(cmd, obj.consume(), double(lower), double(upper), 1));
+            end
         end
     end
 
