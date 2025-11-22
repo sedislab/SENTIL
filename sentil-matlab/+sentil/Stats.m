@@ -49,5 +49,19 @@ classdef Stats
             %WILSON_SAMPLES Samples for a target Wilson half-width at a confidence level.
             n = sentil_mex('stats_wilson_samples', double(epsilon), double(level));
         end
+
+        function r = sequential_test(source, config)
+            %SEQUENTIAL_TEST Decide a hypothesis by SPRT over a Bernoulli source.
+            r = sentil_mex('sequential_test', source, config.p0, config.p1, config.alpha, ...
+                config.beta, config.max_samples, config.seed);
+            r.verdict = sentil.SprtVerdict(r.verdict);
+        end
+
+        function r = bayes_sequential_test(source, config)
+            %BAYES_SEQUENTIAL_TEST Decide a hypothesis by Bayesian testing over a Bernoulli source.
+            r = sentil_mex('bayes_sequential_test', source, config.threshold, ...
+                config.bayes_factor, config.max_samples, config.seed);
+            r.verdict = sentil.BayesVerdict(r.verdict);
+        end
     end
 end

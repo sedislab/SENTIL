@@ -681,6 +681,31 @@ void batch_trampoline(void* userdata, const double* points, size_t population, s
     }
 }
 
+struct BernoulliBox {
+    const mxArray* fn;
+    mxArray* error;
+};
+
+bool bernoulli_trampoline(void* userdata) {
+    BernoulliBox* box = static_cast<BernoulliBox*>(userdata);
+    if (box->error != nullptr) {
+        return false;
+    }
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[1] = {const_cast<mxArray*>(box->fn)};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 1, rhs, "feval");
+    if (ex != nullptr) {
+        box->error = ex;
+        return false;
+    }
+    bool value =
+        lhs[0] != nullptr && mxGetNumberOfElements(lhs[0]) >= 1 && mxGetScalar(lhs[0]) != 0.0;
+    if (lhs[0] != nullptr) {
+        mxDestroyArray(lhs[0]);
+    }
+    return value;
+}
+
 }  // namespace
 
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -2175,6 +2200,34 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "ring_buffer_destroy") {
         need(nrhs, 2);
         sentil_ring_buffer_destroy(get_handle<sentil_ring_buffer_t>(prhs[1]));
+    } else if (cmd == "sequential_test") {
+        need(nrhs, 8);
+        BernoulliBox box{prhs[1], nullptr};
+        sentil_sprt_config_t config;
+        config.p0 = get_scalar(prhs[2]);
+        config.p1 = get_scalar(prhs[3]);
+        config.alpha = get_scalar(prhs[4]);
+        config.beta = get_scalar(prhs[5]);
+        config.max_samples = static_cast<uint64_t>(get_scalar(prhs[6]));
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[7]));
+        sentil_sprt_result_t out;
+        sentil_error_t code = sentil_sequential_test(&config, bernoulli_trampoline, &box, &out);
+        raise_callback(box.error);
+        check(code);
+        plhs[0] = make_sprt_result(out);
+    } else if (cmd == "bayes_sequential_test") {
+        need(nrhs, 6);
+        BernoulliBox box{prhs[1], nullptr};
+        sentil_bayes_config_t config;
+        config.threshold = get_scalar(prhs[2]);
+        config.bayes_factor = get_scalar(prhs[3]);
+        config.max_samples = static_cast<uint64_t>(get_scalar(prhs[4]));
+        config.seed = static_cast<uint64_t>(get_scalar(prhs[5]));
+        sentil_bayes_result_t out;
+        sentil_error_t code = sentil_bayes_sequential_test(&config, bernoulli_trampoline, &box, &out);
+        raise_callback(box.error);
+        check(code);
+        plhs[0] = make_bayes_result(out);
     } else {
         fail("unknown command: " + cmd);
     }
