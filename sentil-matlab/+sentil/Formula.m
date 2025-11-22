@@ -118,6 +118,50 @@ classdef Formula < handle
             r = sentil_mex('formula_check_rare_event', obj.Handle, system.Handle, system.Box, ...
                 config.particles, config.margin, config.seed);
         end
+
+        function w = find_counterexample(obj, model, bounds, maxIters, smooth)
+            %FIND_COUNTEREXAMPLE Search the smooth robustness for a witnessing input.
+            obj.assertOpen();
+            if nargin < 4, maxIters = 0; end
+            if nargin < 5, smooth = sentil.SmoothConfig; end
+            out = sentil_mex('formula_find_counterexample', obj.Handle, model.Handle, ...
+                bounds.Handle, double(maxIters), smooth.temperature, double(int32(smooth.kind)));
+            w = obj.wrapWitness(out);
+        end
+
+        function w = falsify(obj, model, bounds, config, restarts)
+            %FALSIFY Minimize exact robustness with restarted CMA-ES.
+            obj.assertOpen();
+            if nargin < 4, config = sentil.CmaConfig; end
+            if nargin < 5, restarts = 1; end
+            out = sentil_mex('formula_falsify', obj.Handle, model.Handle, bounds.Handle, ...
+                config.population, config.max_generations, config.initial_step, config.tol_step, ...
+                config.seed, double(restarts));
+            w = obj.wrapWitness(out);
+        end
+
+        function g = smooth_gradient(obj, model, initial, input, smooth)
+            %SMOOTH_GRADIENT The smooth robustness of a rollout and its gradient per input.
+            obj.assertOpen();
+            if nargin < 5, smooth = sentil.SmoothConfig; end
+            g = sentil_mex('formula_smooth_gradient', obj.Handle, model.Handle, double(initial), ...
+                double(input), smooth.temperature, double(int32(smooth.kind)));
+        end
+
+        function g = smooth_value_and_gradient(obj, trace, smooth)
+            %SMOOTH_VALUE_AND_GRADIENT The smooth robustness over a trace and its gradient.
+            obj.assertOpen();
+            if nargin < 3, smooth = sentil.SmoothConfig; end
+            g = sentil_mex('formula_smooth_value_and_gradient', obj.Handle, trace.Handle, ...
+                smooth.temperature, double(int32(smooth.kind)));
+        end
+    end
+
+    methods (Static, Access = private)
+        function w = wrapWitness(out)
+            w = struct('input', out.input, 'robustness', out.robustness, ...
+                'trace', sentil.Trace(uint64(out.trace)));
+        end
     end
 
     methods (Hidden)

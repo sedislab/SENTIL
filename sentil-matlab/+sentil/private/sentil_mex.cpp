@@ -392,6 +392,28 @@ sentil_smooth_config_t read_smooth_config(const mxArray* temperature, const mxAr
     return c;
 }
 
+sentil_cma_config_t read_cma_config(const mxArray* population, const mxArray* max_generations,
+                                    const mxArray* initial_step, const mxArray* tol_step,
+                                    const mxArray* seed) {
+    sentil_cma_config_t c;
+    c.population = static_cast<size_t>(get_scalar(population));
+    c.max_generations = static_cast<size_t>(get_scalar(max_generations));
+    c.initial_step = get_scalar(initial_step);
+    c.tol_step = get_scalar(tol_step);
+    c.seed = static_cast<uint64_t>(get_scalar(seed));
+    return c;
+}
+
+mxArray* make_witness(sentil_witness_t& w) {
+    static const char* fields[] = {"input", "robustness", "trace"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 3, fields);
+    mxSetField(s, 0, "input", make_doubles(w.input, w.input_len));
+    mxSetField(s, 0, "robustness", mxCreateDoubleScalar(w.robustness));
+    mxSetField(s, 0, "trace", make_handle(w.trace));
+    sentil_free_doubles(w.input, w.input_len);
+    return s;
+}
+
 mxArray* callback_error(const char* message) {
     mxArray* args[3] = {make_string("sentil:callback"), make_string("%s"), make_string(message)};
     mxArray* lhs[1] = {nullptr};
@@ -1585,6 +1607,66 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "chance_constraint_destroy") {
         need(nrhs, 2);
         sentil_chance_constraint_destroy(get_handle<sentil_chance_constraint_t>(prhs[1]));
+    } else if (cmd == "formula_find_counterexample") {
+        need(nrhs, 7);
+        sentil_smooth_config_t smooth = read_smooth_config(prhs[5], prhs[6]);
+        sentil_witness_t out{};
+        check(sentil_formula_find_counterexample(
+            get_handle<sentil_formula_t>(prhs[1]), get_handle<sentil_system_model_t>(prhs[2]),
+            get_handle<sentil_bounds_t>(prhs[3]), static_cast<size_t>(get_scalar(prhs[4])), &smooth,
+            &out));
+        plhs[0] = make_witness(out);
+    } else if (cmd == "formula_falsify") {
+        need(nrhs, 10);
+        sentil_cma_config_t config = read_cma_config(prhs[4], prhs[5], prhs[6], prhs[7], prhs[8]);
+        sentil_witness_t out{};
+        check(sentil_formula_falsify(get_handle<sentil_formula_t>(prhs[1]),
+                                     get_handle<sentil_system_model_t>(prhs[2]),
+                                     get_handle<sentil_bounds_t>(prhs[3]), config,
+                                     static_cast<size_t>(get_scalar(prhs[9])), &out));
+        plhs[0] = make_witness(out);
+    } else if (cmd == "formula_smooth_gradient") {
+        need(nrhs, 7);
+        size_t ni = 0, nu = 0;
+        const double* initial = get_doubles(prhs[3], &ni);
+        const double* input = get_doubles(prhs[4], &nu);
+        sentil_smooth_config_t smooth = read_smooth_config(prhs[5], prhs[6]);
+        double value = 0.0;
+        mxArray* gradient = mxCreateDoubleMatrix(1, static_cast<mwSize>(nu), mxREAL);
+        check(sentil_formula_smooth_gradient(get_handle<sentil_formula_t>(prhs[1]),
+                                             get_handle<sentil_system_model_t>(prhs[2]), initial, ni,
+                                             input, nu, &smooth, &value, mxGetDoubles(gradient)));
+        static const char* fields[] = {"value", "gradient"};
+        plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
+        mxSetField(plhs[0], 0, "value", mxCreateDoubleScalar(value));
+        mxSetField(plhs[0], 0, "gradient", gradient);
+    } else if (cmd == "formula_smooth_value_and_gradient") {
+        need(nrhs, 5);
+        sentil_formula_t* formula = get_handle<sentil_formula_t>(prhs[1]);
+        const sentil_trace_t* trace = get_handle<sentil_trace_t>(prhs[2]);
+        sentil_smooth_config_t smooth = read_smooth_config(prhs[3], prhs[4]);
+        size_t n_samples = sentil_trace_len(trace);
+        size_t n_vars = 0;
+        char** vars = sentil_formula_variables(formula, &n_vars);
+        if (vars != nullptr) {
+            sentil_free_string_array(vars, n_vars);
+        }
+        double value = 0.0;
+        std::vector<double> flat(n_vars * n_samples);
+        check(sentil_formula_smooth_value_and_gradient(formula, trace, &smooth, &value, flat.data(),
+                                                       n_vars, n_samples));
+        mxArray* gradient =
+            mxCreateDoubleMatrix(static_cast<mwSize>(n_vars), static_cast<mwSize>(n_samples), mxREAL);
+        double* gd = mxGetDoubles(gradient);
+        for (size_t v = 0; v < n_vars; ++v) {
+            for (size_t s = 0; s < n_samples; ++s) {
+                gd[s * n_vars + v] = flat[v * n_samples + s];
+            }
+        }
+        static const char* fields[] = {"value", "gradient"};
+        plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
+        mxSetField(plhs[0], 0, "value", mxCreateDoubleScalar(value));
+        mxSetField(plhs[0], 0, "gradient", gradient);
     } else {
         fail("unknown command: " + cmd);
     }
