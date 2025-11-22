@@ -415,6 +415,31 @@ mxArray* make_witness(sentil_witness_t& w) {
     return s;
 }
 
+mxArray* make_sample(const sentil_sample_t& s) {
+    if (!s.found) {
+        return mxCreateDoubleMatrix(0, 0, mxREAL);
+    }
+    static const char* fields[] = {"time", "value"};
+    mxArray* m = mxCreateStructMatrix(1, 1, 2, fields);
+    mxSetField(m, 0, "time", mxCreateDoubleScalar(s.time));
+    mxSetField(m, 0, "value", mxCreateDoubleScalar(s.value));
+    return m;
+}
+
+mxArray* make_sample_array(const sentil_sample_t* arr, size_t count) {
+    static const char* fields[] = {"time", "value"};
+    mxArray* m = mxCreateStructMatrix(1, static_cast<mwSize>(count), 2, fields);
+    for (size_t i = 0; i < count; ++i) {
+        mxSetField(m, static_cast<mwIndex>(i), "time", mxCreateDoubleScalar(arr[i].time));
+        mxSetField(m, static_cast<mwIndex>(i), "value", mxCreateDoubleScalar(arr[i].value));
+    }
+    return m;
+}
+
+mxArray* make_optional(bool defined, double value) {
+    return defined ? mxCreateDoubleScalar(value) : mxCreateDoubleMatrix(0, 0, mxREAL);
+}
+
 mxArray* callback_error(const char* message) {
     mxArray* args[3] = {make_string("sentil:callback"), make_string("%s"), make_string(message)};
     mxArray* lhs[1] = {nullptr};
@@ -2055,6 +2080,101 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "prepared_trace_destroy") {
         need(nrhs, 2);
         sentil_prepared_trace_destroy(get_handle<sentil_prepared_trace_t>(prhs[1]));
+    } else if (cmd == "ring_buffer_create") {
+        need(nrhs, 2);
+        plhs[0] =
+            make_handle(checked(sentil_ring_buffer_create(static_cast<size_t>(get_scalar(prhs[1])))));
+    } else if (cmd == "ring_buffer_push") {
+        need(nrhs, 4);
+        sentil_sample_t evicted;
+        check(sentil_ring_buffer_push(get_handle<sentil_ring_buffer_t>(prhs[1]), get_scalar(prhs[2]),
+                                      get_scalar(prhs[3]), &evicted));
+        plhs[0] = make_sample(evicted);
+    } else if (cmd == "ring_buffer_clear") {
+        need(nrhs, 2);
+        sentil_ring_buffer_clear(get_handle<sentil_ring_buffer_t>(prhs[1]));
+    } else if (cmd == "ring_buffer_len") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(
+            static_cast<double>(sentil_ring_buffer_len(get_handle<sentil_ring_buffer_t>(prhs[1]))));
+    } else if (cmd == "ring_buffer_capacity") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(static_cast<double>(
+            sentil_ring_buffer_capacity(get_handle<sentil_ring_buffer_t>(prhs[1]))));
+    } else if (cmd == "ring_buffer_is_empty") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateLogicalScalar(
+            sentil_ring_buffer_is_empty(get_handle<sentil_ring_buffer_t>(prhs[1])));
+    } else if (cmd == "ring_buffer_is_full") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateLogicalScalar(
+            sentil_ring_buffer_is_full(get_handle<sentil_ring_buffer_t>(prhs[1])));
+    } else if (cmd == "ring_buffer_front") {
+        need(nrhs, 2);
+        plhs[0] = make_sample(sentil_ring_buffer_front(get_handle<sentil_ring_buffer_t>(prhs[1])));
+    } else if (cmd == "ring_buffer_back") {
+        need(nrhs, 2);
+        plhs[0] = make_sample(sentil_ring_buffer_back(get_handle<sentil_ring_buffer_t>(prhs[1])));
+    } else if (cmd == "ring_buffer_get") {
+        need(nrhs, 3);
+        plhs[0] = make_sample(sentil_ring_buffer_get(get_handle<sentil_ring_buffer_t>(prhs[1]),
+                                                     static_cast<size_t>(get_scalar(prhs[2])) - 1));
+    } else if (cmd == "ring_buffer_pop_front") {
+        need(nrhs, 2);
+        plhs[0] =
+            make_sample(sentil_ring_buffer_pop_front(get_handle<sentil_ring_buffer_t>(prhs[1])));
+    } else if (cmd == "ring_buffer_pop_back") {
+        need(nrhs, 2);
+        plhs[0] = make_sample(sentil_ring_buffer_pop_back(get_handle<sentil_ring_buffer_t>(prhs[1])));
+    } else if (cmd == "ring_buffer_closest_to_time") {
+        need(nrhs, 3);
+        plhs[0] = make_sample(sentil_ring_buffer_closest_to_time(
+            get_handle<sentil_ring_buffer_t>(prhs[1]), get_scalar(prhs[2])));
+    } else if (cmd == "ring_buffer_mean" || cmd == "ring_buffer_variance" ||
+               cmd == "ring_buffer_std_dev" || cmd == "ring_buffer_min" ||
+               cmd == "ring_buffer_max") {
+        need(nrhs, 2);
+        sentil_ring_buffer_t* buffer = get_handle<sentil_ring_buffer_t>(prhs[1]);
+        double out = 0.0;
+        bool defined = cmd == "ring_buffer_mean"       ? sentil_ring_buffer_mean(buffer, &out)
+                       : cmd == "ring_buffer_variance" ? sentil_ring_buffer_variance(buffer, &out)
+                       : cmd == "ring_buffer_std_dev"  ? sentil_ring_buffer_std_dev(buffer, &out)
+                       : cmd == "ring_buffer_min"      ? sentil_ring_buffer_min(buffer, &out)
+                                                       : sentil_ring_buffer_max(buffer, &out);
+        plhs[0] = make_optional(defined, out);
+    } else if (cmd == "ring_buffer_recompute_statistics") {
+        need(nrhs, 2);
+        sentil_ring_buffer_recompute_statistics(get_handle<sentil_ring_buffer_t>(prhs[1]));
+    } else if (cmd == "ring_buffer_at_time") {
+        need(nrhs, 3);
+        double out = 0.0;
+        bool defined = sentil_ring_buffer_at_time(get_handle<sentil_ring_buffer_t>(prhs[1]),
+                                                  get_scalar(prhs[2]), &out);
+        plhs[0] = make_optional(defined, out);
+    } else if (cmd == "ring_buffer_time_range") {
+        need(nrhs, 2);
+        double start = 0.0, end = 0.0;
+        if (sentil_ring_buffer_time_range(get_handle<sentil_ring_buffer_t>(prhs[1]), &start, &end)) {
+            plhs[0] = mxCreateDoubleMatrix(1, 2, mxREAL);
+            double* d = mxGetDoubles(plhs[0]);
+            d[0] = start;
+            d[1] = end;
+        } else {
+            plhs[0] = mxCreateDoubleMatrix(0, 0, mxREAL);
+        }
+    } else if (cmd == "ring_buffer_between") {
+        need(nrhs, 4);
+        size_t count = 0;
+        sentil_sample_t* samples = sentil_ring_buffer_between(
+            get_handle<sentil_ring_buffer_t>(prhs[1]), get_scalar(prhs[2]), get_scalar(prhs[3]),
+            &count);
+        plhs[0] = make_sample_array(samples, count);
+        if (samples != nullptr) {
+            sentil_free_samples(samples, count);
+        }
+    } else if (cmd == "ring_buffer_destroy") {
+        need(nrhs, 2);
+        sentil_ring_buffer_destroy(get_handle<sentil_ring_buffer_t>(prhs[1]));
     } else {
         fail("unknown command: " + cmd);
     }
