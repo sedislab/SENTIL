@@ -706,6 +706,46 @@ bool bernoulli_trampoline(void* userdata) {
     return value;
 }
 
+struct FormulaFnBox {
+    const mxArray* fn;
+    mxArray* error;
+};
+
+sentil_formula_t* formula_fn_trampoline(void* userdata, double param) {
+    FormulaFnBox* box = static_cast<FormulaFnBox*>(userdata);
+    if (box->error != nullptr) {
+        return nullptr;
+    }
+    mxArray* param_arg = mxCreateDoubleScalar(param);
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[2] = {const_cast<mxArray*>(box->fn), param_arg};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 2, rhs, "feval");
+    mxDestroyArray(param_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return nullptr;
+    }
+    if (lhs[0] == nullptr) {
+        return nullptr;
+    }
+    mxArray* handle_lhs[1] = {nullptr};
+    mxArray* consume_ex = mexCallMATLABWithTrap(1, handle_lhs, 1, &lhs[0], "consume");
+    mxDestroyArray(lhs[0]);
+    if (consume_ex != nullptr) {
+        box->error = consume_ex;
+        return nullptr;
+    }
+    sentil_formula_t* formula = nullptr;
+    if (handle_lhs[0] != nullptr && mxIsUint64(handle_lhs[0])) {
+        formula =
+            reinterpret_cast<sentil_formula_t*>(*static_cast<uint64_t*>(mxGetData(handle_lhs[0])));
+    }
+    if (handle_lhs[0] != nullptr) {
+        mxDestroyArray(handle_lhs[0]);
+    }
+    return formula;
+}
+
 }  // namespace
 
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
@@ -2228,6 +2268,25 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         raise_callback(box.error);
         check(code);
         plhs[0] = make_bayes_result(out);
+    } else if (cmd == "mine_tightest_parameter") {
+        need(nrhs, 5);
+        FormulaFnBox box{prhs[1], nullptr};
+        if (!mxIsUint64(prhs[2])) {
+            fail("expected an array of trace handles");
+        }
+        size_t n = mxGetNumberOfElements(prhs[2]);
+        uint64_t* raw = static_cast<uint64_t*>(mxGetData(prhs[2]));
+        std::vector<const sentil_trace_t*> traces(n);
+        for (size_t i = 0; i < n; ++i) {
+            traces[i] = reinterpret_cast<const sentil_trace_t*>(raw[i]);
+        }
+        double out = 0.0;
+        sentil_error_t code =
+            sentil_mine_tightest_parameter(formula_fn_trampoline, &box, traces.data(), n,
+                                           get_scalar(prhs[3]), get_scalar(prhs[4]), &out);
+        raise_callback(box.error);
+        check(code);
+        plhs[0] = mxCreateDoubleScalar(out);
     } else {
         fail("unknown command: " + cmd);
     }

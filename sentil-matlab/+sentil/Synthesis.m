@@ -62,5 +62,14 @@ classdef Synthesis
                 bounds.Handle, config.population, config.max_generations, config.initial_step, ...
                 config.tol_step, config.seed);
         end
+
+        function p = mine_tightest_parameter(make, traces, lower, upper)
+            %MINE_TIGHTEST_PARAMETER The tightest parameter in [lower, upper] for which make(param) holds on every trace.
+            handles = zeros(1, numel(traces), 'uint64');
+            for i = 1:numel(traces)
+                handles(i) = traces(i).Handle;
+            end
+            p = sentil_mex('mine_tightest_parameter', make, handles, double(lower), double(upper));
+        end
     end
 end
