@@ -4,6 +4,7 @@
 #include "sentil.h"
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -505,13 +506,12 @@ void system_step_trampoline(void* userdata, const double* prev, size_t n, double
     mxDestroyArray(lhs[0]);
 }
 
-/* Re-raise a callback error the engine call captured, as the user's own MATLAB error. */
-void rethrow_system_error(SystemBox* box) {
-    if (box == nullptr || box->error == nullptr) {
+void raise_callback(mxArray*& error) {
+    if (error == nullptr) {
         return;
     }
-    mxArray* id_arr = mxGetProperty(box->error, 0, "identifier");
-    mxArray* msg_arr = mxGetProperty(box->error, 0, "message");
+    mxArray* id_arr = mxGetProperty(error, 0, "identifier");
+    mxArray* msg_arr = mxGetProperty(error, 0, "message");
     char* id = id_arr ? mxArrayToUTF8String(id_arr) : nullptr;
     char* msg = msg_arr ? mxArrayToUTF8String(msg_arr) : nullptr;
     std::string identifier = (id != nullptr && id[0] != '\0') ? id : "sentil:callback";
@@ -522,13 +522,138 @@ void rethrow_system_error(SystemBox* box) {
     if (msg != nullptr) {
         mxFree(msg);
     }
-    mxDestroyArray(box->error);
-    box->error = nullptr;
+    mxDestroyArray(error);
+    error = nullptr;
     mexErrMsgIdAndTxt(identifier.c_str(), "%s", message.c_str());
+}
+
+void rethrow_system_error(SystemBox* box) {
+    if (box != nullptr) {
+        raise_callback(box->error);
+    }
 }
 
 SystemBox* get_box(const mxArray* arr) {
     return reinterpret_cast<SystemBox*>(*static_cast<uint64_t*>(mxGetData(arr)));
+}
+
+struct ObjectiveBox {
+    const mxArray* fn;
+    mxArray* error;
+};
+
+mxArray* row_from(const double* x, size_t n) {
+    mxArray* a = mxCreateDoubleMatrix(1, static_cast<mwSize>(n), mxREAL);
+    double* d = mxGetDoubles(a);
+    for (size_t i = 0; i < n; ++i) {
+        d[i] = x[i];
+    }
+    return a;
+}
+
+void gradient_trampoline(void* userdata, const double* x, size_t n, double* out_value,
+                         double* out_gradient) {
+    ObjectiveBox* box = static_cast<ObjectiveBox*>(userdata);
+    *out_value = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        out_gradient[i] = 0.0;
+    }
+    if (box->error != nullptr) {
+        return;
+    }
+    mxArray* x_arg = row_from(x, n);
+    mxArray* lhs[2] = {nullptr, nullptr};
+    mxArray* rhs[2] = {const_cast<mxArray*>(box->fn), x_arg};
+    mxArray* ex = mexCallMATLABWithTrap(2, lhs, 2, rhs, "feval");
+    mxDestroyArray(x_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return;
+    }
+    if (lhs[0] != nullptr && !is_real_double(lhs[0])) {
+        box->error = callback_error("the objective function must return a real double scalar");
+    } else {
+        if (lhs[0] != nullptr && mxGetNumberOfElements(lhs[0]) >= 1) {
+            *out_value = mxGetDoubles(lhs[0])[0];
+        }
+        box->error = fill_state(out_gradient, n, lhs[1],
+                                "the objective function must return a gradient row of real "
+                                "doubles");
+    }
+    if (lhs[0] != nullptr) {
+        mxDestroyArray(lhs[0]);
+    }
+    if (lhs[1] != nullptr) {
+        mxDestroyArray(lhs[1]);
+    }
+}
+
+double objective_trampoline(void* userdata, const double* x, size_t n) {
+    ObjectiveBox* box = static_cast<ObjectiveBox*>(userdata);
+    if (box->error != nullptr) {
+        return -std::numeric_limits<double>::infinity();
+    }
+    mxArray* x_arg = row_from(x, n);
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[2] = {const_cast<mxArray*>(box->fn), x_arg};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 2, rhs, "feval");
+    mxDestroyArray(x_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return -std::numeric_limits<double>::infinity();
+    }
+    if (lhs[0] != nullptr && !is_real_double(lhs[0])) {
+        box->error = callback_error("the objective function must return a real double scalar");
+        mxDestroyArray(lhs[0]);
+        return -std::numeric_limits<double>::infinity();
+    }
+    double value = (lhs[0] != nullptr && mxGetNumberOfElements(lhs[0]) >= 1)
+                       ? mxGetDoubles(lhs[0])[0]
+                       : 0.0;
+    if (lhs[0] != nullptr) {
+        mxDestroyArray(lhs[0]);
+    }
+    return value;
+}
+
+void batch_trampoline(void* userdata, const double* points, size_t population, size_t dim,
+                      double* out_scores) {
+    ObjectiveBox* box = static_cast<ObjectiveBox*>(userdata);
+    for (size_t i = 0; i < population; ++i) {
+        out_scores[i] = -std::numeric_limits<double>::infinity();
+    }
+    if (box->error != nullptr) {
+        return;
+    }
+    mxArray* points_arg =
+        mxCreateDoubleMatrix(static_cast<mwSize>(population), static_cast<mwSize>(dim), mxREAL);
+    double* pd = mxGetDoubles(points_arg);
+    for (size_t i = 0; i < population; ++i) {
+        for (size_t j = 0; j < dim; ++j) {
+            pd[j * population + i] = points[i * dim + j];
+        }
+    }
+    mxArray* lhs[1] = {nullptr};
+    mxArray* rhs[2] = {const_cast<mxArray*>(box->fn), points_arg};
+    mxArray* ex = mexCallMATLABWithTrap(1, lhs, 2, rhs, "feval");
+    mxDestroyArray(points_arg);
+    if (ex != nullptr) {
+        box->error = ex;
+        return;
+    }
+    if (lhs[0] != nullptr && !is_real_double(lhs[0])) {
+        box->error = callback_error("the objective function must return a row of real doubles, "
+                                    "one score per candidate");
+    } else if (lhs[0] != nullptr) {
+        const double* sd = mxGetDoubles(lhs[0]);
+        size_t got = mxGetNumberOfElements(lhs[0]);
+        for (size_t i = 0; i < population && i < got; ++i) {
+            out_scores[i] = sd[i];
+        }
+    }
+    if (lhs[0] != nullptr) {
+        mxDestroyArray(lhs[0]);
+    }
 }
 
 }  // namespace
@@ -1640,6 +1765,56 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         plhs[0] = mxCreateStructMatrix(1, 1, 2, fields);
         mxSetField(plhs[0], 0, "value", mxCreateDoubleScalar(value));
         mxSetField(plhs[0], 0, "gradient", gradient);
+    } else if (cmd == "maximize") {
+        need(nrhs, 5);
+        ObjectiveBox box{prhs[1], nullptr};
+        size_t n = 0;
+        const double* start = get_doubles(prhs[2], &n);
+        mxArray* point = mxCreateDoubleMatrix(1, static_cast<mwSize>(n), mxREAL);
+        double value = 0.0;
+        sentil_error_t code =
+            sentil_maximize(gradient_trampoline, &box, start, n, get_handle<sentil_bounds_t>(prhs[3]),
+                            static_cast<size_t>(get_scalar(prhs[4])), mxGetDoubles(point), &value);
+        raise_callback(box.error);
+        check(code);
+        plhs[0] = point;
+        if (nlhs > 1) {
+            plhs[1] = mxCreateDoubleScalar(value);
+        }
+    } else if (cmd == "cma_es") {
+        need(nrhs, 9);
+        ObjectiveBox box{prhs[1], nullptr};
+        size_t n = 0;
+        const double* start = get_doubles(prhs[2], &n);
+        sentil_cma_config_t config = read_cma_config(prhs[4], prhs[5], prhs[6], prhs[7], prhs[8]);
+        mxArray* point = mxCreateDoubleMatrix(1, static_cast<mwSize>(n), mxREAL);
+        double value = 0.0;
+        sentil_error_t code = sentil_cma_es(objective_trampoline, &box, start, n,
+                                            get_handle<sentil_bounds_t>(prhs[3]), config,
+                                            mxGetDoubles(point), &value);
+        raise_callback(box.error);
+        check(code);
+        plhs[0] = point;
+        if (nlhs > 1) {
+            plhs[1] = mxCreateDoubleScalar(value);
+        }
+    } else if (cmd == "cma_es_batched") {
+        need(nrhs, 9);
+        ObjectiveBox box{prhs[1], nullptr};
+        size_t n = 0;
+        const double* start = get_doubles(prhs[2], &n);
+        sentil_cma_config_t config = read_cma_config(prhs[4], prhs[5], prhs[6], prhs[7], prhs[8]);
+        mxArray* point = mxCreateDoubleMatrix(1, static_cast<mwSize>(n), mxREAL);
+        double value = 0.0;
+        sentil_error_t code = sentil_cma_es_batched(batch_trampoline, &box, start, n,
+                                                    get_handle<sentil_bounds_t>(prhs[3]), config,
+                                                    mxGetDoubles(point), &value);
+        raise_callback(box.error);
+        check(code);
+        plhs[0] = point;
+        if (nlhs > 1) {
+            plhs[1] = mxCreateDoubleScalar(value);
+        }
     } else if (cmd == "formula_smooth_value_and_gradient") {
         need(nrhs, 5);
         sentil_formula_t* formula = get_handle<sentil_formula_t>(prhs[1]);

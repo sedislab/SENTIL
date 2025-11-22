@@ -30,5 +30,37 @@ classdef Synthesis
             if nargin < 2, temperature = 10; end
             v = sentil_mex('soft_max', double(values), double(temperature));
         end
+
+        function [point, value] = maximize(objective, start, bounds, maxIters)
+            %MAXIMIZE Climb an objective returning [value, gradient] from start within bounds.
+            if nargin < 3 || isempty(bounds)
+                bounds = sentil.Bounds.unbounded(numel(start));
+            end
+            if nargin < 4, maxIters = 0; end
+            [point, value] = sentil_mex('maximize', objective, double(start), bounds.Handle, ...
+                double(maxIters));
+        end
+
+        function [point, value] = cma_es(objective, start, bounds, config)
+            %CMA_ES Maximize a scalar objective with gradient-free CMA-ES.
+            if nargin < 3 || isempty(bounds)
+                bounds = sentil.Bounds.unbounded(numel(start));
+            end
+            if nargin < 4, config = sentil.CmaConfig; end
+            [point, value] = sentil_mex('cma_es', objective, double(start), bounds.Handle, ...
+                config.population, config.max_generations, config.initial_step, config.tol_step, ...
+                config.seed);
+        end
+
+        function [point, value] = cma_es_batched(objective, start, bounds, config)
+            %CMA_ES_BATCHED CMA-ES with an objective that scores a whole population at once.
+            if nargin < 3 || isempty(bounds)
+                bounds = sentil.Bounds.unbounded(numel(start));
+            end
+            if nargin < 4, config = sentil.CmaConfig; end
+            [point, value] = sentil_mex('cma_es_batched', objective, double(start), ...
+                bounds.Handle, config.population, config.max_generations, config.initial_step, ...
+                config.tol_step, config.seed);
+        end
     end
 end
