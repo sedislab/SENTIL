@@ -28,7 +28,7 @@ The committed numbers were measured on a 128-core AMD EPYC 7763 (`sentil_smc_cpu
 
 ## Across the bindings
 
-Six SENTIL runners emit the same record on the same work, so the cost a binding adds over the Rust core is visible directly: `sentil_runner` (rust), `sentil_runner.c` (c), `sentil_runner.cpp` (cpp), `sentil_runner.py` (python), `sentil_runner.jl` (julia), and `sentil_runner.java` (java). The engine is the same compiled core in every case, so a binding only adds the cost of crossing its boundary.
+Seven SENTIL runners emit the same record on the same work, so the cost a binding adds over the Rust core is visible directly: `sentil_runner` (rust), `sentil_runner.c` (c), `sentil_runner.cpp` (cpp), `sentil_runner.py` (python), `sentil_runner.jl` (julia), `sentil_runner.java` (java), and `sentil_runner.m` (matlab). The engine is the same compiled core in every case, so a binding only adds the cost of crossing its boundary.
 
 On the full-signal sweep the bindings track the core, because the single boundary crossing is amortized over the O(n) work inside Rust. The per-sample cost is where a binding shows, and it is tens to hundreds of nanoseconds: on the streaming run the C path crosses in about 70 ns per sample, the C++ path in about 90 ns (the extra is the small verdict struct it returns each call), the Julia path in about 100 ns, the Python path in about 460 ns (the interpreter and the per-call attribute access), and the Java path in about 500 ns (the JNI boundary, the packed-array region copy, and a small verdict object built each call). The C, C++, and Julia streaming paths allocate nothing on the hot path; they take a pre-resolved symbol index and a packed array and cross once per sample.
 
