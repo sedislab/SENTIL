@@ -552,6 +552,9 @@ void rethrow_system_error(SystemBox* box) {
 }
 
 SystemBox* get_box(const mxArray* arr) {
+    if (arr == nullptr || !mxIsUint64(arr) || mxGetNumberOfElements(arr) != 1) {
+        fail("expected a system box handle");
+    }
     return reinterpret_cast<SystemBox*>(*static_cast<uint64_t*>(mxGetData(arr)));
 }
 
@@ -787,6 +790,9 @@ void model_rollout_trampoline(void* userdata, const double* initial, size_t n_st
 }
 
 ModelBox* get_model_box(const mxArray* arr) {
+    if (arr == nullptr || !mxIsUint64(arr) || mxGetNumberOfElements(arr) != 1) {
+        fail("expected a model box handle");
+    }
     return reinterpret_cast<ModelBox*>(*static_cast<uint64_t*>(mxGetData(arr)));
 }
 
@@ -1536,6 +1542,9 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "sim_expr_call") {
         need(nrhs, 3);
         std::string name = get_string(prhs[1]);
+        if (!mxIsUint64(prhs[2])) {
+            fail("expected an array of expression handles");
+        }
         size_t n = mxGetNumberOfElements(prhs[2]);
         uint64_t* raw = static_cast<uint64_t*>(mxGetData(prhs[2]));
         std::vector<sentil_sim_expr_t*> args(n);
@@ -1553,6 +1562,9 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         get_string_cell(prhs[1], storage, names);
         double dt = get_scalar(prhs[2]);
         size_t horizon = static_cast<size_t>(get_scalar(prhs[3]));
+        if (!mxIsUint64(prhs[4]) || !mxIsUint64(prhs[5]) || !mxIsUint64(prhs[6])) {
+            fail("the init, advance, and noise arguments must be arrays of handles");
+        }
         size_t ni = mxGetNumberOfElements(prhs[4]);
         size_t na = mxGetNumberOfElements(prhs[5]);
         size_t nn = mxGetNumberOfElements(prhs[6]);
@@ -1601,22 +1613,23 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         sentil_sim_model_destroy(get_handle<sentil_sim_model_t>(prhs[1]));
     } else if (cmd == "stochastic_system_create_custom") {
         need(nrhs, 6);
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[3], storage, names);
+        double dt = get_scalar(prhs[4]);
+        size_t horizon = static_cast<size_t>(get_scalar(prhs[5]));
         SystemBox* box = new SystemBox();
         box->init_fn = mxDuplicateArray(prhs[1]);
         mexMakeArrayPersistent(box->init_fn);
         box->step_fn = mxDuplicateArray(prhs[2]);
         mexMakeArrayPersistent(box->step_fn);
         box->error = nullptr;
-        std::vector<std::string> storage;
-        std::vector<const char*> names;
-        get_string_cell(prhs[3], storage, names);
         sentil_system_callbacks_t callbacks;
         callbacks.userdata = box;
         callbacks.init = system_init_trampoline;
         callbacks.step = system_step_trampoline;
         sentil_stochastic_system_t* system = sentil_stochastic_system_create(
-            names.data(), names.size(), get_scalar(prhs[4]),
-            static_cast<size_t>(get_scalar(prhs[5])), callbacks);
+            names.data(), names.size(), dt, horizon, callbacks);
         if (system == nullptr) {
             mxDestroyArray(box->init_fn);
             mxDestroyArray(box->step_fn);
@@ -1813,25 +1826,28 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         sentil_system_model_destroy(get_handle<sentil_system_model_t>(prhs[1]));
     } else if (cmd == "system_model_create_custom") {
         need(nrhs, 7);
+        std::vector<std::string> storage;
+        std::vector<const char*> names;
+        get_string_cell(prhs[2], storage, names);
+        double dt = get_scalar(prhs[3]);
+        size_t horizon = static_cast<size_t>(get_scalar(prhs[4]));
+        size_t isn = 0;
+        const double* initial = get_doubles(prhs[5], &isn);
+        size_t input_dim = static_cast<size_t>(get_scalar(prhs[6]));
         ModelBox* box = new ModelBox();
         box->rollout_fn = mxDuplicateArray(prhs[1]);
         mexMakeArrayPersistent(box->rollout_fn);
         box->error = nullptr;
-        std::vector<std::string> storage;
-        std::vector<const char*> names;
-        get_string_cell(prhs[2], storage, names);
         box->n_vars = names.size();
-        box->horizon = static_cast<size_t>(get_scalar(prhs[4]));
-        size_t isn = 0;
-        const double* initial = get_doubles(prhs[5], &isn);
+        box->horizon = horizon;
         box->initial_state.assign(initial, initial + isn);
         sentil_model_vtable_t vtable;
         vtable.userdata = box;
-        vtable.input_dimension = static_cast<size_t>(get_scalar(prhs[6]));
+        vtable.input_dimension = input_dim;
         vtable.initial_state = box->initial_state.data();
         vtable.rollout = model_rollout_trampoline;
         sentil_system_model_t* model = sentil_system_model_create_custom(
-            names.data(), names.size(), get_scalar(prhs[3]), box->horizon, vtable);
+            names.data(), names.size(), dt, box->horizon, vtable);
         if (model == nullptr) {
             mxDestroyArray(box->rollout_fn);
             delete box;
@@ -2184,6 +2200,9 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "expr_call") {
         need(nrhs, 3);
         std::string name = get_string(prhs[1]);
+        if (!mxIsUint64(prhs[2])) {
+            fail("expected an array of expression handles");
+        }
         size_t n = mxGetNumberOfElements(prhs[2]);
         uint64_t* raw = static_cast<uint64_t*>(mxGetData(prhs[2]));
         std::vector<sentil_expr_t*> args(n);
