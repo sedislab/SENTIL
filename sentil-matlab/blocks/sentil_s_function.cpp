@@ -258,7 +258,6 @@ static void mdlStart(SimStruct* S) {
     }
 
     ctx->port_to_symbol_map = (size_t*)malloc(vars->count * sizeof(size_t));
-    size_t max_index = 0;
     int mapping_failed = 0;
     for (int i = 0; i < vars->count; ++i) {
         size_t idx = 0;
@@ -270,9 +269,6 @@ static void mdlStart(SimStruct* S) {
             break;
         }
         ctx->port_to_symbol_map[i] = idx;
-        if (idx > max_index) {
-            max_index = idx;
-        }
     }
 
     if (mapping_failed) {
@@ -287,7 +283,7 @@ static void mdlStart(SimStruct* S) {
         return;
     }
 
-    ctx->total_symbols = max_index + 1;
+    ctx->total_symbols = sentil_stream_monitor_variable_count(ctx->handle);
     ctx->packed_buffer = (double*)calloc(ctx->total_symbols, sizeof(double));
 
     ssGetPWork(S)[0] = (void*)ctx;
