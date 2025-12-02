@@ -1,0 +1,44 @@
+name: ci-matlab
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  license:
+    name: matlab license
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.probe.outputs.present }}
+    steps:
+      - id: probe
+        env:
+          MLM_LICENSE_TOKEN: ${{ secrets.MATLAB_BATCH_TOKEN }}
+        run: |
+          if [ -n "${MLM_LICENSE_TOKEN}" ]; then
+            echo "present=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=no" >> "$GITHUB_OUTPUT"
+            echo "MATLAB_BATCH_TOKEN is not set here, so the matlab tests were skipped and this run does not cover them." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  test:
+    name: matlab
+    needs: license
+    if: needs.license.outputs.present == 'yes'
+    runs-on: ubuntu-latest
+    env:
+      MLM_LICENSE_TOKEN: ${{ secrets.MATLAB_BATCH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build the core
+        run: cargo build --release -p sentil-ffi
+      - uses: matlab-actions/setup-matlab@v2
+        with:
+          products: Simulink
+      - name: build the binding and run the tests
+        uses: matlab-actions/run-command@v2
+        with:
+          command: cd('sentil-matlab'); build_sentil; addpath(pwd); r = runtests('tests'); assert(all([r.Passed]))

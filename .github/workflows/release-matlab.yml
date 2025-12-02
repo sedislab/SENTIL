@@ -1,0 +1,43 @@
+name: release-matlab
+
+# Builds the core and the MEX gateway on Linux, macOS, and Windows, then assembles one
+# Sentil.mltbx that carries every platform's gateway, so the File Exchange package installs
+# and runs anywhere with no Rust toolchain and no build from source. The package is attached
+# to the GitHub release as an asset; uploading it to the File Exchange is a maintainer step.
+# Gated on the MATLAB_BATCH_TOKEN secret so it skips cleanly where no license is configured.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: package mltbx
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      MLM_LICENSE_TOKEN: ${{ secrets.MATLAB_BATCH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.MLM_LICENSE_TOKEN != ''
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.MLM_LICENSE_TOKEN != ''
+      - name: build the core
+        if: env.MLM_LICENSE_TOKEN != ''
+        run: cargo build --release -p sentil-ffi
+      - uses: matlab-actions/setup-matlab@v2
+        if: env.MLM_LICENSE_TOKEN != ''
+        with:
+          products: Simulink
+      - name: build and package the toolbox
+        if: env.MLM_LICENSE_TOKEN != ''
+        uses: matlab-actions/run-command@v2
+        with:
+          command: cd('sentil-matlab'); build_sentil; package_sentil('Sentil.mltbx')
+      - name: attach the package to the release
+        if: env.MLM_LICENSE_TOKEN != '' && github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          files: sentil-matlab/Sentil.mltbx
