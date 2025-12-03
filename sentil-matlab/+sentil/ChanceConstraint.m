@@ -8,8 +8,6 @@ classdef ChanceConstraint < handle
     methods
         function obj = ChanceConstraint(spec, probability, confidence, tightening)
             %CHANCECONSTRAINT The spec (consumed) must hold with at least probability.
-            %   confidence sets the lower-bound confidence level (default 0.95); a
-            %   nonzero tightening adds a conservative margin.
             if nargin < 3, confidence = 0.0; end
             if nargin < 4, tightening = 0.0; end
             obj.Handle = sentil_mex('chance_constraint_create', spec.consume(), ...
