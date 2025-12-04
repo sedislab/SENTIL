@@ -17,6 +17,55 @@
 
 extern crate alloc;
 
+// On a board the engine allocates from a fixed region the sketch hands over, and
+// a panic halts the core because there is no unwinder and nowhere to print. A
+// host build (the `std` feature, used by the oracle test and the formula
+// compiler) keeps the system allocator and panic handler instead.
+#[cfg(all(feature = "mcu", not(feature = "std")))]
+mod mcu {
+    use embedded_alloc::LlffHeap as Heap;
+
+    #[global_allocator]
+    static HEAP: Heap = Heap::empty();
+
+    pub(crate) unsafe fn init(start: *mut u8, size: usize) {
+        HEAP.init(start as usize, size);
+    }
+}
+
+#[cfg(all(feature = "mcu", not(feature = "std")))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Hands the monitor a fixed region of memory to allocate from.
+///
+/// Call this once from `setup()` with a static buffer, before creating any
+/// monitor; the region must stay alive for as long as any monitor does. A zero
+/// size or null pointer is ignored so the call cannot fault. A host build has a
+/// system allocator already, so there this does nothing.
+///
+/// # Safety
+///
+/// `heap` must point to `size` writable bytes that outlive every monitor, and
+/// this must run before the first allocation on the board.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_init(heap: *mut u8, size: usize) {
+    #[cfg(all(feature = "mcu", not(feature = "std")))]
+    {
+        if size != 0 && !heap.is_null() {
+            mcu::init(heap, size);
+        }
+    }
+    #[cfg(not(all(feature = "mcu", not(feature = "std"))))]
+    {
+        let _ = (heap, size);
+    }
+}
+
 /// Writes the library version into the out-pointers. A null pointer is skipped.
 ///
 /// The version tracks the SENTIL release this monitor was built from.
