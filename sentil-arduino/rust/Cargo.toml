@@ -1,0 +1,47 @@
+[package]
+name = "sentil-arduino"
+version = "1.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = [
+    "Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>",
+    "Ernest Bonnah",
+    "SEDIS Lab, Baylor University",
+]
+repository = "https://github.com/sedislab/SENTIL"
+description = "Deterministic STL streaming monitor for microcontrollers, built on the SENTIL core"
+publish = false
+
+[lib]
+name = "sentil_embedded"
+crate-type = ["staticlib"]
+
+[features]
+default = ["parser"]
+# Host build: link the standard library so the oracle test and the formula
+# compiler get a system allocator and a panic handler. Never set on a board.
+std = ["sentil/std"]
+# The text formula parser. On by default; drop it on the smallest boards and
+# load a host-compiled formula through the compiled path instead.
+parser = []
+# The fixed-heap allocator and abort panic for a bare-metal target.
+mcu = ["dep:embedded-alloc"]
+
+[dependencies]
+sentil = { path = "../../sentil-core", default-features = false }
+embedded-alloc = { version = "0.7", optional = true }
+
+# Host tool: compile a formula on a workstation into the compact byte form the
+# smallest boards load without shipping the parser.
+[[bin]]
+name = "sentil-compile-formula"
+path = "src/bin/compile_formula.rs"
+required-features = ["std", "parser"]
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+[workspace]
