@@ -25,7 +25,11 @@ pub(crate) mod prelude {
     pub(crate) use alloc::boxed::Box;
     pub(crate) use alloc::collections::{BTreeMap, VecDeque};
     pub(crate) use alloc::string::String;
+    #[cfg(target_has_atomic = "ptr")]
     pub(crate) use alloc::sync::Arc;
+    // Cortex-M0/M0+ and RISC-V without the A extension gate out alloc::sync.
+    #[cfg(not(target_has_atomic = "ptr"))]
+    pub(crate) use alloc::rc::Rc as Arc;
     pub(crate) use alloc::vec::Vec;
     pub(crate) use alloc::{format, vec};
     #[cfg(not(test))]
