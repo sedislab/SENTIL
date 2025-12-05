@@ -14,7 +14,9 @@ publish = false
 
 [lib]
 name = "sentil_embedded"
-crate-type = ["staticlib"]
+# staticlib is the archive a sketch links; rlib lets the host formula compiler
+# reuse the codec.
+crate-type = ["staticlib", "rlib"]
 
 [features]
 default = ["parser"]
