@@ -17,6 +17,8 @@
 
 extern crate alloc;
 
+pub mod codec;
+
 // On a board the engine allocates from a fixed region the sketch hands over, and
 // a panic halts the core because there is no unwinder and nowhere to print. A
 // host build (the `std` feature, used by the oracle test and the formula
