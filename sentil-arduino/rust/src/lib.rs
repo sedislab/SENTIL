@@ -177,6 +177,46 @@ pub unsafe extern "C" fn sentil_embedded_create(
     }
 }
 
+/// Builds a streaming monitor from a host-compiled formula, storing the handle
+/// in `*out`. The blob comes from the `sentil-compile-formula` tool, so the
+/// smallest boards can monitor without the parser.
+///
+/// On success returns [`Status::Ok`] and writes the monitor to `*out`; a
+/// malformed blob returns [`Status::Decode`] and writes null.
+///
+/// # Safety
+///
+/// `bytes` must point to `len` readable bytes and `out` to a writable slot.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_create_compiled(
+    bytes: *const u8,
+    len: usize,
+    out: *mut *mut StreamMonitor,
+) -> Status {
+    if out.is_null() {
+        return Status::NullPointer;
+    }
+    *out = core::ptr::null_mut();
+    let blob = if len == 0 {
+        &[][..]
+    } else if bytes.is_null() {
+        return Status::NullPointer;
+    } else {
+        core::slice::from_raw_parts(bytes, len)
+    };
+    let formula = match codec::decode(blob) {
+        Ok(formula) => formula,
+        Err(_) => return Status::Decode,
+    };
+    match StreamMonitor::from_formula(&formula) {
+        Ok(monitor) => {
+            *out = alloc::boxed::Box::into_raw(alloc::boxed::Box::new(monitor));
+            Status::Ok
+        }
+        Err(e) => status_of(&e),
+    }
+}
+
 /// Frees a monitor from a SENTIL create call. A null pointer is a no-op.
 ///
 /// # Safety
