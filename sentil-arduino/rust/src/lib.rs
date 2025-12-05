@@ -123,3 +123,67 @@ pub extern "C" fn sentil_embedded_version(major: *mut u32, minor: *mut u32, patc
     write(minor, 0);
     write(patch, 0);
 }
+
+use sentil::StreamMonitor;
+
+fn status_of(err: &sentil::Error) -> Status {
+    use sentil::Error;
+    match err {
+        Error::Parse(_) => Status::Parse,
+        Error::UnknownVariable { .. } => Status::UnknownVariable,
+        Error::PackedLength { .. } => Status::PackedLength,
+        Error::Unsupported { .. } => Status::Unsupported,
+        _ => Status::Internal,
+    }
+}
+
+/// Builds a streaming monitor from a formula, storing the handle in `*out`.
+///
+/// On success returns [`Status::Ok`] and writes an owned monitor to `*out`; on
+/// failure returns the reason and writes null. Free the handle with
+/// [`sentil_embedded_destroy`]. This entry point exists only when the crate is
+/// built with the `parser` feature; the smallest boards drop it and load a
+/// host-compiled formula instead.
+///
+/// # Safety
+///
+/// `formula` must be a null-terminated UTF-8 string and `out` must point to a
+/// writable handle slot.
+#[cfg(feature = "parser")]
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_create(
+    formula: *const core::ffi::c_char,
+    out: *mut *mut StreamMonitor,
+) -> Status {
+    if out.is_null() {
+        return Status::NullPointer;
+    }
+    *out = core::ptr::null_mut();
+    if formula.is_null() {
+        return Status::NullPointer;
+    }
+    let text = match core::ffi::CStr::from_ptr(formula).to_str() {
+        Ok(text) => text,
+        Err(_) => return Status::Parse,
+    };
+    match StreamMonitor::new(text) {
+        Ok(monitor) => {
+            *out = alloc::boxed::Box::into_raw(alloc::boxed::Box::new(monitor));
+            Status::Ok
+        }
+        Err(e) => status_of(&e),
+    }
+}
+
+/// Frees a monitor from a SENTIL create call. A null pointer is a no-op.
+///
+/// # Safety
+///
+/// `monitor` must be a live handle from this library that has not already been
+/// destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_destroy(monitor: *mut StreamMonitor) {
+    if !monitor.is_null() {
+        drop(alloc::boxed::Box::from_raw(monitor));
+    }
+}
