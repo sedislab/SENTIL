@@ -187,3 +187,130 @@ pub unsafe extern "C" fn sentil_embedded_destroy(monitor: *mut StreamMonitor) {
         drop(alloc::boxed::Box::from_raw(monitor));
     }
 }
+
+/// The robustness after one sample, laid out for C.
+///
+/// `value` is the margin (the interval midpoint while a temporal window is still
+/// open), `satisfied` is `value >= 0`, and `resolved` says whether the verdict
+/// has settled or still depends on samples not yet seen.
+#[repr(C)]
+pub struct EmbeddedRobustness {
+    /// Whether the verdict has settled to a single value.
+    pub resolved: bool,
+    /// Whether the property holds at this point.
+    pub satisfied: bool,
+    /// The robustness margin.
+    pub value: f64,
+    /// The greatest lower bound on the margin.
+    pub lower: f64,
+    /// The least upper bound on the margin.
+    pub upper: f64,
+}
+
+impl EmbeddedRobustness {
+    fn from_core(r: sentil::Robustness) -> Self {
+        Self {
+            resolved: r.is_resolved(),
+            satisfied: r.is_satisfied(),
+            value: r.value(),
+            lower: r.lower(),
+            upper: r.upper(),
+        }
+    }
+}
+
+/// Folds one timestamped sample into the monitor and writes the robustness.
+///
+/// `values` holds the variables in the order [`sentil_embedded_symbol_index`]
+/// reports, with `n` entries. Times must strictly increase across calls. On
+/// success returns [`Status::Ok`] and fills `*out`; on a missing value or a
+/// short slice it returns the reason and leaves `*out` untouched.
+///
+/// # Safety
+///
+/// `monitor` must be a live handle, `values` must point to `n` doubles, and
+/// `out` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_update(
+    monitor: *mut StreamMonitor,
+    time: f64,
+    values: *const f64,
+    n: usize,
+    out: *mut EmbeddedRobustness,
+) -> Status {
+    if monitor.is_null() || out.is_null() || (values.is_null() && n != 0) {
+        return Status::NullPointer;
+    }
+    let monitor = &mut *monitor;
+    let slice = core::slice::from_raw_parts(values, n);
+    match monitor.update_packed(time, slice) {
+        Ok(robustness) => {
+            *out = EmbeddedRobustness::from_core(robustness);
+            Status::Ok
+        }
+        Err(e) => status_of(&e),
+    }
+}
+
+/// The number of variables the formula references, which is the length the
+/// packed `values` slice of [`sentil_embedded_update`] must reach. Returns zero
+/// for a null handle.
+///
+/// # Safety
+///
+/// `monitor` must be a live handle or null.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_variable_count(monitor: *const StreamMonitor) -> usize {
+    if monitor.is_null() {
+        return 0;
+    }
+    (*monitor).variable_count()
+}
+
+/// The packed-slice position of a named variable. Writes the index to `*out` and
+/// `true` to `*found` when the formula uses the variable, or `false` when it does
+/// not. Resolve each name once, then feed the packed slice in that order.
+///
+/// # Safety
+///
+/// `monitor` must be a live handle, `name` a null-terminated string, and `out`
+/// and `found` writable.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_symbol_index(
+    monitor: *const StreamMonitor,
+    name: *const core::ffi::c_char,
+    out: *mut usize,
+    found: *mut bool,
+) -> Status {
+    if monitor.is_null() || name.is_null() || out.is_null() || found.is_null() {
+        return Status::NullPointer;
+    }
+    let name = match core::ffi::CStr::from_ptr(name).to_str() {
+        Ok(name) => name,
+        Err(_) => return Status::UnknownVariable,
+    };
+    match (*monitor).symbol_index(name) {
+        Some(index) => {
+            *out = index;
+            *found = true;
+        }
+        None => {
+            *out = 0;
+            *found = false;
+        }
+    }
+    Status::Ok
+}
+
+/// Clears the monitor so it can run again from the start of a fresh stream. A
+/// null handle is a no-op.
+///
+/// # Safety
+///
+/// `monitor` must be a live handle or null.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_reset(monitor: *mut StreamMonitor) {
+    if !monitor.is_null() {
+        (*monitor).reset();
+    }
+}
