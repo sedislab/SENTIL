@@ -280,11 +280,17 @@ pub unsafe extern "C" fn sentil_embedded_update(
     n: usize,
     out: *mut EmbeddedRobustness,
 ) -> Status {
-    if monitor.is_null() || out.is_null() || (values.is_null() && n != 0) {
+    if monitor.is_null() || out.is_null() {
         return Status::NullPointer;
     }
+    let slice = if n == 0 {
+        &[][..]
+    } else if values.is_null() {
+        return Status::NullPointer;
+    } else {
+        core::slice::from_raw_parts(values, n)
+    };
     let monitor = &mut *monitor;
-    let slice = core::slice::from_raw_parts(values, n);
     match monitor.update_packed(time, slice) {
         Ok(robustness) => {
             *out = EmbeddedRobustness::from_core(robustness);
