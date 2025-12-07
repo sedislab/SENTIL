@@ -12,7 +12,7 @@ COMPILER := $(RUST)/target/release/sentil-compile-formula
 ORACLE := $(ROOT)/benchmarks/deterministic/oracle.json
 BLOB := $(abspath $(RUST)/target/sentil_test_formula.bin)
 LINK := $(LIB) -lpthread -ldl -lm
-TESTS := tests/test_oracle.cpp
+TESTS := tests/test_oracle.cpp tests/test_monitor.cpp
 
 .PHONY: build test clean
 
