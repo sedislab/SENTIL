@@ -32,7 +32,7 @@ void loop() {
 }
 ```
 
-The `examples/` folder carries `BasicMonitor`, which prints the robustness over serial, and `StreamingThreshold`, which lights the built-in LED when a windowed safety property fails.
+The `packaging/arduino/examples/` folder carries `BasicMonitor`, which prints the robustness over serial, and `StreamingThreshold`, which lights the built-in LED when a windowed safety property fails.
 
 ## Which operators suit a board
 
@@ -62,7 +62,7 @@ Bad input comes back as a status code, never a fault. A malformed formula gives 
 
 ## Performance
 
-The streaming monitor holds an O(1) amortized per-sample cost with memory proportional to the window. The `examples/Benchmark` sketch reports the microseconds per update on a named board; that number is hardware-bound and recorded in the claims ledger with the board it was measured on.
+The streaming monitor holds an O(1) amortized per-sample cost with memory proportional to the window. The `packaging/arduino/examples/Benchmark` sketch reports the microseconds per update on a named board; that number is hardware-bound and recorded in the claims ledger with the board it was measured on.
 
 ## Credits and license
 

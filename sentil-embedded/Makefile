@@ -20,7 +20,7 @@ test: build
 	$(COMPILER) "always[0, 5](x > 0)" -o $(BLOB)
 	@for t in $(TESTS); do \
 		echo "  cxx $$t"; out=$$(mktemp); \
-		$(CXX) $(CXXFLAGS) -Isrc -Itests \
+		$(CXX) $(CXXFLAGS) -Iinclude -Itests \
 			-DSENTIL_ORACLE_PATH='"$(ORACLE)"' -DSENTIL_BLOB_PATH='"$(BLOB)"' \
 			$$t src/Sentil.cpp $(LINK) -o $$out || exit 1; \
 		$$out || exit 1; rm -f $$out; \

@@ -54,11 +54,11 @@ jobs:
         run: |
           lib="Sentil-1.0.0"
           mkdir -p "$lib/src" "$lib/examples"
-          cp sentil-embedded/library.properties "$lib/"
+          cp sentil-embedded/packaging/arduino/library.properties "$lib/"
           cp sentil-embedded/README.md "$lib/" 2>/dev/null || true
           cp LICENSE-MIT LICENSE-APACHE "$lib/"
-          cp sentil-embedded/src/Sentil.h sentil-embedded/src/Sentil.cpp "$lib/src/"
-          cp -r sentil-embedded/examples/. "$lib/examples/"
+          cp sentil-embedded/include/Sentil.h sentil-embedded/src/Sentil.cpp "$lib/src/"
+          cp -r sentil-embedded/packaging/arduino/examples/. "$lib/examples/"
           for d in archives/archive-*; do
             mcu=$(basename "$d" | sed 's/^archive-//')
             mkdir -p "$lib/src/$mcu"
