@@ -1,0 +1,7 @@
+permissions:
+  contents: write
+
+          token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          draft: true
+      - name: add the board target to the pinned toolchain
+        run: rustup target add ${{ matrix.target }}
