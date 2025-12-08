@@ -1,5 +1,7 @@
 //! Central finite-difference gradient of smooth robustness over a model rollout.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::model::SystemModel;
 use super::smooth::SmoothConfig;
 use crate::error::Result;

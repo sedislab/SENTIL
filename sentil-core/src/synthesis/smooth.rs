@@ -5,7 +5,10 @@
     reason = "operand and window sizes stay far below 2^53, so the length cast is exact"
 )]
 
+#[cfg(feature = "std")]
 use std::collections::BTreeMap;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 use crate::error::{Error, Result};
 use crate::formula::Formula;

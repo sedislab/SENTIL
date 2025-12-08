@@ -1,6 +1,9 @@
 //! Reverse-mode differentiation of the smooth robustness.
 
+#[cfg(feature = "std")]
 use std::collections::BTreeMap;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 use super::smooth::{soft_eval, SmoothConfig, SoftKind};
 use crate::error::{Error, Result};

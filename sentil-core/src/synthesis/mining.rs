@@ -1,5 +1,7 @@
 //! Mining the tightest parameter of a parametric specification from data.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::signal::Trace;

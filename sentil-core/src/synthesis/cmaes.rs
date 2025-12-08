@@ -1,6 +1,8 @@
 //! Covariance matrix adaptation evolution strategy (CMA-ES), in the standard
 //! `(mu/mu_w, lambda)` formulation.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::model::Bounds;
 use super::numerics::symmetric_eigen;
 use crate::error::{Error, Result};

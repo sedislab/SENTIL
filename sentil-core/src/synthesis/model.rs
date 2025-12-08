@@ -1,5 +1,7 @@
 //! System models and input bounds for synthesis.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::error::{Error, Result};
 use crate::signal::Trace;
 

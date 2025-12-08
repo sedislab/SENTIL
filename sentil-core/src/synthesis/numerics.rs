@@ -1,5 +1,7 @@
 //! Dense linear-algebra primitives for synthesis.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::error::{Error, Result};
 
 const MAX_SWEEPS: usize = 100;

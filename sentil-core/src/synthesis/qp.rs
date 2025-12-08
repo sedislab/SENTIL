@@ -7,6 +7,8 @@
 //! non-negative multipliers and so is always feasible at `λ = 0`. The dual reuses
 //! the projected-gradient ascent and the Cholesky solve already in the crate.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::model::Bounds;
 use super::numerics::solve_spd;
 use super::pgrad::maximize;

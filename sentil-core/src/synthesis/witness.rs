@@ -1,5 +1,7 @@
 //! Counterexample synthesis: search for an input that violates a specification.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::cmaes::{cma_es, CmaConfig};
 use super::model::{Bounds, SystemModel};
 use super::pgrad::maximize;

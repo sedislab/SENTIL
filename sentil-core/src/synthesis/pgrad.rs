@@ -1,5 +1,7 @@
 //! Projected gradient ascent over a box.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::model::Bounds;
 use crate::error::Result;
 

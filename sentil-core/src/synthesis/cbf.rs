@@ -7,6 +7,8 @@
 //! filter solves the least-change quadratic program subject to those barriers and
 //! the actuator bounds, so it overrides the controller as little as safety allows.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::model::Bounds;
 use super::qp::solve_qp;
 use crate::error::{Error, Result};

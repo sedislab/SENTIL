@@ -20,6 +20,8 @@
     reason = "the encoding uses the domain's short names (matrices a/b, cost P/q, constraints G/h), and step indices stay far below 2^53 so the time cast is exact"
 )]
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::model::{AffineForm, Bounds};
 use super::qp::solve_qp;
 use crate::error::Result;
