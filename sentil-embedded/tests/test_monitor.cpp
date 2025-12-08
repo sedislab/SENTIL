@@ -1,6 +1,3 @@
-// The streaming monitor's own checks: the cross-binding canonical example, a
-// past operator, reset, the error paths, and the host-compiled formula path.
-// The offline oracle is covered by test_oracle.cpp.
 #include "Sentil.h"
 
 #include <cmath>
@@ -17,9 +14,6 @@
 #define SENTIL_BLOB_PATH "rust/target/sentil_test_formula.bin"
 #endif
 
-// always[0,10](x > -0.9) over x = sin(0.3 t), the streaming example every binding
-// runs. The future window resolves with a delay, so the first resolved violation
-// lands at robustness about -0.078, the value sin(4.5) + 0.9.
 static void canonical_streaming() {
     SentilMonitor monitor;
     CHECK(monitor.begin("always[0, 10] (x > -0.9)") == SENTIL_EMBEDDED_OK);
@@ -41,7 +35,6 @@ static void canonical_streaming() {
     CHECK(reported);
 }
 
-// A host-compiled blob must build a monitor identical to the parsed formula.
 static void compiled_matches_parsed() {
     std::ifstream file(SENTIL_BLOB_PATH, std::ios::binary);
     CHECK(file.good());
@@ -67,7 +60,6 @@ static void compiled_matches_parsed() {
     }
 }
 
-// A past operator resolves at every step, and reset clears the history.
 static void past_operator_and_reset() {
     SentilMonitor monitor;
     CHECK(monitor.begin("historically[0, 5](pressure < 50)") == SENTIL_EMBEDDED_OK);
@@ -90,7 +82,6 @@ static void past_operator_and_reset() {
     CHECK_CLOSE(r.value, 20.0, 1e-12);
 }
 
-// Bad input comes back as a status, never a fault.
 static void error_paths() {
     SentilMonitor monitor;
     CHECK(monitor.begin("always[0,") == SENTIL_EMBEDDED_PARSE);

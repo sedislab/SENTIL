@@ -28,12 +28,12 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: build the archive
-        working-directory: sentil-arduino/rust
+        working-directory: sentil-embedded/rust
         run: cargo build --release --features mcu --target ${{ matrix.target }}
       - name: stage the archive
         run: |
           mkdir -p "stage/${{ matrix.mcu }}"
-          cp "sentil-arduino/rust/target/${{ matrix.target }}/release/libsentil_embedded.a" \
+          cp "sentil-embedded/rust/target/${{ matrix.target }}/release/libsentil_embedded.a" \
             "stage/${{ matrix.mcu }}/libsentil_embedded.a"
       - uses: actions/upload-artifact@v4
         with:
@@ -54,11 +54,11 @@ jobs:
         run: |
           lib="Sentil-1.0.0"
           mkdir -p "$lib/src" "$lib/examples"
-          cp sentil-arduino/library.properties "$lib/"
-          cp sentil-arduino/README.md "$lib/" 2>/dev/null || true
+          cp sentil-embedded/library.properties "$lib/"
+          cp sentil-embedded/README.md "$lib/" 2>/dev/null || true
           cp LICENSE-MIT LICENSE-APACHE "$lib/"
-          cp sentil-arduino/src/Sentil.h sentil-arduino/src/Sentil.cpp "$lib/src/"
-          cp -r sentil-arduino/examples/. "$lib/examples/"
+          cp sentil-embedded/src/Sentil.h sentil-embedded/src/Sentil.cpp "$lib/src/"
+          cp -r sentil-embedded/examples/. "$lib/examples/"
           for d in archives/archive-*; do
             mcu=$(basename "$d" | sed 's/^archive-//')
             mkdir -p "$lib/src/$mcu"

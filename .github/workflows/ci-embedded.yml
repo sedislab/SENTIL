@@ -1,2 +1,46 @@
+name: ci-embedded
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-test:
+    name: host oracle test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy
+        working-directory: sentil-embedded/rust
+        run: cargo clippy --features std -- -D warnings
+      - name: host tests
+        run: make -C sentil-embedded test
+
+  cross-compile:
+    name: board ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - thumbv7em-none-eabihf
+          - thumbv6m-none-eabi
+          - riscv32imc-unknown-none-elf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
       - name: add the board target to the pinned toolchain
         run: rustup target add ${{ matrix.target }}
+      - name: archive with the parser
+        working-directory: sentil-embedded/rust
+        run: cargo build --release --features mcu --target ${{ matrix.target }}
+      - name: archive without the parser
+        working-directory: sentil-embedded/rust
+        run: cargo build --release --no-default-features --features mcu --target ${{ matrix.target }}

@@ -1,4 +1,4 @@
-# sentil-arduino
+# sentil-embedded
 
 The SENTIL streaming monitor for microcontrollers. SENTIL is a runtime verification engine for Signal Temporal Logic; this library runs its deterministic streaming monitor on a board, on the same compiled core the desktop tools use, so a sketch gets the same robustness numbers a workstation would.
 
@@ -46,7 +46,7 @@ The supported cores are the 32-bit ARM and RISC-V families with a heap: Cortex-M
 
 ## Build from source
 
-The library links a `no_std` Rust static library built from `sentil-core`. To rebuild the archives or add a board, install the Rust toolchain and follow `extras/cross_compile.md`, which lists the target for each core and where Arduino expects the archive. The host oracle test, which proves the monitor reproduces the cross-language oracle through the embedded C ABI, runs with `make -C sentil-arduino test`.
+The library links a `no_std` Rust static library built from `sentil-core`. To rebuild the archives or add a board, install the Rust toolchain and follow `extras/cross_compile.md`, which lists the target for each core and where Arduino expects the archive. The host oracle test, which proves the monitor reproduces the cross-language oracle through the embedded C ABI, runs with `make -C sentil-embedded test`.
 
 ## The smallest boards
 

@@ -1,5 +1,5 @@
 [package]
-name = "sentil-arduino"
+name = "sentil-embedded"
 version = "1.0.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -14,27 +14,19 @@ publish = false
 
 [lib]
 name = "sentil_embedded"
-# staticlib is the archive a sketch links; rlib lets the host formula compiler
-# reuse the codec.
 crate-type = ["staticlib", "rlib"]
 
 [features]
 default = ["parser"]
-# Host build: link the standard library so the oracle test and the formula
-# compiler get a system allocator and a panic handler. Never set on a board.
+# std and specs are host-only: a board has no system allocator to link against.
 std = ["sentil/std"]
-# The text formula parser. On by default; drop it on the smallest boards and
-# load a host-compiled formula through the compiled path instead.
 parser = []
-# The fixed-heap allocator and abort panic for a bare-metal target.
 mcu = ["dep:embedded-alloc"]
 
 [dependencies]
 sentil = { path = "../../sentil-core", default-features = false }
 embedded-alloc = { version = "0.7", optional = true }
 
-# Host tool: compile a formula on a workstation into the compact byte form the
-# smallest boards load without shipping the parser.
 [[bin]]
 name = "sentil-compile-formula"
 path = "src/bin/compile_formula.rs"

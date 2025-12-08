@@ -118,7 +118,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sentil-arduino"
+name = "sentil-embedded"
 version = "1.0.0"
 dependencies = [
  "embedded-alloc",

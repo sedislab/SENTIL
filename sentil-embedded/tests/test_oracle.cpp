@@ -1,11 +1,3 @@
-// The deterministic oracle, run through the embedded streaming ABI.
-//
-// The board target carries only the streaming monitor, so this checks the cases
-// the stream resolves at every step (predicates, boolean structure, arithmetic,
-// and the past operators) bit for bit against the offline oracle, and runs the
-// future-temporal cases end to end so a fault or a wrong length still fails. A
-// future operator's stream is delayed by its horizon, so a pointwise match is
-// neither expected nor asserted; the other bindings carry its offline robustness.
 #include "Sentil.h"
 
 #include <cstdint>

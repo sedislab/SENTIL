@@ -35,7 +35,7 @@ The remaining distributors are listed in the project layout, and each one's publ
 | Homebrew, Scoop, Winget | CLI, Winget id `SEDIS.SENTIL` | tap, bucket, and manifest PRs | sentil-cli |
 | MATLAB File Exchange | toolbox | linked GitHub release | sentil-matlab |
 | ROS rosdistro | ROS 2 package | bloom release | sentil-ros |
-| Arduino Library Manager | library | index PR from a tagged release | sentil-arduino |
+| Arduino Library Manager | library | index PR from a tagged release | sentil-embedded |
 
 The C and C++ port files for vcpkg and Conan already live in `sentil-cpp`, so that row is packaging-complete; landing it is opening the registry PR, which is a maintainer step rather than an automated push.
 

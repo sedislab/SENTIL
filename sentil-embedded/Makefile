@@ -1,6 +1,3 @@
-# Build the host static library and run the embedded ABI tests. CI runs
-# `make -C sentil-arduino test`. The board build is verified separately by
-# cross-compiling the rust crate; see extras/ for the per-architecture recipe.
 CARGO ?= cargo
 CXX ?= c++
 CXXFLAGS ?= -std=c++14 -Wall -Wextra -O2
@@ -28,7 +25,7 @@ test: build
 			$$t src/Sentil.cpp $(LINK) -o $$out || exit 1; \
 		$$out || exit 1; rm -f $$out; \
 	done
-	@echo "all arduino host tests passed"
+	@echo "all embedded host tests passed"
 
 clean:
 	$(CARGO) clean --manifest-path $(RUST)/Cargo.toml

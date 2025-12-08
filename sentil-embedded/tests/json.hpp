@@ -1,7 +1,3 @@
-// A small recursive-descent JSON reader, just enough to load the shared oracle and
-// benchmark fixtures. The C++ standard library has no JSON, and the binding stays
-// dependency-free, so the tests carry this rather than pulling one in. It parses
-// the subset the fixtures use: objects, arrays, strings, numbers, booleans, null.
 #ifndef SENTIL_TEST_JSON_HPP
 #define SENTIL_TEST_JSON_HPP
 

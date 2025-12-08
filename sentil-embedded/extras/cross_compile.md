@@ -22,7 +22,7 @@ otherwise the same.
 
 ## Build
 
-From `sentil-arduino/rust`, build the archive for the board's core, with the
+From `sentil-embedded/rust`, build the archive for the board's core, with the
 allocator and the parser on:
 
 ```

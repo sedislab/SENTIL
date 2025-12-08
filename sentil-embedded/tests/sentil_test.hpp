@@ -1,7 +1,3 @@
-// A tiny zero-dependency test harness for the C++ binding, the same shape as the
-// C ABI's sentil_test.h: CHECK records a failure and keeps going, and main ends
-// with sentil_report so a nonzero exit means a test failed. No GTest, so the suite
-// stays self-contained and clean under valgrind.
 #ifndef SENTIL_TEST_HPP
 #define SENTIL_TEST_HPP
 
@@ -23,8 +19,6 @@ inline void sentil_check(bool condition, const char* expr, const char* file, int
     }
 }
 
-// Bit-identical comparison, so -0.0, +0.0, the infinities, and NaN are told apart
-// exactly the way the Rust oracle compares with to_bits.
 inline bool sentil_same_bits(double a, double b) {
     std::uint64_t ua;
     std::uint64_t ub;

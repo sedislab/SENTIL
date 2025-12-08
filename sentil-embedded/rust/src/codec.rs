@@ -1,15 +1,4 @@
 //! A compact binary form of a parsed formula.
-//!
-//! The smallest boards drop the text parser to save flash and instead load a
-//! formula compiled on a workstation. This module writes a `Formula` to bytes on
-//! the host (through the `sentil-compile-formula` tool) and reads them back on
-//! the device without the parser. The format is internal and not a stable
-//! interchange format: a four-byte header, then a depth-first walk of the tree
-//! with one tag byte per node, little-endian `f64`s, and length-prefixed names.
-//!
-//! Decoding is the side that meets untrusted bytes, so every read is bounds
-//! checked and the recursion is capped at the same depth the parser allows, so a
-//! malformed blob returns an error instead of faulting or overflowing the stack.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -18,8 +7,7 @@ use sentil::formula::{BinaryOp, ComparisonOp, Expr, Formula, Interval, Predicate
 
 const HEADER: [u8; 4] = *b"SEN1";
 
-// Matches the parser's nesting cap, so any formula the parser accepts encodes
-// and decodes, while a blob claiming deeper nesting is rejected.
+// Matches the parser's nesting cap.
 const MAX_DEPTH: usize = 256;
 
 /// The compiled blob was not a well-formed formula.
@@ -34,8 +22,7 @@ pub fn encode(formula: &Formula) -> Vec<u8> {
     w.bytes
 }
 
-/// Rebuilds a formula from [`encode`] output, or fails if the bytes are
-/// truncated, carry an unknown tag, nest too deeply, or have trailing data.
+/// Rebuilds a formula from [`encode`] output.
 pub fn decode(bytes: &[u8]) -> Result<Formula, Malformed> {
     let mut r = Reader { bytes, pos: 0 };
     if r.take(4)? != HEADER {

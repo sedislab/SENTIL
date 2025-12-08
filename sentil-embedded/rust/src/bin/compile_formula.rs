@@ -70,8 +70,6 @@ fn parse_args(args: &[String]) -> Result<(String, Option<String>), String> {
 }
 
 fn print_packed_order(formula: &sentil::Formula) {
-    // The order a sketch must pack its update values in is the monitor's symbol
-    // order, so build one on the host and read the indices straight off it.
     let Ok(monitor) = StreamMonitor::from_formula(formula) else {
         return;
     };

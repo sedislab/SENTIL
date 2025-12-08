@@ -19,10 +19,6 @@ extern crate alloc;
 
 pub mod codec;
 
-// On a board the engine allocates from a fixed region the sketch hands over, and
-// a panic halts the core because there is no unwinder and nowhere to print. A
-// host build (the `std` feature, used by the oracle test and the formula
-// compiler) keeps the system allocator and panic handler instead.
 #[cfg(all(feature = "mcu", not(feature = "std")))]
 mod mcu {
     use embedded_alloc::LlffHeap as Heap;
@@ -45,15 +41,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 /// Hands the monitor a fixed region of memory to allocate from.
 ///
-/// Call this once from `setup()` with a static buffer, before creating any
-/// monitor; the region must stay alive for as long as any monitor does. A zero
-/// size or null pointer is ignored so the call cannot fault. A host build has a
-/// system allocator already, so there this does nothing.
-///
 /// # Safety
 ///
-/// `heap` must point to `size` writable bytes that outlive every monitor, and
-/// this must run before the first allocation on the board.
+/// `heap` must point to `size` writable bytes that outlive every monitor.
 #[no_mangle]
 pub unsafe extern "C" fn sentil_embedded_init(heap: *mut u8, size: usize) {
     #[cfg(all(feature = "mcu", not(feature = "std")))]
@@ -69,10 +59,6 @@ pub unsafe extern "C" fn sentil_embedded_init(heap: *mut u8, size: usize) {
 }
 
 /// The outcome of an embedded monitor call.
-///
-/// Zero is success; every other value names one failure so a sketch can branch
-/// on it. The functions that build a monitor return this and write the handle
-/// through an out-pointer, so there is no error state to read back later.
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -94,8 +80,7 @@ pub enum Status {
     Internal = 7,
 }
 
-/// A short, static, human-readable message for a status code. The pointer is to
-/// a string literal that lives for the whole program, so never free it.
+/// A short static message for a status code. Never free it.
 #[no_mangle]
 pub extern "C" fn sentil_embedded_status_message(status: core::ffi::c_int) -> *const core::ffi::c_char {
     let message: &'static [u8] = match status {
@@ -112,8 +97,6 @@ pub extern "C" fn sentil_embedded_status_message(status: core::ffi::c_int) -> *c
 }
 
 /// Writes the library version into the out-pointers. A null pointer is skipped.
-///
-/// The version tracks the SENTIL release this monitor was built from.
 #[no_mangle]
 pub extern "C" fn sentil_embedded_version(major: *mut u32, minor: *mut u32, patch: *mut u32) {
     let write = |p: *mut u32, v: u32| {
@@ -141,16 +124,9 @@ fn status_of(err: &sentil::Error) -> Status {
 
 /// Builds a streaming monitor from a formula, storing the handle in `*out`.
 ///
-/// On success returns [`Status::Ok`] and writes an owned monitor to `*out`; on
-/// failure returns the reason and writes null. Free the handle with
-/// [`sentil_embedded_destroy`]. This entry point exists only when the crate is
-/// built with the `parser` feature; the smallest boards drop it and load a
-/// host-compiled formula instead.
-///
 /// # Safety
 ///
-/// `formula` must be a null-terminated UTF-8 string and `out` must point to a
-/// writable handle slot.
+/// `formula` must be a null-terminated UTF-8 string and `out` a writable slot.
 #[cfg(feature = "parser")]
 #[no_mangle]
 pub unsafe extern "C" fn sentil_embedded_create(
@@ -178,11 +154,7 @@ pub unsafe extern "C" fn sentil_embedded_create(
 }
 
 /// Builds a streaming monitor from a host-compiled formula, storing the handle
-/// in `*out`. The blob comes from the `sentil-compile-formula` tool, so the
-/// smallest boards can monitor without the parser.
-///
-/// On success returns [`Status::Ok`] and writes the monitor to `*out`; a
-/// malformed blob returns [`Status::Decode`] and writes null.
+/// in `*out`.
 ///
 /// # Safety
 ///
@@ -197,12 +169,8 @@ pub unsafe extern "C" fn sentil_embedded_create_compiled(
         return Status::NullPointer;
     }
     *out = core::ptr::null_mut();
-    let blob = if len == 0 {
-        &[][..]
-    } else if bytes.is_null() {
+    let Some(blob) = read_slice(bytes, len) else {
         return Status::NullPointer;
-    } else {
-        core::slice::from_raw_parts(bytes, len)
     };
     let formula = match codec::decode(blob) {
         Ok(formula) => formula,
@@ -221,8 +189,7 @@ pub unsafe extern "C" fn sentil_embedded_create_compiled(
 ///
 /// # Safety
 ///
-/// `monitor` must be a live handle from this library that has not already been
-/// destroyed.
+/// `monitor` must be a live handle from this library that has not been destroyed.
 #[no_mangle]
 pub unsafe extern "C" fn sentil_embedded_destroy(monitor: *mut StreamMonitor) {
     if !monitor.is_null() {
@@ -231,10 +198,6 @@ pub unsafe extern "C" fn sentil_embedded_destroy(monitor: *mut StreamMonitor) {
 }
 
 /// The robustness after one sample, laid out for C.
-///
-/// `value` is the margin (the interval midpoint while a temporal window is still
-/// open), `satisfied` is `value >= 0`, and `resolved` says whether the verdict
-/// has settled or still depends on samples not yet seen.
 #[repr(C)]
 pub struct EmbeddedRobustness {
     /// Whether the verdict has settled to a single value.
@@ -263,15 +226,10 @@ impl EmbeddedRobustness {
 
 /// Folds one timestamped sample into the monitor and writes the robustness.
 ///
-/// `values` holds the variables in the order [`sentil_embedded_symbol_index`]
-/// reports, with `n` entries. Times must strictly increase across calls. On
-/// success returns [`Status::Ok`] and fills `*out`; on a missing value or a
-/// short slice it returns the reason and leaves `*out` untouched.
-///
 /// # Safety
 ///
-/// `monitor` must be a live handle, `values` must point to `n` doubles, and
-/// `out` must be writable.
+/// `monitor` must be a live handle, `values` points to `n` doubles, and `out`
+/// is writable.
 #[no_mangle]
 pub unsafe extern "C" fn sentil_embedded_update(
     monitor: *mut StreamMonitor,
@@ -300,9 +258,7 @@ pub unsafe extern "C" fn sentil_embedded_update(
     }
 }
 
-/// The number of variables the formula references, which is the length the
-/// packed `values` slice of [`sentil_embedded_update`] must reach. Returns zero
-/// for a null handle.
+/// The number of variables the formula references.
 ///
 /// # Safety
 ///
@@ -315,9 +271,7 @@ pub unsafe extern "C" fn sentil_embedded_variable_count(monitor: *const StreamMo
     (*monitor).variable_count()
 }
 
-/// The packed-slice position of a named variable. Writes the index to `*out` and
-/// `true` to `*found` when the formula uses the variable, or `false` when it does
-/// not. Resolve each name once, then feed the packed slice in that order.
+/// The packed-slice position of a named variable.
 ///
 /// # Safety
 ///
@@ -350,8 +304,7 @@ pub unsafe extern "C" fn sentil_embedded_symbol_index(
     Status::Ok
 }
 
-/// Clears the monitor so it can run again from the start of a fresh stream. A
-/// null handle is a no-op.
+/// Clears the monitor so it can run a fresh stream. A null handle is a no-op.
 ///
 /// # Safety
 ///
