@@ -1,0 +1,2 @@
+      - name: add the board target to the pinned toolchain
+        run: rustup target add ${{ matrix.target }}

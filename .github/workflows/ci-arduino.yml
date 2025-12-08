@@ -1,0 +1,48 @@
+name: ci-arduino
+
+# Builds the no_std static library for several boards and runs the host oracle
+# test through the embedded C ABI. This is the hardware-independent tier: the
+# board archives are compiled, not flashed, and the host test is the gate. The
+# on-device timing check is recorded separately, since it needs a board.
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-test:
+    name: host oracle test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy
+        working-directory: sentil-arduino/rust
+        run: cargo clippy --features std -- -D warnings
+      - name: host tests
+        run: make -C sentil-arduino test
+
+  cross-compile:
+    name: board ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - thumbv7em-none-eabihf
+          - thumbv6m-none-eabi
+          - riscv32imc-unknown-none-elf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: archive with the parser
+        working-directory: sentil-arduino/rust
+        run: cargo build --release --features mcu --target ${{ matrix.target }}
+      - name: archive without the parser
+        working-directory: sentil-arduino/rust
+        run: cargo build --release --no-default-features --features mcu --target ${{ matrix.target }}
