@@ -1,5 +1,8 @@
 //! Receding-horizon online controller.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+#[cfg(feature = "std")]
 use std::time::{Duration, Instant};
 
 use super::convex;
@@ -20,13 +23,16 @@ pub struct Controller<'a, M: SystemModel> {
     input_width: usize,
     bounds: Bounds,
     smooth: SmoothConfig,
-    budget: Duration,
+    #[cfg(feature = "std")]
+    budget: Option<Duration>,
+    max_iters: usize,
     warm_start: Vec<f64>,
 }
 
 impl<'a, M: SystemModel> Controller<'a, M> {
     /// Builds a controller that plans `spec` over `model`, applies `input_width`
     /// values per step, and spends at most `budget` planning each step.
+    #[cfg(feature = "std")]
     #[must_use]
     pub fn new(model: &'a M, spec: &'a Formula, input_width: usize, budget: Duration) -> Self {
         let dimension = model.input_dimension();
@@ -36,7 +42,30 @@ impl<'a, M: SystemModel> Controller<'a, M> {
             input_width,
             bounds: Bounds::unbounded(dimension),
             smooth: SmoothConfig::default(),
-            budget,
+            budget: Some(budget),
+            max_iters: usize::MAX,
+            warm_start: vec![0.0; dimension],
+        }
+    }
+
+    /// Builds a controller bounded by a gradient-step count rather than a clock.
+    #[must_use]
+    pub fn with_iterations(
+        model: &'a M,
+        spec: &'a Formula,
+        input_width: usize,
+        max_iters: usize,
+    ) -> Self {
+        let dimension = model.input_dimension();
+        Self {
+            model,
+            spec,
+            input_width,
+            bounds: Bounds::unbounded(dimension),
+            smooth: SmoothConfig::default(),
+            #[cfg(feature = "std")]
+            budget: None,
+            max_iters: max_iters.max(1),
             warm_start: vec![0.0; dimension],
         }
     }
@@ -87,36 +116,48 @@ impl<'a, M: SystemModel> Controller<'a, M> {
         let (model, spec, smooth) = (self.model, self.spec, self.smooth);
         let objective = |u: &[f64]| spec.smooth_gradient(model, state, u, smooth);
         let bounds = &self.bounds;
+        #[cfg(feature = "std")]
         let start = Instant::now();
-        let deadline = start + self.budget;
+        #[cfg(feature = "std")]
+        let deadline = self.budget.map(|budget| start + budget);
 
         let (mut best, mut best_score) = maximize(objective, &self.warm_start, bounds, 1)?;
         let mut plan = best.clone();
         let mut steps = 1usize;
         loop {
-            let now = Instant::now();
-            if now >= deadline {
+            #[cfg(feature = "std")]
+            if let Some(deadline) = deadline {
+                if Instant::now() >= deadline {
+                    break;
+                }
+            }
+            if steps >= self.max_iters {
                 break;
             }
-            // Size the next chunk to the time left, from the average step cost so far,
-            // so a chunk that could not finish before the deadline is not started. The
-            // float ratio is clamped to the chunk range before rounding, so it stays a
-            // small in-range count.
-            #[allow(
-                clippy::cast_precision_loss,
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "steps and CHUNK are tiny counts, and the ratio is clamped to [1, CHUNK] before the cast"
-            )]
-            let chunk = {
-                let per_step = start.elapsed().as_secs_f64() / steps as f64;
-                let remaining = (deadline - now).as_secs_f64();
-                if per_step > 0.0 {
-                    (remaining / per_step).clamp(1.0, CHUNK as f64) as usize
-                } else {
-                    CHUNK
+            #[cfg(feature = "std")]
+            let chunk = match deadline {
+                Some(deadline) => {
+                    #[allow(
+                        clippy::cast_precision_loss,
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "steps and CHUNK are tiny counts, and the ratio is clamped to [1, CHUNK] before the cast"
+                    )]
+                    {
+                        let per_step = start.elapsed().as_secs_f64() / steps as f64;
+                        let remaining = (deadline - Instant::now()).as_secs_f64();
+                        if per_step > 0.0 {
+                            (remaining / per_step).clamp(1.0, CHUNK as f64) as usize
+                        } else {
+                            CHUNK
+                        }
+                    }
                 }
+                None => CHUNK.min(self.max_iters.saturating_sub(steps)).max(1),
             };
+            #[cfg(not(feature = "std"))]
+            let chunk = CHUNK.min(self.max_iters.saturating_sub(steps)).max(1);
+
             let (next, score) = maximize(objective, &plan, bounds, chunk)?;
             steps += chunk;
             let gain = score - best_score;
