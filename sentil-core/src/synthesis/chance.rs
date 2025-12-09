@@ -107,10 +107,10 @@ impl ChanceConstraint {
     /// Counts the trajectories the formula holds on, seeded per index.
     #[cfg(feature = "parallel")]
     fn count_successes(&self, system: &StochasticSystem, samples: u64, seed: u64) -> Result<u64> {
+        use rayon::prelude::*;
         if system.is_thread_confined() {
             return self.count_successes_serial(system, samples, seed);
         }
-        use rayon::prelude::*;
         let hits: Vec<u64> = (0..samples)
             .into_par_iter()
             .map(|i| {
