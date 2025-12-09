@@ -20,6 +20,7 @@ mod cmaes;
 mod controller;
 mod convex;
 mod gradient;
+#[cfg(feature = "std")]
 mod milp;
 mod mining;
 mod model;
@@ -37,6 +38,7 @@ pub use cbf::SafetyFilter;
 pub use chance::{ChanceConstraint, ChanceReport};
 pub use cmaes::{cma_es, cma_es_batched, CmaConfig};
 pub use controller::Controller;
+#[cfg(feature = "std")]
 pub use milp::solve_milp;
 pub use mining::mine_tightest_parameter;
 pub use model::{AffineForm, Bounds, LinearModel, SystemModel};

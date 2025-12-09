@@ -1,13 +1,19 @@
 //! Open-loop trajectory synthesis: find an input sequence that satisfies a spec.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use super::cmaes::{cma_es, CmaConfig};
+#[cfg(feature = "std")]
 use super::milp::solve_milp;
 use super::model::{Bounds, SystemModel};
 use super::pgrad::maximize;
 use super::smooth::SmoothConfig;
-use crate::error::{Error, Result};
+#[cfg(any(feature = "std", test))]
+use crate::error::Error;
+use crate::error::Result;
 use crate::formula::Formula;
 
+#[cfg(feature = "std")]
 const MILP_MAX_NODES: usize = 200_000;
 
 /// The search backend a synthesis problem uses.
@@ -132,37 +138,48 @@ impl Synthesizer {
         let initial = model.initial_state();
         let start = vec![0.0; model.input_dimension()];
         let backend = if problem.backend == Backend::Auto {
-            let finite_box = problem.bounds.lower().iter().all(|b| b.is_finite())
-                && problem.bounds.upper().iter().all(|b| b.is_finite());
-            if finite_box && model.affine_form().is_some() && super::milp::supports(spec) {
-                Backend::Milp
-            } else {
-                Backend::Gradient
-            }
+            #[cfg(feature = "std")]
+            let chosen = {
+                let finite_box = problem.bounds.lower().iter().all(|b| b.is_finite())
+                    && problem.bounds.upper().iter().all(|b| b.is_finite());
+                if finite_box && model.affine_form().is_some() && super::milp::supports(spec) {
+                    Backend::Milp
+                } else {
+                    Backend::Gradient
+                }
+            };
+            #[cfg(not(feature = "std"))]
+            let chosen = Backend::Gradient;
+            chosen
         } else {
             problem.backend
         };
-        let (input, backend) = if backend == Backend::Milp {
-            let affine = model.affine_form().ok_or(Error::Unsupported {
-                feature: "the MILP backend needs an affine model; use Gradient or CmaEs",
-            })?;
-            (
-                solve_milp(&affine, spec, &problem.bounds, MILP_MAX_NODES)?,
-                Backend::Milp,
-            )
-        } else if backend == Backend::CmaEs {
-            let config = CmaConfig {
-                max_generations: problem.max_iters,
-                population: problem.population,
-                ..CmaConfig::default()
-            };
-            (cma_es_input(problem, &start, config)?, Backend::CmaEs)
-        } else {
-            let objective = |u: &[f64]| spec.smooth_gradient(model, initial, u, problem.smooth);
-            (
-                maximize(objective, &start, &problem.bounds, problem.max_iters)?.0,
-                Backend::Gradient,
-            )
+        let (input, backend) = match backend {
+            #[cfg(feature = "std")]
+            Backend::Milp => {
+                let affine = model.affine_form().ok_or(Error::Unsupported {
+                    feature: "the MILP backend needs an affine model; use Gradient or CmaEs",
+                })?;
+                (
+                    solve_milp(&affine, spec, &problem.bounds, MILP_MAX_NODES)?,
+                    Backend::Milp,
+                )
+            }
+            Backend::CmaEs => {
+                let config = CmaConfig {
+                    max_generations: problem.max_iters,
+                    population: problem.population,
+                    ..CmaConfig::default()
+                };
+                (cma_es_input(problem, &start, config)?, Backend::CmaEs)
+            }
+            _ => {
+                let objective = |u: &[f64]| spec.smooth_gradient(model, initial, u, problem.smooth);
+                (
+                    maximize(objective, &start, &problem.bounds, problem.max_iters)?.0,
+                    Backend::Gradient,
+                )
+            }
         };
         let robustness = spec.robustness(&model.rollout_from(initial, &input)?)?;
         Ok(SynthesisResult {
