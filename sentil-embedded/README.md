@@ -1,10 +1,12 @@
 # sentil-embedded
 
-The SENTIL streaming monitor for microcontrollers. SENTIL is a runtime verification engine for Signal Temporal Logic; this library runs its deterministic streaming monitor on a board, on the same compiled core the desktop tools use, so a sketch gets the same robustness numbers a workstation would.
+SENTIL on microcontrollers. SENTIL is a runtime verification engine for Signal Temporal Logic; this library runs its deterministic streaming monitor and its synthesis layer on a board, on the same compiled core the desktop tools use, so a sketch gets the same numbers a workstation would. The directory holds the generic embedded library and a packaging for each ecosystem under `packaging/`, starting with Arduino.
 
 ## Scope
 
-A microcontroller cannot host statistical model checking, controller synthesis, or the GPU paths, so this target leaves them out and ships the streaming STL monitor in full. You write a temporal property, feed one sample per loop, and read the quantitative robustness: a positive margin says the property holds and by how much, a negative one says how far it has failed. The per-sample cost is flat and the memory is proportional to the formula's windows, not to the length of the stream, which is the whole point on a device.
+A microcontroller cannot host statistical model checking or the GPU paths, so this target leaves those out, and the MILP synthesis backend with them since it needs an external solver. Everything else fits: the streaming STL monitor, the numerics, open-loop planning by gradient or CMA-ES, the receding-horizon controller, and the safety filter, all running on the chip with no standard library.
+
+For monitoring you write a temporal property, feed one sample per loop, and read the quantitative robustness: a positive margin says the property holds and by how much, a negative one how far it has failed. The per-sample cost is flat and the memory is proportional to the formula's windows, not to the length of the stream. For control you give the controller a model and a spec, and each step it plans an input from the live state within a fixed step budget, since a board has no wall clock to bound an anytime search.
 
 ## A first monitor
 
@@ -37,6 +39,28 @@ The `packaging/arduino/examples/` folder carries `BasicMonitor`, which prints th
 ## Which operators suit a board
 
 A past operator such as `historically` or `once`, and a bounded operator, settle to a verdict from the samples already seen, so they give an answer at every step. A future operator such as `always` or `eventually` needs samples that have not arrived, so online it stays provisional until its window closes and then resolves with that delay. For a real-time alarm, reach for the past-time or bounded forms. An unbounded `eventually` keeps growing its history with no bound, so avoid it on a device.
+
+## Planning and control
+
+The synthesis surface plans an input from a model and a spec, runs a controller online, and shields a nominal input. Build a model, parse a spec, then let the controller plan each step from the live state.
+
+```cpp
+sentil_embedded_model_t* model;
+double a[1] = {1.0}, b[1] = {1.0}, x0[1] = {2.0};
+const char* vars[1] = {"x"};
+sentil_embedded_linear_model_create(a, 1, b, 1, x0, vars, 1.0, 5, &model);
+
+sentil_embedded_formula_t* spec;
+sentil_embedded_formula_create("always (x > 0)", &spec);
+
+sentil_embedded_controller_t* controller;  // takes ownership of the model and spec
+sentil_embedded_controller_create(model, spec, 1, 150, nullptr, &controller);
+
+double state[1] = {x}, u[1];
+sentil_embedded_controller_control(controller, state, 1, u);  // u[0] is the input to apply
+```
+
+The `Controller` example sketch runs this loop on a board. The controller's step budget is a gradient-step count, not a clock, because a board has none; pick it for the per-step time the chip can spare. Synthesis needs more heap than the bare monitor, so reserve a few more kilobytes.
 
 ## Install
 
