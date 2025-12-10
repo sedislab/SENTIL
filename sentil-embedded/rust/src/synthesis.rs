@@ -565,3 +565,15 @@ pub unsafe extern "C" fn sentil_embedded_safety_filter_filter(
         Err(e) => status_of(&e),
     }
 }
+
+/// Frees a safety filter. A null pointer is a no-op.
+///
+/// # Safety
+///
+/// `filter` must be a live handle that has not already been destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn sentil_embedded_safety_filter_destroy(filter: *mut EmbeddedSafetyFilter) {
+    if !filter.is_null() {
+        drop(Box::from_raw(filter));
+    }
+}
