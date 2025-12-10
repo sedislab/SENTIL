@@ -17,10 +17,11 @@ name = "sentil_embedded"
 crate-type = ["staticlib", "rlib"]
 
 [features]
-default = ["parser"]
+default = ["parser", "synthesis"]
 # std and specs are host-only: a board has no system allocator to link against.
 std = ["sentil/std"]
 parser = []
+synthesis = ["sentil/synthesis"]
 mcu = ["dep:embedded-alloc"]
 
 [dependencies]

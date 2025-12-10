@@ -18,6 +18,8 @@
 extern crate alloc;
 
 pub mod codec;
+#[cfg(feature = "synthesis")]
+pub mod synthesis;
 
 #[cfg(all(feature = "mcu", not(feature = "std")))]
 mod mcu {
@@ -78,6 +80,8 @@ pub enum Status {
     Decode = 6,
     /// The engine reported a failure that the boundary does not map to a code.
     Internal = 7,
+    /// A synthesis input was malformed.
+    InvalidConfig = 8,
 }
 
 /// A short static message for a status code. Never free it.
@@ -91,6 +95,7 @@ pub extern "C" fn sentil_embedded_status_message(status: core::ffi::c_int) -> *c
         4 => b"fewer values than the formula has variables\0",
         5 => b"the formula uses an operator the streaming monitor cannot run online\0",
         6 => b"the compiled formula is malformed\0",
+        8 => b"a synthesis input was malformed: shape, dimension, or bounds\0",
         _ => b"internal engine error\0",
     };
     message.as_ptr().cast()
@@ -111,13 +116,14 @@ pub extern "C" fn sentil_embedded_version(major: *mut u32, minor: *mut u32, patc
 
 use sentil::StreamMonitor;
 
-fn status_of(err: &sentil::Error) -> Status {
+pub(crate) fn status_of(err: &sentil::Error) -> Status {
     use sentil::Error;
     match err {
         Error::Parse(_) => Status::Parse,
         Error::UnknownVariable { .. } => Status::UnknownVariable,
         Error::PackedLength { .. } => Status::PackedLength,
         Error::Unsupported { .. } => Status::Unsupported,
+        Error::InvalidConfig { .. } => Status::InvalidConfig,
         _ => Status::Internal,
     }
 }
