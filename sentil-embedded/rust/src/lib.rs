@@ -20,6 +20,8 @@ extern crate alloc;
 pub mod codec;
 #[cfg(feature = "synthesis")]
 pub mod synthesis;
+#[cfg(test)]
+mod abi_tests;
 
 #[cfg(all(feature = "mcu", not(feature = "std")))]
 mod mcu {
@@ -62,7 +64,7 @@ pub unsafe extern "C" fn sentil_embedded_init(heap: *mut u8, size: usize) {
 
 /// The outcome of an embedded monitor call.
 #[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Status {
     /// The call succeeded.
     Ok = 0,
