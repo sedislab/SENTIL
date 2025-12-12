@@ -282,6 +282,33 @@ sentil_embedded_status_t sentil_embedded_violation_intervals(const sentil_embedd
                                                              double *starts, double *ends, size_t cap,
                                                              size_t *count);
 
+/* Evaluate a whole captured trace against several formulas at once, each keyed by
+   an id. Read the results by index after a robustness call. */
+
+typedef struct sentil_embedded_bank sentil_embedded_bank_t;
+
+sentil_embedded_status_t sentil_embedded_bank_create(sentil_embedded_bank_t **out);
+/* Add a formula under id; needs an archive with the parser. */
+sentil_embedded_status_t sentil_embedded_bank_add(sentil_embedded_bank_t *bank, const char *id,
+                                                  const char *formula);
+/* Add a formula under id from a host-compiled blob. */
+sentil_embedded_status_t sentil_embedded_bank_add_compiled(sentil_embedded_bank_t *bank,
+                                                           const char *id, const uint8_t *bytes,
+                                                           size_t len);
+/* Evaluate every formula over the trace, discrete or dense, storing the results. */
+sentil_embedded_status_t sentil_embedded_bank_robustness(sentil_embedded_bank_t *bank,
+                                                         const sentil_embedded_trace_t *trace);
+sentil_embedded_status_t sentil_embedded_bank_robustness_dense(sentil_embedded_bank_t *bank,
+                                                               const sentil_embedded_trace_t *trace);
+size_t sentil_embedded_bank_count(const sentil_embedded_bank_t *bank);
+/* The robustness at index; returns the formula's error status if it failed. */
+sentil_embedded_status_t sentil_embedded_bank_result(const sentil_embedded_bank_t *bank, size_t index,
+                                                     double *out);
+size_t sentil_embedded_bank_id(const sentil_embedded_bank_t *bank, size_t index, char *buf,
+                               size_t buf_len);
+size_t sentil_embedded_bank_len(const sentil_embedded_bank_t *bank);
+void sentil_embedded_bank_destroy(sentil_embedded_bank_t *bank);
+
 #ifdef __cplusplus
 } /* extern "C" */
 

@@ -17,6 +17,7 @@
 
 extern crate alloc;
 
+pub mod bank;
 pub mod codec;
 pub mod formula;
 pub mod multi;
