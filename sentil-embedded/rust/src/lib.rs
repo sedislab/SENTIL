@@ -18,6 +18,7 @@
 extern crate alloc;
 
 pub mod codec;
+pub mod ring_buffer;
 #[cfg(feature = "synthesis")]
 pub mod synthesis;
 #[cfg(test)]
@@ -151,14 +152,6 @@ pub(crate) unsafe fn read_slice<'a, T>(ptr: *const T, n: usize) -> Option<&'a [T
     }
 }
 
-/// Copies `values` into the caller's `out` buffer.
-///
-/// # Safety
-///
-/// `out` must point to at least `values.len()` writable doubles.
-pub(crate) unsafe fn write_out(out: *mut f64, values: &[f64]) {
-    core::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
-}
 
 /// Builds a streaming monitor from a formula, storing the handle in `*out`.
 ///
@@ -279,12 +272,8 @@ pub unsafe extern "C" fn sentil_embedded_update(
     if monitor.is_null() || out.is_null() {
         return Status::NullPointer;
     }
-    let slice = if n == 0 {
-        &[][..]
-    } else if values.is_null() {
+    let Some(slice) = read_slice(values, n) else {
         return Status::NullPointer;
-    } else {
-        core::slice::from_raw_parts(values, n)
     };
     let monitor = &mut *monitor;
     match monitor.update_packed(time, slice) {

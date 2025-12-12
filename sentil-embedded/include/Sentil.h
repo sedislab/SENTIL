@@ -159,6 +159,47 @@ sentil_embedded_status_t sentil_embedded_safety_filter_filter(
     const double *barrier_a, const double *barrier_b, size_t m, double *out);
 void sentil_embedded_safety_filter_destroy(sentil_embedded_safety_filter_t *filter);
 
+/* A fixed-size rolling window with O(1) running statistics. */
+
+typedef struct sentil_embedded_ring_buffer sentil_embedded_ring_buffer_t;
+
+/* A timestamped sample. */
+typedef struct sentil_embedded_sample {
+    double time;
+    double value;
+} sentil_embedded_sample_t;
+
+sentil_embedded_status_t sentil_embedded_ring_buffer_create(size_t capacity,
+                                                            sentil_embedded_ring_buffer_t **out);
+/* Push a sample, evicting the oldest when full. */
+sentil_embedded_status_t sentil_embedded_ring_buffer_push(sentil_embedded_ring_buffer_t *buffer,
+                                                          double time, double value,
+                                                          sentil_embedded_sample_t *out_evicted,
+                                                          bool *out_did_evict);
+size_t sentil_embedded_ring_buffer_len(const sentil_embedded_ring_buffer_t *buffer);
+size_t sentil_embedded_ring_buffer_capacity(const sentil_embedded_ring_buffer_t *buffer);
+bool sentil_embedded_ring_buffer_is_empty(const sentil_embedded_ring_buffer_t *buffer);
+bool sentil_embedded_ring_buffer_is_full(const sentil_embedded_ring_buffer_t *buffer);
+/* Running statistics, or NaN when the buffer is empty. */
+double sentil_embedded_ring_buffer_mean(const sentil_embedded_ring_buffer_t *buffer);
+double sentil_embedded_ring_buffer_variance(const sentil_embedded_ring_buffer_t *buffer);
+double sentil_embedded_ring_buffer_std_dev(const sentil_embedded_ring_buffer_t *buffer);
+double sentil_embedded_ring_buffer_min(const sentil_embedded_ring_buffer_t *buffer);
+double sentil_embedded_ring_buffer_max(const sentil_embedded_ring_buffer_t *buffer);
+/* Read a sample to *out; false when the index is out of range or empty. */
+bool sentil_embedded_ring_buffer_get(const sentil_embedded_ring_buffer_t *buffer, size_t index,
+                                     sentil_embedded_sample_t *out);
+bool sentil_embedded_ring_buffer_front(const sentil_embedded_ring_buffer_t *buffer,
+                                       sentil_embedded_sample_t *out);
+bool sentil_embedded_ring_buffer_back(const sentil_embedded_ring_buffer_t *buffer,
+                                      sentil_embedded_sample_t *out);
+/* Value recorded at the query time, within a small tolerance, or NaN. */
+double sentil_embedded_ring_buffer_at_time(const sentil_embedded_ring_buffer_t *buffer, double time);
+bool sentil_embedded_ring_buffer_closest_to_time(const sentil_embedded_ring_buffer_t *buffer,
+                                                 double time, sentil_embedded_sample_t *out);
+void sentil_embedded_ring_buffer_clear(sentil_embedded_ring_buffer_t *buffer);
+void sentil_embedded_ring_buffer_destroy(sentil_embedded_ring_buffer_t *buffer);
+
 #ifdef __cplusplus
 } /* extern "C" */
 
