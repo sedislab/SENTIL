@@ -12,7 +12,7 @@ DCOMPILER := $(RUST)/target/debug/sentil-compile-formula
 ORACLE := $(ROOT)/benchmarks/deterministic/oracle.json
 BLOB := $(abspath $(RUST)/target/sentil_test_formula.bin)
 LINK := $(LIB) -lpthread -ldl -lm
-TESTS := tests/test_oracle.cpp tests/test_monitor.cpp tests/test_synthesis.cpp
+TESTS := tests/test_oracle.cpp tests/test_monitor.cpp tests/test_synthesis.cpp tests/test_surface.cpp
 DEFS = -DSENTIL_ORACLE_PATH='"$(ORACLE)"' -DSENTIL_BLOB_PATH='"$(BLOB)"'
 VG := $(VALGRIND) --leak-check=full --show-leak-kinds=definite,indirect \
 	--errors-for-leak-kinds=definite,indirect --error-exitcode=1 --quiet
