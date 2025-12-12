@@ -4,7 +4,9 @@ use alloc::boxed::Box;
 
 use sentil::Formula;
 
-use crate::{codec, status_of, Status};
+#[cfg(feature = "parser")]
+use crate::status_of;
+use crate::{codec, read_slice, Status};
 
 /// Parses a formula, storing the handle in `*out`. Needs the `parser` feature.
 ///
