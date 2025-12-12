@@ -24,6 +24,21 @@ jobs:
       - name: leak check
         run: sudo apt-get update && sudo apt-get install -y valgrind && make -C sentil-embedded leakcheck
 
+  miri:
+    name: miri aliasing check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri, rust-src
+      - uses: Swatinem/rust-cache@v2
+      - name: miri abi tests
+        working-directory: sentil-embedded/rust
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+        run: cargo miri test --features std
+
   cross-compile:
     name: board ${{ matrix.target }}
     runs-on: ubuntu-latest
