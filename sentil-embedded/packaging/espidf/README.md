@@ -1,5 +1,7 @@
 # Sentil for ESP-IDF
 
+Download the latest [sentil-esp-idf.zip](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-esp-idf.zip) from the Releases tab, or build the archive from source as below.
+
 SENTIL as an ESP-IDF component: the streaming STL monitor and the on-board synthesis layer, on an ESP32.
 
 ## Add it to a project

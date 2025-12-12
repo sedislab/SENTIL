@@ -1,5 +1,7 @@
 # Sentil for Zephyr
 
+Download the latest [sentil-zephyr.tar.gz](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-zephyr.tar.gz) from the Releases tab, or build the archive from source as below.
+
 SENTIL as a Zephyr module: the streaming STL monitor and the on-board synthesis layer.
 
 ## Add it to a project

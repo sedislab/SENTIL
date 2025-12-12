@@ -1,5 +1,7 @@
 # Sentil for PlatformIO
 
+Download the latest [sentil-platformio.zip](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-platformio.zip) from the Releases tab, or build the archive from source as below.
+
 The SENTIL embedded library packaged for PlatformIO. It carries the same `Sentil.h` surface as the Arduino packaging: the streaming STL monitor and the on-board synthesis layer.
 
 ## Add it to a project

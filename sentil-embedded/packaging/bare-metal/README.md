@@ -1,5 +1,7 @@
 # Sentil on bare metal
 
+Download the latest [sentil-bare-metal.tar.gz](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-bare-metal.tar.gz) from the Releases tab, or build the archive from source as below.
+
 For a project with no operating system: link the precompiled archive and the C++ wrapper directly, with your own startup and linker script. This is also the path for a soft-core CPU on an FPGA, since that runs the same instruction set; it is not a hardware monitor synthesized to gates, which is a separate undertaking.
 
 ## Build
