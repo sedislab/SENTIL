@@ -1,14 +1,11 @@
 //! Compiles a formula into the compact byte form the smallest boards load
 //! without shipping the parser.
 //!
-//! Run it on a workstation, where any mistake in the formula is caught before
-//! the board is flashed. By default it prints a ready-to-paste C array on stdout
-//! and the packed variable order on stderr; with `-o <file>` it writes the raw
-//! bytes instead.
-//!
 //! ```text
 //! sentil-compile-formula "always[0, 10](speed < 5)"
 //! sentil-compile-formula "x > 0" -o formula.bin
+//! sentil-compile-formula --list-specs
+//! sentil-compile-formula --spec controls/overshoot --param limit=1.2 -o formula.bin
 //! ```
 
 use std::process::ExitCode;
@@ -16,29 +13,43 @@ use std::process::ExitCode;
 use sentil::StreamMonitor;
 use sentil_embedded::codec;
 
+#[derive(Default)]
+struct Args {
+    formula: Option<String>,
+    output: Option<String>,
+    spec: Option<String>,
+    variant: Option<String>,
+    params: Vec<(String, f64)>,
+    list_specs: bool,
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let (formula, output) = match parse_args(&args) {
-        Ok(parsed) => parsed,
+    let args = match parse_args(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        Ok(args) => args,
         Err(message) => {
             eprintln!("{message}");
             eprintln!("usage: sentil-compile-formula \"<formula>\" [-o <file>]");
+            eprintln!("       sentil-compile-formula --spec <name> [--variant <v>] [--param k=v] [-o <file>]");
+            eprintln!("       sentil-compile-formula --list-specs");
             return ExitCode::from(2);
         }
     };
 
-    let parsed = match sentil::Formula::parse(&formula) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!("could not parse the formula: {e}");
+    if args.list_specs {
+        return list_specs();
+    }
+
+    let formula = match resolve_formula(&args) {
+        Ok(formula) => formula,
+        Err(message) => {
+            eprintln!("{message}");
             return ExitCode::from(2);
         }
     };
 
-    let bytes = codec::encode(&parsed);
-    print_packed_order(&parsed);
-
-    match output {
+    let bytes = codec::encode(&formula);
+    print_packed_order(&formula);
+    match args.output {
         Some(path) => {
             if let Err(e) = std::fs::write(&path, &bytes) {
                 eprintln!("could not write {path}: {e}");
@@ -51,22 +62,83 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn parse_args(args: &[String]) -> Result<(String, Option<String>), String> {
-    let mut formula = None;
-    let mut output = None;
+fn resolve_formula(args: &Args) -> Result<sentil::Formula, String> {
+    if let Some(name) = &args.spec {
+        return formula_from_spec(name, args.variant.as_deref(), &args.params);
+    }
+    let text = args.formula.as_ref().ok_or("no formula or spec given")?;
+    sentil::Formula::parse(text).map_err(|e| format!("could not parse the formula: {e}"))
+}
+
+#[cfg(feature = "specs")]
+fn formula_from_spec(name: &str, variant: Option<&str>, params: &[(String, f64)]) -> Result<sentil::Formula, String> {
+    let registry = sentil::SpecRegistry::default();
+    let mut builder = registry.builder(name).map_err(|e| format!("spec `{name}`: {e}"))?;
+    if let Some(variant) = variant {
+        builder = builder.with_variant(variant).map_err(|e| format!("{e}"))?;
+    }
+    for (key, value) in params {
+        builder = builder.with_param(key, *value).map_err(|e| format!("{e}"))?;
+    }
+    let formula = builder.build_formula().map_err(|e| format!("{e}"))?;
+    if matches!(formula, sentil::Formula::Probabilistic(..)) {
+        return Err(format!(
+            "spec `{name}` resolves to a probabilistic formula, which a board cannot decide; pick a deterministic variant"
+        ));
+    }
+    Ok(formula)
+}
+
+#[cfg(not(feature = "specs"))]
+fn formula_from_spec(_name: &str, _variant: Option<&str>, _params: &[(String, f64)]) -> Result<sentil::Formula, String> {
+    Err("this build has no spec library; rebuild with --features specs".to_string())
+}
+
+#[cfg(feature = "specs")]
+fn list_specs() -> ExitCode {
+    for name in sentil::SpecRegistry::default().available() {
+        println!("{name}");
+    }
+    ExitCode::SUCCESS
+}
+
+#[cfg(not(feature = "specs"))]
+fn list_specs() -> ExitCode {
+    eprintln!("this build has no spec library; rebuild with --features specs");
+    ExitCode::from(2)
+}
+
+fn parse_args(args: &[String]) -> Result<Args, String> {
+    let mut out = Args::default();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "-o" | "--output" => {
                 i += 1;
-                output = Some(args.get(i).ok_or("missing path after -o")?.clone());
+                out.output = Some(args.get(i).ok_or("missing path after -o")?.clone());
             }
-            other if formula.is_none() => formula = Some(other.to_string()),
+            "--spec" => {
+                i += 1;
+                out.spec = Some(args.get(i).ok_or("missing name after --spec")?.clone());
+            }
+            "--variant" => {
+                i += 1;
+                out.variant = Some(args.get(i).ok_or("missing name after --variant")?.clone());
+            }
+            "--param" => {
+                i += 1;
+                let pair = args.get(i).ok_or("missing k=v after --param")?;
+                let (key, value) = pair.split_once('=').ok_or("--param needs the form key=value")?;
+                let value = value.parse::<f64>().map_err(|_| format!("`{value}` is not a number"))?;
+                out.params.push((key.to_string(), value));
+            }
+            "--list-specs" => out.list_specs = true,
+            other if out.formula.is_none() && out.spec.is_none() => out.formula = Some(other.to_string()),
             other => return Err(format!("unexpected argument `{other}`")),
         }
         i += 1;
     }
-    Ok((formula.ok_or("no formula given")?, output))
+    Ok(out)
 }
 
 fn print_packed_order(formula: &sentil::Formula) {

@@ -22,6 +22,7 @@ default = ["parser", "synthesis"]
 std = ["sentil/std"]
 parser = []
 synthesis = ["sentil/synthesis"]
+specs = ["std", "sentil/specs"]
 mcu = ["dep:embedded-alloc"]
 
 [dependencies]
