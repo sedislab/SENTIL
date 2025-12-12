@@ -9,28 +9,12 @@ use sentil::{
     Synthesizer,
 };
 
-use crate::{status_of, Status};
-
-/// Builds a slice from a C pointer and length, empty and safe when the length is
-/// zero so a null pointer is never dereferenced.
-unsafe fn read_slice<'a>(ptr: *const f64, n: usize) -> Option<&'a [f64]> {
-    if n == 0 {
-        Some(&[])
-    } else if ptr.is_null() {
-        None
-    } else {
-        Some(core::slice::from_raw_parts(ptr, n))
-    }
-}
+use crate::{read_slice, status_of, write_out, Status};
 
 unsafe fn read_matrix(ptr: *const f64, rows: usize, cols: usize) -> Option<Vec<Vec<f64>>> {
     let total = rows.checked_mul(cols)?;
     let flat = read_slice(ptr, total)?;
     Some((0..rows).map(|r| flat[r * cols..(r + 1) * cols].to_vec()).collect())
-}
-
-unsafe fn write_out(out: *mut f64, values: &[f64]) {
-    core::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
 }
 
 /// Parses a formula for use as a synthesis specification, writing the handle to

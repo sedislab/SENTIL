@@ -136,6 +136,30 @@ pub(crate) fn status_of(err: &sentil::Error) -> Status {
     }
 }
 
+/// Borrows `n` values from a C pointer, empty when `n` is zero.
+///
+/// # Safety
+///
+/// `ptr` must point to `n` readable, aligned `T` values when `n` is nonzero.
+pub(crate) unsafe fn read_slice<'a, T>(ptr: *const T, n: usize) -> Option<&'a [T]> {
+    if n == 0 {
+        Some(&[])
+    } else if ptr.is_null() {
+        None
+    } else {
+        Some(core::slice::from_raw_parts(ptr, n))
+    }
+}
+
+/// Copies `values` into the caller's `out` buffer.
+///
+/// # Safety
+///
+/// `out` must point to at least `values.len()` writable doubles.
+pub(crate) unsafe fn write_out(out: *mut f64, values: &[f64]) {
+    core::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
+}
+
 /// Builds a streaming monitor from a formula, storing the handle in `*out`.
 ///
 /// # Safety
