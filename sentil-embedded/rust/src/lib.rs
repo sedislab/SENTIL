@@ -27,6 +27,12 @@ mod abi_tests;
 mod mcu {
     use embedded_alloc::LlffHeap as Heap;
 
+    // Links the architecture crate's critical-section provider for the allocator.
+    #[cfg(target_arch = "arm")]
+    use cortex_m as _;
+    #[cfg(target_arch = "riscv32")]
+    use riscv as _;
+
     #[global_allocator]
     static HEAP: Heap = Heap::empty();
 

@@ -28,6 +28,12 @@ mcu = ["dep:embedded-alloc"]
 sentil = { path = "../../sentil-core", default-features = false }
 embedded-alloc = { version = "0.7", optional = true }
 
+[target.'cfg(target_arch = "arm")'.dependencies]
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+riscv = { version = "0.12", features = ["critical-section-single-hart"] }
+
 [[bin]]
 name = "sentil-compile-formula"
 path = "src/bin/compile_formula.rs"
