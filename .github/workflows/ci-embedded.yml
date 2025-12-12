@@ -46,9 +46,11 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - thumbv7em-none-eabihf
           - thumbv6m-none-eabi
+          - thumbv7m-none-eabi
+          - thumbv7em-none-eabihf
           - riscv32imc-unknown-none-elf
+          - riscv32imac-unknown-none-elf
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
