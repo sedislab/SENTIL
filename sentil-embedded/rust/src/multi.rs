@@ -130,7 +130,10 @@ pub unsafe extern "C" fn sentil_embedded_multi_update(
             monitor.last = results;
             Status::Ok
         }
-        Err(e) => status_of(&e),
+        Err(e) => {
+            monitor.last.clear();
+            status_of(&e)
+        }
     }
 }
 

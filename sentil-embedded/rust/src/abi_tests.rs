@@ -120,6 +120,14 @@ fn multi_monitor_lifecycle() {
 
         let mut buf = [0 as core::ffi::c_char; 8];
         assert_eq!(sentil_embedded_multi_id(m, 0, buf.as_mut_ptr(), buf.len()), 5);
+
+        let other = CString::new("y").unwrap();
+        let bad_names = [other.as_ptr()];
+        assert_ne!(
+            sentil_embedded_multi_update(m, 1.0, bad_names.as_ptr(), values.as_ptr(), 1),
+            Status::Ok
+        );
+        assert_eq!(sentil_embedded_multi_count(m), 0);
         sentil_embedded_multi_destroy(m);
     }
 }
