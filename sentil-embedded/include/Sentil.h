@@ -244,6 +244,44 @@ bool sentil_embedded_multi_remove(sentil_embedded_multi_monitor_t *monitor, cons
 void sentil_embedded_multi_reset(sentil_embedded_multi_monitor_t *monitor);
 void sentil_embedded_multi_destroy(sentil_embedded_multi_monitor_t *monitor);
 
+/* Build a trace from a time vector and named signals, then ask a formula for its
+   robustness, the per-sample signal, or the violation intervals. */
+
+typedef struct sentil_embedded_trace sentil_embedded_trace_t;
+
+sentil_embedded_status_t sentil_embedded_trace_create(const double *times, size_t n,
+                                                      sentil_embedded_trace_t **out);
+/* A trace whose timestamps are 0, 1, ..., len - 1. */
+sentil_embedded_status_t sentil_embedded_trace_create_indexed(size_t len,
+                                                              sentil_embedded_trace_t **out);
+sentil_embedded_status_t sentil_embedded_trace_add_signal(sentil_embedded_trace_t *trace,
+                                                          const char *name, const double *values,
+                                                          size_t n);
+size_t sentil_embedded_trace_len(const sentil_embedded_trace_t *trace);
+void sentil_embedded_trace_destroy(sentil_embedded_trace_t *trace);
+
+/* Discrete and dense scalar robustness of a formula over a trace. */
+sentil_embedded_status_t sentil_embedded_robustness(const sentil_embedded_formula_t *formula,
+                                                    const sentil_embedded_trace_t *trace,
+                                                    double *out);
+sentil_embedded_status_t sentil_embedded_robustness_dense(const sentil_embedded_formula_t *formula,
+                                                          const sentil_embedded_trace_t *trace,
+                                                          double *out);
+/* Writes up to cap values into out and the full length into written. */
+sentil_embedded_status_t sentil_embedded_robustness_signal(const sentil_embedded_formula_t *formula,
+                                                           const sentil_embedded_trace_t *trace,
+                                                           double *out, size_t cap, size_t *written);
+sentil_embedded_status_t sentil_embedded_robustness_dense_signal(const sentil_embedded_formula_t *formula,
+                                                                 const sentil_embedded_trace_t *trace,
+                                                                 double *out, size_t cap,
+                                                                 size_t *written);
+/* Intervals where the formula is violated, as parallel starts and ends arrays up
+   to cap, with the full count in count. */
+sentil_embedded_status_t sentil_embedded_violation_intervals(const sentil_embedded_formula_t *formula,
+                                                             const sentil_embedded_trace_t *trace,
+                                                             double *starts, double *ends, size_t cap,
+                                                             size_t *count);
+
 #ifdef __cplusplus
 } /* extern "C" */
 
