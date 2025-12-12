@@ -54,16 +54,17 @@ for the board's `build.mcu`. Copy the built archive there:
 cp rust/target/thumbv7em-none-eabihf/release/libsentil_embedded.a src/cortex-m4/
 ```
 
-## Two link-time dependencies
+## Link-time dependencies
 
-The archive expects the board's runtime to provide two symbols, which every HAL
-already does:
+The archive bundles a single-core `critical-section` implementation for the heap
+allocator, from the `cortex-m` crate on ARM and the `riscv` crate on RISC-V, so
+firmware that provides no other one still links. This assumes the monitor runs on
+a single core; on a dual-core part such as the RP2040, keep all SENTIL calls on
+one core, or link a multicore critical-section from the board HAL instead, in
+which case build the archive without the bundled one.
 
-- A `critical-section` implementation, for the allocator. On Cortex-M the
-  `cortex-m` crate's `critical-section-single-core` feature provides it; the
-  ESP-IDF and the `riscv` crate provide their own.
-- The standard `memcpy`/`memset` and the `libm` math symbols, which the Arduino
-  core links.
+Beyond that the archive needs only the standard `memcpy`, `memset`, and the
+`libm` math symbols, which every Arduino, ESP-IDF, and Zephyr core links.
 
 ## Heap budget
 
