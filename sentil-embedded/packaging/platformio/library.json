@@ -1,0 +1,20 @@
+{
+  "name": "Sentil",
+  "version": "1.0.0",
+  "description": "Runtime verification with Signal Temporal Logic on a microcontroller: a streaming STL monitor plus on-board synthesis and a receding-horizon controller.",
+  "keywords": "temporal-logic, runtime-verification, monitoring, control, stl",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sedislab/SENTIL"
+  },
+  "authors": [
+    { "name": "Paapa Kwesi Quansah", "email": "paapa_quansah1@baylor.edu" },
+    { "name": "Ernest Bonnah" },
+    { "name": "SEDIS Lab" }
+  ],
+  "frameworks": ["arduino", "espidf"],
+  "platforms": ["raspberrypi", "espressif32", "ststm32", "atmelsam"],
+  "headers": "Sentil.h",
+  "examples": ["examples/*/*.ino"]
+}

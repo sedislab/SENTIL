@@ -1,0 +1,10 @@
+version: "1.0.0"
+description: "Runtime verification with Signal Temporal Logic on an ESP32: a streaming STL monitor and on-board synthesis."
+url: "https://github.com/sedislab/SENTIL"
+repository: "https://github.com/sedislab/SENTIL.git"
+license: "MIT OR Apache-2.0"
+targets:
+  - esp32
+  - esp32s3
+  - esp32c3
+  - esp32c6
