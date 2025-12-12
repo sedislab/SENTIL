@@ -18,6 +18,7 @@
 extern crate alloc;
 
 pub mod codec;
+pub mod formula;
 pub mod multi;
 pub mod ring_buffer;
 #[cfg(feature = "synthesis")]

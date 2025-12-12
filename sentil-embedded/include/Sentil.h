@@ -79,20 +79,32 @@ const char *sentil_embedded_status_message(int status);
 /* Write the library version. NULL out-pointers are skipped. */
 void sentil_embedded_version(uint32_t *major, uint32_t *minor, uint32_t *patch);
 
+/* A parsed formula, shared by the offline calls, a bank, and synthesis. */
+
+typedef struct sentil_embedded_formula sentil_embedded_formula_t;
+
+/* Parse a formula; needs an archive built with the parser. */
+sentil_embedded_status_t sentil_embedded_formula_create(const char *formula,
+                                                        sentil_embedded_formula_t **out);
+/* Rebuild a formula from a host-compiled blob. */
+sentil_embedded_status_t sentil_embedded_formula_create_compiled(const uint8_t *bytes, size_t len,
+                                                                 sentil_embedded_formula_t **out);
+void sentil_embedded_formula_destroy(sentil_embedded_formula_t *formula);
+size_t sentil_embedded_formula_depth(const sentil_embedded_formula_t *formula);
+bool sentil_embedded_formula_has_temporal(const sentil_embedded_formula_t *formula);
+bool sentil_embedded_formula_is_probabilistic(const sentil_embedded_formula_t *formula);
+size_t sentil_embedded_formula_variable_count(const sentil_embedded_formula_t *formula);
+/* Copy the variable at index into buf; returns the length needed including the
+   terminator. */
+size_t sentil_embedded_formula_variable(const sentil_embedded_formula_t *formula, size_t index,
+                                        char *buf, size_t buf_len);
+
 /* Present when the library is built with synthesis, which is the default. */
 
-/* A parsed specification for synthesis. */
-typedef struct sentil_embedded_formula sentil_embedded_formula_t;
 typedef struct sentil_embedded_bounds sentil_embedded_bounds_t;
 typedef struct sentil_embedded_model sentil_embedded_model_t;
 typedef struct sentil_embedded_controller sentil_embedded_controller_t;
 typedef struct sentil_embedded_safety_filter sentil_embedded_safety_filter_t;
-
-/* Parse a spec; needs an archive built with the parser. Free with the destroy
-   call, or hand it to a controller, which takes ownership. */
-sentil_embedded_status_t sentil_embedded_formula_create(const char *formula,
-                                                        sentil_embedded_formula_t **out);
-void sentil_embedded_formula_destroy(sentil_embedded_formula_t *formula);
 
 /* Small dense numerics. Matrices are row-major; out buffers hold n doubles. */
 sentil_embedded_status_t sentil_embedded_solve_spd(const double *matrix, size_t n,

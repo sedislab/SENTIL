@@ -21,52 +21,6 @@ unsafe fn write_out(out: *mut f64, values: &[f64]) {
     core::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
 }
 
-/// Parses a formula for use as a synthesis specification, writing the handle to
-/// `*out`. Free it with [`sentil_embedded_formula_destroy`], or pass it to a
-/// controller, which takes ownership.
-///
-/// # Safety
-///
-/// `formula` must be a null-terminated UTF-8 string and `out` a writable slot.
-#[cfg(feature = "parser")]
-#[no_mangle]
-pub unsafe extern "C" fn sentil_embedded_formula_create(
-    formula: *const core::ffi::c_char,
-    out: *mut *mut Formula,
-) -> Status {
-    if out.is_null() {
-        return Status::NullPointer;
-    }
-    *out = core::ptr::null_mut();
-    if formula.is_null() {
-        return Status::NullPointer;
-    }
-    let text = match core::ffi::CStr::from_ptr(formula).to_str() {
-        Ok(text) => text,
-        Err(_) => return Status::Parse,
-    };
-    match Formula::parse(text) {
-        Ok(formula) => {
-            *out = Box::into_raw(Box::new(formula));
-            Status::Ok
-        }
-        Err(e) => status_of(&e),
-    }
-}
-
-/// Frees a formula handle. A null pointer is a no-op.
-///
-/// # Safety
-///
-/// `formula` must be a live handle that has not been destroyed or handed to a
-/// controller.
-#[no_mangle]
-pub unsafe extern "C" fn sentil_embedded_formula_destroy(formula: *mut Formula) {
-    if !formula.is_null() {
-        drop(Box::from_raw(formula));
-    }
-}
-
 /// Solves `matrix * x = rhs` for a symmetric positive-definite `matrix`, writing
 /// `n` values to `out`. `matrix` is row-major `n`-by-`n`.
 ///

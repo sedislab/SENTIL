@@ -76,6 +76,7 @@ fn bad_input_never_faults() {
 
 #[cfg(feature = "synthesis")]
 mod synth {
+    use crate::formula::sentil_embedded_formula_create;
     use crate::synthesis::*;
     use crate::Status;
     use core::ptr;
