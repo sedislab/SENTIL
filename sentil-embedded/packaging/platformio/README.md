@@ -4,17 +4,19 @@ The SENTIL embedded library packaged for PlatformIO. It carries the same `Sentil
 
 ## Add it to a project
 
-The released package bundles the header, the `Sentil.cpp` wrapper, and a precompiled archive per board architecture, so no Rust toolchain is needed. Add it to `platformio.ini`:
+The released package bundles the header, the `Sentil.cpp` wrapper, and a precompiled archive per board architecture, so no Rust toolchain is needed. Add the library and link the archive for your board's core:
 
 ```ini
 [env:pico]
-platform = raspberrypi
+platform = https://github.com/maxgerhardt/platform-raspberrypi.git
 board = pico
 framework = arduino
+board_build.core = earlephilhower
 lib_deps = sentil/Sentil@^1.0.0
+build_flags = -L${PROJECT_DIR}/.pio/libdeps/pico/Sentil/src/cortex-m0plus -lsentil_embedded
 ```
 
-PlatformIO compiles `Sentil.cpp` and links the archive matching the board's core. The same `lib_deps` line works under the `espidf` framework on an ESP32.
+PlatformIO compiles `Sentil.cpp` from the library and links the archive named on the `build_flags` line, where the path is the `src/<mcu>` folder for the board's core. The same shape works under the `espidf` framework on an ESP32, with the chip's archive folder.
 
 ## Build the archive from source
 
