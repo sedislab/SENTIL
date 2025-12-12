@@ -1,0 +1,11 @@
+get_filename_component(SENTIL_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
+
+if(CONFIG_SENTIL)
+    if(NOT DEFINED SENTIL_ARCHIVE)
+        message(FATAL_ERROR "set SENTIL_ARCHIVE to the libsentil_embedded.a for this board's core")
+    endif()
+    zephyr_include_directories(${SENTIL_ROOT}/include)
+    zephyr_library()
+    zephyr_library_sources(${SENTIL_ROOT}/src/Sentil.cpp)
+    zephyr_link_libraries(${SENTIL_ARCHIVE})
+endif()

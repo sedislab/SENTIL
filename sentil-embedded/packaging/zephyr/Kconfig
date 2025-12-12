@@ -1,0 +1,6 @@
+config SENTIL
+	bool "SENTIL runtime verification"
+	help
+	  Build the SENTIL streaming STL monitor and on-board synthesis layer and
+	  link the precompiled archive for the board's core. Set SENTIL_ARCHIVE to the
+	  archive built with the recipe in the embedded library's extras.

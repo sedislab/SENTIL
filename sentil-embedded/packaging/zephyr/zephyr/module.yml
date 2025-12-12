@@ -1,0 +1,4 @@
+name: sentil
+build:
+  cmake: .
+  kconfig: Kconfig
