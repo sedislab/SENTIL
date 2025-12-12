@@ -200,6 +200,38 @@ bool sentil_embedded_ring_buffer_closest_to_time(const sentil_embedded_ring_buff
 void sentil_embedded_ring_buffer_clear(sentil_embedded_ring_buffer_t *buffer);
 void sentil_embedded_ring_buffer_destroy(sentil_embedded_ring_buffer_t *buffer);
 
+/* Folds one sample into several formulas at once, each keyed by an id. Read the
+   results by index after an update. */
+
+typedef struct sentil_embedded_multi_monitor sentil_embedded_multi_monitor_t;
+
+sentil_embedded_status_t sentil_embedded_multi_create(sentil_embedded_multi_monitor_t **out);
+/* Add a formula under id; needs an archive with the parser. */
+sentil_embedded_status_t sentil_embedded_multi_add(sentil_embedded_multi_monitor_t *monitor,
+                                                   const char *id, const char *formula);
+/* Add a formula under id from a host-compiled blob. */
+sentil_embedded_status_t sentil_embedded_multi_add_compiled(sentil_embedded_multi_monitor_t *monitor,
+                                                            const char *id, const uint8_t *bytes,
+                                                            size_t len);
+/* Fold one sample, given the variables as parallel names and values arrays. */
+sentil_embedded_status_t sentil_embedded_multi_update(sentil_embedded_multi_monitor_t *monitor,
+                                                      double time, const char *const *names,
+                                                      const double *values, size_t n);
+/* The number of results from the last update. */
+size_t sentil_embedded_multi_count(const sentil_embedded_multi_monitor_t *monitor);
+/* The robustness of the formula at index from the last update. */
+sentil_embedded_status_t sentil_embedded_multi_result(const sentil_embedded_multi_monitor_t *monitor,
+                                                      size_t index,
+                                                      sentil_embedded_robustness_t *out);
+/* Copy the id of the formula at index into buf; returns the length needed
+   including the terminator. */
+size_t sentil_embedded_multi_id(const sentil_embedded_multi_monitor_t *monitor, size_t index,
+                                char *buf, size_t buf_len);
+size_t sentil_embedded_multi_len(const sentil_embedded_multi_monitor_t *monitor);
+bool sentil_embedded_multi_remove(sentil_embedded_multi_monitor_t *monitor, const char *id);
+void sentil_embedded_multi_reset(sentil_embedded_multi_monitor_t *monitor);
+void sentil_embedded_multi_destroy(sentil_embedded_multi_monitor_t *monitor);
+
 #ifdef __cplusplus
 } /* extern "C" */
 

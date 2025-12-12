@@ -18,6 +18,7 @@
 extern crate alloc;
 
 pub mod codec;
+pub mod multi;
 pub mod ring_buffer;
 #[cfg(feature = "synthesis")]
 pub mod synthesis;
@@ -244,7 +245,7 @@ pub struct EmbeddedRobustness {
 }
 
 impl EmbeddedRobustness {
-    fn from_core(r: sentil::Robustness) -> Self {
+    pub(crate) fn from_core(r: sentil::Robustness) -> Self {
         Self {
             resolved: r.is_resolved(),
             satisfied: r.is_satisfied(),
