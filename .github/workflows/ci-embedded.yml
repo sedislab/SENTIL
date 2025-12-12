@@ -17,8 +17,12 @@ jobs:
       - name: clippy
         working-directory: sentil-embedded/rust
         run: cargo clippy --features std -- -D warnings
+      - name: rust abi tests
+        run: make -C sentil-embedded test-rust
       - name: host tests
         run: make -C sentil-embedded test
+      - name: leak check
+        run: sudo apt-get update && sudo apt-get install -y valgrind && make -C sentil-embedded leakcheck
 
   cross-compile:
     name: board ${{ matrix.target }}
