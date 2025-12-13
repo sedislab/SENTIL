@@ -10,6 +10,18 @@ Every workflow also has a manual `workflow_dispatch` trigger with a `dry_run` in
 
 Before the first publish to any registry, run `check-sentil-names.sh` to confirm the coordinate is still free, and claim it. These names are permanent once taken.
 
+## Credentials, configured
+
+The release credentials are set up in this repository's Actions settings, so the gated upload steps run on a tag. A maintainer picking this up does not need to recreate them; this inventory records what each one is and where it lives.
+
+Repository secrets: `CARGO_REGISTRY_TOKEN` for crates.io, `DOCUMENTER_KEY` for the Julia docs deploy, `MATLAB_BATCH_TOKEN` for running MATLAB in CI (the workflows map it to `MLM_LICENSE_TOKEN`; File Exchange publishing is a separate manual repo link), `PLATFORMIO_AUTH_TOKEN` for the PlatformIO registry, and `IDF_COMPONENT_API_TOKEN` for the ESP component registry.
+
+Repository variable: `IDF_COMPONENT_NAMESPACE` is the Espressif registry namespace the component uploads under, `sedislab`. Without it the embedded publish skips, since the registry's default namespace is one the token cannot write to.
+
+Environment `central` holds the Maven Central credentials: `OSSRH_USERNAME` and `OSSRH_PASSWORD` are the Sonatype Central Portal user token despite the legacy names, not old OSSRH credentials, and `GPG_PRIVATE_KEY` with `GPG_PASSPHRASE` sign the artifacts. Keeping them on the environment lets a required-reviewer rule hold a Maven release for approval.
+
+Environment `pypi` carries no secret. PyPI publishes through trusted publishing over OIDC, with the trusted publisher bound to this repository, the `release-python.yml` workflow, and the `pypi` environment. `GITHUB_TOKEN` is automatic and needs nothing.
+
 ## What is wired now
 
 Three distributors publish from this repository today, because their packages exist in the tree.
