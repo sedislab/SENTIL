@@ -22,7 +22,7 @@ arduino-cli lib install --zip-path sentil-arduino.zip
 
 ## Boards
 
-The supported cores are the 32-bit ARM and RISC-V families with a heap: Cortex-M0+ (RP2040, SAMD21), Cortex-M3, Cortex-M4 and M7 (SAMD51, STM32, Teensy), and the ESP32 and ESP32-C3. The package selects the matching archive automatically from the board you compile for. An 8-bit AVR board (the classic Uno and Nano) does not have the room for the engine.
+The package ships a prebuilt archive for the 32-bit ARM and RISC-V cores with a heap: Cortex-M0+ (RP2040, SAMD21), Cortex-M3, Cortex-M4 and M7 (SAMD51, STM32, Teensy), and the RISC-V ESP32 variants (ESP32-C3, ESP32-C6), and selects the matching one from the board you compile for. The original Xtensa ESP32 runs the engine too, but its Rust target needs the Espressif toolchain fork, so build its archive from source as below. An 8-bit AVR board (the classic Uno and Nano) does not have the room for the engine.
 
 If your board's core is not one of these, see "Your board isn't listed" in the top-level `sentil-embedded/README.md`; adding one is a cross-compile and a one-line entry.
 
