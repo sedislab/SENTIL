@@ -1,9 +1,5 @@
-name: release-arduino
+name: release-embedded
 
-# Cross-compiles the static library for each board architecture and assembles the
-# Arduino library, with the precompiled archives placed where Arduino's build
-# expects them. Runs on a version tag or by hand; the archive is staged, never
-# pushed to the Library Manager without the authors' action.
 on:
   push:
     tags:
@@ -15,15 +11,17 @@ permissions:
 
 jobs:
   archives:
-    name: archive ${{ matrix.target }}
+    name: archive ${{ matrix.mcu }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { target: thumbv7em-none-eabihf, mcu: cortex-m4 }
           - { target: thumbv6m-none-eabi, mcu: cortex-m0plus }
+          - { target: thumbv7m-none-eabi, mcu: cortex-m3 }
+          - { target: thumbv7em-none-eabihf, mcu: cortex-m4 }
           - { target: riscv32imc-unknown-none-elf, mcu: esp32c3 }
+          - { target: riscv32imac-unknown-none-elf, mcu: riscv32imac }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -46,7 +44,7 @@ jobs:
           path: stage/${{ matrix.mcu }}
 
   bundle:
-    name: assemble the library
+    name: assemble the packages
     needs: archives
     runs-on: ubuntu-latest
     steps:
@@ -55,25 +53,122 @@ jobs:
         with:
           pattern: archive-*
           path: archives
-      - name: assemble Sentil-1.0.0
+      - name: assemble every package
         run: |
-          lib="Sentil-1.0.0"
-          mkdir -p "$lib/src" "$lib/examples"
-          cp sentil-embedded/packaging/arduino/library.properties "$lib/"
-          cp sentil-embedded/README.md "$lib/" 2>/dev/null || true
+          set -e
+          E=sentil-embedded
+          fanout() {
+            for d in archives/archive-*; do
+              mcu=$(basename "$d" | sed 's/^archive-//')
+              mkdir -p "$1/$mcu"
+              cp "$d/libsentil_embedded.a" "$1/$mcu/"
+            done
+          }
+          mkdir -p out
+          if [ -d archives/archive-cortex-m4 ]; then
+            cp -r archives/archive-cortex-m4 archives/archive-cortex-m7
+          fi
+          for d in archives/archive-*; do
+            mcu=$(basename "$d" | sed 's/^archive-//')
+            cp "$d/libsentil_embedded.a" "out/sentil-archive-$mcu.a"
+          done
+
+          lib=Sentil
+          rm -rf "$lib"; mkdir -p "$lib/src" "$lib/examples"
+          cp $E/packaging/arduino/library.properties "$lib/"
           cp LICENSE-MIT LICENSE-APACHE "$lib/"
-          cp sentil-embedded/include/Sentil.h sentil-embedded/src/Sentil.cpp "$lib/src/"
-          cp -r sentil-embedded/packaging/arduino/examples/. "$lib/examples/"
+          cp $E/include/Sentil.h $E/src/Sentil.cpp "$lib/src/"
+          cp -r $E/packaging/arduino/examples/. "$lib/examples/"
           fanout "$lib/src"
-          zip -r "$lib.zip" "$lib"
+          zip -rq out/sentil-arduino.zip "$lib"
+
+          pio=SentilPio
+          rm -rf "$pio"; cp -r "$lib" "$pio"
+          cp $E/packaging/platformio/library.json "$pio/"
+          (cd "$pio" && zip -rq ../out/sentil-platformio.zip .)
+
+          idf=sentil
+          rm -rf "$idf"; mkdir -p "$idf/include"
+          cp $E/packaging/espidf/CMakeLists.txt $E/packaging/espidf/idf_component.yml $E/packaging/espidf/README.md "$idf/"
+          cp $E/include/Sentil.h "$idf/include/"
+          cp $E/src/Sentil.cpp "$idf/"
+          for chip in esp32c3 riscv32imac; do
+            if [ -d "archives/archive-$chip" ]; then
+              mkdir -p "$idf/prebuilt/$chip"
+              cp "archives/archive-$chip/libsentil_embedded.a" "$idf/prebuilt/$chip/"
+            fi
+          done
+          zip -rq out/sentil-esp-idf.zip "$idf"
+
+          zep=sentil-zephyr-module
+          rm -rf "$zep"; mkdir -p "$zep/include"
+          cp -r $E/packaging/zephyr/. "$zep/"
+          cp $E/include/Sentil.h "$zep/include/"
+          cp $E/src/Sentil.cpp "$zep/"
+          fanout "$zep/lib"
+          tar czf out/sentil-zephyr.tar.gz "$zep"
+
+          bm=sentil-bare-metal
+          rm -rf "$bm"; mkdir -p "$bm/include" "$bm/src"
+          cp $E/packaging/bare-metal/CMakeLists.txt $E/packaging/bare-metal/README.md "$bm/"
+          cp $E/include/Sentil.h "$bm/include/"
+          cp $E/src/Sentil.cpp "$bm/src/"
+          fanout "$bm/lib"
+          tar czf out/sentil-bare-metal.tar.gz "$bm"
+
+          ls -la out
       - uses: actions/upload-artifact@v4
         with:
-          name: arduino-library
-          path: Sentil-1.0.0.zip
+          name: packages
+          path: out/*
       - name: attach to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
           draft: true
-          files: Sentil-1.0.0.zip
+          files: out/*
+
+  publish-platformio:
+    name: publish to the platformio registry
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: packages, path: out }
+      - name: install platformio
+        run: pipx install platformio
+      - name: publish
+        env:
+          PLATFORMIO_AUTH_TOKEN: ${{ secrets.PLATFORMIO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$PLATFORMIO_AUTH_TOKEN" ]; then
+            echo "no PLATFORMIO_AUTH_TOKEN secret set; skipping publish"
+            exit 0
+          fi
+          mkdir lib && (cd lib && unzip -q ../out/sentil-platformio.zip)
+          pio pkg publish lib --no-interactive
+
+  publish-espidf:
+    name: publish to the esp component registry
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: packages, path: out }
+      - name: publish
+        env:
+          IDF_COMPONENT_API_TOKEN: ${{ secrets.IDF_COMPONENT_API_TOKEN }}
+          IDF_COMPONENT_NAMESPACE: ${{ vars.IDF_COMPONENT_NAMESPACE }}
+        run: |
+          if [ -z "$IDF_COMPONENT_API_TOKEN" ] || [ -z "$IDF_COMPONENT_NAMESPACE" ]; then
+            echo "IDF_COMPONENT_API_TOKEN secret or IDF_COMPONENT_NAMESPACE variable unset; skipping publish"
+            exit 0
+          fi
+          pip install idf-component-manager
+          mkdir comp && (cd comp && unzip -q ../out/sentil-esp-idf.zip)
+          compote component upload --namespace "$IDF_COMPONENT_NAMESPACE" --name sentil --project-dir comp/sentil
