@@ -185,13 +185,7 @@ pub unsafe extern "C" fn sentil_embedded_bank_id(
     let Some((id, _)) = bank.last.get(index) else {
         return 0;
     };
-    let bytes = id.as_bytes();
-    if !buf.is_null() && buf_len > 0 {
-        let copy = core::cmp::min(bytes.len(), buf_len - 1);
-        core::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), copy);
-        *buf.add(copy) = 0;
-    }
-    bytes.len() + 1
+    crate::copy_into(id.as_bytes(), buf, buf_len)
 }
 
 /// The number of formulas held.

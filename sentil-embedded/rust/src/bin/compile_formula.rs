@@ -75,12 +75,12 @@ fn formula_from_spec(name: &str, variant: Option<&str>, params: &[(String, f64)]
     let registry = sentil::SpecRegistry::default();
     let mut builder = registry.builder(name).map_err(|e| format!("spec `{name}`: {e}"))?;
     if let Some(variant) = variant {
-        builder = builder.with_variant(variant).map_err(|e| format!("{e}"))?;
+        builder = builder.with_variant(variant).map_err(|e| e.to_string())?;
     }
     for (key, value) in params {
-        builder = builder.with_param(key, *value).map_err(|e| format!("{e}"))?;
+        builder = builder.with_param(key, *value).map_err(|e| e.to_string())?;
     }
-    let formula = builder.build_formula().map_err(|e| format!("{e}"))?;
+    let formula = builder.build_formula().map_err(|e| e.to_string())?;
     if matches!(formula, sentil::Formula::Probabilistic(..)) {
         return Err(format!(
             "spec `{name}` resolves to a probabilistic formula, which a board cannot decide; pick a deterministic variant"

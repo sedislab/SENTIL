@@ -101,8 +101,7 @@ pub unsafe extern "C" fn sentil_embedded_formula_has_temporal(formula: *const Fo
     !formula.is_null() && (*formula).has_temporal()
 }
 
-/// Whether the formula is wrapped in the probabilistic operator. A board cannot
-/// decide a probabilistic formula, so this is the check before using one.
+/// Whether the formula's outermost operator is probabilistic.
 ///
 /// # Safety
 ///
@@ -146,11 +145,5 @@ pub unsafe extern "C" fn sentil_embedded_formula_variable(
     let Some(name) = variables.get(index) else {
         return 0;
     };
-    let bytes = name.as_bytes();
-    if !buf.is_null() && buf_len > 0 {
-        let copy = core::cmp::min(bytes.len(), buf_len - 1);
-        core::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), copy);
-        *buf.add(copy) = 0;
-    }
-    bytes.len() + 1
+    crate::copy_into(name.as_bytes(), buf, buf_len)
 }

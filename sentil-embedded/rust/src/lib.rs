@@ -1,16 +1,4 @@
 //! The SENTIL streaming monitor for microcontrollers.
-//!
-//! This crate compiles the deterministic STL streaming monitor from the SENTIL
-//! core into a `no_std` static library a sketch links directly. It carries the
-//! monitor and nothing else: a microcontroller has no room for statistical model
-//! checking, synthesis, or a GPU, so those layers are left out by building the
-//! core with no default features.
-//!
-//! The surface is a small C ABI under the `sentil_embedded_` prefix, declared in
-//! `src/Sentil.h`. A sketch creates a monitor from a formula, feeds one sample
-//! per loop, and reads back the robustness. Errors come back as a status code,
-//! never a fault, because the embedded build aborts on panic and so the boundary
-//! checks every input before it reaches the engine.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
@@ -156,6 +144,20 @@ pub(crate) unsafe fn read_slice<'a, T>(ptr: *const T, n: usize) -> Option<&'a [T
     }
 }
 
+/// Copies `bytes` into `buf` null-terminated, returning the length needed
+/// including the terminator.
+///
+/// # Safety
+///
+/// `buf`, when non-null, must point to `buf_len` writable bytes.
+pub(crate) unsafe fn copy_into(bytes: &[u8], buf: *mut core::ffi::c_char, buf_len: usize) -> usize {
+    if !buf.is_null() && buf_len > 0 {
+        let copy = bytes.len().min(buf_len - 1);
+        core::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), copy);
+        *buf.add(copy) = 0;
+    }
+    bytes.len() + 1
+}
 
 /// Builds a streaming monitor from a formula, storing the handle in `*out`.
 ///
