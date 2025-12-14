@@ -1,0 +1,58 @@
+[package]
+name = "sentil-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The SENTIL command-line tool for monitoring, checking, and synthesizing against STL and PrSTL specifications."
+
+[[bin]]
+name = "sentil"
+path = "src/main.rs"
+
+[features]
+default = []
+gpu = ["sentil/gpu", "dep:pollster"]
+formats = ["sentil/parquet", "sentil/arrow", "sentil/sqlite"]
+
+[dependencies]
+sentil = { path = "../sentil-core", default-features = false, features = [
+    "std",
+    "statistical",
+    "synthesis",
+    "specs",
+    "ingest",
+    "parallel",
+    "serde",
+] }
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.5"
+clap_mangen = "0.2"
+miette = { version = "7.6", features = ["fancy"] }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0"
+csv = { workspace = true }
+anstream = "0.6"
+anstyle = "1.0"
+anstyle-query = "1.1"
+figment = { version = "0.10", features = ["toml", "env"] }
+directories = "5.0"
+exitcode = "1.1"
+indicatif = "0.18"
+inquire = "0.9"
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+ctrlc = "3.4"
+pollster = { version = "0.3", optional = true }
+
+[build-dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+clap_complete = "4.5"
+clap_mangen = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3"
