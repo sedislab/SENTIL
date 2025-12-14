@@ -165,14 +165,6 @@ fn with_path(err: Error, path: &Path) -> Error {
     }
 }
 
-/// Picks the time column from named f64 columns and assembles the trace, the
-/// shared tail of the columnar and database readers.
-#[cfg(any(
-    feature = "parquet",
-    feature = "arrow",
-    feature = "sqlite",
-    feature = "hdf5"
-))]
 fn from_columns(columns: Vec<(String, Vec<f64>)>, path: &Path) -> Result<Trace> {
     if columns.is_empty() {
         return Err(ingest_at(path, "the file has no numeric columns"));
