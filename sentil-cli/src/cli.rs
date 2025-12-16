@@ -1,6 +1,6 @@
 //! The command-line surface
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::fmt;
 
 #[derive(Parser, Debug)]
@@ -37,6 +37,83 @@ pub struct Cli {
 
     #[arg(global = true, long)]
     pub no_input: bool,
+
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Evaluate a formula's robustness over a recorded trace.
+    Check {
+        /// The formula to check. Use this or --spec, not both.
+        #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
+        formula: Option<String>,
+        /// A premade specification to check instead of a raw formula.
+        #[arg(long, value_name = "NAME", required_unless_present = "formula")]
+        spec: Option<String>,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Override a spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+        /// The trace file, or - for standard input.
+        #[arg(short, long, value_name = "FILE")]
+        trace: String,
+        /// Dense reads between samples; discrete reads only at them.
+        #[arg(long, value_name = "MODE", default_value_t = Semantics::Dense)]
+        semantics: Semantics,
+        /// Where to run the evaluation.
+        #[arg(long, value_name = "BACKEND", default_value_t = Backend::Cpu)]
+        backend: Backend,
+    },
+
+    /// List the premade specifications, or inspect one in detail.
+    Specs {
+        /// The specification to inspect, such as `controls/overshoot`. Omit to
+        /// list everything.
+        name: Option<String>,
+        /// List only specifications whose name contains this text.
+        #[arg(long, value_name = "TEXT")]
+        filter: Option<String>,
+    },
+}
+
+/// How time between samples is read.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Semantics {
+    /// Read the signal continuously, catching an inter-sample crossing.
+    Dense,
+    /// Read the signal only at the sample points.
+    Discrete,
+}
+
+impl fmt::Display for Semantics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Dense => "dense",
+            Self::Discrete => "discrete",
+        })
+    }
+}
+
+/// Where a computation runs.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backend {
+    /// The CPU engine.
+    Cpu,
+    /// The GPU engine, for the simulation-heavy work that supports it.
+    Gpu,
+}
+
+impl fmt::Display for Backend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Cpu => "cpu",
+            Self::Gpu => "gpu",
+        })
+    }
 }
 
 /// The machine and human output modes.
