@@ -4,6 +4,7 @@ use crate::output::Out;
 
 mod check;
 mod monitor;
+mod smc;
 mod specs;
 
 /// Runs the chosen verb and returns its exit code.
@@ -37,6 +38,32 @@ pub fn dispatch(command: Commands, out: &Out) -> Run {
             spec.as_deref(),
             variant.as_deref(),
             &param,
+            out,
+        ),
+        Commands::Smc {
+            algo,
+            samples,
+            confidence,
+            interval,
+            epsilon,
+            seed,
+            formula,
+            spec,
+            variant,
+            param,
+            trace,
+        } => smc::run(
+            algo,
+            &samples,
+            confidence,
+            interval,
+            epsilon,
+            seed,
+            formula.as_deref(),
+            spec.as_deref(),
+            variant.as_deref(),
+            &param,
+            &trace,
             out,
         ),
         Commands::Specs { name, filter } => specs::run(name.as_deref(), filter.as_deref(), out),

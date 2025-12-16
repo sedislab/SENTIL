@@ -86,6 +86,44 @@ pub enum Commands {
         param: Vec<String>,
     },
 
+    /// Estimate how likely a probabilistic specification holds.
+    #[command(alias = "prob")]
+    Smc {
+        /// The estimation algorithm.
+        #[arg(long, value_name = "ALGO", default_value_t = Algo::Smc)]
+        algo: Algo,
+        /// The sample budget. Accepts scientific notation.
+        #[arg(long, value_name = "N", default_value = "10000")]
+        samples: String,
+        /// The confidence level for the reported interval.
+        #[arg(long, default_value_t = 0.95)]
+        confidence: f64,
+        /// Which confidence interval to report.
+        #[arg(long, value_name = "METHOD", default_value_t = Interval::Wilson)]
+        interval: Interval,
+        /// The half-width target the chernoff algorithm sizes the sample count for.
+        #[arg(long, default_value_t = 0.05)]
+        epsilon: f64,
+        /// The base seed, so a run reproduces exactly.
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+        /// The probabilistic formula. Use this or --spec.
+        #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
+        formula: Option<String>,
+        /// A premade specification to check instead of a raw formula.
+        #[arg(long, value_name = "NAME", required_unless_present = "formula")]
+        spec: Option<String>,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Override a spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+        /// The base trace to lift into an ensemble, or - for standard input.
+        #[arg(short, long, value_name = "FILE")]
+        trace: String,
+    },
+
     /// List the premade specifications, or inspect one in detail.
     Specs {
         /// The specification to inspect, such as `controls/overshoot`. Omit to
@@ -111,6 +149,48 @@ impl fmt::Display for Semantics {
         f.write_str(match self {
             Self::Dense => "dense",
             Self::Discrete => "discrete",
+        })
+    }
+}
+
+/// The statistical estimation algorithm.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Algo {
+    /// Monte Carlo with a confidence interval.
+    Smc,
+    /// Wald's sequential probability ratio test.
+    Sprt,
+    /// Monte Carlo with the sample count sized a priori by Chernoff-Hoeffding.
+    Chernoff,
+    /// Adaptive multilevel splitting, for rare events.
+    Ams,
+}
+
+impl fmt::Display for Algo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Smc => "smc",
+            Self::Sprt => "sprt",
+            Self::Chernoff => "chernoff",
+            Self::Ams => "ams",
+        })
+    }
+}
+
+/// Which confidence interval to report around an estimate.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interval {
+    /// The Wilson score interval, the right default.
+    Wilson,
+    /// The Clopper-Pearson exact interval, conservative.
+    ClopperPearson,
+}
+
+impl fmt::Display for Interval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Wilson => "wilson",
+            Self::ClopperPearson => "clopper-pearson",
         })
     }
 }
