@@ -16,23 +16,7 @@ pub fn resolve_formula(
     match (formula, spec) {
         (Some(text), None) => Ok((text.to_string(), None)),
         (None, Some(name)) => {
-            let mut builder = SpecRegistry::global().builder(name).map_err(|e| {
-                CliError::Input(
-                    format!("cannot load spec '{name}': {e}"),
-                    Some("run `sentil specs` to list the available specifications".into()),
-                )
-            })?;
-            if let Some(variant) = variant {
-                builder = builder
-                    .with_variant(variant)
-                    .map_err(|e| CliError::Input(format!("variant '{variant}': {e}"), None))?;
-            }
-            for param in params {
-                let (key, value) = parse_param(param)?;
-                builder = builder
-                    .with_param(&key, value)
-                    .map_err(|e| CliError::Input(format!("parameter '{key}': {e}"), None))?;
-            }
+            let builder = resolve_builder(name, variant, params)?;
             let formula = if probabilistic {
                 builder.build_probabilistic().map_err(|e| {
                     CliError::Input(format!("building the probabilistic formula: {e}"), None)
@@ -53,6 +37,31 @@ pub fn resolve_formula(
             Some("for example -f 'always[0,5] (x > 0)' or --spec controls/overshoot".into()),
         )),
     }
+}
+
+pub fn resolve_builder(
+    name: &str,
+    variant: Option<&str>,
+    params: &[String],
+) -> Result<SpecBuilder, CliError> {
+    let mut builder = SpecRegistry::global().builder(name).map_err(|e| {
+        CliError::Input(
+            format!("cannot load spec '{name}': {e}"),
+            Some("run `sentil specs` to list the available specifications".into()),
+        )
+    })?;
+    if let Some(variant) = variant {
+        builder = builder
+            .with_variant(variant)
+            .map_err(|e| CliError::Input(format!("variant '{variant}': {e}"), None))?;
+    }
+    for param in params {
+        let (key, value) = parse_param(param)?;
+        builder = builder
+            .with_param(&key, value)
+            .map_err(|e| CliError::Input(format!("parameter '{key}': {e}"), None))?;
+    }
+    Ok(builder)
 }
 
 fn parse_param(text: &str) -> Result<(String, f64), CliError> {

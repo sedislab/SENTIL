@@ -3,6 +3,7 @@ use crate::error::Run;
 use crate::output::Out;
 
 mod check;
+mod lift;
 mod monitor;
 mod smc;
 mod specs;
@@ -66,6 +67,13 @@ pub fn dispatch(command: Commands, out: &Out) -> Run {
             &trace,
             out,
         ),
+        Commands::Lift {
+            spec,
+            variant,
+            param,
+            trace,
+            seed,
+        } => lift::run(&spec, variant.as_deref(), &param, &trace, seed),
         Commands::Specs { name, filter } => specs::run(name.as_deref(), filter.as_deref(), out),
     }
 }

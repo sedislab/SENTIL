@@ -124,6 +124,25 @@ pub enum Commands {
         trace: String,
     },
 
+    /// Apply a spec's noise models to a trace, writing the lifted trace as CSV.
+    Lift {
+        /// The specification whose noise models to apply.
+        #[arg(long, value_name = "NAME")]
+        spec: String,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Override a spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+        /// The trace to lift, or - for standard input.
+        #[arg(short, long, value_name = "FILE")]
+        trace: String,
+        /// The base seed, so a lift reproduces exactly.
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+    },
+
     /// List the premade specifications, or inspect one in detail.
     Specs {
         /// The specification to inspect, such as `controls/overshoot`. Omit to
