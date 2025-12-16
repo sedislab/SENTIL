@@ -44,7 +44,18 @@ fn run() -> error::Run {
     }
 }
 
+#[cfg(unix)]
+fn reset_sigpipe() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn reset_sigpipe() {}
+
 fn main() -> ExitCode {
+    reset_sigpipe();
     install_diagnostic_hook();
     match run() {
         Ok(exit) => ExitCode::from(exit),

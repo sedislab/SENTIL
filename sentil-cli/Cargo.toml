@@ -45,6 +45,7 @@ inquire = "0.9"
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 ctrlc = "3.4"
+libc = "0.2"
 pollster = { version = "0.3", optional = true }
 
 [build-dependencies]

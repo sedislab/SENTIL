@@ -2921,6 +2921,7 @@ dependencies = [
  "figment",
  "indicatif",
  "inquire",
+ "libc",
  "miette",
  "pollster 0.3.0",
  "predicates",
