@@ -69,6 +69,23 @@ pub enum Commands {
         backend: Backend,
     },
 
+    /// Monitor a live signal by reading one JSON sample per line and emitting a verdict per line. Watch multiple formulas by separating them with `;`.
+    #[command(alias = "stream")]
+    Monitor {
+        /// The formula(s) to monitor. Use this or --spec.
+        #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
+        formula: Option<String>,
+        /// A premade specification to monitor instead of a raw formula.
+        #[arg(long, value_name = "NAME", required_unless_present = "formula")]
+        spec: Option<String>,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Override a spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+    },
+
     /// List the premade specifications, or inspect one in detail.
     Specs {
         /// The specification to inspect, such as `controls/overshoot`. Omit to

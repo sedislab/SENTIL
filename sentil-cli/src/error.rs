@@ -20,6 +20,8 @@ pub mod code {
     /// A requested backend this build or this machine cannot provide.
     pub const UNAVAILABLE: u8 = exitcode::UNAVAILABLE as u8;
     pub const INTERNAL: u8 = exitcode::SOFTWARE as u8;
+    /// By convention 128 plus SIGINT.
+    pub const INTERRUPTED: u8 = 130;
 }
 
 #[derive(Debug, Error, Diagnostic)]

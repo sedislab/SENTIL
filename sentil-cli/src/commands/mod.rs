@@ -3,6 +3,7 @@ use crate::error::Run;
 use crate::output::Out;
 
 mod check;
+mod monitor;
 mod specs;
 
 /// Runs the chosen verb and returns its exit code.
@@ -24,6 +25,18 @@ pub fn dispatch(command: Commands, out: &Out) -> Run {
             &trace,
             semantics,
             backend,
+            out,
+        ),
+        Commands::Monitor {
+            formula,
+            spec,
+            variant,
+            param,
+        } => monitor::run(
+            formula.as_deref(),
+            spec.as_deref(),
+            variant.as_deref(),
+            &param,
             out,
         ),
         Commands::Specs { name, filter } => specs::run(name.as_deref(), filter.as_deref(), out),

@@ -27,6 +27,11 @@ impl Out {
         matches!(self.format, OutputFormat::Text)
     }
 
+    /// Whether the format is streaming JSON lines.
+    pub fn is_ndjson(&self) -> bool {
+        matches!(self.format, OutputFormat::Ndjson)
+    }
+
     pub fn paint(&self, text: &str, style: Style) -> String {
         if self.color {
             format!("{}{text}{}", style.render(), style.render_reset())
