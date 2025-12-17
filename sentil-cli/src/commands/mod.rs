@@ -1,4 +1,5 @@
 use crate::cli::Commands;
+use crate::config;
 use crate::error::Run;
 use crate::output::Out;
 
@@ -11,9 +12,9 @@ mod smc;
 mod specs;
 mod synth;
 
-/// Runs the chosen verb and returns its exit code.
-pub fn dispatch(command: Commands, out: &Out) -> Run {
+pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run {
     match command {
+        Commands::Config => config::show(config_path, out),
         Commands::Check {
             formula,
             spec,

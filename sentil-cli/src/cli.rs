@@ -12,7 +12,7 @@ use std::fmt;
 )]
 pub struct Cli {
     /// Output format.
-    #[arg(global = true, short = 'o', long, value_name = "FORMAT", default_value_t = OutputFormat::Text)]
+    #[arg(global = true, short = 'o', long, value_name = "FORMAT", default_value_t = OutputFormat::Text, env = "SENTIL_OUTPUT")]
     pub output: OutputFormat,
 
     /// A hidden boolean alias for `-o json`.
@@ -20,7 +20,7 @@ pub struct Cli {
     pub json: bool,
 
     /// When to colorize output.
-    #[arg(global = true, long, value_name = "WHEN", default_value_t = ColorWhen::Auto)]
+    #[arg(global = true, long, value_name = "WHEN", default_value_t = ColorWhen::Auto, env = "SENTIL_COLOR")]
     pub color: ColorWhen,
 
     /// Increase logging on stderr; repeat for more.
@@ -170,6 +170,9 @@ pub enum Commands {
         #[arg(long, default_value_t = 42)]
         seed: u64,
     },
+
+    /// Show the configuration files that are consulted and the values in effect.
+    Config,
 
     /// Print a shell completion script to stdout.
     Completion {

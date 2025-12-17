@@ -1,8 +1,10 @@
-use clap::{CommandFactory, FromArgMatches};
+use clap::parser::ValueSource;
+use clap::{ArgMatches, CommandFactory, FromArgMatches, ValueEnum};
 use std::process::ExitCode;
 
 mod cli;
 mod commands;
+mod config;
 mod engine;
 mod error;
 mod output;
@@ -33,9 +35,14 @@ fn run() -> error::Run {
     let matches = command.get_matches();
     let cli =
         cli::Cli::from_arg_matches(&matches).map_err(|e| error::CliError::Internal(e.to_string()))?;
-    let out = output::Out::new(cli.output, cli.json, cli.color, cli.quiet);
+
+    let file = config::load(cli.config.as_deref())?;
+    let output = from_config(&matches, "output", cli.output, file.output.as_deref());
+    let color = from_config(&matches, "color", cli.color, file.color.as_deref());
+    let out = output::Out::new(output, cli.json, color, cli.quiet);
+
     match cli.command {
-        Some(command) => commands::dispatch(command, &out),
+        Some(command) => commands::dispatch(command, cli.config.as_deref(), &out),
         None => {
             // Help and a usage exit rather than a prompt, so a pipe or a CI job never hangs.
             cli::Cli::command().print_help().ok();
@@ -53,6 +60,25 @@ fn reset_sigpipe() {
 
 #[cfg(not(unix))]
 fn reset_sigpipe() {}
+
+// Lets a config-file value replace a flag's default, but only when the parser used
+// that default (no flag and no env var). The file value is parsed against the same
+// value enum the flag uses, so an invalid entry is ignored rather than fatal.
+fn from_config<T: ValueEnum + Copy>(
+    matches: &ArgMatches,
+    name: &str,
+    flag_value: T,
+    file_value: Option<&str>,
+) -> T {
+    if matches.value_source(name) == Some(ValueSource::DefaultValue) {
+        if let Some(text) = file_value {
+            if let Ok(parsed) = T::from_str(text, true) {
+                return parsed;
+            }
+        }
+    }
+    flag_value
+}
 
 fn main() -> ExitCode {
     reset_sigpipe();
