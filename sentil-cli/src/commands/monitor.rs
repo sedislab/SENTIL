@@ -60,17 +60,31 @@ pub fn run(
         if interrupted.load(Ordering::SeqCst) {
             break;
         }
+        // A read failure ends the stream; a single bad or unprocessable line is
+        // skipped with a note so the monitor survives it.
         let line = line.map_err(|e| CliError::Input(format!("reading input: {e}"), None))?;
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let (time, pairs) = parse_sample(trimmed)?;
+        let (time, pairs) = match parse_sample(trimmed) {
+            Ok(sample) => sample,
+            Err(e) => {
+                warn(out, &format!("skipped a malformed sample: {e}"));
+                continue;
+            }
+        };
         let borrowed: Vec<(&str, f64)> = pairs.iter().map(|(k, v)| (k.as_str(), *v)).collect();
-        let results = monitor
-            .update(time, &borrowed)
-            .map_err(|e| CliError::Engine(e.to_string()))?;
-        emit(&mut stdout, out, time, &results)?;
+        let results = match monitor.update(time, &borrowed) {
+            Ok(results) => results,
+            Err(e) => {
+                warn(out, &format!("skipped the sample at t={time}: {e}"));
+                continue;
+            }
+        };
+        if !emit(&mut stdout, out, time, &results)? {
+            break; // the downstream reader closed the pipe
+        }
         samples += 1;
     }
 
@@ -111,13 +125,19 @@ fn parse_sample(line: &str) -> Result<(f64, Vec<(String, f64)>), CliError> {
     Ok((time, pairs))
 }
 
-/// Writes one verdict record for a sample.
+/// Notes a skipped line on stderr, unless output is quiet.
+fn warn(out: &Out, message: &str) {
+    if !out.quiet {
+        eprintln!("{}", out.paint(message, output::dim()));
+    }
+}
+
 fn emit(
     stdout: &mut std::io::Stdout,
     out: &Out,
     time: f64,
     results: &[(String, Robustness)],
-) -> Result<(), CliError> {
+) -> Result<bool, CliError> {
     let write_result = if out.is_text() {
         let mut line = format!("[t={time:.3}]");
         for (id, robustness) in results {
@@ -148,10 +168,9 @@ fn emit(
             json!({ "schema_version": "1.0", "event": "sample", "time": time, "results": map })
         )
     };
-    // A closed downstream pipe is a normal end to a stream, not an error to report.
     match write_result {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(false),
         Err(e) => Err(CliError::Internal(format!("writing output: {e}"))),
     }
 }

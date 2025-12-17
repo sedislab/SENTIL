@@ -24,9 +24,12 @@ pub fn run(
 
     let names = lifted.variables();
     let mut stdout = std::io::stdout();
-    write_csv(&mut stdout, &lifted, &names)
-        .map_err(|e| CliError::Internal(format!("writing the lifted trace: {e}")))?;
-    Ok(code::SUCCESS)
+    match write_csv(&mut stdout, &lifted, &names) {
+        Ok(()) => Ok(code::SUCCESS),
+        // A reader that closed the pipe early is a normal end, not an error.
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(code::SUCCESS),
+        Err(e) => Err(CliError::Internal(format!("writing the lifted trace: {e}"))),
+    }
 }
 
 fn write_csv(
