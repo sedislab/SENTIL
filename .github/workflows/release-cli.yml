@@ -1,0 +1,58 @@
+name: release-cli
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: bundle ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x86_64, triple: x86_64-unknown-linux-gnu, fmt: tar.gz }
+          - { os: macos-15-intel, name: macos-x86_64, triple: x86_64-apple-darwin, fmt: tar.gz }
+          - { os: macos-14, name: macos-arm64, triple: aarch64-apple-darwin, fmt: tar.gz }
+          - { os: windows-latest, name: windows-x86_64, triple: x86_64-pc-windows-msvc, fmt: zip }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+      - run: cargo build --release -p sentil-cli --target ${{ matrix.triple }}
+      - name: stage archive
+        shell: bash
+        run: |
+          ext=""
+          [ "${{ matrix.triple }}" = "x86_64-pc-windows-msvc" ] && ext=".exe"
+          bin="target/${{ matrix.triple }}/release/sentil${ext}"
+          packaging/cli/stage.sh "${{ matrix.triple }}" "1.0.0" "$bin" "${{ matrix.fmt }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentil-${{ matrix.name }}
+          path: assets/**
+
+  release:
+    name: attach to the release
+    needs: bundle
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+      # The distributor manifests (Homebrew, Scoop, Winget) live under
+      # packaging/cli and are submitted by a maintainer once the archives and their
+      # checksums are attached here, so nothing publishes without their action.
+      - uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          draft: true
+          files: assets/**/*
