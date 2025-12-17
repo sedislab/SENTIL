@@ -174,6 +174,10 @@ pub enum Commands {
         seed: u64,
     },
 
+    /// Build a check interactively, then print and run the equivalent command.
+    /// Needs a terminal; in a script use the verbs directly.
+    Init,
+
     /// Show the configuration files that are consulted and the values in effect.
     Config,
 

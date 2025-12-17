@@ -6,6 +6,7 @@ use crate::output::Out;
 mod check;
 mod explain;
 mod generate;
+mod init;
 mod lift;
 mod monitor;
 mod smc;
@@ -14,6 +15,7 @@ mod synth;
 
 pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run {
     match command {
+        Commands::Init => init::run(out),
         Commands::Config => config::show(config_path, out),
         Commands::Check {
             formula,

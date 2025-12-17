@@ -9,16 +9,24 @@ pub struct Out {
     /// The chosen output format.
     pub format: OutputFormat,
     pub quiet: bool,
+    pub no_input: bool,
     color: bool,
 }
 
 impl Out {
-    pub fn new(format: OutputFormat, json_alias: bool, color: ColorWhen, quiet: bool) -> Self {
+    pub fn new(
+        format: OutputFormat,
+        json_alias: bool,
+        color: ColorWhen,
+        quiet: bool,
+        no_input: bool,
+    ) -> Self {
         let format = if json_alias { OutputFormat::Json } else { format };
         let text = matches!(format, OutputFormat::Text);
         Self {
             format,
             quiet,
+            no_input,
             color: resolve_color(color, text),
         }
     }

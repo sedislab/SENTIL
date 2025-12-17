@@ -39,7 +39,7 @@ fn run() -> error::Run {
     let file = config::load(cli.config.as_deref())?;
     let output = from_config(&matches, "output", cli.output, file.output.as_deref());
     let color = from_config(&matches, "color", cli.color, file.color.as_deref());
-    let out = output::Out::new(output, cli.json, color, cli.quiet);
+    let out = output::Out::new(output, cli.json, color, cli.quiet, cli.no_input);
 
     match cli.command {
         Some(command) => commands::dispatch(command, cli.config.as_deref(), &out),
