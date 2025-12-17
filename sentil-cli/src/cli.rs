@@ -108,6 +108,9 @@ pub enum Commands {
         /// The half-width target the chernoff algorithm sizes the sample count for.
         #[arg(long, default_value_t = 0.05)]
         epsilon: f64,
+        /// The half-width of the sprt indifference band around the formula's threshold.
+        #[arg(long, default_value_t = 0.05)]
+        indifference: f64,
         /// The base seed, so a run reproduces exactly.
         #[arg(long, default_value_t = 42)]
         seed: u64,
