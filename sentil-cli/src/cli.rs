@@ -124,6 +124,34 @@ pub enum Commands {
         trace: String,
     },
 
+    /// Synthesize a control-input sequence that best satisfies a spec on a model.
+    Synth {
+        /// The optimization method.
+        #[arg(long, value_name = "METHOD", default_value_t = Method::Gradient)]
+        method: Method,
+        /// A JSON model file with the fields a, b, x0, variables, dt, horizon, and optional bounds {lower, upper}.
+        #[arg(long, value_name = "FILE")]
+        model: String,
+        /// The spec to satisfy. Use this or --spec.
+        #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
+        formula: Option<String>,
+        /// A premade specification to satisfy instead of a raw formula.
+        #[arg(long, value_name = "NAME", required_unless_present = "formula")]
+        spec: Option<String>,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Override a spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+        /// Override the model's horizon.
+        #[arg(long, value_name = "N")]
+        horizon: Option<usize>,
+        /// The optimizer's iteration budget.
+        #[arg(long, default_value_t = 200)]
+        budget: usize,
+    },
+
     /// Apply a spec's noise models to a trace, writing the lifted trace as CSV.
     Lift {
         /// The specification whose noise models to apply.
@@ -202,6 +230,27 @@ impl fmt::Display for Algo {
             Self::Sprt => "sprt",
             Self::Chernoff => "chernoff",
             Self::Ams => "ams",
+        })
+    }
+}
+
+/// The synthesis optimization method.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Method {
+    /// Projected gradient ascent on the smooth robustness, the light default.
+    Gradient,
+    /// CMA-ES, a black-box search for models gradients do not suit.
+    CmaEs,
+    /// A complete mixed-integer encoding, needing the milp build feature.
+    Milp,
+}
+
+impl fmt::Display for Method {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Gradient => "gradient",
+            Self::CmaEs => "cmaes",
+            Self::Milp => "milp",
         })
     }
 }

@@ -8,6 +8,7 @@ mod lift;
 mod monitor;
 mod smc;
 mod specs;
+mod synth;
 
 /// Runs the chosen verb and returns its exit code.
 pub fn dispatch(command: Commands, out: &Out) -> Run {
@@ -66,6 +67,26 @@ pub fn dispatch(command: Commands, out: &Out) -> Run {
             variant.as_deref(),
             &param,
             &trace,
+            out,
+        ),
+        Commands::Synth {
+            method,
+            model,
+            formula,
+            spec,
+            variant,
+            param,
+            horizon,
+            budget,
+        } => synth::run(
+            method,
+            &model,
+            formula.as_deref(),
+            spec.as_deref(),
+            variant.as_deref(),
+            &param,
+            horizon,
+            budget,
             out,
         ),
         Commands::Lift {
