@@ -143,6 +143,16 @@ pub enum Commands {
         seed: u64,
     },
 
+    /// Explain an operator's robustness semantics, or a verb's output fields.
+    Explain {
+        /// An operator such as `until`, or with --fields a verb such as `check`.
+        /// Omit to list the operators.
+        topic: Option<String>,
+        /// Describe the JSON fields the named verb emits, not an operator.
+        #[arg(long)]
+        fields: bool,
+    },
+
     /// List the premade specifications, or inspect one in detail.
     Specs {
         /// The specification to inspect, such as `controls/overshoot`. Omit to
