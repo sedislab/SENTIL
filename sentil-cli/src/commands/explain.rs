@@ -122,12 +122,40 @@ const FIELDS: &[Fields] = &[
 pub fn run(topic: Option<&str>, fields: bool, out: &Out) -> Run {
     match (topic, fields) {
         (Some(verb), true) => explain_fields(verb, out),
+        (Some("exit-codes"), false) => {
+            explain_exit_codes(out);
+            Ok(code::SUCCESS)
+        }
         (Some(name), false) => explain_operator(name, out),
         (None, _) => {
             list(out);
             Ok(code::SUCCESS)
         }
     }
+}
+
+fn explain_exit_codes(out: &Out) {
+    const ROWS: &[(&str, &str)] = &[
+        ("0", "success, the specification held"),
+        ("10", "ran fine, the specification was violated (a verdict, not an error)"),
+        ("2", "usage error on the command line"),
+        ("65", "bad input data: a malformed formula, trace, or parameter"),
+        ("66", "an input file was named but could not be opened"),
+        ("69", "a requested backend is unavailable, such as the GPU with no device"),
+        ("70", "an internal error"),
+        ("130", "interrupted with Ctrl-C"),
+    ];
+    println!("{}", out.paint("exit codes", output::heading()));
+    for (code, meaning) in ROWS {
+        println!("  {code:>3}  {meaning}");
+    }
+    println!(
+        "\n{}",
+        out.paint(
+            "0 and 10 report a run; the rest report a failure. `... && deploy` runs only on 0.",
+            output::dim()
+        )
+    );
 }
 
 fn explain_operator(name: &str, out: &Out) -> Run {
@@ -166,10 +194,12 @@ fn list(out: &Out) {
     for operator in OPERATORS {
         println!("  {}", operator.name);
     }
+    println!("\n{}", out.paint("topics", output::heading()));
+    println!("  exit-codes");
     println!(
         "\n{}",
         out.paint(
-            "explain one with `sentil explain <operator>`, or a verb's JSON with `sentil explain --fields check`.",
+            "explain an operator with `sentil explain until`, a topic with `sentil explain exit-codes`, or a verb's JSON with `sentil explain --fields check`.",
             output::dim()
         )
     );

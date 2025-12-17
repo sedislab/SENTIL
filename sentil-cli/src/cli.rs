@@ -45,6 +45,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Evaluate a formula's robustness over a recorded trace.
+    #[command(after_help = "Examples:\n  sentil check -f 'always[0,5] (speed < 30)' -t run.csv\n  sentil check --spec controls/overshoot -t run.csv -o json\n  cat run.csv | sentil check -f 'eventually (x > 2)' -t -")]
     Check {
         /// The formula to check. Use this or --spec, not both.
         #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
@@ -70,7 +71,7 @@ pub enum Commands {
     },
 
     /// Monitor a live signal by reading one JSON sample per line and emitting a verdict per line. Watch multiple formulas by separating them with `;`.
-    #[command(alias = "stream")]
+    #[command(alias = "stream", after_help = "Examples:\n  sensor | sentil monitor -f 'always (temp < 80)' -o ndjson\n  sentil monitor -f 'x > 0; historically (x > 0)' < samples.ndjson")]
     Monitor {
         /// The formula(s) to monitor. Use this or --spec.
         #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
@@ -87,7 +88,7 @@ pub enum Commands {
     },
 
     /// Estimate how likely a probabilistic specification holds.
-    #[command(alias = "prob")]
+    #[command(alias = "prob", after_help = "Examples:\n  sentil smc -f 'P>=0.95(always[0,10] (x > 0))' -t base.csv --samples 1e5\n  sentil smc --spec controls/overshoot -t base.csv --algo sprt\n  sentil smc -f 'P>=0.9(...)' -t base.csv --algo chernoff --epsilon 0.05")]
     Smc {
         /// The estimation algorithm.
         #[arg(long, value_name = "ALGO", default_value_t = Algo::Smc)]
@@ -125,6 +126,7 @@ pub enum Commands {
     },
 
     /// Synthesize a control-input sequence that best satisfies a spec on a model.
+    #[command(after_help = "Examples:\n  sentil synth -f 'always (x > 0)' --model system.json\n  sentil synth --spec controls/overshoot --model m.json --method cmaes -o json")]
     Synth {
         /// The optimization method.
         #[arg(long, value_name = "METHOD", default_value_t = Method::Gradient)]
@@ -153,6 +155,7 @@ pub enum Commands {
     },
 
     /// Apply a spec's noise models to a trace, writing the lifted trace as CSV.
+    #[command(after_help = "Example:\n  sentil lift --spec controls/overshoot -t run.csv > lifted.csv")]
     Lift {
         /// The specification whose noise models to apply.
         #[arg(long, value_name = "NAME")]
@@ -195,6 +198,7 @@ pub enum Commands {
     },
 
     /// List the premade specifications, or inspect one in detail.
+    #[command(after_help = "Examples:\n  sentil specs\n  sentil specs --filter aerospace\n  sentil specs controls/overshoot")]
     Specs {
         /// The specification to inspect, such as `controls/overshoot`. Omit to
         /// list everything.
