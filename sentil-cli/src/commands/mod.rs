@@ -4,6 +4,7 @@ use crate::output::Out;
 
 mod check;
 mod explain;
+mod generate;
 mod lift;
 mod monitor;
 mod smc;
@@ -96,6 +97,8 @@ pub fn dispatch(command: Commands, out: &Out) -> Run {
             trace,
             seed,
         } => lift::run(&spec, variant.as_deref(), &param, &trace, seed),
+        Commands::Completion { shell } => generate::completion(shell),
+        Commands::Man => generate::man(),
         Commands::Explain { topic, fields } => explain::run(topic.as_deref(), fields, out),
         Commands::Specs { name, filter } => specs::run(name.as_deref(), filter.as_deref(), out),
     }

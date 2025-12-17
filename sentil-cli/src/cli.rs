@@ -171,6 +171,16 @@ pub enum Commands {
         seed: u64,
     },
 
+    /// Print a shell completion script to stdout.
+    Completion {
+        /// The shell to generate for.
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+
+    /// Print the man page, in roff, to stdout.
+    Man,
+
     /// Explain an operator's robustness semantics, or a verb's output fields.
     Explain {
         /// An operator such as `until`, or with --fields a verb such as `check`.
