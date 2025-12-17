@@ -24,6 +24,7 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             param,
             trace,
             semantics,
+            signal,
             backend,
         } => check::run(
             formula.as_deref(),
@@ -32,6 +33,7 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             &param,
             &trace,
             semantics,
+            signal,
             backend,
             out,
         ),

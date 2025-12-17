@@ -18,6 +18,7 @@ pub fn run(
     params: &[String],
     trace_path: &str,
     semantics: Semantics,
+    signal: bool,
     backend: Backend,
     out: &Out,
 ) -> Run {
@@ -40,6 +41,15 @@ pub fn run(
     let monitor = Monitor::from_formula(parsed, MonitorConfig::new().time(mode));
 
     let start = Instant::now();
+    if signal {
+        let values = monitor
+            .robustness_signal(&trace)
+            .map_err(|e| CliError::Engine(e.to_string()))?;
+        if let Some(bar) = spinner {
+            bar.finish_and_clear();
+        }
+        return emit_signal(&formula, trace_path, semantics, &values, out);
+    }
     let robustness = monitor
         .robustness(&trace)
         .map_err(|e| CliError::Engine(e.to_string()))?;
@@ -80,6 +90,39 @@ pub fn run(
         );
     }
 
+    Ok(if satisfied {
+        code::SUCCESS
+    } else {
+        code::VIOLATED
+    })
+}
+
+/// The per-sample robustness. Text prints one value per line in a round-trip form to preserve the infinities that a bounded operator can produce
+fn emit_signal(
+    formula: &str,
+    trace_path: &str,
+    semantics: Semantics,
+    values: &[f64],
+    out: &Out,
+) -> Run {
+    if out.is_text() {
+        for value in values {
+            println!("{value}");
+        }
+    } else {
+        println!(
+            "{}",
+            json!({
+                "schema_version": "1.0",
+                "verb": "check",
+                "formula": formula,
+                "trace": trace_path,
+                "semantics": semantics.to_string(),
+                "signal": values,
+            })
+        );
+    }
+    let satisfied = values.first().is_some_and(|&v| v >= 0.0);
     Ok(if satisfied {
         code::SUCCESS
     } else {

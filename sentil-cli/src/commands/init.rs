@@ -42,6 +42,7 @@ pub fn run(out: &Out) -> Run {
         &[],
         &trace,
         semantics,
+        false,
         Backend::Cpu,
         out,
     )

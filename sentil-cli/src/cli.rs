@@ -65,6 +65,9 @@ pub enum Commands {
         /// Dense reads between samples; discrete reads only at them.
         #[arg(long, value_name = "MODE", default_value_t = Semantics::Dense)]
         semantics: Semantics,
+        /// Print the robustness at every sample, not just the verdict at t=0.
+        #[arg(long)]
+        signal: bool,
         /// Where to run the evaluation.
         #[arg(long, value_name = "BACKEND", default_value_t = Backend::Cpu)]
         backend: Backend,
