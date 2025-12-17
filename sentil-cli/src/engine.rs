@@ -1,9 +1,71 @@
 use std::io::Read;
 use std::path::Path;
 
-use sentil::{Formula, SpecBuilder, SpecRegistry, Trace};
+use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SpecBuilder, SpecRegistry, Trace};
 
 use crate::error::{span_at, CliError};
+
+/// Builds a lifting registry from `--noise` flags, each `signal=distribution:params` with an optional `:additive` or `:multiplicative` tail.
+pub fn parse_noise(specs: &[String]) -> Result<Option<LiftingRegistry>, CliError> {
+    if specs.is_empty() {
+        return Ok(None);
+    }
+    let mut registry = LiftingRegistry::new();
+    for spec in specs {
+        let (signal, rest) = spec.split_once('=').ok_or_else(|| {
+            CliError::Input(
+                format!("--noise '{spec}' must be signal=distribution:params"),
+                Some("for example --noise 'speed=gaussian:0,0.5'".into()),
+            )
+        })?;
+        let parts: Vec<&str> = rest.split(':').collect();
+        let params = if parts.len() > 1 && !parts[1].is_empty() {
+            parts[1]
+                .split(',')
+                .map(|p| p.trim().parse::<f64>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| {
+                    CliError::Input(format!("--noise '{spec}': parameters must be numbers"), None)
+                })?
+        } else {
+            Vec::new()
+        };
+        let interaction = match parts.get(2).map(|s| s.to_ascii_lowercase()).as_deref() {
+            None | Some("additive") => NoiseInteraction::Additive,
+            Some("multiplicative") => NoiseInteraction::Multiplicative,
+            Some(other) => {
+                return Err(CliError::Input(
+                    format!("--noise '{spec}': interaction must be additive or multiplicative, not '{other}'"),
+                    None,
+                ))
+            }
+        };
+        let model = noise_model(parts[0], &params)
+            .map_err(|e| CliError::Input(format!("--noise '{spec}': {e}"), None))?;
+        registry.register(signal.trim(), model, interaction);
+    }
+    Ok(Some(registry))
+}
+
+fn noise_model(distribution: &str, params: &[f64]) -> Result<NoiseModel, String> {
+    let need = |n: usize| -> Result<(), String> {
+        if params.len() == n {
+            Ok(())
+        } else {
+            Err(format!("{distribution} needs {n} parameter(s), got {}", params.len()))
+        }
+    };
+    let model = match distribution.to_ascii_lowercase().as_str() {
+        "gaussian" | "normal" => need(2).and_then(|()| NoiseModel::gaussian(params[0], params[1]).map_err(|e| e.to_string())),
+        "uniform" => need(2).and_then(|()| NoiseModel::uniform(params[0], params[1]).map_err(|e| e.to_string())),
+        "lognormal" | "log_normal" => need(2).and_then(|()| NoiseModel::log_normal(params[0], params[1]).map_err(|e| e.to_string())),
+        "exponential" | "exp" => need(1).and_then(|()| NoiseModel::exponential(params[0]).map_err(|e| e.to_string())),
+        "gamma" => need(2).and_then(|()| NoiseModel::gamma(params[0], params[1]).map_err(|e| e.to_string())),
+        "beta" => need(2).and_then(|()| NoiseModel::beta(params[0], params[1]).map_err(|e| e.to_string())),
+        other => Err(format!("unknown distribution '{other}', try gaussian, uniform, lognormal, exponential, gamma, or beta")),
+    };
+    model
+}
 
 /// Resolves the user's `--formula`/`--spec` choice into a formula string, plus the builder when a spec was used, since `smc` takes its noise models from it.
 pub fn resolve_formula(

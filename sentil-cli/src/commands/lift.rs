@@ -7,16 +7,25 @@ use crate::engine;
 use crate::error::{code, CliError, Run};
 
 pub fn run(
-    spec: &str,
+    spec: Option<&str>,
     variant: Option<&str>,
     params: &[String],
+    noise: &[String],
     trace_path: &str,
     seed: u64,
 ) -> Run {
-    let builder = engine::resolve_builder(spec, variant, params)?;
-    let lifting = builder
-        .build_lifting_registry()
-        .map_err(|e| CliError::Input(format!("the spec's noise models: {e}"), None))?;
+    let lifting = if let Some(registry) = engine::parse_noise(noise)? {
+        registry
+    } else if let Some(name) = spec {
+        engine::resolve_builder(name, variant, params)?
+            .build_lifting_registry()
+            .map_err(|e| CliError::Input(format!("the spec's noise models: {e}"), None))?
+    } else {
+        return Err(CliError::Input(
+            "give a spec with --spec or a model with --noise".into(),
+            Some("for example --noise 'speed=gaussian:0,0.5'".into()),
+        ));
+    };
     let trace = engine::load_trace(trace_path)?;
     let lifted = lifting
         .lift(&trace, seed)

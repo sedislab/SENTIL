@@ -122,6 +122,9 @@ pub enum Commands {
         /// Override a spec parameter, repeatable, as key=value.
         #[arg(short, long, value_name = "KEY=VALUE")]
         param: Vec<String>,
+        /// A noise model for a signal, repeatable, as signal=distribution:params, e.g. speed=gaussian:0,0.5. Overrides a spec's models.
+        #[arg(long, value_name = "SIGNAL=DIST:PARAMS")]
+        noise: Vec<String>,
         /// The base trace to lift into an ensemble, or - for standard input.
         #[arg(short, long, value_name = "FILE")]
         trace: String,
@@ -156,18 +159,21 @@ pub enum Commands {
         budget: usize,
     },
 
-    /// Apply a spec's noise models to a trace, writing the lifted trace as CSV.
-    #[command(after_help = "Example:\n  sentil lift --spec controls/overshoot -t run.csv > lifted.csv")]
+    /// Apply noise models to a trace, and write the lifted trace as a CSV. Feed the models as a spec or from --noise flags.
+    #[command(after_help = "Examples:\n  sentil lift --spec controls/overshoot -t run.csv > lifted.csv\n  sentil lift --noise 'speed=gaussian:0,0.5' -t run.csv > lifted.csv")]
     Lift {
-        /// The specification whose noise models to apply.
+        /// A specification whose noise models to apply.
         #[arg(long, value_name = "NAME")]
-        spec: String,
+        spec: Option<String>,
         /// A spec variant to apply.
         #[arg(long, value_name = "NAME")]
         variant: Option<String>,
         /// Override a spec parameter, repeatable, as key=value.
         #[arg(short, long, value_name = "KEY=VALUE")]
         param: Vec<String>,
+        /// A noise model for a signal, repeatable, as signal=distribution:params.
+        #[arg(long, value_name = "SIGNAL=DIST:PARAMS")]
+        noise: Vec<String>,
         /// The trace to lift, or - for standard input.
         #[arg(short, long, value_name = "FILE")]
         trace: String,

@@ -29,6 +29,7 @@ pub fn run(
     spec: Option<&str>,
     variant: Option<&str>,
     params: &[String],
+    noise: &[String],
     trace_path: &str,
     out: &Out,
 ) -> Run {
@@ -51,7 +52,7 @@ pub fn run(
         }
     };
     let trace = engine::load_trace(trace_path)?;
-    let lifting = lifting_for(builder.as_ref())?;
+    let lifting = resolve_lifting(noise, builder.as_ref())?;
 
     let spinner = out.spinner("simulating");
     let start = Instant::now();
@@ -235,10 +236,13 @@ fn sprt(
     })
 }
 
-/// The noise models for lifting come from the spec; a raw formula runs with no
-/// lifting. SENTIL carries noise models in the specification format rather than a
-/// standalone file, so reach for `--spec` when an ensemble is wanted.
-fn lifting_for(builder: Option<&sentil::SpecBuilder>) -> Result<LiftingRegistry, CliError> {
+fn resolve_lifting(
+    noise: &[String],
+    builder: Option<&sentil::SpecBuilder>,
+) -> Result<LiftingRegistry, CliError> {
+    if let Some(registry) = engine::parse_noise(noise)? {
+        return Ok(registry);
+    }
     match builder {
         Some(builder) => builder
             .build_lifting_registry()

@@ -149,6 +149,46 @@ fn synth_finds_a_feasible_input() {
 }
 
 #[test]
+fn smc_accepts_noise_flags() {
+    let trace = file("time,x\n0,1\n1,1\n2,1\n");
+    sentil()
+        .args([
+            "smc",
+            "-f",
+            "P>=0.5(always[0,2] (x > 0))",
+            "-t",
+            &path(&trace),
+            "--noise",
+            "x=gaussian:0,2",
+            "--samples",
+            "400",
+            "-o",
+            "json",
+        ])
+        .assert()
+        .stdout(predicate::str::contains("\"probability\""));
+}
+
+#[test]
+fn lift_with_noise_needs_no_spec() {
+    let trace = file("time,x\n0,1\n1,1\n");
+    sentil()
+        .args(["lift", "--noise", "x=gaussian:0,0.5", "-t", &path(&trace)])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("time,x"));
+}
+
+#[test]
+fn bad_noise_distribution_errors() {
+    let trace = file("time,x\n0,1\n");
+    sentil()
+        .args(["lift", "--noise", "x=nope:1,2", "-t", &path(&trace)])
+        .assert()
+        .code(65);
+}
+
+#[test]
 fn lift_writes_csv() {
     let trace = file("time,response\n0,1.0\n1,1.05\n");
     sentil()
