@@ -23,10 +23,6 @@ pub struct Cli {
     #[arg(global = true, long, value_name = "WHEN", default_value_t = ColorWhen::Auto, env = "SENTIL_COLOR")]
     pub color: ColorWhen,
 
-    /// Increase logging on stderr; repeat for more.
-    #[arg(global = true, short = 'v', long, action = clap::ArgAction::Count)]
-    pub verbose: u8,
-
     /// Print only results and errors.
     #[arg(global = true, short = 'q', long)]
     pub quiet: bool,
@@ -268,7 +264,7 @@ pub enum Method {
     Gradient,
     /// CMA-ES, a black-box search for models gradients do not suit.
     CmaEs,
-    /// A complete mixed-integer encoding, needing the milp build feature.
+    /// A complete mixed-integer encoding, for affine models.
     Milp,
 }
 

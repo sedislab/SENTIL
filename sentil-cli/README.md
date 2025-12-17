@@ -55,7 +55,7 @@ The trace is CSV (a `time` column then one column per signal) or a JSON array of
 | `completion`, `man` | the shell completion script or the man page |
 | `init` | build a check interactively, then print and run the command |
 
-Every verb takes the global flags `-o/--output text|json|ndjson`, `--color auto|always|never`, `-v/--verbose`, `-q/--quiet`, `--config <FILE>`, and `--no-input`. Run `sentil <verb> --help` for examples.
+Every verb takes the global flags `-o/--output text|json|ndjson`, `--color auto|always|never`, `-q/--quiet`, `--config <FILE>`, and `--no-input`. Run `sentil <verb> --help` for examples.
 
 ## Output and exit codes
 

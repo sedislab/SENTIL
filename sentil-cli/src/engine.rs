@@ -177,6 +177,12 @@ fn trace_from_json(text: &str) -> Result<Trace, CliError> {
             })?;
             columns[j].push(value);
         }
+        if let Some(extra) = object.keys().find(|k| *k != "time" && !names.iter().any(|n| n == *k)) {
+            return Err(CliError::Input(
+                format!("record {}: unexpected signal '{extra}'", i + 1),
+                Some("every record must carry the same signals as the first".into()),
+            ));
+        }
     }
     build_trace(names, times, columns)
 }

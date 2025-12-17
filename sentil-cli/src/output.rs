@@ -6,8 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::cli::{ColorWhen, OutputFormat};
 
 pub struct Out {
-    /// The chosen output format.
-    pub format: OutputFormat,
+    format: OutputFormat,
     pub quiet: bool,
     pub no_input: bool,
     color: bool,

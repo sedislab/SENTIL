@@ -37,8 +37,8 @@ fn run() -> error::Run {
         cli::Cli::from_arg_matches(&matches).map_err(|e| error::CliError::Internal(e.to_string()))?;
 
     let file = config::load(cli.config.as_deref())?;
-    let output = from_config(&matches, "output", cli.output, file.output.as_deref());
-    let color = from_config(&matches, "color", cli.color, file.color.as_deref());
+    let output = from_config(&matches, "output", cli.output, file.output.as_deref(), cli.quiet);
+    let color = from_config(&matches, "color", cli.color, file.color.as_deref(), cli.quiet);
     let out = output::Out::new(output, cli.json, color, cli.quiet, cli.no_input);
 
     match cli.command {
@@ -61,19 +61,21 @@ fn reset_sigpipe() {
 #[cfg(not(unix))]
 fn reset_sigpipe() {}
 
-// Lets a config-file value replace a flag's default, but only when the parser used
-// that default (no flag and no env var). The file value is parsed against the same
-// value enum the flag uses, so an invalid entry is ignored rather than fatal.
 fn from_config<T: ValueEnum + Copy>(
     matches: &ArgMatches,
     name: &str,
     flag_value: T,
     file_value: Option<&str>,
+    quiet: bool,
 ) -> T {
     if matches.value_source(name) == Some(ValueSource::DefaultValue) {
         if let Some(text) = file_value {
-            if let Ok(parsed) = T::from_str(text, true) {
-                return parsed;
+            match T::from_str(text, true) {
+                Ok(parsed) => return parsed,
+                Err(_) if !quiet => {
+                    eprintln!("warning: ignoring invalid {name} = \"{text}\" in the config file");
+                }
+                Err(_) => {}
             }
         }
     }
