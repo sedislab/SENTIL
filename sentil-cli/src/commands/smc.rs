@@ -9,16 +9,14 @@ use sentil::{
     BayesConfig, BayesResult, Formula, IntervalMethod, LiftingRegistry, Monitor, MonitorConfig,
     SmcConfig, SprtConfig, SprtResult, Trace,
 };
-
-/// A Bayes factor of 100 is "decisive" on the Jeffreys scale, the standard bar for
-/// a sequential Bayesian decision.
-const BAYES_FACTOR: f64 = 100.0;
 use serde_json::json;
 
 use crate::cli::{Algo, Interval};
 use crate::engine;
 use crate::error::{code, CliError, Run};
 use crate::output::{self, Out};
+
+const BAYES_FACTOR: f64 = 100.0; // a bayes factor of 100 is solid on the Jeffreys scale
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(

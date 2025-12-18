@@ -74,13 +74,24 @@ fn noise_model(distribution: &str, params: &[f64]) -> Result<NoiseModel, String>
             need(4).and_then(|()| m(NoiseModel::truncated_normal(params[0], params[1], params[2], params[3])))
         }
         "poisson" => need(1).and_then(|()| m(NoiseModel::poisson(params[0]))),
-        "binomial" => need(2).and_then(|()| m(NoiseModel::binomial(params[0] as u64, params[1]))),
+        "binomial" => need(2).and_then(|()| m(NoiseModel::binomial(binomial_n(params[0])?, params[1]))),
         other => Err(format!(
             "unknown distribution '{other}'; try gaussian, uniform, lognormal, exponential, gamma, \
              beta, dirac, weibull, rayleigh, gumbel, cauchy, student_t, truncated_normal, poisson, \
              or binomial"
         )),
     }
+}
+
+fn binomial_n(value: f64) -> Result<u64, String> {
+    const MAX_TRIALS: f64 = 1_000_000.0;
+    if !value.is_finite() || value < 1.0 || value.fract() != 0.0 || value > MAX_TRIALS {
+        return Err(format!(
+            "binomial needs a whole trial count in 1..={}, got {value}",
+            MAX_TRIALS as u64
+        ));
+    }
+    Ok(value as u64)
 }
 
 /// Resolves the user's `--formula`/`--spec` choice into a formula string, plus the builder when a spec was used, since `smc` takes its noise models from it.

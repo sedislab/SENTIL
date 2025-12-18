@@ -44,7 +44,7 @@ pub fn run(
     }
     for member in 0..members {
         let lifted = lifting
-            .lift(&trace, seed + member)
+            .lift(&trace, seed.wrapping_add(member))
             .map_err(|e| CliError::Engine(e.to_string()))?;
         if let Err(e) = write_rows(&mut stdout, &lifted, &names, tagged.then_some(member)) {
             return pipe_or_error(e);

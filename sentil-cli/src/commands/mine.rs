@@ -28,20 +28,28 @@ pub fn run(
             Some(format!("parameters: {}", names.join(", "))),
         ));
     }
+    let declared = probe.template().parameters.get(parameter).and_then(|d| d.range);
     let (lower, upper) = match range {
-        Some(text) => parse_range(text)?,
-        None => probe
-            .template()
-            .parameters
-            .get(parameter)
-            .and_then(|d| d.range)
-            .map(|[lo, hi]| (lo, hi))
-            .ok_or_else(|| {
-                CliError::Input(
-                    format!("spec '{spec}' defines no range for '{parameter}'"),
-                    Some("give one with --range lo,hi".into()),
-                )
-            })?,
+        Some(text) => {
+            let (mut lo, mut hi) = parse_range(text)?;
+            if let Some([dlo, dhi]) = declared {
+                lo = lo.max(dlo);
+                hi = hi.min(dhi);
+                if lo > hi {
+                    return Err(CliError::Input(
+                        format!("--range lies outside '{parameter}'s allowed [{dlo}, {dhi}]"),
+                        None,
+                    ));
+                }
+            }
+            (lo, hi)
+        }
+        None => declared.map(|[lo, hi]| (lo, hi)).ok_or_else(|| {
+            CliError::Input(
+                format!("spec '{spec}' defines no range for '{parameter}'"),
+                Some("give one with --range lo,hi".into()),
+            )
+        })?,
     };
 
     let overrides = engine::parse_params(params)?;
