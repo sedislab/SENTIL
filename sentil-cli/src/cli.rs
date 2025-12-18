@@ -58,6 +58,9 @@ pub enum Commands {
         /// The trace file, or - for standard input.
         #[arg(short, long, value_name = "FILE")]
         trace: String,
+        /// Bind a formula variable to a dataset column, repeatable, as variable=column.
+        #[arg(long, value_name = "VAR=COLUMN")]
+        map: Vec<String>,
         /// Dense reads between samples; discrete reads only at them.
         #[arg(long, value_name = "MODE", default_value_t = Semantics::Dense)]
         semantics: Semantics,
@@ -84,6 +87,9 @@ pub enum Commands {
         /// Override a spec parameter, repeatable, as key=value.
         #[arg(short, long, value_name = "KEY=VALUE")]
         param: Vec<String>,
+        /// Bind a formula variable to an input field, repeatable, as variable=field.
+        #[arg(long, value_name = "VAR=FIELD")]
+        map: Vec<String>,
     },
 
     /// Estimate how likely a probabilistic specification holds.
@@ -128,6 +134,9 @@ pub enum Commands {
         /// The base trace to lift into an ensemble, or - for standard input.
         #[arg(short, long, value_name = "FILE")]
         trace: String,
+        /// Bind a formula variable to a dataset column, repeatable, as variable=column.
+        #[arg(long, value_name = "VAR=COLUMN")]
+        map: Vec<String>,
     },
 
     /// Synthesize a control-input sequence that best satisfies a spec on a model.
@@ -177,6 +186,9 @@ pub enum Commands {
         /// The trace to lift, or - for standard input.
         #[arg(short, long, value_name = "FILE")]
         trace: String,
+        /// Bind a formula variable to a dataset column, repeatable, as variable=column.
+        #[arg(long, value_name = "VAR=COLUMN")]
+        map: Vec<String>,
         /// The base seed, so a lift reproduces exactly.
         #[arg(long, default_value_t = 42)]
         seed: u64,

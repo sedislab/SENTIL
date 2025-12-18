@@ -31,6 +31,7 @@ pub fn run(
     params: &[String],
     noise: &[String],
     trace_path: &str,
+    map: &[String],
     out: &Out,
 ) -> Run {
     if !(confidence > 0.0 && confidence < 1.0) {
@@ -51,7 +52,7 @@ pub fn run(
             ))
         }
     };
-    let trace = engine::load_trace(trace_path)?;
+    let trace = engine::load_trace(trace_path, map)?;
     let lifting = resolve_lifting(noise, builder.as_ref())?;
 
     let spinner = out.spinner("simulating");

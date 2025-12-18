@@ -12,6 +12,7 @@ pub fn run(
     params: &[String],
     noise: &[String],
     trace_path: &str,
+    map: &[String],
     seed: u64,
 ) -> Run {
     let lifting = if let Some(registry) = engine::parse_noise(noise)? {
@@ -26,7 +27,7 @@ pub fn run(
             Some("for example --noise 'speed=gaussian:0,0.5'".into()),
         ));
     };
-    let trace = engine::load_trace(trace_path)?;
+    let trace = engine::load_trace(trace_path, map)?;
     let lifted = lifting
         .lift(&trace, seed)
         .map_err(|e| CliError::Engine(e.to_string()))?;

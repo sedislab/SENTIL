@@ -189,6 +189,28 @@ fn bad_noise_distribution_errors() {
 }
 
 #[test]
+fn maps_a_variable_to_a_column() {
+    let trace = file("time,velocity\n0,5\n1,-2\n");
+    sentil()
+        .args([
+            "check", "-f", "speed > 0", "-t", &path(&trace), "--map", "speed=velocity",
+            "--semantics", "discrete", "--signal",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("5"));
+}
+
+#[test]
+fn map_to_a_missing_column_errors() {
+    let trace = file("time,velocity\n0,5\n");
+    sentil()
+        .args(["check", "-f", "speed > 0", "-t", &path(&trace), "--map", "speed=nope"])
+        .assert()
+        .code(65);
+}
+
+#[test]
 fn reads_a_matlab_trace() {
     let mat = concat!(
         env!("CARGO_MANIFEST_DIR"),

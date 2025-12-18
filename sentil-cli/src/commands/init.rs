@@ -52,6 +52,7 @@ fn guided_check(out: &Out) -> Run {
         None,
         &[],
         &trace,
+        &[],
         semantics,
         false,
         Backend::Cpu,
@@ -74,7 +75,7 @@ fn guided_smc(out: &Out) -> Run {
     );
     smc::run(
         algo, &samples, 0.95, Interval::Wilson, 0.05, 0.05, 42, Some(&formula), None, None, &[], &[],
-        &trace, out,
+        &trace, &[], out,
     )
 }
 

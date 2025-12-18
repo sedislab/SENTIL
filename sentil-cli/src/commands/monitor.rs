@@ -2,6 +2,7 @@
 //! per line out, no whole-trace buffering, so it sits in a pipe between a sensor
 //! and an alerter.
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,8 +21,12 @@ pub fn run(
     spec: Option<&str>,
     variant: Option<&str>,
     params: &[String],
+    map: &[String],
     out: &Out,
 ) -> Run {
+    let mapping = engine::parse_map(map)?;
+    let rename: HashMap<&str, &str> =
+        mapping.iter().map(|(v, f)| (f.as_str(), v.as_str())).collect();
     let (combined, _builder) = engine::resolve_formula(formula, spec, variant, params, false)?;
     let formulas: Vec<&str> = combined
         .split(';')
@@ -74,7 +79,10 @@ pub fn run(
                 continue;
             }
         };
-        let borrowed: Vec<(&str, f64)> = pairs.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+        let borrowed: Vec<(&str, f64)> = pairs
+            .iter()
+            .map(|(k, v)| (rename.get(k.as_str()).copied().unwrap_or(k.as_str()), *v))
+            .collect();
         let results = match monitor.update(time, &borrowed) {
             Ok(results) => results,
             Err(e) => {

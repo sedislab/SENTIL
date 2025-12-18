@@ -17,6 +17,7 @@ pub fn run(
     variant: Option<&str>,
     params: &[String],
     trace_path: &str,
+    map: &[String],
     semantics: Semantics,
     signal: bool,
     backend: Backend,
@@ -32,7 +33,7 @@ pub fn run(
     let (formula, _builder) = engine::resolve_formula(formula, spec, variant, params, false)?;
     let parsed = engine::parse_or_diagnose(&formula)?;
     let spinner = out.spinner("evaluating");
-    let trace = engine::load_trace(trace_path)?;
+    let trace = engine::load_trace(trace_path, map)?;
 
     let mode = match semantics {
         Semantics::Dense => TimeMode::Dense,

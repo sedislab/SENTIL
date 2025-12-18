@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
@@ -152,12 +153,15 @@ pub fn parse_or_diagnose(formula: &str) -> Result<Formula, CliError> {
     }
 }
 
-/// Reads a trace from `path`, or from standard input when `path` is `-`. CSV and
-/// JSON are read here (the format is inferred from the content, so no extension is
-/// required); a MATLAB `.mat`, Parquet, Arrow, or SQLite file is read through the
-/// engine's loader by its extension. A named file that does not exist is reported
-/// as missing rather than as a read error.
-pub fn load_trace(path: &str) -> Result<Trace, CliError> {
+/// Reads a trace from `path`, or from standard input when `path` is `-`, then binds the formula's variables to dataset columns per `map` (each `variable=column`).
+/// File type is inferred from the content or file extension.
+pub fn load_trace(path: &str, map: &[String]) -> Result<Trace, CliError> {
+    let parsed = parse_map(map)?;
+    let trace = read_trace(path)?;
+    remap_trace(trace, &parsed)
+}
+
+fn read_trace(path: &str) -> Result<Trace, CliError> {
     if path == "-" {
         let mut text = String::new();
         std::io::stdin()
@@ -188,6 +192,47 @@ pub fn load_trace(path: &str) -> Result<Trace, CliError> {
             )
         }),
     }
+}
+
+/// Parses the `--map variable=column` pairs.
+pub fn parse_map(specs: &[String]) -> Result<Vec<(String, String)>, CliError> {
+    specs
+        .iter()
+        .map(|spec| {
+            let (variable, column) = spec.split_once('=').ok_or_else(|| {
+                CliError::Input(
+                    format!("--map '{spec}' must be variable=column"),
+                    Some("for example --map speed=velocity_mps".into()),
+                )
+            })?;
+            Ok((variable.trim().to_string(), column.trim().to_string()))
+        })
+        .collect()
+}
+
+fn remap_trace(trace: Trace, map: &[(String, String)]) -> Result<Trace, CliError> {
+    if map.is_empty() {
+        return Ok(trace);
+    }
+    let columns = trace.variables();
+    for (variable, column) in map {
+        if !columns.iter().any(|c| c == column) {
+            return Err(CliError::Input(
+                format!("--map {variable}={column}: no column '{column}' in the trace"),
+                Some(format!("the trace has: {}", columns.join(", "))),
+            ));
+        }
+    }
+    let rename: HashMap<&str, &str> = map.iter().map(|(v, c)| (c.as_str(), v.as_str())).collect();
+    let mut out = Trace::new(trace.times().to_vec())
+        .map_err(|e| CliError::Input(format!("the trace times are invalid: {e}"), None))?;
+    for name in trace.variables() {
+        let target = rename.get(name).copied().unwrap_or(name);
+        let values = trace.signal(name).unwrap_or(&[]).to_vec();
+        out.add_signal(target, values)
+            .map_err(|e| CliError::Input(format!("signal '{target}': {e}"), None))?;
+    }
+    Ok(out)
 }
 
 fn trace_from_text(text: &str) -> Result<Trace, CliError> {
