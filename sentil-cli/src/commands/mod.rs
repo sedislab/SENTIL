@@ -9,6 +9,7 @@ mod external;
 mod generate;
 mod init;
 mod lift;
+mod mine;
 mod monitor;
 mod smc;
 mod specs;
@@ -106,6 +107,24 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             &param,
             horizon,
             budget,
+            out,
+        ),
+        Commands::Mine {
+            spec,
+            variant,
+            param,
+            parameter,
+            range,
+            trace,
+            map,
+        } => mine::run(
+            &spec,
+            variant.as_deref(),
+            &param,
+            &parameter,
+            range.as_deref(),
+            &trace,
+            &map,
             out,
         ),
         Commands::Lift {

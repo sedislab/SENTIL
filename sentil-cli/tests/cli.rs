@@ -265,6 +265,16 @@ fn reads_a_matlab_trace() {
 }
 
 #[test]
+fn mine_finds_the_tightest_parameter() {
+    let trace = file("time,output,reference\n0,1.0,1.0\n1,1.15,1.0\n2,1.0,1.0\n");
+    sentil()
+        .args(["mine", "--spec", "controls/overshoot", "--parameter", "max_overshoot", "-t", &path(&trace), "-o", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tightest\""));
+}
+
+#[test]
 fn lift_writes_csv() {
     let trace = file("time,response\n0,1.0\n1,1.05\n");
     sentil()

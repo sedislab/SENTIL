@@ -171,6 +171,32 @@ pub enum Commands {
         budget: usize,
     },
 
+    /// Find the tightest value of a spec parameter for which it still holds on a trace.
+    #[command(after_help = "Example:\n  sentil mine --spec controls/overshoot --parameter max_overshoot -t run.csv")]
+    Mine {
+        /// The specification to mine.
+        #[arg(long, value_name = "NAME")]
+        spec: String,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Fix another spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+        /// The parameter to mine.
+        #[arg(long, value_name = "NAME")]
+        parameter: String,
+        /// The search range; defaults to the parameter's declared range.
+        #[arg(long, value_name = "LO,HI")]
+        range: Option<String>,
+        /// The trace, or - for standard input.
+        #[arg(short, long, value_name = "FILE")]
+        trace: String,
+        /// Bind a formula variable to a dataset column, repeatable, as variable=column.
+        #[arg(long, value_name = "VAR=COLUMN")]
+        map: Vec<String>,
+    },
+
     /// Apply noise models to a trace, and write the lifted trace as a CSV. Feed the models as a spec or from --noise flags.
     #[command(after_help = "Examples:\n  sentil lift --spec controls/overshoot -t run.csv > lifted.csv\n  sentil lift --noise 'speed=gaussian:0,0.5' -t run.csv > lifted.csv")]
     Lift {

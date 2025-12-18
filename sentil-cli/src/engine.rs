@@ -142,6 +142,11 @@ pub fn resolve_builder(
     Ok(builder)
 }
 
+/// Parses the `-p key=value` overrides.
+pub fn parse_params(specs: &[String]) -> Result<Vec<(String, f64)>, CliError> {
+    specs.iter().map(|s| parse_param(s)).collect()
+}
+
 fn parse_param(text: &str) -> Result<(String, f64), CliError> {
     let (key, value) = text.split_once('=').ok_or_else(|| {
         CliError::Input(
