@@ -1,0 +1,23 @@
+{
+  "tool": "sentil",
+  "language": "rust",
+  "benchmark": "embedded_deployment",
+  "specifications": 60,
+  "rate_hz": 85.0,
+  "cycles": 612000,
+  "deadline_ms": 11.764705882352942,
+  "deadline_misses": 0,
+  "violation_cycles": 148320,
+  "latency_ms": {
+    "mean": 0.0056390016013051205,
+    "median": 0.005561,
+    "p95": 0.005971,
+    "p99": 0.0066619999999999995,
+    "max": 0.532406
+  },
+  "rss_steady_mb": 11.0,
+  "rss_growth_mb": 1.0,
+  "hardware": "x86_64 dev login node (regression guard, not the Pi 4 reference)",
+  "version": "1.0.0",
+  "runs": 1
+}
