@@ -64,16 +64,13 @@ pub fn run(
         } else {
             out.paint("violated", output::bad())
         };
-        println!("{}", out.paint("check", output::heading()));
-        println!("  formula     {formula}");
-        println!("  trace       {trace_path}");
-        println!("  semantics   {semantics}");
-        println!("  verdict     {verdict}");
-        println!("  robustness  {robustness:.6}");
-        println!(
-            "{}",
-            out.paint(&format!("  evaluated in {elapsed_ms:.1} ms"), output::dim())
-        );
+        out.heading("check");
+        out.field("formula", &formula);
+        out.field("trace", trace_path);
+        out.field("semantics", &semantics.to_string());
+        out.field("verdict", &verdict);
+        out.field("robustness", &format!("{robustness:.6}"));
+        out.note(&format!("evaluated in {elapsed_ms:.1} ms"));
     } else {
         println!(
             "{}",

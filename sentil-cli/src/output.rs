@@ -39,6 +39,18 @@ impl Out {
         matches!(self.format, OutputFormat::Ndjson)
     }
 
+    pub fn heading(&self, title: &str) {
+        println!("{}", self.paint(title, heading()));
+    }
+
+    pub fn field(&self, label: &str, value: &str) {
+        println!("  {} {value}", self.paint(&format!("{label:<11}"), dim()));
+    }
+
+    pub fn note(&self, text: &str) {
+        println!("{}", self.paint(&format!("  {text}"), dim()));
+    }
+
     pub fn paint(&self, text: &str, style: Style) -> String {
         if self.color {
             format!("{}{text}{}", style.render(), style.render_reset())

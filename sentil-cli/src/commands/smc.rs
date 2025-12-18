@@ -88,32 +88,32 @@ pub fn run(
     output::clear_spinner(spinner);
 
     if out.is_text() {
-        println!("{}", out.paint("smc", output::heading()));
-        println!("  formula      {formula_text}");
-        println!("  algorithm    {algo}");
-        println!("  samples      {}", report.samples);
+        out.heading("smc");
+        out.field("formula", &formula_text);
+        out.field("algorithm", &algo.to_string());
+        out.field("samples", &report.samples.to_string());
         if let Some(satisfactions) = report.satisfactions {
-            println!("  satisfied    {satisfactions}");
+            out.field("satisfied", &satisfactions.to_string());
         }
         if let Some(probability) = report.probability {
-            println!("  probability  {probability:.6}");
+            out.field("probability", &format!("{probability:.6}"));
         }
         if let Some((low, high)) = report.interval {
-            println!("  {:.0}% interval [{low:.6}, {high:.6}]", confidence * 100.0);
+            out.field(
+                "interval",
+                &format!("[{low:.6}, {high:.6}] at {:.0}%", confidence * 100.0),
+            );
         }
         if let Some(decision) = report.decision {
-            println!("  decision     {decision}");
+            out.field("decision", decision);
         }
         let verdict = if report.holds {
             out.paint("holds", output::good())
         } else {
             out.paint("does not hold", output::bad())
         };
-        println!("  verdict      {verdict}");
-        println!(
-            "{}",
-            out.paint(&format!("  ran in {elapsed_ms:.1} ms"), output::dim())
-        );
+        out.field("verdict", &verdict);
+        out.note(&format!("ran in {elapsed_ms:.1} ms"));
     } else {
         let mut object = json!({
             "schema_version": "1.0",

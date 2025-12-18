@@ -75,23 +75,23 @@ pub fn run(
     output::clear_spinner(spinner);
 
     if out.is_text() {
-        println!("{}", out.paint("synth", output::heading()));
-        println!("  spec        {formula_text}");
-        println!("  method      {method}");
         let feasible = if result.holds {
             out.paint("feasible", output::good())
         } else {
             out.paint("infeasible (minimally violating)", output::bad())
         };
-        println!("  result      {feasible}");
-        println!("  robustness  {:.6}", result.robustness);
         let input = result
             .input
             .iter()
             .map(|u| format!("{u:.4}"))
             .collect::<Vec<_>>()
             .join(", ");
-        println!("  input       [{input}]");
+        out.heading("synth");
+        out.field("spec", &formula_text);
+        out.field("method", &method.to_string());
+        out.field("result", &feasible);
+        out.field("robustness", &format!("{:.6}", result.robustness));
+        out.field("input", &format!("[{input}]"));
     } else {
         println!(
             "{}",
