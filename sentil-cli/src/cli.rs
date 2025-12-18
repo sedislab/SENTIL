@@ -197,6 +197,38 @@ pub enum Commands {
         map: Vec<String>,
     },
 
+    /// Search a model's input space for a trajectory that violates the spec.
+    #[command(after_help = "Example:\n  sentil falsify -f 'always (x < 5)' --model system.json")]
+    Falsify {
+        /// The search method.
+        #[arg(long, value_name = "METHOD", default_value_t = Method::CmaEs)]
+        method: Method,
+        /// A JSON model file with a bounds {lower, upper} block to search within.
+        #[arg(long, value_name = "FILE")]
+        model: String,
+        /// The spec to try to violate. Use this or --spec.
+        #[arg(short, long, value_name = "FORMULA", required_unless_present = "spec")]
+        formula: Option<String>,
+        /// A premade specification to try to violate instead of a raw formula.
+        #[arg(long, value_name = "NAME", required_unless_present = "formula")]
+        spec: Option<String>,
+        /// A spec variant to apply.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Override a spec parameter, repeatable, as key=value.
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        param: Vec<String>,
+        /// Override the model's horizon.
+        #[arg(long, value_name = "N")]
+        horizon: Option<usize>,
+        /// The search iteration budget.
+        #[arg(long, default_value_t = 200)]
+        budget: usize,
+        /// How many times cmaes restarts from a fresh start.
+        #[arg(long, default_value_t = 1)]
+        restarts: usize,
+    },
+
     /// Apply noise models to a trace, and write the lifted trace as a CSV. Feed the models as a spec or from --noise flags.
     #[command(after_help = "Examples:\n  sentil lift --spec controls/overshoot -t run.csv > lifted.csv\n  sentil lift --noise 'speed=gaussian:0,0.5' -t run.csv > lifted.csv")]
     Lift {
@@ -319,6 +351,7 @@ pub enum Method {
     /// Projected gradient ascent on the smooth robustness, the light default.
     Gradient,
     /// CMA-ES, a black-box search for models gradients do not suit.
+    #[value(name = "cmaes", alias = "cma-es")]
     CmaEs,
     /// A complete mixed-integer encoding, for affine models.
     Milp,

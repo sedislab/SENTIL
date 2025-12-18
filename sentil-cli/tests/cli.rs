@@ -136,6 +136,30 @@ fn smc_estimates_a_probability() {
 }
 
 #[test]
+fn falsify_finds_a_counterexample() {
+    let model = file(
+        "{\"a\":[[1.0]],\"b\":[[1.0]],\"x0\":[0.0],\"variables\":[\"x\"],\"dt\":1.0,\
+         \"horizon\":5,\"bounds\":{\"lower\":[0.0],\"upper\":[3.0]}}",
+    );
+    sentil()
+        .args(["falsify", "-f", "always (x < 5)", "--model", &path(&model), "-o", "json"])
+        .assert()
+        .code(10)
+        .stdout(predicate::str::contains("\"found\":true"));
+}
+
+#[test]
+fn falsify_without_bounds_errors() {
+    let model = file(
+        "{\"a\":[[1.0]],\"b\":[[1.0]],\"x0\":[0.0],\"variables\":[\"x\"],\"dt\":1.0,\"horizon\":3}",
+    );
+    sentil()
+        .args(["falsify", "-f", "always (x < 5)", "--model", &path(&model)])
+        .assert()
+        .code(65);
+}
+
+#[test]
 fn synth_finds_a_feasible_input() {
     let model = file(
         "{\"a\":[[1.0]],\"b\":[[1.0]],\"x0\":[1.0],\"variables\":[\"x\"],\"dt\":1.0,\

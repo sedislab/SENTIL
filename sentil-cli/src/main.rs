@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod engine;
 mod error;
+mod model;
 mod output;
 
 const LONG_VERSION: &str = concat!(

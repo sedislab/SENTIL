@@ -6,6 +6,7 @@ use crate::output::Out;
 mod check;
 mod explain;
 mod external;
+mod falsify;
 mod generate;
 mod init;
 mod lift;
@@ -107,6 +108,28 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             &param,
             horizon,
             budget,
+            out,
+        ),
+        Commands::Falsify {
+            method,
+            model,
+            formula,
+            spec,
+            variant,
+            param,
+            horizon,
+            budget,
+            restarts,
+        } => falsify::run(
+            method,
+            &model,
+            formula.as_deref(),
+            spec.as_deref(),
+            variant.as_deref(),
+            &param,
+            horizon,
+            budget,
+            restarts,
             out,
         ),
         Commands::Mine {
