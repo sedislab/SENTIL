@@ -20,6 +20,7 @@ pub fn run(
     map: &[String],
     semantics: Semantics,
     signal: bool,
+    violations: bool,
     backend: Backend,
     out: &Out,
 ) -> Run {
@@ -42,6 +43,15 @@ pub fn run(
     let monitor = Monitor::from_formula(parsed, MonitorConfig::new().time(mode));
 
     let start = Instant::now();
+    if violations {
+        let intervals = monitor
+            .violations(&trace)
+            .map_err(|e| CliError::Engine(e.to_string()))?;
+        if let Some(bar) = spinner {
+            bar.finish_and_clear();
+        }
+        return emit_violations(&formula, trace_path, &intervals, out);
+    }
     if signal {
         let values = monitor
             .robustness_signal(&trace)
@@ -89,6 +99,38 @@ pub fn run(
     }
 
     Ok(if satisfied {
+        code::SUCCESS
+    } else {
+        code::VIOLATED
+    })
+}
+
+fn emit_violations(formula: &str, trace_path: &str, intervals: &[(f64, f64)], out: &Out) -> Run {
+    if out.is_text() {
+        out.heading("violations");
+        out.field("formula", formula);
+        out.field("trace", trace_path);
+        if intervals.is_empty() {
+            out.note("none");
+        } else {
+            for (start, end) in intervals {
+                println!("  [{start:.3}, {end:.3}]");
+            }
+        }
+    } else {
+        let spans: Vec<[f64; 2]> = intervals.iter().map(|(s, e)| [*s, *e]).collect();
+        println!(
+            "{}",
+            json!({
+                "schema_version": "1.0",
+                "verb": "check",
+                "formula": formula,
+                "trace": trace_path,
+                "violations": spans,
+            })
+        );
+    }
+    Ok(if intervals.is_empty() {
         code::SUCCESS
     } else {
         code::VIOLATED

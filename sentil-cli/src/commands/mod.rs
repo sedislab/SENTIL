@@ -27,6 +27,7 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             map,
             semantics,
             signal,
+            violations,
             backend,
         } => check::run(
             formula.as_deref(),
@@ -37,6 +38,7 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             &map,
             semantics,
             signal,
+            violations,
             backend,
             out,
         ),

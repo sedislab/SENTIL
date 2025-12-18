@@ -189,6 +189,27 @@ fn bad_noise_distribution_errors() {
 }
 
 #[test]
+fn check_reports_violation_intervals() {
+    let trace = file("time,x\n0,5\n1,-3\n2,4\n3,-1\n");
+    sentil()
+        .args(["check", "-f", "x > 0", "-t", &path(&trace), "--violations", "--semantics", "discrete"])
+        .assert()
+        .code(10)
+        .stdout(predicate::str::contains("[1.000, 1.000]"))
+        .stdout(predicate::str::contains("[3.000, 3.000]"));
+}
+
+#[test]
+fn smc_bayes_decides() {
+    let trace = file("time,x\n0,1\n1,1\n2,1\n");
+    sentil()
+        .args(["smc", "-f", "P>=0.9(always[0,2] (x > 0))", "-t", &path(&trace), "--algo", "bayes", "-o", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"decision\":\"holds\""));
+}
+
+#[test]
 fn maps_a_variable_to_a_column() {
     let trace = file("time,velocity\n0,5\n1,-2\n");
     sentil()

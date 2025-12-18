@@ -67,6 +67,9 @@ pub enum Commands {
         /// Print the robustness at every sample, not just the verdict at t=0.
         #[arg(long)]
         signal: bool,
+        /// Print the time intervals where the formula is violated.
+        #[arg(long)]
+        violations: bool,
         /// Where to run the evaluation.
         #[arg(long, value_name = "BACKEND", default_value_t = Backend::Cpu)]
         backend: Backend,

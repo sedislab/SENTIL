@@ -55,6 +55,7 @@ fn guided_check(out: &Out) -> Run {
         &[],
         semantics,
         false,
+        false,
         Backend::Cpu,
         out,
     )
