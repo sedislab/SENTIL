@@ -2908,6 +2908,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentil-embedded-deployment"
+version = "1.0.0"
+dependencies = [
+ "rand",
+ "rand_chacha",
+ "sentil",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sentil-ffi"
 version = "1.0.0"
 dependencies = [
