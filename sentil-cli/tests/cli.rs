@@ -289,6 +289,26 @@ fn reads_a_matlab_trace() {
 }
 
 #[test]
+fn fit_recovers_a_gaussian_bias() {
+    let trace = file("time,truth,meas\n0,1.0,1.5\n1,2.0,2.5\n2,3.0,3.5\n3,4.0,4.5\n");
+    sentil()
+        .args(["fit", "-t", &path(&trace), "--truth", "truth", "--sensor", "meas", "-o", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"verb\":\"fit\""))
+        .stdout(predicate::str::contains("\"mean\":0.5"));
+}
+
+#[test]
+fn fit_missing_column_errors() {
+    let trace = file("time,truth,meas\n0,1.0,1.5\n");
+    sentil()
+        .args(["fit", "-t", &path(&trace), "--truth", "nope", "--sensor", "meas"])
+        .assert()
+        .code(65);
+}
+
+#[test]
 fn mine_finds_the_tightest_parameter() {
     let trace = file("time,output,reference\n0,1.0,1.0\n1,1.15,1.0\n2,1.0,1.0\n");
     sentil()

@@ -171,6 +171,32 @@ pub enum Commands {
         budget: usize,
     },
 
+    /// Fit a noise model from paired ground-truth and sensor columns
+    #[command(after_help = "Example:\n  sentil fit -t calib.csv --truth temp_true --sensor temp_meas --model gaussian")]
+    Fit {
+        /// The calibration dataset, or - for standard input.
+        #[arg(short, long, value_name = "FILE")]
+        trace: String,
+        /// The ground-truth column.
+        #[arg(long, value_name = "COLUMN")]
+        truth: String,
+        /// The sensor-reading column.
+        #[arg(long, value_name = "COLUMN")]
+        sensor: String,
+        /// How the noise couples to the signal.
+        #[arg(long, value_name = "MODE", default_value_t = Interaction::Additive)]
+        interaction: Interaction,
+        /// The model class to fit.
+        #[arg(long, value_name = "CLASS", default_value_t = FitModel::Gaussian)]
+        model: FitModel,
+        /// The number of mixture components, for the mixture model.
+        #[arg(long, default_value_t = 2)]
+        components: usize,
+        /// Bind the truth or sensor name to a dataset column, repeatable.
+        #[arg(long, value_name = "VAR=COLUMN")]
+        map: Vec<String>,
+    },
+
     /// Find the tightest value of a spec parameter for which it still holds on a trace.
     #[command(after_help = "Example:\n  sentil mine --spec controls/overshoot --parameter max_overshoot -t run.csv")]
     Mine {
@@ -341,6 +367,45 @@ impl fmt::Display for Algo {
             Self::Sprt => "sprt",
             Self::Chernoff => "chernoff",
             Self::Bayes => "bayes",
+        })
+    }
+}
+
+/// How a noise model couples to a signal.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interaction {
+    /// The noise is added to the reading.
+    Additive,
+    /// The noise scales the reading.
+    Multiplicative,
+}
+
+impl fmt::Display for Interaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Additive => "additive",
+            Self::Multiplicative => "multiplicative",
+        })
+    }
+}
+
+/// The model class fitted from calibration residuals.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FitModel {
+    /// A maximum-likelihood Gaussian.
+    Gaussian,
+    /// The empirical residuals, resampled with replacement.
+    Bootstrap,
+    /// A Gaussian mixture fitted by expectation-maximization.
+    Mixture,
+}
+
+impl fmt::Display for FitModel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Gaussian => "gaussian",
+            Self::Bootstrap => "bootstrap",
+            Self::Mixture => "mixture",
         })
     }
 }

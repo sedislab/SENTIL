@@ -7,6 +7,7 @@ mod check;
 mod explain;
 mod external;
 mod falsify;
+mod fit;
 mod generate;
 mod init;
 mod lift;
@@ -132,6 +133,15 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             restarts,
             out,
         ),
+        Commands::Fit {
+            trace,
+            truth,
+            sensor,
+            interaction,
+            model,
+            components,
+            map,
+        } => fit::run(&trace, &truth, &sensor, interaction, model, components, &map, out),
         Commands::Mine {
             spec,
             variant,
