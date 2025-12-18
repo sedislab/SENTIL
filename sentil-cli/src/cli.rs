@@ -192,6 +192,9 @@ pub enum Commands {
         /// Bind a formula variable to a dataset column, repeatable, as variable=column.
         #[arg(long, value_name = "VAR=COLUMN")]
         map: Vec<String>,
+        /// Write this many sampled realizations. If it's above one, a `member` column is added.
+        #[arg(long, default_value_t = 1)]
+        members: u64,
         /// The base seed, so a lift reproduces exactly.
         #[arg(long, default_value_t = 42)]
         seed: u64,

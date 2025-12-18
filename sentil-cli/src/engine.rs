@@ -56,16 +56,31 @@ fn noise_model(distribution: &str, params: &[f64]) -> Result<NoiseModel, String>
             Err(format!("{distribution} needs {n} parameter(s), got {}", params.len()))
         }
     };
-    let model = match distribution.to_ascii_lowercase().as_str() {
-        "gaussian" | "normal" => need(2).and_then(|()| NoiseModel::gaussian(params[0], params[1]).map_err(|e| e.to_string())),
-        "uniform" => need(2).and_then(|()| NoiseModel::uniform(params[0], params[1]).map_err(|e| e.to_string())),
-        "lognormal" | "log_normal" => need(2).and_then(|()| NoiseModel::log_normal(params[0], params[1]).map_err(|e| e.to_string())),
-        "exponential" | "exp" => need(1).and_then(|()| NoiseModel::exponential(params[0]).map_err(|e| e.to_string())),
-        "gamma" => need(2).and_then(|()| NoiseModel::gamma(params[0], params[1]).map_err(|e| e.to_string())),
-        "beta" => need(2).and_then(|()| NoiseModel::beta(params[0], params[1]).map_err(|e| e.to_string())),
-        other => Err(format!("unknown distribution '{other}', try gaussian, uniform, lognormal, exponential, gamma, or beta")),
-    };
-    model
+    let m = |r: Result<NoiseModel, sentil::Error>| r.map_err(|e| e.to_string());
+    match distribution.to_ascii_lowercase().as_str() {
+        "gaussian" | "normal" => need(2).and_then(|()| m(NoiseModel::gaussian(params[0], params[1]))),
+        "uniform" => need(2).and_then(|()| m(NoiseModel::uniform(params[0], params[1]))),
+        "lognormal" | "log_normal" => need(2).and_then(|()| m(NoiseModel::log_normal(params[0], params[1]))),
+        "exponential" | "exp" => need(1).and_then(|()| m(NoiseModel::exponential(params[0]))),
+        "gamma" => need(2).and_then(|()| m(NoiseModel::gamma(params[0], params[1]))),
+        "beta" => need(2).and_then(|()| m(NoiseModel::beta(params[0], params[1]))),
+        "dirac" | "constant" => need(1).and_then(|()| m(NoiseModel::dirac(params[0]))),
+        "weibull" => need(2).and_then(|()| m(NoiseModel::weibull(params[0], params[1]))),
+        "rayleigh" => need(1).and_then(|()| m(NoiseModel::rayleigh(params[0]))),
+        "gumbel" => need(2).and_then(|()| m(NoiseModel::gumbel(params[0], params[1]))),
+        "cauchy" => need(2).and_then(|()| m(NoiseModel::cauchy(params[0], params[1]))),
+        "student_t" | "studentt" => need(3).and_then(|()| m(NoiseModel::student_t(params[0], params[1], params[2]))),
+        "truncated_normal" | "truncnormal" => {
+            need(4).and_then(|()| m(NoiseModel::truncated_normal(params[0], params[1], params[2], params[3])))
+        }
+        "poisson" => need(1).and_then(|()| m(NoiseModel::poisson(params[0]))),
+        "binomial" => need(2).and_then(|()| m(NoiseModel::binomial(params[0] as u64, params[1]))),
+        other => Err(format!(
+            "unknown distribution '{other}'; try gaussian, uniform, lognormal, exponential, gamma, \
+             beta, dirac, weibull, rayleigh, gumbel, cauchy, student_t, truncated_normal, poisson, \
+             or binomial"
+        )),
+    }
 }
 
 /// Resolves the user's `--formula`/`--spec` choice into a formula string, plus the builder when a spec was used, since `smc` takes its noise models from it.

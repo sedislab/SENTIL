@@ -170,6 +170,26 @@ fn smc_accepts_noise_flags() {
 }
 
 #[test]
+fn lift_ensemble_tags_members() {
+    let trace = file("time,x\n0,1\n1,1\n");
+    sentil()
+        .args(["lift", "--noise", "x=gaussian:0,0.3", "-t", &path(&trace), "--members", "3"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("member,time,x"))
+        .stdout(predicate::str::contains("2,1,"));
+}
+
+#[test]
+fn lift_accepts_extended_noise_families() {
+    let trace = file("time,x\n0,1\n");
+    sentil()
+        .args(["lift", "--noise", "x=weibull:1.5,1", "-t", &path(&trace)])
+        .assert()
+        .success();
+}
+
+#[test]
 fn lift_with_noise_needs_no_spec() {
     let trace = file("time,x\n0,1\n1,1\n");
     sentil()
