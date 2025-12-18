@@ -1,9 +1,7 @@
-//! `sentil monitor`: the online monitor. One JSON sample per line in, one verdict
-//! per line out, no whole-trace buffering, so it sits in a pipe between a sensor
-//! and an alerter.
+//! `sentil monitor` is the online monitor. One JSON sample per line in.
 
 use std::collections::HashMap;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -50,7 +48,9 @@ pub fn run(
     let flag = interrupted.clone();
     let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));
 
-    if out.is_text() && !out.quiet {
+    let live = out.is_text() && !out.quiet && std::io::stdout().is_terminal();
+    let mut dashboard = live.then(|| Dashboard::new(formulas.iter().map(|s| s.to_string()).collect()));
+    if out.is_text() && !out.quiet && !live {
         let banner = format!(
             "monitoring {} formula(s); send one JSON object per line, e.g. {{\"time\": 1.0, \"x\": 5.0}}",
             formulas.len()
@@ -61,12 +61,11 @@ pub fn run(
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     let mut samples = 0u64;
+    let mut skipped = 0u64;
     for line in stdin.lock().lines() {
         if interrupted.load(Ordering::SeqCst) {
             break;
         }
-        // A read failure ends the stream; a single bad or unprocessable line is
-        // skipped with a note so the monitor survives it.
         let line = line.map_err(|e| CliError::Input(format!("reading input: {e}"), None))?;
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -75,7 +74,10 @@ pub fn run(
         let (time, pairs) = match parse_sample(trimmed) {
             Ok(sample) => sample,
             Err(e) => {
-                warn(out, &format!("skipped a malformed sample: {e}"));
+                skipped += 1;
+                if dashboard.is_none() {
+                    warn(out, &format!("skipped a malformed sample: {e}"));
+                }
                 continue;
             }
         };
@@ -86,17 +88,25 @@ pub fn run(
         let results = match monitor.update(time, &borrowed) {
             Ok(results) => results,
             Err(e) => {
-                warn(out, &format!("skipped the sample at t={time}: {e}"));
+                skipped += 1;
+                if dashboard.is_none() {
+                    warn(out, &format!("skipped the sample at t={time}: {e}"));
+                }
                 continue;
             }
         };
-        if !emit(&mut stdout, out, time, &results)? {
-            break; // the downstream reader closed the pipe
-        }
         samples += 1;
+        match dashboard.as_mut() {
+            Some(board) => board.render(out, time, samples, skipped, &results),
+            None => {
+                if !emit(&mut stdout, out, time, &results)? {
+                    break;
+                }
+            }
+        }
     }
 
-    if out.is_ndjson() {
+    if dashboard.is_none() && out.is_ndjson() {
         let _ = writeln!(
             stdout,
             "{}",
@@ -109,6 +119,109 @@ pub fn run(
     } else {
         code::SUCCESS
     })
+}
+
+struct Dashboard {
+    labels: Vec<String>,
+    height: usize,
+    drawn: bool,
+}
+
+impl Dashboard {
+    fn new(labels: Vec<String>) -> Self {
+        Self {
+            labels,
+            height: 0,
+            drawn: false,
+        }
+    }
+
+    fn render(&mut self, out: &Out, time: f64, samples: u64, skipped: u64, results: &[(String, Robustness)]) {
+        let lines = frame(out, time, samples, skipped, &self.labels, results);
+        let mut buf = String::new();
+        if self.drawn {
+            // cursor back up over the previous box; each line is cleared as it is rewritten
+            buf.push_str(&format!("\x1b[{}A", self.height));
+        }
+        for line in &lines {
+            buf.push_str("\r\x1b[2K"); // return and clear the line before redrawing it
+            buf.push_str(line);
+            buf.push('\n');
+        }
+        self.height = lines.len();
+        self.drawn = true;
+        let mut stdout = std::io::stdout();
+        let _ = stdout.write_all(buf.as_bytes());
+        let _ = stdout.flush();
+    }
+}
+
+/// box here. look at it before you change anything.
+fn frame(
+    out: &Out,
+    time: f64,
+    samples: u64,
+    skipped: u64,
+    labels: &[String],
+    results: &[(String, Robustness)],
+) -> Vec<String> {
+    const VALUE_W: usize = 13; // a 4-wide verdict, a space, an 8-wide number
+    let label_w = labels
+        .iter()
+        .map(|l| l.chars().count())
+        .chain([7]) // "samples" and "skipped"
+        .max()
+        .unwrap_or(7)
+        .min(44);
+    let inner = label_w + 4 + VALUE_W; // " " + label + "  " + value + " "
+    let rule = "─".repeat(inner);
+    let bar = |left: char, right: char| out.paint(&format!("{left}{rule}{right}"), output::dim());
+    let dim_bar = out.paint("│", output::dim());
+
+    let title = " sentil monitor ";
+    let title_fill = inner.saturating_sub(title.chars().count());
+    let mut lines = vec![out.paint(
+        &format!("┌{title}{}┐", "─".repeat(title_fill)),
+        output::dim(),
+    )];
+
+    let meta = |label: &str, value: String| {
+        format!("{dim_bar} {label:<label_w$}  {value:>VALUE_W$} {dim_bar}")
+    };
+    lines.push(meta("time", format!("{time:.2}")));
+    lines.push(meta("samples", samples.to_string()));
+    lines.push(meta("skipped", skipped.to_string()));
+    lines.push(bar('├', '┤'));
+
+    for (i, (_, robustness)) in results.iter().enumerate() {
+        let label = labels.get(i).map_or(String::new(), |l| truncate(l, label_w));
+        let value = robustness.value();
+        let word = if value >= 0.0 {
+            out.paint(&format!("{:>4}", "sat"), output::good())
+        } else {
+            out.paint(&format!("{:>4}", "viol"), output::bad())
+        };
+        let mark = if robustness.is_resolved() { ' ' } else { '~' };
+        let cell = format!("{word} {mark}{value:>7.3}");
+        lines.push(format!("{dim_bar} {label:<label_w$}  {cell} {dim_bar}"));
+    }
+    lines.push(bar('└', '┘'));
+    lines
+}
+
+fn truncate(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    let mut cut: String = text.chars().take(width.saturating_sub(1)).collect();
+    cut.push('…');
+    cut
+}
+
+fn warn(out: &Out, message: &str) {
+    if !out.quiet {
+        eprintln!("{}", out.paint(message, output::dim()));
+    }
 }
 
 fn parse_sample(line: &str) -> Result<(f64, Vec<(String, f64)>), CliError> {
@@ -131,13 +244,6 @@ fn parse_sample(line: &str) -> Result<(f64, Vec<(String, f64)>), CliError> {
         }
     }
     Ok((time, pairs))
-}
-
-/// Notes a skipped line on stderr, unless output is quiet.
-fn warn(out: &Out, message: &str) {
-    if !out.quiet {
-        eprintln!("{}", out.paint(message, output::dim()));
-    }
 }
 
 fn emit(
@@ -180,5 +286,35 @@ fn emit(
         Ok(()) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(false),
         Err(e) => Err(CliError::Internal(format!("writing output: {e}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::{ColorWhen, OutputFormat};
+
+    fn plain() -> Out {
+        Out::new(OutputFormat::Text, false, ColorWhen::Never, false, false)
+    }
+
+    #[test]
+    fn the_box_is_rectangular() {
+        let out = plain();
+        let labels = vec!["always (x > 0)".to_string(), "historically (y < 9)".to_string()];
+        let results = vec![
+            ("f0".to_string(), Robustness::Concrete(0.5)),
+            ("f1".to_string(), Robustness::Concrete(-2.0)),
+        ];
+        let lines = frame(&out, 1.5, 42, 0, &labels, &results);
+        // top, three meta rows, separator, two formula rows, bottom.
+        assert_eq!(lines.len(), 8);
+        let width = lines[0].chars().count();
+        for line in &lines {
+            assert_eq!(line.chars().count(), width, "ragged line: {line}");
+        }
+        assert!(lines.iter().any(|l| l.contains("always (x > 0)")));
+        assert!(lines.iter().any(|l| l.contains("sat")));
+        assert!(lines.iter().any(|l| l.contains("viol")));
     }
 }
