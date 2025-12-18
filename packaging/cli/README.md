@@ -1,21 +1,21 @@
 # Packaging the sentil CLI
 
-The `release-cli` workflow builds the CLI for Linux, macOS (Intel and Apple silicon), and Windows, bundles each binary with its shell completions, man page, and licenses by way of `stage.sh`, and attaches the archives to the GitHub release. The desktop package managers are then updated from those archives. Nothing here publishes on its own; each is a maintainer step once the archives and their checksums exist, in keeping with the project's release model.
+The `release-cli` workflow builds the CLI for Linux, macOS (Intel and Apple silicon), and Windows, bundles each binary with its shell completions, man page, and licenses by way of `stage.sh`, and attaches the archives to the GitHub release. `fill-manifests.sh` then stamps the distributor manifests with the version and each archive's checksum, and the tap jobs publish from there.
 
-The Raspberry Pi and other ARM Linux builds, plus the `.deb` and `.rpm` packages, come from the separate `release-pi` workflow.
+Each tap publishes only when its token is configured, so the release is complete without them and nothing reaches a distributor until the authors add the secret. The Raspberry Pi and other ARM Linux builds, plus the `.deb` and `.rpm` packages, come from the separate `release-pi` workflow.
 
 ## Homebrew
 
-`homebrew/sentil.rb` is the formula. After a release, fill the three `sha256` placeholders with the checksums of the macOS and Linux archives, then open a PR against the tap repository (`sedislab/homebrew-sentil`). Users install with `brew install sedislab/sentil/sentil`.
+`homebrew/sentil.rb` is the formula template. On a tagged release, if the `HOMEBREW_TAP_TOKEN` secret is set, the workflow fills the version and the macOS and Linux checksums and pushes `Formula/sentil.rb` to the tap repository `sedislab/homebrew-sentil`. Users install with `brew install sedislab/sentil/sentil`. Create the tap repository and add a fine-grained PAT with write access to it as `HOMEBREW_TAP_TOKEN` to turn this on.
 
 ## Scoop
 
-`scoop/sentil.json` is the manifest. Fill the Windows archive `hash`, then commit it to the bucket repository (`sedislab/scoop-sentil`). Users install with `scoop bucket add sedislab ...; scoop install sentil`. The `autoupdate` block lets Scoop track later releases.
+`scoop/sentil.json` is the manifest template. With `SCOOP_BUCKET_TOKEN` set, the workflow fills the Windows checksum and pushes `bucket/sentil.json` to the bucket repository `sedislab/scoop-sentil`. Users install with `scoop bucket add sedislab https://github.com/sedislab/scoop-sentil; scoop install sentil`.
 
 ## Winget
 
-`winget/` holds the three-file manifest set for `SEDIS.SENTIL`, a portable zip package. Fill the installer `InstallerSha256`, then submit the set to `microsoft/winget-pkgs` under `manifests/s/SEDIS/SENTIL/1.0.0/`. Users install with `winget install SEDIS.SENTIL`.
+Winget is a central registry (`microsoft/winget-pkgs`), so it takes a pull request rather than a push to an own repository. The workflow stages the three-file manifest set for `SEDIS.SENTIL` with the version and checksum filled in, as the `winget-manifests` artifact. Submit it with `wingetcreate submit --token <PAT> winget-manifests/`, or open the PR by hand against `manifests/s/SEDIS/SENTIL/<version>/`. Users then install with `winget install SEDIS.SENTIL`.
 
-## Checksums
+## The tokens, in short
 
-Each archive's SHA-256 is what the manifests need. Compute it from the attached release asset, for example `sha256sum sentil-1.0.0-x86_64-apple-darwin.tar.gz`, and paste it into the matching placeholder before submitting.
+`HOMEBREW_TAP_TOKEN` and `SCOOP_BUCKET_TOKEN` are write tokens for the tap and bucket repositories; both are optional and the matching job skips when absent. Winget needs no repository secret because submission is a maintainer step with a personal token to `wingetcreate`.

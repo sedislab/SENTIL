@@ -22,6 +22,8 @@ Environment `central` holds the Maven Central credentials: `OSSRH_USERNAME` and 
 
 Environment `pypi` carries no secret. PyPI publishes through trusted publishing over OIDC, with the trusted publisher bound to this repository, the `release-python.yml` workflow, and the `pypi` environment. `GITHUB_TOKEN` is automatic and needs nothing.
 
+Optional CLI tap tokens, off until set: `HOMEBREW_TAP_TOKEN` and `SCOOP_BUCKET_TOKEN` are write tokens for the `sedislab/homebrew-sentil` tap and `sedislab/scoop-sentil` bucket; `release-cli.yml` fills and pushes the manifests when either is present and skips when it is not. Winget needs no secret here, since its manifests are staged for a maintainer's `wingetcreate submit`.
+
 ## What is wired now
 
 Three distributors publish from this repository today, because their packages exist in the tree.
