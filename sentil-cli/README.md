@@ -36,6 +36,12 @@ sentil smc -f 'P>=0.95(always[0,10] (x > 0))' -t base.csv --samples 1e5
 
 # synthesis: find a control input that satisfies a spec on a model
 sentil synth -f 'always (x > 0)' --model system.json
+
+# falsification: search the input space for a trajectory that breaks the spec
+sentil falsify -f 'always (x < 5)' --model system.json
+
+# calibration: fit a noise model from recorded truth and sensor columns
+sentil fit -t calib.csv --truth temp_true --sensor temp_meas --model gaussian
 ```
 
 The trace is CSV (a `time` column then one column per signal) or a JSON array of `{"time": .., "x": ..}` records, and the format is inferred from the content, so no extension is required; pass `-` to read it from stdin. A MATLAB `.mat` file loads too, and Parquet, Arrow, and SQLite with a `--features formats` build. The signal columns bind to the formula's variables by name. The premade specifications replace a hand-written formula: `sentil specs` lists them, `sentil specs <name>` inspects one, and `--spec <name>` uses it.
@@ -44,11 +50,14 @@ The trace is CSV (a `time` column then one column per signal) or a JSON array of
 
 | Verb | What it does |
 | --- | --- |
-| `check` | offline robustness of a formula over a trace; `--signal` prints it at every sample |
-| `monitor` | the online monitor, stdin to stdout, a verdict per line |
-| `smc` | statistical model checking, with `--algo smc\|sprt\|chernoff` |
+| `check` | offline robustness of a formula over a trace; `--signal` prints it at every sample, `--violations` the failing intervals |
+| `monitor` | the online monitor, stdin to stdout, a verdict per line, a live dashboard on a terminal |
+| `smc` | statistical model checking, with `--algo smc\|sprt\|chernoff\|bayes` |
 | `synth` | open-loop synthesis from a model file |
-| `lift` | apply a spec's noise models to a trace, CSV out |
+| `falsify` | search a model's input space for a trajectory that violates the spec |
+| `fit` | fit a noise model from paired ground-truth and sensor columns |
+| `mine` | find the tightest spec parameter that still holds on a trace |
+| `lift` | apply noise models to a trace, CSV out; `--members N` writes a full ensemble |
 | `specs` | list or inspect the premade specifications |
 | `explain` | an operator's robustness semantics, or a verb's output fields |
 | `config` | the configuration files in effect |
