@@ -189,6 +189,19 @@ fn bad_noise_distribution_errors() {
 }
 
 #[test]
+fn reads_a_matlab_trace() {
+    let mat = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../sentil-core/tests/fixtures/sample_v5.mat"
+    );
+    sentil()
+        .args(["check", "-f", "x > 0", "-t", mat, "--semantics", "discrete", "--signal"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("10"));
+}
+
+#[test]
 fn lift_writes_csv() {
     let trace = file("time,response\n0,1.0\n1,1.05\n");
     sentil()

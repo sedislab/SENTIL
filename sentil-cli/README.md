@@ -38,7 +38,7 @@ sentil smc -f 'P>=0.95(always[0,10] (x > 0))' -t base.csv --samples 1e5
 sentil synth -f 'always (x > 0)' --model system.json
 ```
 
-The trace is CSV (a `time` column then one column per signal) or a JSON array of `{"time": .., "x": ..}` records; pass `-` to read it from stdin. The premade specifications replace a hand-written formula: `sentil specs` lists them, `sentil specs <name>` inspects one, and `--spec <name>` uses it.
+The trace is CSV (a `time` column then one column per signal) or a JSON array of `{"time": .., "x": ..}` records, and the format is inferred from the content, so no extension is required; pass `-` to read it from stdin. A MATLAB `.mat` file loads too, and Parquet, Arrow, and SQLite with a `--features formats` build. The signal columns bind to the formula's variables by name. The premade specifications replace a hand-written formula: `sentil specs` lists them, `sentil specs <name>` inspects one, and `--spec <name>` uses it.
 
 ## The verbs
 

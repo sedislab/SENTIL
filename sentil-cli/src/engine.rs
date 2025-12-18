@@ -152,8 +152,11 @@ pub fn parse_or_diagnose(formula: &str) -> Result<Formula, CliError> {
     }
 }
 
-/// Reads a trace from `path`, or from standard input when `path` is `-`. A named
-/// file that does not exist is reported as missing rather than as a read error.
+/// Reads a trace from `path`, or from standard input when `path` is `-`. CSV and
+/// JSON are read here (the format is inferred from the content, so no extension is
+/// required); a MATLAB `.mat`, Parquet, Arrow, or SQLite file is read through the
+/// engine's loader by its extension. A named file that does not exist is reported
+/// as missing rather than as a read error.
 pub fn load_trace(path: &str) -> Result<Trace, CliError> {
     if path == "-" {
         let mut text = String::new();
@@ -167,9 +170,24 @@ pub fn load_trace(path: &str) -> Result<Trace, CliError> {
             path: path.to_string(),
         });
     }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| CliError::Input(format!("{path}: {e}"), None))?;
-    trace_from_text(&text)
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    match extension.as_str() {
+        "" | "csv" | "tsv" | "txt" | "json" | "ndjson" => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|e| CliError::Input(format!("{path}: {e}"), None))?;
+            trace_from_text(&text)
+        }
+        _ => Trace::from_path(path).map_err(|e| {
+            CliError::Input(
+                format!("{path}: {e}"),
+                Some("Parquet, Arrow, and SQLite need a build with --features formats".into()),
+            )
+        }),
+    }
 }
 
 fn trace_from_text(text: &str) -> Result<Trace, CliError> {
