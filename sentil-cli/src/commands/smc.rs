@@ -6,9 +6,13 @@ use std::time::Instant;
 use sentil::formula::ProbabilityOp;
 use sentil::stats::chernoff_hoeffding_samples;
 use sentil::{
-    Formula, IntervalMethod, LiftingRegistry, Monitor, MonitorConfig, SmcConfig, SprtConfig,
-    SprtResult, Trace,
+    BayesConfig, BayesResult, Formula, IntervalMethod, LiftingRegistry, Monitor, MonitorConfig,
+    SmcConfig, SprtConfig, SprtResult, Trace,
 };
+
+/// A Bayes factor of 100 is "decisive" on the Jeffreys scale, the standard bar for
+/// a sequential Bayesian decision.
+const BAYES_FACTOR: f64 = 100.0;
 use serde_json::json;
 
 use crate::cli::{Algo, Interval};
@@ -75,14 +79,7 @@ pub fn run(
             budget,
             seed,
         )?,
-        Algo::Ams => {
-            return Err(CliError::Input(
-                "the ams algorithm needs a stochastic system, which the trace-based CLI cannot \
-                 supply"
-                    .into(),
-                Some("use smc or sprt here, or call the library for adaptive multilevel splitting".into()),
-            ))
-        }
+        Algo::Bayes => bayes(&parsed, &trace, &lifting, op, threshold, budget, seed)?,
     };
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     output::clear_spinner(spinner);
@@ -234,6 +231,37 @@ fn sprt(
         interval: None,
         decision: Some(decision),
         holds,
+    })
+}
+
+fn bayes(
+    formula: &Formula,
+    trace: &Trace,
+    lifting: &LiftingRegistry,
+    op: ProbabilityOp,
+    threshold: f64,
+    max_samples: u64,
+    seed: u64,
+) -> Result<Report, CliError> {
+    let config = BayesConfig::new(threshold, BAYES_FACTOR, max_samples)
+        .map_err(|e| CliError::Input(format!("bayes configuration: {e}"), None))?
+        .with_seed(seed);
+    let result = formula
+        .check_bayesian(trace, lifting, &config)
+        .map_err(|e| CliError::Engine(e.to_string()))?;
+    let lower_bound = matches!(op, ProbabilityOp::GreaterEqual | ProbabilityOp::Greater);
+    let (decision, samples, met) = match result {
+        BayesResult::Holds { samples, .. } => ("holds", samples, Some(true)),
+        BayesResult::Fails { samples, .. } => ("fails", samples, Some(false)),
+        BayesResult::Inconclusive { samples, .. } => ("inconclusive", samples, None),
+    };
+    Ok(Report {
+        probability: None,
+        satisfactions: None,
+        samples,
+        interval: None,
+        decision: Some(decision),
+        holds: met.is_some_and(|high| high == lower_bound),
     })
 }
 

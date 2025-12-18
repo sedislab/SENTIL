@@ -26,7 +26,7 @@ pub fn run(
     if matches!(backend, Backend::Gpu) {
         return Err(CliError::Backend(
             "the gpu backend does not run deterministic checking".into(),
-            Some("drop --backend gpu here, or use `sentil smc --backend gpu` for simulation".into()),
+            Some("drop --backend gpu; deterministic robustness runs on the CPU".into()),
         ));
     }
 

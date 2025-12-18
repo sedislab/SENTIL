@@ -266,8 +266,8 @@ pub enum Algo {
     Sprt,
     /// Monte Carlo with the sample count sized a priori by Chernoff-Hoeffding.
     Chernoff,
-    /// Adaptive multilevel splitting, for rare events.
-    Ams,
+    /// Bayesian sequential testing.
+    Bayes,
 }
 
 impl fmt::Display for Algo {
@@ -276,7 +276,7 @@ impl fmt::Display for Algo {
             Self::Smc => "smc",
             Self::Sprt => "sprt",
             Self::Chernoff => "chernoff",
-            Self::Ams => "ams",
+            Self::Bayes => "bayes",
         })
     }
 }
