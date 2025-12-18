@@ -54,3 +54,19 @@ clap_mangen = "0.2"
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3"
+
+[package.metadata.deb]
+name = "sentil"
+maintainer = "Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab <paapa_quansah1@baylor.edu>"
+copyright = "2025 Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab"
+license-file = ["../LICENSE-MIT", "0"]
+extended-description = "Runtime verification for Signal Temporal Logic and its probabilistic extension: monitor a trace or a live stream, run statistical model checking, and synthesize inputs against a specification."
+section = "science"
+priority = "optional"
+assets = [
+    ["target/release/sentil", "usr/bin/", "755"],
+    ["target/release/build/sentil-cli-*/out/sentil.1", "usr/share/man/man1/", "644"],
+    ["target/release/build/sentil-cli-*/out/sentil.bash", "usr/share/bash-completion/completions/sentil", "644"],
+    ["target/release/build/sentil-cli-*/out/_sentil", "usr/share/zsh/vendor-completions/_sentil", "644"],
+    ["target/release/build/sentil-cli-*/out/sentil.fish", "usr/share/fish/vendor_completions.d/sentil.fish", "644"],
+]
