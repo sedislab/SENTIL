@@ -2,23 +2,26 @@ use crate::conversions::{
     c_char_to_string, clear_error, collect_strings, ffi_panic_boundary, into_string_array,
     set_error, slice_from, to_c_string,
 };
-use crate::handles::{drop_handle, into_boxed_array, into_handle, take_handle, take_handle_array};
+use crate::handles::{drop_handle, into_boxed_array, into_handle, repeated_handle, take_handle};
 use crate::{
     SentilBayesVerdict, SentilError, SentilIntervalMethod, SentilNoiseInteraction, SentilSprtVerdict,
 };
 use libc::{c_char, c_void, size_t};
 use sentil::stats::{
-    agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples, clopper_pearson,
-    jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score, BayesConfig,
-    adaptive_multilevel_splitting, BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry,
-    NoiseModel, RareEventConfig, RareEventEstimate, RareEventResult, RareEventSimulator,
-    RobustnessDistribution, SimExpr, SimModel, SmcConfig, SmcResult, SprtConfig, SprtResult,
-    StochasticSystem,
+    adaptive_multilevel_splitting, agresti_coull, bayes_sequential_test, chernoff_hoeffding_samples,
+    clopper_pearson, jeffreys_interval, sequential_test, wilson_interval, wilson_samples, z_score,
+    BayesConfig, BayesResult, ConfidenceInterval, IntervalMethod, LiftingRegistry, NoiseModel,
+    RareEventConfig, RareEventEstimate, RareEventResult, RareEventSimulator, RobustnessDistribution,
+    SmcConfig, SmcResult, SprtConfig, SprtResult, StochasticSystem,
 };
 use sentil::{Formula, Monitor, Trace};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::ptr;
+#[cfg(feature = "gpu")]
+use crate::handles::take_handle_array;
+#[cfg(feature = "gpu")]
+use sentil::stats::{SimExpr, SimModel};
 
 /// Callbacks defining a stochastic system.
 #[repr(C)]
@@ -947,6 +950,7 @@ pub extern "C" fn sentil_bayes_sequential_test(
     })
 }
 
+#[cfg(feature = "gpu")]
 fn sim_binary(
     left: *mut c_void,
     right: *mut c_void,
@@ -964,54 +968,63 @@ fn sim_binary(
     into_handle(build(Box::new(l), Box::new(r)))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_prev(variable: size_t) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Prev(variable)))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_time() -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Time))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_const(value: f64) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Const(value)))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_noise(source: size_t) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || into_handle(SimExpr::Noise(source)))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_add(left: *mut c_void, right: *mut c_void) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Add))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_sub(left: *mut c_void, right: *mut c_void) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Sub))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_mul(left: *mut c_void, right: *mut c_void) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Mul))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_div(left: *mut c_void, right: *mut c_void) -> *mut c_void {
     clear_error();
     ffi_panic_boundary(ptr::null_mut(), || sim_binary(left, right, SimExpr::Div))
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_call(
     name: *const c_char,
@@ -1041,12 +1054,14 @@ pub extern "C" fn sentil_sim_expr_call(
     })
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_expr_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<SimExpr>(handle) });
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_create(
     variables: *const *const c_char,
@@ -1091,6 +1106,7 @@ pub extern "C" fn sentil_sim_model_create(
     })
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_simulate(handle: *mut c_void, seed: u64) -> *mut c_void {
     clear_error();
@@ -1106,6 +1122,7 @@ pub extern "C" fn sentil_sim_model_simulate(handle: *mut c_void, seed: u64) -> *
     })
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_variables(
     handle: *mut c_void,
@@ -1119,18 +1136,21 @@ pub extern "C" fn sentil_sim_model_variables(
     })
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_dt(handle: *mut c_void) -> f64 {
     clear_error();
     ffi_panic_boundary(f64::NAN, || borrow_handle!(handle, SimModel, f64::NAN).dt())
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_horizon(handle: *mut c_void) -> size_t {
     clear_error();
     ffi_panic_boundary(0, || borrow_handle!(handle, SimModel, 0).horizon())
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_to_stochastic_system(handle: *mut c_void) -> *mut c_void {
     clear_error();
@@ -1146,6 +1166,7 @@ pub extern "C" fn sentil_sim_model_to_stochastic_system(handle: *mut c_void) -> 
     })
 }
 
+#[cfg(feature = "gpu")]
 #[no_mangle]
 pub extern "C" fn sentil_sim_model_destroy(handle: *mut c_void) {
     clear_error();

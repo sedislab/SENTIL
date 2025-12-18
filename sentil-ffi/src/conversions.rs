@@ -165,7 +165,9 @@ pub(crate) fn code_of(e: &sentil::Error) -> SentilError {
         E::Ingest { .. } => SentilError::Ingest,
         E::Splitting { .. } => SentilError::Splitting,
         E::Unsupported { .. } => SentilError::Unsupported,
+        #[cfg(feature = "gpu")]
         E::Transpilation { .. } => SentilError::Transpilation,
+        #[cfg(feature = "gpu")]
         E::Gpu { .. } => SentilError::Gpu,
         _ => SentilError::Evaluation,
     }

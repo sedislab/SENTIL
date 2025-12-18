@@ -104,6 +104,7 @@ pub(crate) unsafe fn repeated_handle(arrays: &[(&str, *mut *mut c_void, usize)])
 
 /// # Safety
 /// Each non-null entry is a live pointer from `into_handle::<T>`.
+#[cfg(feature = "gpu")]
 pub(crate) unsafe fn take_handle_array<T>(
     what: &str,
     handles: *mut *mut c_void,

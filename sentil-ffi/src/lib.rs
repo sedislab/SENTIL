@@ -32,6 +32,7 @@ pub enum SentilError {
 mod macros;
 mod conversions;
 mod formula;
+#[cfg(feature = "gpu")]
 mod gpu;
 mod handles;
 mod monitor;

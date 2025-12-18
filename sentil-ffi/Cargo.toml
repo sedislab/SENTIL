@@ -13,11 +13,15 @@ crate-type = ["cdylib", "staticlib"]
 doctest = false
 
 [dependencies]
-sentil = { path = "../sentil-core", features = ["serde", "gpu"] }
+sentil = { path = "../sentil-core", features = ["serde"] }
 libc = "0.2"
 serde_json = "1.0"
 rand = { workspace = true }
 rand_chacha = { workspace = true }
+
+[features]
+default = ["gpu"]
+gpu = ["sentil/gpu"]
 
 [build-dependencies]
 cc = "1.0"
@@ -34,8 +38,8 @@ license-file = ["../LICENSE-MIT", "0"]
 section = "libdevel"
 priority = "optional"
 assets = [
-    ["../target/release/libsentil.so", "usr/lib/", "644"],
-    ["../target/release/libsentil.a", "usr/lib/", "644"],
+    ["target/release/libsentil.so", "usr/lib/", "644"],
+    ["target/release/libsentil.a", "usr/lib/", "644"],
     ["include/sentil.h", "usr/include/", "644"],
     ["sentil.pc", "usr/lib/pkgconfig/", "644"],
     ["cmake/SentilConfig.cmake.in", "usr/lib/cmake/Sentil/SentilConfig.cmake", "644"],
@@ -45,8 +49,8 @@ assets = [
 [package.metadata.generate-rpm]
 name = "libsentil-devel"
 assets = [
-    { source = "../target/release/libsentil.so", dest = "/usr/lib/libsentil.so", mode = "644" },
-    { source = "../target/release/libsentil.a", dest = "/usr/lib/libsentil.a", mode = "644" },
+    { source = "target/release/libsentil.so", dest = "/usr/lib/libsentil.so", mode = "644" },
+    { source = "target/release/libsentil.a", dest = "/usr/lib/libsentil.a", mode = "644" },
     { source = "include/sentil.h", dest = "/usr/include/sentil.h", mode = "644" },
     { source = "sentil.pc", dest = "/usr/lib/pkgconfig/sentil.pc", mode = "644" },
     { source = "cmake/SentilConfig.cmake.in", dest = "/usr/lib/cmake/Sentil/SentilConfig.cmake", mode = "644" },
