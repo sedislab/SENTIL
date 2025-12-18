@@ -221,6 +221,12 @@ pub enum Commands {
         fields: bool,
     },
 
+    /// An alias from the config file, or an external `sentil-<name>` on the PATH.
+    #[command(external_subcommand)]
+    // build.rs builds the command for completions and never reads the captured arguments.
+    #[allow(dead_code)]
+    External(Vec<String>),
+
     /// List the premade specifications, or inspect one in detail.
     #[command(after_help = "Examples:\n  sentil specs\n  sentil specs --filter aerospace\n  sentil specs controls/overshoot")]
     Specs {

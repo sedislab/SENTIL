@@ -5,6 +5,7 @@ use crate::output::Out;
 
 mod check;
 mod explain;
+mod external;
 mod generate;
 mod init;
 mod lift;
@@ -118,5 +119,6 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
         Commands::Man => generate::man(),
         Commands::Explain { topic, fields } => explain::run(topic.as_deref(), fields, out),
         Commands::Specs { name, filter } => specs::run(name.as_deref(), filter.as_deref(), out),
+        Commands::External(args) => external::run(&args, config_path, out),
     }
 }

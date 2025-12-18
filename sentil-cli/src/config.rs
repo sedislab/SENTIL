@@ -3,6 +3,7 @@
 //! The precedence is a command-line flag, then a `SENTIL_*` environment variable, then `./sentil.toml`, then the user config under XDG, then
 //! `/etc/sentil/config.toml`, then the built-in default.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
@@ -18,6 +19,28 @@ use crate::output::{self, Out};
 pub struct FileConfig {
     pub output: Option<String>,
     pub color: Option<String>,
+    /// Command presets
+    #[serde(default)]
+    pub alias: HashMap<String, AliasValue>,
+}
+
+/// An alias body: `check = "check --spec controls/overshoot"`, or the same as a list of arguments.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AliasValue {
+    Line(String),
+    Args(Vec<String>),
+}
+
+impl AliasValue {
+    /// The expansion as a token list
+    pub fn tokens(&self) -> Vec<String> {
+        match self {
+            Self::Line(line) => shlex::split(line)
+                .unwrap_or_else(|| line.split_whitespace().map(str::to_string).collect()),
+            Self::Args(args) => args.clone(),
+        }
+    }
 }
 
 /// The files consulted with the lowest precedence first
@@ -77,6 +100,16 @@ pub fn show(explicit: Option<&str>, out: &Out) -> Run {
     println!("\n{}", out.paint("values in effect", output::heading()));
     println!("  output  {}", config.output.as_deref().unwrap_or("text (default)"));
     println!("  color   {}", config.color.as_deref().unwrap_or("auto (default)"));
+
+    if !config.alias.is_empty() {
+        println!("\n{}", out.paint("aliases", output::heading()));
+        let mut names: Vec<&String> = config.alias.keys().collect();
+        names.sort();
+        for name in names {
+            println!("  {name} = {}", config.alias[name].tokens().join(" "));
+        }
+    }
+
     println!(
         "\n{}",
         out.paint(

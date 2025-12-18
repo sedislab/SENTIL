@@ -85,6 +85,18 @@ output = "json"
 color = "never"
 ```
 
+## Aliases and plugins
+
+Define your own presets under `[alias]` in `sentil.toml`, the way cargo does. Each is a command line, with shell quoting honored, expanded when the name is not a built-in verb; extra arguments are appended:
+
+```toml
+[alias]
+highway = "check --spec automotive/lane_keeping --semantics dense"
+glucose = "smc --spec medical/glucose --samples 1e5"
+```
+
+Then `sentil highway -t drive.csv` runs the lane-keeping check on that trace, and `sentil config` lists the aliases in effect. For a custom subcommand in any language, drop an executable named `sentil-<name>` on your `PATH`; `sentil <name> ...` runs it with the remaining arguments, the way `git` and `cargo` find their plugins.
+
 ## Performance
 
 The CLI links the engine as one compilation unit, with no FFI boundary, so it runs at native engine speed. The streaming monitor holds an O(1) amortized per-sample cost with memory proportional to the formula's windows, not the length of the stream.

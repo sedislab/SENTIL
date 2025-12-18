@@ -276,6 +276,38 @@ fn init_off_a_terminal_does_not_hang() {
 }
 
 #[test]
+fn runs_a_config_alias() {
+    let config = file("[alias]\npos = \"check -f 'x > 0' --semantics discrete --signal\"\n");
+    let trace = file("time,x\n0,5\n1,-2\n");
+    sentil()
+        .args(["--config", &path(&config), "pos", "-t", &path(&trace)])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("5"));
+}
+
+#[test]
+fn monitor_reports_a_violation_when_it_is_decided_not_when_the_window_closes() {
+    sentil()
+        .args(["monitor", "-f", "always[0,10] (speed < 30)", "-o", "ndjson"])
+        .write_stdin("{\"time\":0,\"speed\":10}\n{\"time\":1,\"speed\":50}\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""robustness":-20.0,"satisfied":false"#));
+    sentil()
+        .args(["monitor", "-f", "always[0,2] (x > 0)", "-o", "ndjson"])
+        .write_stdin("{\"time\":0,\"x\":1}\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""robustness":"nan""#));
+}
+
+#[test]
+fn unknown_subcommand_errors() {
+    sentil().arg("frobnicate").assert().code(65);
+}
+
+#[test]
 fn no_arguments_shows_help() {
     sentil()
         .assert()
