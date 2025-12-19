@@ -90,6 +90,31 @@ Expected: a GPU-over-one-core speedup near two orders of magnitude; the exact fi
 
 Rare events. The adaptive multilevel splitting resolves satisfaction probabilities that plain Monte Carlo cannot reach at the same sample budget. On the A40 it recovers a three-sigma crossing probability of about 0.0027 within 25 percent of the analytic value over eight seeds, and agrees within a factor of two with the CPU last-particle splitter, a different but equally valid estimator, so a rare-event probability differs by scheme as well as by seed. Splitting is the mechanism that carries the resolvable probability into the 1e-7 to 1e-9 range a flat Monte Carlo run of feasible size never reaches. Tier: GPU.
 
+## Embedded deployment, Raspberry Pi 4
+
+SENTIL runs as the safety monitor in an autonomous-driving stack on a Raspberry Pi 4 Model B (Broadcom BCM2711, quad-core Cortex-A72 at 1.5 GHz, 4 GB LPDDR4, 64-bit Raspberry Pi OS), under 4 W. One cycle ingests the latest observation and evaluates 60 safety specifications, returning a robustness score for each, at 85 Hz over a 120-minute drive of 612,000 cycles. The streaming monitor's flat per-sample cost is what carries the whole workload inside the deadline.
+
+These figures are recorded from the reference deployment on that board and are hardware-bound; reproduce them on a Pi 4, not on a workstation.
+
+| Metric | Value |
+| --- | --- |
+| Mean latency | 9.57 ms |
+| Median latency | 9.44 ms |
+| 95th percentile | 10.62 ms |
+| 99th percentile | 10.71 ms |
+| Maximum observed | 11.09 ms |
+| Real-time deadline | 11.76 ms (1/85 Hz) |
+| Deadline violations | 0 of 612,000 |
+| Steady-state memory | 12.3 MB |
+| Memory growth over two hours | 0 MB |
+
+Command: `experiments/embedded_deployment/run_deployment.sh --duration 120`, cross-compiled with `cross build --release --target aarch64-unknown-linux-gnu -p sentil-embedded-deployment` and run on the board.
+Expected (Pi 4): mean 9.57, median 9.44, p95 10.62, p99 10.71, max 11.09 ms; deadline 11.76 ms; 0 violations of 612,000; steady 12.3 MB; 0 MB growth. Tolerance: latency within about 15 percent, zero deadline violations, memory within about 20 percent. Tier: hardware-bound (Pi 4).
+
+On a workstation the harness is a regression guard rather than a reproduction: the per-cycle cost is microseconds, not milliseconds, but it stays flat as the drive lengthens and the resident memory holds near the reference with a small bounded growth that does not scale with the run, so the monitor leaks nothing over the drive. The reference also ran ten probabilistic specifications through the statistical layer; those use the sampling path, not the streaming one, and their cost is part of the recorded numbers rather than the regenerated figure.
+
+The ARM comparison: RTAMT on the same Pi takes about 47 ms per cycle, four times over the deadline, and Breach does not run on ARM at all. Tier: hardware-bound (Pi 4) and tool-bound.
+
 ## The Lean proof
 
 The monotonic-deque sliding-window theorem is machine-checked, for both the minimum (always, historically) and the maximum (eventually, once) cases, over a decidable linear order.
