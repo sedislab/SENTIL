@@ -698,6 +698,8 @@ sentil_error_t sentil_bayes_sequential_test(const sentil_bayes_config_t *config,
 
 /* Simulation model (data form) */
 
+/* Present only when the library is built with the gpu feature (the default). */
+
 typedef struct sentil_sim_expr sentil_sim_expr_t;
 
 /* The binary builders and call consume their operands. prev reads the previous
@@ -1120,6 +1122,8 @@ bool sentil_spec_builder_ams_settings(const sentil_spec_builder_t *builder,
 void sentil_spec_builder_destroy(sentil_spec_builder_t *builder);
 
 /* GPU */
+
+/* Present only when the library is built with the gpu feature (the default). */
 
 bool sentil_gpu_is_available(void);
 

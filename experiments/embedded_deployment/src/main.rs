@@ -181,9 +181,7 @@ fn workload() -> Vec<(String, String)> {
         .collect()
 }
 
-/// A seeded generator of plausible driving signals. Each value follows a slow
-/// random walk inside its safe band, so the windows behave like a real drive and
-/// violations are rare rather than constant.
+/// A seeded generator of driving signals.
 struct Generator {
     rng: ChaCha8Rng,
     state: [f64; SIGNALS.len()],
@@ -239,6 +237,15 @@ struct Stats {
 
 impl Stats {
     fn from(samples: &mut [f64]) -> Self {
+        if samples.is_empty() {
+            return Self {
+                mean: f64::NAN,
+                median: f64::NAN,
+                p95: f64::NAN,
+                p99: f64::NAN,
+                max: f64::NAN,
+            };
+        }
         samples.sort_by(f64::total_cmp);
         let n = samples.len();
         let mean = samples.iter().sum::<f64>() / n as f64;
