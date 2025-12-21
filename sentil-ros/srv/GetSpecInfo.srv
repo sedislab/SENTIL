@@ -1,0 +1,9 @@
+string spec_name
+string spec_file
+---
+bool success
+string error_message
+string deterministic_formula
+string probabilistic_formula
+string parameters_json
+string[] available_variants

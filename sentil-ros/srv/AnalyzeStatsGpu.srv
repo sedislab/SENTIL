@@ -1,0 +1,11 @@
+# Robustness distribution statistics on the GPU over a sampled ensemble.
+string formula
+uint64 samples
+uint64 seed
+---
+float64 mean
+float64 variance
+float64 min
+float64 max
+uint32[] histogram
+string error_message

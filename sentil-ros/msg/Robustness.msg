@@ -1,0 +1,6 @@
+std_msgs/Header header
+string formula_id
+float64 robustness
+bool is_concrete
+float64 robustness_min
+float64 robustness_max

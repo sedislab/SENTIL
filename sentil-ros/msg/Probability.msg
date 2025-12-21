@@ -1,0 +1,9 @@
+std_msgs/Header header
+string formula_id
+float64 estimate
+bool is_concrete
+uint64 samples
+uint64 satisfactions
+float64 ci_lower
+float64 ci_upper
+float64 ci_confidence

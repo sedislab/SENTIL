@@ -1,0 +1,9 @@
+# Statistical model checking on the GPU: estimate a satisfaction probability.
+string formula
+uint64 samples
+uint64 seed
+---
+float64 estimate
+float64 ci_lower
+float64 ci_upper
+string error_message
