@@ -202,10 +202,18 @@ fn frame(
             out.paint(&format!("{:>4}", "viol"), output::bad())
         };
         let mark = if robustness.is_resolved() { ' ' } else { '~' };
-        let cell = format!("{word} {mark}{value:>7.3}");
+        // An infinite value is a hard verdict (a probabilistic decision, or an
+        // unbounded operator with nothing finite to report yet), so show the word
+        // alone rather than a meaningless "inf".
+        let cell = if value.is_infinite() {
+            format!("{word} {:>8}", "")
+        } else {
+            format!("{word} {mark}{value:>7.3}")
+        };
         lines.push(format!("{dim_bar} {label:<label_w$}  {cell} {dim_bar}"));
     }
     lines.push(bar('└', '┘'));
+    lines.push(out.paint("  Ctrl+C to stop", output::dim()));
     lines
 }
 
@@ -262,7 +270,11 @@ fn emit(
                 out.paint("viol", output::bad())
             };
             let provisional = if robustness.is_resolved() { "" } else { "~" };
-            line.push_str(&format!("  {id} {verdict} {provisional}{value:.4}"));
+            if value.is_infinite() {
+                line.push_str(&format!("  {id} {verdict}"));
+            } else {
+                line.push_str(&format!("  {id} {verdict} {provisional}{value:.4}"));
+            }
         }
         writeln!(stdout, "{line}")
     } else {
@@ -307,14 +319,16 @@ mod tests {
             ("f1".to_string(), Robustness::Concrete(-2.0)),
         ];
         let lines = frame(&out, 1.5, 42, 0, &labels, &results);
-        // top, three meta rows, separator, two formula rows, bottom.
-        assert_eq!(lines.len(), 8);
-        let width = lines[0].chars().count();
-        for line in &lines {
+        // top, three meta rows, separator, two formula rows, bottom, then the caption.
+        assert_eq!(lines.len(), 9);
+        let box_lines = &lines[..lines.len() - 1];
+        let width = box_lines[0].chars().count();
+        for line in box_lines {
             assert_eq!(line.chars().count(), width, "ragged line: {line}");
         }
         assert!(lines.iter().any(|l| l.contains("always (x > 0)")));
         assert!(lines.iter().any(|l| l.contains("sat")));
         assert!(lines.iter().any(|l| l.contains("viol")));
+        assert!(lines.last().unwrap().contains("Ctrl+C to stop"));
     }
 }
