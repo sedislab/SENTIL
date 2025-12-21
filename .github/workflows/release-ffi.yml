@@ -17,6 +17,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: macos-15-intel, name: macos-x86_64 }
           - { os: macos-14, name: macos-arm64 }
           - { os: windows-latest, name: windows-x86_64 }
     runs-on: ${{ matrix.os }}
@@ -30,8 +31,6 @@ jobs:
           stage="sentil-1.0.0-${{ matrix.name }}"
           mkdir -p "$stage/lib/pkgconfig" "$stage/lib/cmake/Sentil" "$stage/include" "$stage/share/sentil"
           cp sentil-ffi/include/sentil.h "$stage/include/"
-          # The C++ wrapper is header-only, so the same bundle carries it and the
-          # vcpkg port and Conan recipe can offer sentil.hpp instead of the C ABI alone.
           cp -r sentil-cpp/include/sentil "$stage/include/"
           cp benchmarks/deterministic/oracle.json "$stage/share/sentil/"
           cp sentil-ffi/cmake/SentilConfig.cmake.in "$stage/lib/cmake/Sentil/SentilConfig.cmake"
@@ -74,8 +73,6 @@ jobs:
         with:
           path: assets
       - name: checksum the assets
-        # Consumers that fetch a bundle instead of building it have nothing else to
-        # authenticate it with, so the sums ship as their own asset.
         working-directory: assets
         run: |
           find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | while read -r f; do
