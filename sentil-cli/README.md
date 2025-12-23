@@ -51,7 +51,7 @@ The trace is CSV (a `time` column then one column per signal) or a JSON array of
 | Verb | What it does |
 | --- | --- |
 | `check` | offline robustness of a formula over a trace; `--signal` prints it at every sample, `--violations` the failing intervals |
-| `monitor` | the online monitor, stdin to stdout, a verdict per line, a live dashboard on a terminal |
+| `monitor` | the online monitor, stdin to stdout, a verdict per line, a live dashboard on a terminal; a PrSTL formula with `--noise` shows a live probability |
 | `smc` | statistical model checking, with `--algo smc\|sprt\|chernoff\|bayes` |
 | `synth` | open-loop synthesis from a model file |
 | `falsify` | search a model's input space for a trajectory that violates the spec |

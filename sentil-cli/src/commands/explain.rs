@@ -116,7 +116,8 @@ const FIELDS: &[Fields] = &[
         lines: &[
             "event           \"sample\" per input line, then one \"summary\"",
             "time            the sample timestamp (sample records)",
-            "results         {id: {robustness, resolved}} (sample records)",
+            "results         {id: {robustness, resolved, probability?}} (sample records)",
+            "probability     the running estimate, present for a P~p formula",
             "samples         the total sample count (summary record)",
         ],
     },
