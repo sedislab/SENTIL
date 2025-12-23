@@ -97,6 +97,16 @@ impl MultiFormulaMonitor {
         }
     }
 
+    /// The last satisfaction probability estimated for each formula, in insertion
+    /// order, or `None` for a deterministic formula.
+    #[cfg(feature = "statistical")]
+    pub fn probabilities(&self) -> Vec<(String, Option<f64>)> {
+        self.monitors
+            .iter()
+            .map(|(id, monitor)| (id.clone(), monitor.last_probability()))
+            .collect()
+    }
+
     /// Resets every monitor.
     pub fn reset(&mut self) {
         for (_, monitor) in &mut self.monitors {
@@ -295,6 +305,12 @@ mod tests {
         assert_eq!(out[1].0, "prob");
         assert!(out[0].1.value() > 0.0);
         assert!(out[1].1.value() > 0.0);
+
+        let estimates = bank.probabilities();
+        assert_eq!(estimates[0], ("plain".to_string(), None));
+        let (id, estimate) = &estimates[1];
+        assert_eq!(id, "prob");
+        assert!(estimate.unwrap() > 0.9);
     }
 
     #[test]

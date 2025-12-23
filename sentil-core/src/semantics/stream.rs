@@ -61,6 +61,10 @@ trait Node {
     /// symbol index.
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness>;
     fn reset(&mut self);
+    /// The satisfaction probability estimated at the last update, for a `P~p` node.
+    fn probability_estimate(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// A maximal non-temporal subformula, compiled to a flat program.
@@ -490,6 +494,7 @@ struct ProbabilisticNode {
     lifting: Arc<LiftingRegistry>,
     symbols: Arc<SymbolTable>,
     scratch: Vec<f64>,
+    last_estimate: Option<f64>,
 }
 
 #[cfg(feature = "statistical")]
@@ -514,6 +519,7 @@ impl Node for ProbabilisticNode {
             }
         }
         let estimate = satisfied as f64 / self.particles.len() as f64;
+        self.last_estimate = Some(estimate);
         let holds = match self.op {
             ProbabilityOp::GreaterEqual => estimate >= self.threshold,
             ProbabilityOp::Greater => estimate > self.threshold,
@@ -531,6 +537,11 @@ impl Node for ProbabilisticNode {
         for particle in &mut self.particles {
             particle.reset();
         }
+        self.last_estimate = None;
+    }
+
+    fn probability_estimate(&self) -> Option<f64> {
+        self.last_estimate
     }
 }
 
@@ -614,6 +625,7 @@ impl StreamMonitor {
                     lifting: Arc::new(lifting.clone()),
                     symbols: symbols.clone(),
                     scratch: vec![0.0; symbols.len()],
+                    last_estimate: None,
                 })
             }
             _ => build_node(formula, &symbols)?,
@@ -706,6 +718,13 @@ impl StreamMonitor {
     /// The number of variables the formula references.
     pub fn variable_count(&self) -> usize {
         self.symbols.len()
+    }
+
+    /// The satisfaction probability estimated at the last update, or `None` for a
+    /// deterministic formula.
+    #[cfg(feature = "statistical")]
+    pub fn last_probability(&self) -> Option<f64> {
+        self.root.probability_estimate()
     }
 
     /// Clears all state.
