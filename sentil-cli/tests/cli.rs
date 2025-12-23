@@ -115,6 +115,40 @@ fn monitor_streams_and_summarizes() {
 }
 
 #[test]
+fn monitor_streams_a_live_probability() {
+    sentil()
+        .args(["monitor", "-f", "P>=0.9(x > 0)", "--noise", "x=gaussian:0,1", "--particles", "2000", "-o", "ndjson"])
+        .write_stdin("{\"time\":0,\"x\":3}\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"probability\""));
+}
+
+#[test]
+fn monitor_holds_a_probability_open_until_its_window_closes() {
+    sentil()
+        .args(["monitor", "-f", "P>=0.95(always[0, 2](x > 0.35))", "--noise", "x=gaussian:0,0.05", "--particles", "200", "-o", "ndjson"])
+        .write_stdin("{\"time\":0,\"x\":1}\n{\"time\":1,\"x\":1}\n{\"time\":2,\"x\":1}\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "\"probability\":0.0,\"resolved\":false,\"robustness\":\"nan\"",
+        ))
+        .stdout(predicate::str::contains(
+            "\"probability\":1.0,\"resolved\":true,\"robustness\":\"inf\"",
+        ));
+}
+
+#[test]
+fn monitor_probabilistic_without_noise_errors() {
+    sentil()
+        .args(["monitor", "-f", "P>=0.9(x > 0)", "-o", "ndjson"])
+        .write_stdin("{\"time\":0,\"x\":3}\n")
+        .assert()
+        .code(65);
+}
+
+#[test]
 fn smc_estimates_a_probability() {
     let trace = file("time,x\n0,1\n1,1\n2,1\n");
     sentil()

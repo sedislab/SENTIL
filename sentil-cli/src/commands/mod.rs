@@ -51,12 +51,16 @@ pub fn dispatch(command: Commands, config_path: Option<&str>, out: &Out) -> Run 
             variant,
             param,
             map,
+            noise,
+            particles,
         } => monitor::run(
             formula.as_deref(),
             spec.as_deref(),
             variant.as_deref(),
             &param,
             &map,
+            &noise,
+            particles,
             out,
         ),
         Commands::Smc {

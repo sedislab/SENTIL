@@ -5,27 +5,32 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use sentil::{MultiFormulaMonitor, Robustness};
+use sentil::{Formula, MultiFormulaMonitor, Robustness, SmcConfig};
 use serde_json::json;
 
 use crate::engine;
 use crate::error::{code, CliError, Run};
 use crate::output::{self, Out};
 
+type Row = (String, Robustness, Option<f64>);
+
 /// Builds the bank, then folds each line of input into it until the stream ends or
 /// the user interrupts, in which case it drains and exits 130.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     formula: Option<&str>,
     spec: Option<&str>,
     variant: Option<&str>,
     params: &[String],
     map: &[String],
+    noise: &[String],
+    particles: u64,
     out: &Out,
 ) -> Run {
     let mapping = engine::parse_map(map)?;
     let rename: HashMap<&str, &str> =
         mapping.iter().map(|(v, f)| (f.as_str(), v.as_str())).collect();
-    let (combined, _builder) = engine::resolve_formula(formula, spec, variant, params, false)?;
+    let (combined, builder) = engine::resolve_formula(formula, spec, variant, params, false)?;
     let formulas: Vec<&str> = combined
         .split(';')
         .map(str::trim)
@@ -35,13 +40,33 @@ pub fn run(
         return Err(CliError::Input("there is no formula to monitor".into(), None));
     }
 
+    // A probabilistic formula needs a noise model to lift each reading into an
+    // ensemble: the --noise flags win, otherwise the spec's own models.
+    let lifting = match engine::parse_noise(noise)? {
+        Some(registry) => Some(registry),
+        None => builder.as_ref().and_then(|b| b.build_lifting_registry().ok()),
+    };
+    let config = SmcConfig {
+        samples: particles,
+        ..SmcConfig::default()
+    };
+
     let mut monitor = MultiFormulaMonitor::new();
     let ids: Vec<String> = (0..formulas.len()).map(|i| format!("f{i}")).collect();
     for (id, text) in ids.iter().zip(&formulas) {
         let parsed = engine::parse_or_diagnose(text)?;
-        monitor
-            .add_formula(id.clone(), &parsed)
-            .map_err(|e| CliError::Engine(e.to_string()))?;
+        let added = if matches!(parsed, Formula::Probabilistic(..)) {
+            let registry = lifting.as_ref().ok_or_else(|| {
+                CliError::Input(
+                    format!("'{text}' is probabilistic; give a noise model to monitor it online"),
+                    Some("for example --noise 'speed=gaussian:0,0.5'".into()),
+                )
+            })?;
+            monitor.add_probabilistic(id.clone(), &parsed, registry, &config)
+        } else {
+            monitor.add_formula(id.clone(), &parsed)
+        };
+        added.map_err(|e| CliError::Engine(e.to_string()))?;
     }
 
     let interrupted = Arc::new(AtomicBool::new(false));
@@ -95,11 +120,16 @@ pub fn run(
                 continue;
             }
         };
+        let rows: Vec<Row> = results
+            .into_iter()
+            .zip(monitor.probabilities())
+            .map(|((id, robustness), (_, estimate))| (id, robustness, estimate))
+            .collect();
         samples += 1;
         match dashboard.as_mut() {
-            Some(board) => board.render(out, time, samples, skipped, &results),
+            Some(board) => board.render(out, time, samples, skipped, &rows),
             None => {
-                if !emit(&mut stdout, out, time, &results)? {
+                if !emit(&mut stdout, out, time, &rows)? {
                     break;
                 }
             }
@@ -136,8 +166,8 @@ impl Dashboard {
         }
     }
 
-    fn render(&mut self, out: &Out, time: f64, samples: u64, skipped: u64, results: &[(String, Robustness)]) {
-        let lines = frame(out, time, samples, skipped, &self.labels, results);
+    fn render(&mut self, out: &Out, time: f64, samples: u64, skipped: u64, rows: &[Row]) {
+        let lines = frame(out, time, samples, skipped, &self.labels, rows);
         let mut buf = String::new();
         if self.drawn {
             // cursor back up over the previous box; each line is cleared as it is rewritten
@@ -163,7 +193,7 @@ fn frame(
     samples: u64,
     skipped: u64,
     labels: &[String],
-    results: &[(String, Robustness)],
+    rows: &[Row],
 ) -> Vec<String> {
     const VALUE_W: usize = 13; // a 4-wide verdict, a space, an 8-wide number
     let label_w = labels
@@ -193,7 +223,7 @@ fn frame(
     lines.push(meta("skipped", skipped.to_string()));
     lines.push(bar('├', '┤'));
 
-    for (i, (_, robustness)) in results.iter().enumerate() {
+    for (i, (_, robustness, estimate)) in rows.iter().enumerate() {
         let label = labels.get(i).map_or(String::new(), |l| truncate(l, label_w));
         let value = robustness.value();
         let word = if value >= 0.0 {
@@ -202,13 +232,14 @@ fn frame(
             out.paint(&format!("{:>4}", "viol"), output::bad())
         };
         let mark = if robustness.is_resolved() { ' ' } else { '~' };
-        // An infinite value is a hard verdict (a probabilistic decision, or an
-        // unbounded operator with nothing finite to report yet), so show the word
-        // alone rather than a meaningless "inf".
-        let cell = if value.is_infinite() {
-            format!("{word} {:>8}", "")
-        } else {
-            format!("{word} {mark}{value:>7.3}")
+        // A probabilistic formula shows its running probability, colored by the
+        // verdict (the word is green when it clears the threshold, red when it does
+        // not). An infinite value with no estimate is a bare verdict; otherwise the
+        // finite robustness.
+        let cell = match estimate {
+            Some(p) => format!("{word} {:>8}", format!("P={p:.3}")),
+            None if value.is_infinite() => format!("{word} {:>8}", ""),
+            None => format!("{word} {mark}{value:>7.3}"),
         };
         lines.push(format!("{dim_bar} {label:<label_w$}  {cell} {dim_bar}"));
     }
@@ -258,11 +289,11 @@ fn emit(
     stdout: &mut std::io::Stdout,
     out: &Out,
     time: f64,
-    results: &[(String, Robustness)],
+    rows: &[Row],
 ) -> Result<bool, CliError> {
     let write_result = if out.is_text() {
         let mut line = format!("[t={time:.3}]");
-        for (id, robustness) in results {
+        for (id, robustness, estimate) in rows {
             let value = robustness.value();
             let verdict = if value >= 0.0 {
                 out.paint("sat", output::good())
@@ -270,23 +301,24 @@ fn emit(
                 out.paint("viol", output::bad())
             };
             let provisional = if robustness.is_resolved() { "" } else { "~" };
-            if value.is_infinite() {
-                line.push_str(&format!("  {id} {verdict}"));
-            } else {
-                line.push_str(&format!("  {id} {verdict} {provisional}{value:.4}"));
+            match estimate {
+                Some(p) => line.push_str(&format!("  {id} {verdict} P={p:.4}")),
+                None if value.is_infinite() => line.push_str(&format!("  {id} {verdict}")),
+                None => line.push_str(&format!("  {id} {verdict} {provisional}{value:.4}")),
             }
         }
         writeln!(stdout, "{line}")
     } else {
         let mut map = serde_json::Map::new();
-        for (id, robustness) in results {
-            map.insert(
-                id.clone(),
-                json!({
-                    "robustness": robustness.value(),
-                    "resolved": robustness.is_resolved(),
-                }),
-            );
+        for (id, robustness, estimate) in rows {
+            let mut record = json!({
+                "robustness": robustness.value(),
+                "resolved": robustness.is_resolved(),
+            });
+            if let Some(p) = estimate {
+                record["probability"] = json!(p);
+            }
+            map.insert(id.clone(), record);
         }
         writeln!(
             stdout,
@@ -314,11 +346,11 @@ mod tests {
     fn the_box_is_rectangular() {
         let out = plain();
         let labels = vec!["always (x > 0)".to_string(), "historically (y < 9)".to_string()];
-        let results = vec![
-            ("f0".to_string(), Robustness::Concrete(0.5)),
-            ("f1".to_string(), Robustness::Concrete(-2.0)),
+        let rows: Vec<Row> = vec![
+            ("f0".to_string(), Robustness::Concrete(0.5), None),
+            ("f1".to_string(), Robustness::Concrete(-2.0), Some(0.83)),
         ];
-        let lines = frame(&out, 1.5, 42, 0, &labels, &results);
+        let lines = frame(&out, 1.5, 42, 0, &labels, &rows);
         // top, three meta rows, separator, two formula rows, bottom, then the caption.
         assert_eq!(lines.len(), 9);
         let box_lines = &lines[..lines.len() - 1];
@@ -329,6 +361,7 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("always (x > 0)")));
         assert!(lines.iter().any(|l| l.contains("sat")));
         assert!(lines.iter().any(|l| l.contains("viol")));
+        assert!(lines.iter().any(|l| l.contains("P=0.830")));
         assert!(lines.last().unwrap().contains("Ctrl+C to stop"));
     }
 }

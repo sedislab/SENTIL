@@ -93,6 +93,12 @@ pub enum Commands {
         /// Bind a formula variable to an input field, repeatable, as variable=field.
         #[arg(long, value_name = "VAR=FIELD")]
         map: Vec<String>,
+        /// Noise model for a probabilistic formula, repeatable, as variable=dist:params. Required to monitor a P~p formula online.
+        #[arg(long, value_name = "VAR=DIST:PARAMS")]
+        noise: Vec<String>,
+        /// Particles per step for a probabilistic formula's running estimate.
+        #[arg(long, default_value_t = 1000)]
+        particles: u64,
     },
 
     /// Estimate how likely a probabilistic specification holds.
