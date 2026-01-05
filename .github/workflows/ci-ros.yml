@@ -1,0 +1,45 @@
+name: ci-ros
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  humble:
+    name: ros 2 humble build and test
+    runs-on: ubuntu-latest
+    container: ros:humble-ros-base-jammy
+    steps:
+      - uses: actions/checkout@v4
+      - name: the vendored headers still match their originals
+        run: |
+          cmp sentil-ros/include/sentil.h sentil-ffi/include/sentil.h
+          for h in sentil.hpp types.hpp errors.hpp; do
+            cmp "sentil-ros/include/sentil/$h" "sentil-cpp/include/sentil/$h"
+          done
+          echo "vendored headers are in sync"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: rosdep dependencies
+        run: |
+          apt-get update
+          rosdep update
+          rosdep install --from-paths sentil-ros --ignore-src -y
+      - name: build and install the SENTIL core and C++ package
+        run: |
+          cargo build --release -p sentil-ffi
+          cmake -S sentil-cpp -B /tmp/cpp-build -DCMAKE_INSTALL_PREFIX=/opt/sentil -DBUILD_TESTING=OFF
+          cmake --build /tmp/cpp-build --target install -j"$(nproc)"
+          install -D sentil-ffi/include/sentil.h /opt/sentil/include/sentil.h
+          install -D target/release/libsentil.so /opt/sentil/lib/libsentil.so
+          install -D sentil-ffi/cmake/SentilConfig.cmake.in /opt/sentil/lib/cmake/Sentil/SentilConfig.cmake
+      - name: colcon build and test
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          mkdir -p ws/src
+          cp -r sentil-ros ws/src/sentil_ros
+          cd ws
+          colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH=/opt/sentil
+          colcon test --packages-select sentil_ros --return-code-on-test-failure
+          colcon test-result --verbose
