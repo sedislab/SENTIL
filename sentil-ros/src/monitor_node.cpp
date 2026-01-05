@@ -22,6 +22,7 @@
 
 #include "sentil_ros/field_extractor.hpp"
 #include "sentil_ros/msg/robustness.hpp"
+#include "sentil_ros/srv/get_spec_info.hpp"
 
 namespace sentil_ros
 {
@@ -203,6 +204,41 @@ private:
         report_diagnostic(id, status);
       });
     }
+
+    spec_info_service_ = create_service<srv::GetSpecInfo>(
+      "~/get_spec_info",
+      [this](
+        const std::shared_ptr<srv::GetSpecInfo::Request> request,
+        std::shared_ptr<srv::GetSpecInfo::Response> response) {
+        handle_get_spec_info(request, response);
+      });
+  }
+
+  void handle_get_spec_info(
+    const std::shared_ptr<srv::GetSpecInfo::Request> request,
+    std::shared_ptr<srv::GetSpecInfo::Response> response)
+  {
+    try {
+      auto builder = request->spec_file.empty()
+        ? sentil::SpecBuilder(request->spec_name)
+        : sentil::SpecBuilder::from_file(request->spec_file);
+      try {
+        response->deterministic_formula = builder.build_deterministic();
+      } catch (const std::exception &) {
+      }
+      try {
+        response->probabilistic_formula = builder.build_probabilistic();
+      } catch (const std::exception &) {
+      }
+      response->parameters_json = builder.parameters_json();
+      for (const auto & variant : builder.available_variants()) {
+        response->available_variants.push_back(variant);
+      }
+      response->success = true;
+    } catch (const std::exception & e) {
+      response->success = false;
+      response->error_message = e.what();
+    }
   }
 
   void configure_formula(
@@ -224,6 +260,14 @@ private:
       const std::string variant = declare_parameter<std::string>(base + ".variant", "");
       if (!variant.empty()) {
         builder = std::move(builder).with_variant(variant);
+      }
+      const auto names = declare_parameter<std::vector<std::string>>(base + ".spec_params.names", {});
+      const auto values = declare_parameter<std::vector<double>>(base + ".spec_params.values", {});
+      if (names.size() != values.size()) {
+        throw std::runtime_error("formula '" + id + "': spec_params names and values differ in length");
+      }
+      for (size_t i = 0; i < names.size(); ++i) {
+        builder = std::move(builder).with_param(names[i], values[i]);
       }
       lifting = builder.build_lifting_registry();
       probabilistic = probabilistic || !lifting.variables().empty();
@@ -362,6 +406,7 @@ private:
     bindings_.clear();
     publishers_.clear();
     diagnostics_.reset();
+    spec_info_service_.reset();
     monitor_.reset();
     labels_.clear();
     state_.clear();
@@ -373,6 +418,7 @@ private:
   std::map<std::string, Binding> bindings_;
   std::map<std::string, rclcpp_lifecycle::LifecyclePublisher<msg::Robustness>::SharedPtr> publishers_;
   std::unique_ptr<diagnostic_updater::Updater> diagnostics_;
+  rclcpp::Service<srv::GetSpecInfo>::SharedPtr spec_info_service_;
   std::vector<std::string> labels_;
   std::map<std::string, double> state_;
   std::map<std::string, sentil::Robustness> last_verdict_;

@@ -6,10 +6,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  humble:
-    name: ros 2 humble build and test
+  build-test:
+    name: ros 2 ${{ matrix.distro }} build and test
     runs-on: ubuntu-latest
-    container: ros:humble-ros-base-jammy
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: humble, image: "ros:humble-ros-base-jammy" }
+          - { distro: jazzy, image: "ros:jazzy-ros-base-noble" }
+          - { distro: rolling, image: "ros:rolling-ros-base-noble" }
     steps:
       - uses: actions/checkout@v4
       - name: the vendored headers still match their originals
@@ -36,7 +43,8 @@ jobs:
       - name: colcon build and test
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source "/opt/ros/${{ matrix.distro }}/setup.bash"
+          export LD_LIBRARY_PATH="/opt/sentil/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           mkdir -p ws/src
           cp -r sentil-ros ws/src/sentil_ros
           cd ws

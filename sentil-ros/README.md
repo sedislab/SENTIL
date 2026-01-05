@@ -2,7 +2,7 @@
 
 Monitor ROS 2 topic streams against Signal Temporal Logic and probabilistic STL specifications, online and in real time. You write a small YAML configuration that names each formula and binds its variables to topics and message fields; the node subscribes to those topics, evaluates the formulas as messages arrive, and publishes a verdict per formula along with a standard diagnostic. It is built on the SENTIL engine and works with messages of any type, resolved at runtime, so you monitor your existing topics without changing them.
 
-This package targets ROS 2 Humble.
+It builds against the current ROS 2 distributions, Humble, Iron, Jazzy, and Rolling, with the same features on each; Humble is the reference LTS. It uses only cross-distribution ROS 2 interfaces, so there is nothing distro-specific to port.
 
 ## Why it is built the way it is
 
@@ -45,8 +45,9 @@ A formula is configured under `formulas.<id>`. `config/example_params.yaml` is a
 | --- | --- |
 | `formulas` | the list of formula ids to monitor |
 | `formulas.<id>.formula` | the STL or PrSTL formula, e.g. `always[0,10] (speed < 30)` or `P>=0.95(always[0,10] (gap > 5))` |
-| `formulas.<id>.spec` | a premade specification name, used instead of a raw formula |
+| `formulas.<id>.spec` | a premade specification name from the library, used instead of a raw formula |
 | `formulas.<id>.variant` | a variant of the named spec |
+| `formulas.<id>.spec_params.names` / `.values` | parallel arrays overriding the spec's parameters |
 | `formulas.<id>.verification.method` | `robustness` (deterministic), `smc`, `sprt`, or `automatic` |
 | `formulas.<id>.signal_names` | the variable names the formula reads |
 | `formulas.<id>.variables.<v>.topic` | the topic carrying variable `v` |
@@ -63,6 +64,14 @@ Per formula `<id>`, the node publishes:
 - `~/<id>/robustness` (`sentil_ros/msg/Robustness`): the signed robustness, whether the verdict is concrete, and the interval bounds.
 
 It also publishes a `diagnostic_msgs/DiagnosticStatus` per formula on `/diagnostics`, so the monitor shows up in `rqt_robot_monitor` and the diagnostic aggregator: satisfied is OK, violated is ERROR, an undecided probabilistic verdict is WARN, and no data yet is STALE.
+
+## Inspecting the specification library
+
+The premade specifications are part of the engine, so you can reach them from a config (`spec:` above) or query one at runtime through the `~/get_spec_info` service (`sentil_ros/srv/GetSpecInfo`), which returns a spec's resolved deterministic and probabilistic formulas, its parameters as JSON, and its variants:
+
+```
+ros2 service call /sentil_monitor/get_spec_info sentil_ros/srv/GetSpecInfo "{spec_name: 'controls/overshoot'}"
+```
 
 ## CARLA example
 
