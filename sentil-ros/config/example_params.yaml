@@ -1,0 +1,30 @@
+sentil_monitor:
+  ros__parameters:
+    formulas: ["speed_limit", "following_distance"]
+
+    formulas.speed_limit:
+      formula: "always[0,10] (speed < 30.0)"
+      verification:
+        method: "robustness"
+      signal_names: ["speed"]
+      variables:
+        speed:
+          topic: "/vehicle/odom"
+          field: "twist.twist.linear.x"
+
+    formulas.following_distance:
+      formula: "P>=0.95(always[0,10] (gap > 5.0))"
+      verification:
+        method: "smc"
+      signal_names: ["gap"]
+      variables:
+        gap:
+          topic: "/perception/lead_vehicle"
+          field: "range"
+          noise:
+            type: "gaussian"
+            mean: 0.0
+            std_dev: 0.2
+      config:
+        particles: 1000
+        confidence: 0.95

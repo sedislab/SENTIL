@@ -213,7 +213,8 @@ private:
     const std::string spec_name = declare_parameter<std::string>(base + ".spec", "");
     const std::string raw = declare_parameter<std::string>(base + ".formula", "");
     const std::string method = declare_parameter<std::string>(base + ".verification.method", "automatic");
-    const auto variables = declare_parameter<std::vector<std::string>>(base + ".variables", {});
+    // A ROS parameter cannot be both a string array and a nested namespace.
+    const auto variables = declare_parameter<std::vector<std::string>>(base + ".signal_names", {});
 
     std::string formula_text = raw;
     sentil::LiftingRegistry lifting;
