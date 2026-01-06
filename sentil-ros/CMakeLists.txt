@@ -31,9 +31,6 @@ find_package(SentilCpp CONFIG REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Robustness.msg
   msg/Probability.msg
-  srv/AnalyzeRareEvent.srv
-  srv/AnalyzeSmcGpu.srv
-  srv/AnalyzeStatsGpu.srv
   srv/GetSpecInfo.srv
   DEPENDENCIES std_msgs sensor_msgs
 )
