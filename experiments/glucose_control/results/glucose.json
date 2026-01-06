@@ -1,0 +1,107 @@
+{
+  "case_study": "artificial_pancreas_glucose_control",
+  "model": "UVA/Padova (Dalla Man 2007/2013) meal-simulation model, average adult, type-1 patient",
+  "duration_min": 1440,
+  "meals": [
+    {
+      "minute": 420,
+      "carbs_g": 55.0
+    },
+    {
+      "minute": 750,
+      "carbs_g": 75.0
+    },
+    {
+      "minute": 1140,
+      "carbs_g": 65.0
+    }
+  ],
+  "cgm_sigma": 7.0,
+  "controllers": {
+    "missed_lunch_bolus": {
+      "insulin_to_carb_ratio": 8.5,
+      "skipped_meal_boluses": [
+        1
+      ],
+      "peak_glucose": 285.0,
+      "min_glucose": 120.0,
+      "specifications": {
+        "euglycemia": {
+          "formula": "always (glucose > 70 and glucose < 180)",
+          "robustness": -105.0237,
+          "satisfied": false
+        },
+        "no_severe_hypo": {
+          "formula": "always (glucose > 54)",
+          "robustness": 66.0,
+          "satisfied": true
+        },
+        "bounded_hyper": {
+          "formula": "always (glucose < 250)",
+          "robustness": -35.0237,
+          "satisfied": false
+        },
+        "hypo_recovers_30min": {
+          "formula": "always ((glucose < 70) implies eventually[0,30] (glucose > 70))",
+          "robustness": 50.0,
+          "satisfied": true
+        },
+        "unsafe_intervals": [
+          [
+            809.0,
+            1424.0
+          ]
+        ],
+        "hypo_safety_under_cgm_noise": {
+          "formula": "P>=0.95(always (glucose > 70))",
+          "probability": 1.0,
+          "confidence_interval": [
+            0.999,
+            1.0
+          ],
+          "holds": true,
+          "cgm_sigma": 7.0
+        }
+      }
+    },
+    "tuned": {
+      "insulin_to_carb_ratio": 8.5,
+      "skipped_meal_boluses": [],
+      "peak_glucose": 172.0,
+      "min_glucose": 116.3,
+      "specifications": {
+        "euglycemia": {
+          "formula": "always (glucose > 70 and glucose < 180)",
+          "robustness": 7.9514,
+          "satisfied": true
+        },
+        "no_severe_hypo": {
+          "formula": "always (glucose > 54)",
+          "robustness": 62.2538,
+          "satisfied": true
+        },
+        "bounded_hyper": {
+          "formula": "always (glucose < 250)",
+          "robustness": 77.9514,
+          "satisfied": true
+        },
+        "hypo_recovers_30min": {
+          "formula": "always ((glucose < 70) implies eventually[0,30] (glucose > 70))",
+          "robustness": 47.9634,
+          "satisfied": true
+        },
+        "unsafe_intervals": [],
+        "hypo_safety_under_cgm_noise": {
+          "formula": "P>=0.95(always (glucose > 70))",
+          "probability": 1.0,
+          "confidence_interval": [
+            0.999,
+            1.0
+          ],
+          "holds": true,
+          "cgm_sigma": 7.0
+        }
+      }
+    }
+  }
+}
