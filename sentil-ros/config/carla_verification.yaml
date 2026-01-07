@@ -1,16 +1,10 @@
-# Monitoring an ego vehicle in CARLA through the standard carla_ros_bridge topics.
-# These are the bridge's default names for role_name "hero"; if you run a different
-# role or namespace, remap them at launch or edit the topics here. Nothing depends on
-# how CARLA itself is hosted (a native install, Docker, or an Apptainer image) since
-# the monitor only consumes the bridge's ROS topics.
 sentil_monitor:
   ros__parameters:
     use_sim_time: true
-    formulas: ["speed_limit", "following_distance", "collision_risk"]
+    formulas: ["speed_limit", "following_distance", "pedestrian_clearance", "collision_risk"]
 
-    # Stay under the urban speed limit (25 m/s) at all times.
     formulas.speed_limit:
-      formula: "always[0,10] (speed < 25.0)"
+      formula: "always[0,10] (speed < 12.0)"
       verification:
         method: "robustness"
       signal_names: ["speed"]
@@ -18,33 +12,44 @@ sentil_monitor:
         speed:
           topic: "/carla/hero/odometry"
           field: "twist.twist.linear.x"
+          type: "nav_msgs/msg/Odometry"
 
-    # Keep a safe gap to the nearest detected object ahead. The first object's forward
-    # coordinate stands in for the lead-vehicle distance, as in the reference study.
     formulas.following_distance:
-      formula: "always[0,10] (front_distance > 5.0)"
+      formula: "always[0,10] (front_distance > 6.0)"
       verification:
         method: "robustness"
       signal_names: ["front_distance"]
       variables:
         front_distance:
-          topic: "/carla/hero/objects"
-          field: "objects[0].pose.position.x"
+          topic: "/carla/hero/front_range"
+          field: "range"
+          type: "sensor_msgs/msg/Range"
 
-    # The forward distance stays above 2 m with high probability under sensor noise.
+    formulas.pedestrian_clearance:
+      formula: "always[0,10] (pedestrian_distance > 5.0)"
+      verification:
+        method: "robustness"
+      signal_names: ["pedestrian_distance"]
+      variables:
+        pedestrian_distance:
+          topic: "/carla/hero/pedestrian_range"
+          field: "range"
+          type: "sensor_msgs/msg/Range"
+
     formulas.collision_risk:
-      formula: "P>=0.95(always[0,10] (front_distance > 2.0))"
+      formula: "P>=0.95(always[0,10] (pedestrian_distance > 4.0))"
       verification:
         method: "smc"
-      signal_names: ["front_distance"]
+      signal_names: ["pedestrian_distance"]
       variables:
-        front_distance:
-          topic: "/carla/hero/objects"
-          field: "objects[0].pose.position.x"
+        pedestrian_distance:
+          topic: "/carla/hero/pedestrian_range"
+          field: "range"
+          type: "sensor_msgs/msg/Range"
           noise:
             type: "gaussian"
             mean: 0.0
-            std_dev: 0.3
+            std_dev: 0.6
       config:
         particles: 1000
         confidence: 0.95

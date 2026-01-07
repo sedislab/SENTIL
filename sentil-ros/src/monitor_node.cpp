@@ -21,6 +21,7 @@
 #include <sentil/sentil.hpp>
 
 #include "sentil_ros/field_extractor.hpp"
+#include "sentil_ros/msg/probability.hpp"
 #include "sentil_ros/msg/robustness.hpp"
 #include "sentil_ros/srv/get_spec_info.hpp"
 
@@ -98,8 +99,8 @@ sentil::NoiseModel noise_from_params(
   if (family == "gamma") {
     return sentil::NoiseModel::gamma(d("shape", 1.0), d("scale", 1.0));
   }
-  if (family == "uniform") {
-    return sentil::NoiseModel::uniform(d("low", -1.0), d("high", 1.0));
+  if (family == "beta") {
+    return sentil::NoiseModel::beta(d("alpha", 1.0), d("beta", 1.0));
   }
   return sentil::NoiseModel::dirac(d("value", 0.0));
 }
@@ -295,11 +296,12 @@ private:
         declare_parameter<int>(base + ".config.particles", 1000));
       config.confidence = declare_parameter<double>(base + ".config.confidence", 0.95);
       monitor_->add_probabilistic(id, formula, lifting, config);
+      prob_samples_[id] = config.samples;
+      prob_publishers_[id] = create_publisher<msg::Probability>("~/" + id + "/probability", 10);
     } else {
       monitor_->add(id, formula);
     }
     labels_.push_back(id);
-    expected_vars_ += variables.size();
     publishers_[id] = create_publisher<msg::Robustness>("~/" + id + "/robustness", 10);
   }
 
@@ -359,14 +361,15 @@ private:
     }
 
     state_[variable] = value;
-    if (state_.size() < expected_vars_) {
-      return;  // hold until every variable has been seen at least once
+    if (state_.size() < bindings_.size()) {
+      return;  // hold until every distinct variable has been seen at least once
     }
     const double stamp = now().seconds();
     const auto verdicts = monitor_->update(stamp, state_);
     for (const auto & [id, robustness] : verdicts) {
       last_verdict_[id] = robustness;
       publish(id, robustness);
+      publish_probability(id);
     }
   }
 
@@ -380,6 +383,29 @@ private:
     out.robustness_min = robustness.lower;
     out.robustness_max = robustness.upper;
     publishers_.at(id)->publish(out);
+  }
+
+  /// Publish the running satisfaction probability of a P~p formula, the estimate the
+  /// streaming monitor maintains over its lifted ensemble. Deterministic formulas have
+  /// no probability publisher and are skipped.
+  void publish_probability(const std::string & id)
+  {
+    const auto pub = prob_publishers_.find(id);
+    if (pub == prob_publishers_.end()) {
+      return;
+    }
+    const auto estimate = monitor_->probability(id);
+    if (!estimate) {
+      return;
+    }
+    const std::uint64_t samples = prob_samples_.at(id);
+    msg::Probability out;
+    out.header.stamp = now();
+    out.formula_id = id;
+    out.estimate = *estimate;
+    out.samples = samples;
+    out.satisfactions = static_cast<std::uint64_t>(std::llround(*estimate * static_cast<double>(samples)));
+    pub->second->publish(out);
   }
 
   void report_diagnostic(const std::string & id, diagnostic_updater::DiagnosticStatusWrapper & status)
@@ -405,24 +431,26 @@ private:
   {
     bindings_.clear();
     publishers_.clear();
+    prob_publishers_.clear();
+    prob_samples_.clear();
     diagnostics_.reset();
     spec_info_service_.reset();
     monitor_.reset();
     labels_.clear();
     state_.clear();
     last_verdict_.clear();
-    expected_vars_ = 0;
   }
 
   std::unique_ptr<sentil::MultiMonitor> monitor_;
   std::map<std::string, Binding> bindings_;
   std::map<std::string, rclcpp_lifecycle::LifecyclePublisher<msg::Robustness>::SharedPtr> publishers_;
+  std::map<std::string, rclcpp_lifecycle::LifecyclePublisher<msg::Probability>::SharedPtr> prob_publishers_;
+  std::map<std::string, std::uint64_t> prob_samples_;
   std::unique_ptr<diagnostic_updater::Updater> diagnostics_;
   rclcpp::Service<srv::GetSpecInfo>::SharedPtr spec_info_service_;
   std::vector<std::string> labels_;
   std::map<std::string, double> state_;
   std::map<std::string, sentil::Robustness> last_verdict_;
-  size_t expected_vars_ = 0;
   bool active_ = false;
 };
 
