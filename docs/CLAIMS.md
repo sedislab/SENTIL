@@ -115,6 +115,25 @@ On a workstation the harness is a regression guard rather than a reproduction: t
 
 The ARM comparison: RTAMT on the same Pi takes about 47 ms per cycle, four times over the deadline, and Breach does not run on ARM at all. Tier: hardware-bound (Pi 4) and tool-bound.
 
+## Autonomous driving, CARLA
+
+SENTIL monitors a vehicle driving through CARLA against a compound specification: lane keeping within 0.3 m, 5 m clearance from other agents, an urban speed limit, and a probabilistic conjunct `P>=0.99(always[0,10] (no collision))` that weighs a ten-second collision-free lookahead against the uncertainty in where pedestrians go. The trace is a 300-second, 6000-frame drive on the Town10HD map under the CARLA Traffic Manager, recorded from a live server and monitored offline, so the verdicts reproduce with no GPU.
+
+The latency is CPU work on the monitoring machine, not the GPU node that runs the simulator.
+
+| Metric | Value |
+| --- | --- |
+| Deterministic streaming, per sample | about 0.54 us |
+| Deterministic streaming, sustained | about 1.8 M samples/s |
+| Probabilistic check, median per frame | about 0.65 ms |
+| Probabilistic check, 99th percentile | about 0.89 ms |
+| Closed-loop deadline | 2 ms |
+
+Command: record with `experiments/carla_driving/record_drive.py` against a CARLA 0.9.15 server, then `python experiments/carla_driving/monitor_drive.py --trace experiments/carla_driving/results/drive.json`.
+Reference (STORM paper, Apollo on an A100 node): median 0.64 ms, 99th 1.83 ms, end to end 2.1 ms per frame; an RTAMT monitor on the same workload about 47 ms. Tolerance: the deterministic streaming stays sub-microsecond and the probabilistic check stays inside the 2 ms deadline at the median and the tail; absolute figures are machine-dependent. Tier: CPU (the recording step is GPU-bound and not part of the regenerated number).
+
+The probabilistic conjunct is what the deterministic checks cannot do. At the pedestrian encounter near t = 146 s the deterministic clearance still reads 5.7 m, above the 5 m bound, while the collision-free probability over the lookahead falls to essentially zero, because the pedestrian's predicted path under its uncertainty meets the car's recorded path inside ten seconds. The probabilistic verdict holds near 1.0 across the rest of the drive and drops only at the few real encounters. This mirrors the STORM paper's intersection event, where deterministic bounds held and the collision-free probability fell to 0.94. Tier: CPU.
+
 ## The Lean proof
 
 The monotonic-deque sliding-window theorem is machine-checked, for both the minimum (always, historically) and the maximum (eventually, once) cases, over a decidable linear order.
