@@ -1,0 +1,108 @@
+{
+  "case_study": "uav_geofence_collision_avoidance",
+  "area_m": {
+    "x": 200.0,
+    "y": 200.0,
+    "z": [
+      10.0,
+      120.0
+    ]
+  },
+  "safe_radius_m": 10.0,
+  "gps_sigma_m": 3.0,
+  "routes": {
+    "direct": {
+      "climb_peak_m": 50.0,
+      "closest_approach_m": 4.47,
+      "specifications": {
+        "geofence": {
+          "formula": "always (x > 0 and x < 200.0 and y > 0 and y < 200.0 and z > 10.0 and z < 120.0)",
+          "robustness": 20.0,
+          "satisfied": true
+        },
+        "separation": {
+          "formula": "always (sep > 10.0)",
+          "robustness": -5.5279,
+          "satisfied": false
+        },
+        "speed_limit": {
+          "formula": "always (speed < 20.0)",
+          "robustness": 16.0,
+          "satisfied": true
+        },
+        "separation_under_gps_noise": {
+          "formula": "P>=0.95(always (sep > 10.0))",
+          "probability": 0.0,
+          "confidence_interval": [
+            0.0,
+            0.001
+          ],
+          "holds": false,
+          "gps_sigma": 3.0
+        }
+      }
+    },
+    "marginal": {
+      "climb_peak_m": 60.0,
+      "closest_approach_m": 10.72,
+      "specifications": {
+        "geofence": {
+          "formula": "always (x > 0 and x < 200.0 and y > 0 and y < 200.0 and z > 10.0 and z < 120.0)",
+          "robustness": 20.0,
+          "satisfied": true
+        },
+        "separation": {
+          "formula": "always (sep > 10.0)",
+          "robustness": 0.7242,
+          "satisfied": true
+        },
+        "speed_limit": {
+          "formula": "always (speed < 20.0)",
+          "robustness": 15.7723,
+          "satisfied": true
+        },
+        "separation_under_gps_noise": {
+          "formula": "P>=0.95(always (sep > 10.0))",
+          "probability": 0.0767,
+          "confidence_interval": [
+            0.0689,
+            0.0854
+          ],
+          "holds": false,
+          "gps_sigma": 3.0
+        }
+      }
+    },
+    "deconflicted": {
+      "climb_peak_m": 70.0,
+      "closest_approach_m": 19.81,
+      "specifications": {
+        "geofence": {
+          "formula": "always (x > 0 and x < 200.0 and y > 0 and y < 200.0 and z > 10.0 and z < 120.0)",
+          "robustness": 20.0,
+          "satisfied": true
+        },
+        "separation": {
+          "formula": "always (sep > 10.0)",
+          "robustness": 9.811,
+          "satisfied": true
+        },
+        "speed_limit": {
+          "formula": "always (speed < 20.0)",
+          "robustness": 15.1528,
+          "satisfied": true
+        },
+        "separation_under_gps_noise": {
+          "formula": "P>=0.95(always (sep > 10.0))",
+          "probability": 0.998,
+          "confidence_interval": [
+            0.9961,
+            0.999
+          ],
+          "holds": true,
+          "gps_sigma": 3.0
+        }
+      }
+    }
+  }
+}
