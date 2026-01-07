@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <exception>
 #include <functional>
 #include <limits>
@@ -1219,6 +1220,11 @@ public:
         }
         sentil_free_named_robustness(raw, count);
         return out;
+    }
+
+    /// The last satisfaction probability for the formula with this id.
+    std::optional<double> probability(const std::string& id) const {
+        return detail::to_optional(sentil_multi_monitor_probability(get(), id.c_str()));
     }
 
     explicit MultiMonitor(sentil_multi_monitor_t* handle) : handle_(handle) {}

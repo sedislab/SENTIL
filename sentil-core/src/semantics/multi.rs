@@ -107,6 +107,16 @@ impl MultiFormulaMonitor {
             .collect()
     }
 
+    /// The last satisfaction probability estimated for the formula with this id, or
+    /// `None` for a deterministic formula or an unregistered id.
+    #[cfg(feature = "statistical")]
+    pub fn probability(&self, id: &str) -> Option<f64> {
+        self.monitors
+            .iter()
+            .find(|(mid, _)| mid == id)
+            .and_then(|(_, monitor)| monitor.last_probability())
+    }
+
     /// Resets every monitor.
     pub fn reset(&mut self) {
         for (_, monitor) in &mut self.monitors {

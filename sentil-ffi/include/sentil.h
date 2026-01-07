@@ -416,6 +416,8 @@ sentil_named_robustness_t *sentil_multi_monitor_update(sentil_multi_monitor_t *m
                                                        const double *values, size_t n,
                                                        size_t *out_count);
 
+double sentil_multi_monitor_probability(sentil_multi_monitor_t *monitor, const char *id);
+
 void sentil_free_named_robustness(sentil_named_robustness_t *array, size_t count);
 
 void sentil_multi_monitor_destroy(sentil_multi_monitor_t *monitor);

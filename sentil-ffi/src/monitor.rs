@@ -798,6 +798,21 @@ pub extern "C" fn sentil_multi_monitor_update(
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_multi_monitor_probability(
+    handle: *mut c_void,
+    id: *const c_char,
+) -> c_double {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || {
+        let monitor = borrow_handle!(handle, MultiFormulaMonitor, f64::NAN);
+        let Ok(id) = c_char_to_string(id) else {
+            return f64::NAN;
+        };
+        monitor.probability(&id).unwrap_or(f64::NAN)
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_free_named_robustness(array: *mut SentilNamedRobustness, count: size_t) {
     clear_error();
     ffi_panic_boundary((), || unsafe {
