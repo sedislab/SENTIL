@@ -73,6 +73,12 @@ classdef Monitor < handle
             sentil_mex('monitor_reset', obj.Handle);
         end
 
+        function p = last_probability(obj)
+            %LAST_PROBABILITY The satisfaction probability at the last update, or NaN.
+            obj.assertOpen();
+            p = sentil_mex('monitor_last_probability', obj.Handle);
+        end
+
         function f = formula(obj)
             %FORMULA A copy of the monitored formula.
             obj.assertOpen();

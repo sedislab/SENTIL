@@ -132,7 +132,13 @@ end
 """Reset the monitor's streaming state to its start."""
 reset!(m::Monitor) = (ccall((:sentil_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
 
-export Monitor, formula, config, symbol_index, update!, update_packed!, reset!
+"""The satisfaction probability estimated at the last update, or `nothing`."""
+function last_probability(m::Monitor)
+    p = ccall((:sentil_monitor_last_probability, libsentil[]), Cdouble, (Ptr{Cvoid},), _ptr(m))
+    isnan(p) ? nothing : p
+end
+
+export Monitor, formula, config, symbol_index, update!, update_packed!, reset!, last_probability
 
 mutable struct OnlineMonitor
     ptr::Ptr{Cvoid}
@@ -203,7 +209,13 @@ end
 reset!(m::OnlineMonitor) =
     (ccall((:sentil_stream_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
 
-export OnlineMonitor, variable_count, run!
+"""The satisfaction probability estimated at the last update, or `nothing`."""
+function last_probability(m::OnlineMonitor)
+    p = ccall((:sentil_stream_monitor_last_probability, libsentil[]), Cdouble, (Ptr{Cvoid},), _ptr(m))
+    isnan(p) ? nothing : p
+end
+
+export OnlineMonitor, variable_count, run!, last_probability
 
 # Mirrors sentil_named_robustness_t and sentil_bank_result_t.
 struct _NamedRobustness
@@ -291,7 +303,18 @@ end
 reset!(m::MultiMonitor) =
     (ccall((:sentil_multi_monitor_reset, libsentil[]), Cvoid, (Ptr{Cvoid},), _ptr(m)); m)
 
-export MultiMonitor, add!, remove!, ids
+"""The last satisfaction probability for the formula under `id`, or `nothing`."""
+function probability(m::MultiMonitor, id::AbstractString)
+    p = ccall((:sentil_multi_monitor_probability, libsentil[]), Cdouble,
+              (Ptr{Cvoid}, Cstring), _ptr(m), id)
+    isnan(p) ? nothing : p
+end
+
+"""Each formula's last probability keyed by id."""
+probabilities(m::MultiMonitor) =
+    Dict{String,Union{Float64,Nothing}}(id => probability(m, id) for id in ids(m))
+
+export MultiMonitor, add!, remove!, ids, probability, probabilities
 
 mutable struct FormulaBank
     ptr::Ptr{Cvoid}

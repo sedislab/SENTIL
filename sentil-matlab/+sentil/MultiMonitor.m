@@ -78,6 +78,22 @@ classdef MultiMonitor < handle
                     'value', e.value, 'lower', e.lower, 'upper', e.upper);
             end
         end
+
+        function p = probability(obj, id)
+            %PROBABILITY The last satisfaction probability for the formula under id.
+            obj.assertOpen();
+            p = sentil_mex('multi_monitor_probability', obj.Handle, char(id));
+        end
+
+        function m = probabilities(obj)
+            %PROBABILITIES The last probability of every monitor, keyed by id.
+            obj.assertOpen();
+            names = obj.ids();
+            m = containers.Map('KeyType', 'char', 'ValueType', 'double');
+            for i = 1:numel(names)
+                m(names{i}) = obj.probability(names{i});
+            end
+        end
     end
 
     methods (Access = private)

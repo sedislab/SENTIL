@@ -3,6 +3,7 @@ package io.github.sedislab.sentil;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
 /** A monitor for one formula. */
@@ -76,6 +77,12 @@ public final class Monitor extends NativeResource {
     /** Clear streaming state so the monitor can run a fresh trace. */
     public void reset() {
         NativeLib.monitorReset(handle());
+    }
+
+    /** The satisfaction probability estimated at the last streaming update, or empty. */
+    public OptionalDouble lastProbability() {
+        double p = NativeLib.monitorLastProbability(handle());
+        return Double.isNaN(p) ? OptionalDouble.empty() : OptionalDouble.of(p);
     }
 
     /** Check this monitor's probabilistic formula against the lifted trace ensemble. */

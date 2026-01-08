@@ -1084,6 +1084,11 @@ public:
     /// Clear streaming state so the monitor can run a fresh trace.
     void reset() { sentil_monitor_reset(get()); }
 
+    /// The last satisfaction probability the streaming monitor estimated.
+    std::optional<double> last_probability() const {
+        return detail::to_optional(sentil_monitor_last_probability(get()));
+    }
+
     /// Check this monitor's probabilistic formula using its configured SMC
     /// settings and the lifted trace ensemble.
     SmcResult check(const Trace& trace, const LiftingRegistry& lifting) const;
@@ -1153,6 +1158,11 @@ public:
 
     /// Clear streaming state so the monitor can run a fresh trace.
     void reset() { sentil_stream_monitor_reset(get()); }
+
+    /// The last satisfaction probability the streaming monitor estimated.
+    std::optional<double> last_probability() const {
+        return detail::to_optional(sentil_stream_monitor_last_probability(get()));
+    }
 
     explicit OnlineMonitor(sentil_stream_monitor_t* handle) : handle_(handle) {}
 
@@ -1225,6 +1235,15 @@ public:
     /// The last satisfaction probability for the formula with this id.
     std::optional<double> probability(const std::string& id) const {
         return detail::to_optional(sentil_multi_monitor_probability(get(), id.c_str()));
+    }
+
+    /// Each formula's last probability, in insertion order, paired with its id.
+    std::vector<std::pair<std::string, std::optional<double>>> probabilities() const {
+        std::vector<std::pair<std::string, std::optional<double>>> out;
+        for (const auto& id : ids()) {
+            out.emplace_back(id, probability(id));
+        }
+        return out;
     }
 
     explicit MultiMonitor(sentil_multi_monitor_t* handle) : handle_(handle) {}

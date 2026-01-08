@@ -254,6 +254,8 @@ final class NativeLib {
 
     static native void monitorReset(long handle);
 
+    static native double monitorLastProbability(long handle);
+
     static native void monitorDestroy(long handle);
 
     static native long streamMonitorCreate(String formula) throws SentilException;
@@ -274,6 +276,8 @@ final class NativeLib {
 
     static native void streamMonitorReset(long handle);
 
+    static native double streamMonitorLastProbability(long handle);
+
     static native void streamMonitorDestroy(long handle);
 
     static native long multiMonitorCreate() throws SentilException;
@@ -287,6 +291,8 @@ final class NativeLib {
     static native boolean multiMonitorRemove(long handle, String id);
 
     static native void multiMonitorReset(long handle);
+
+    static native double multiMonitorProbability(long handle, String id);
 
     static native long multiMonitorLen(long handle);
 

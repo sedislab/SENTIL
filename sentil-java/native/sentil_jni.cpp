@@ -1960,6 +1960,11 @@ JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorReset(JNI
     sentil_monitor_reset(as_ptr<sentil_monitor_t>(handle));
 }
 
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorLastProbability(
+    JNIEnv*, jclass, jlong handle) {
+    return sentil_monitor_last_probability(as_ptr<sentil_monitor_t>(handle));
+}
+
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_monitorDestroy(JNIEnv*, jclass,
                                                                               jlong handle) {
     sentil_monitor_destroy(as_ptr<sentil_monitor_t>(handle));
@@ -2054,6 +2059,11 @@ JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorRes
     sentil_stream_monitor_reset(as_ptr<sentil_stream_monitor_t>(handle));
 }
 
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorLastProbability(
+    JNIEnv*, jclass, jlong handle) {
+    return sentil_stream_monitor_last_probability(as_ptr<sentil_stream_monitor_t>(handle));
+}
+
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_streamMonitorDestroy(JNIEnv*, jclass,
                                                                                     jlong handle) {
     sentil_stream_monitor_destroy(as_ptr<sentil_stream_monitor_t>(handle));
@@ -2093,6 +2103,12 @@ JNIEXPORT jboolean JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitor
 JNIEXPORT void JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorReset(JNIEnv*, jclass,
                                                                                  jlong handle) {
     sentil_multi_monitor_reset(as_ptr<sentil_multi_monitor_t>(handle));
+}
+
+JNIEXPORT jdouble JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorProbability(
+    JNIEnv* env, jclass, jlong handle, jstring id) {
+    Utf8 text(env, id);
+    return sentil_multi_monitor_probability(as_ptr<sentil_multi_monitor_t>(handle), text.c());
 }
 
 JNIEXPORT jlong JNICALL Java_io_github_sedislab_sentil_NativeLib_multiMonitorLen(JNIEnv*, jclass,

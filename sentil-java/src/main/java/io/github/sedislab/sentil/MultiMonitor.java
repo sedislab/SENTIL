@@ -1,8 +1,10 @@
 package io.github.sedislab.sentil;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 
 /** Several streaming formulas under one clock. */
 public final class MultiMonitor extends NativeResource {
@@ -60,5 +62,20 @@ public final class MultiMonitor extends NativeResource {
             throws SentilException {
         NamedSample sample = NamedSample.of(values);
         return NativeLib.multiMonitorUpdate(handle(), time, sample.names, sample.values);
+    }
+
+    /** The last satisfaction probability for the formula under {@code id}, or empty. */
+    public OptionalDouble probability(String id) {
+        double p = NativeLib.multiMonitorProbability(handle(), id);
+        return Double.isNaN(p) ? OptionalDouble.empty() : OptionalDouble.of(p);
+    }
+
+    /** Each formula's last probability keyed by id, in insertion order. */
+    public Map<String, OptionalDouble> probabilities() throws SentilException {
+        Map<String, OptionalDouble> out = new LinkedHashMap<>();
+        for (String id : ids()) {
+            out.put(id, probability(id));
+        }
+        return out;
     }
 }

@@ -77,6 +77,12 @@ classdef OnlineMonitor < handle
             obj.assertOpen();
             sentil_mex('stream_monitor_reset', obj.Handle);
         end
+
+        function p = last_probability(obj)
+            %LAST_PROBABILITY The satisfaction probability at the last update, or NaN.
+            obj.assertOpen();
+            p = sentil_mex('stream_monitor_last_probability', obj.Handle);
+        end
     end
 
     methods (Access = private)

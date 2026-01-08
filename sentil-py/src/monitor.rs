@@ -163,6 +163,11 @@ impl OnlineMonitor {
         self.inner.reset();
     }
 
+    /// The satisfaction probability estimated at the last update.
+    fn last_probability(&self) -> Option<f64> {
+        self.inner.last_probability()
+    }
+
     fn __repr__(&self) -> String {
         format!("OnlineMonitor(variables={})", self.inner.variable_count())
     }
@@ -233,6 +238,20 @@ impl MultiMonitor {
         let out = PyDict::new(py);
         for (id, verdict) in results {
             out.set_item(id, Robustness::from_core(verdict))?;
+        }
+        Ok(out)
+    }
+
+    /// The last satisfaction probability for the formula with this id.
+    fn probability(&self, id: &str) -> Option<f64> {
+        self.inner.probability(id)
+    }
+
+    /// Each formula's last probability keyed by id.
+    fn probabilities<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let out = PyDict::new(py);
+        for (id, prob) in self.inner.probabilities() {
+            out.set_item(id, prob)?;
         }
         Ok(out)
     }

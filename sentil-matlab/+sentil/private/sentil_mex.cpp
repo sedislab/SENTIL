@@ -1053,6 +1053,10 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "monitor_reset") {
         need(nrhs, 2);
         sentil_monitor_reset(get_handle<sentil_monitor_t>(prhs[1]));
+    } else if (cmd == "monitor_last_probability") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(
+            sentil_monitor_last_probability(get_handle<sentil_monitor_t>(prhs[1])));
     } else if (cmd == "monitor_formula") {
         need(nrhs, 2);
         plhs[0] = make_handle(checked(sentil_monitor_formula(get_handle<sentil_monitor_t>(prhs[1]))));
@@ -1119,6 +1123,10 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "stream_monitor_reset") {
         need(nrhs, 2);
         sentil_stream_monitor_reset(get_handle<sentil_stream_monitor_t>(prhs[1]));
+    } else if (cmd == "stream_monitor_last_probability") {
+        need(nrhs, 2);
+        plhs[0] = mxCreateDoubleScalar(
+            sentil_stream_monitor_last_probability(get_handle<sentil_stream_monitor_t>(prhs[1])));
     } else if (cmd == "stream_monitor_destroy") {
         need(nrhs, 2);
         sentil_stream_monitor_destroy(get_handle<sentil_stream_monitor_t>(prhs[1]));
@@ -1142,6 +1150,10 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (cmd == "multi_monitor_reset") {
         need(nrhs, 2);
         sentil_multi_monitor_reset(get_handle<sentil_multi_monitor_t>(prhs[1]));
+    } else if (cmd == "multi_monitor_probability") {
+        need(nrhs, 3);
+        plhs[0] = mxCreateDoubleScalar(sentil_multi_monitor_probability(
+            get_handle<sentil_multi_monitor_t>(prhs[1]), get_string(prhs[2]).c_str()));
     } else if (cmd == "multi_monitor_len") {
         need(nrhs, 2);
         plhs[0] = mxCreateDoubleScalar(static_cast<double>(

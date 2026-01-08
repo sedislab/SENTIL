@@ -3,6 +3,7 @@ package io.github.sedislab.sentil;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
 /** The streaming monitor, O(1) amortized per sample and memory proportional to the window. */
@@ -62,5 +63,11 @@ public final class OnlineMonitor extends NativeResource {
     /** Clear streaming state so the monitor can run a fresh trace. */
     public void reset() {
         NativeLib.streamMonitorReset(handle());
+    }
+
+    /** The satisfaction probability estimated at the last update, or empty if there is none. */
+    public OptionalDouble lastProbability() {
+        double p = NativeLib.streamMonitorLastProbability(handle());
+        return Double.isNaN(p) ? OptionalDouble.empty() : OptionalDouble.of(p);
     }
 }
