@@ -187,6 +187,13 @@ impl Monitor {
         Ok(self.stream_mut()?.symbol_index(name))
     }
 
+    /// The satisfaction probability the streaming monitor estimated at the last
+    /// update, or `None`.
+    #[cfg(feature = "statistical")]
+    pub fn last_probability(&self) -> Option<f64> {
+        self.stream.as_ref().and_then(StreamMonitor::last_probability)
+    }
+
     /// Clears the streaming state so the same monitor can run a fresh trace.
     pub fn reset(&mut self) {
         if let Some(stream) = &mut self.stream {

@@ -430,6 +430,15 @@ pub extern "C" fn sentil_monitor_symbol_index(
 }
 
 #[no_mangle]
+pub extern "C" fn sentil_monitor_last_probability(handle: *mut c_void) -> c_double {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || {
+        let monitor = borrow_handle!(handle, Monitor, f64::NAN);
+        monitor.last_probability().unwrap_or(f64::NAN)
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sentil_monitor_reset(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { mutate_handle(handle, Monitor::reset) });
@@ -618,6 +627,15 @@ pub extern "C" fn sentil_stream_monitor_run(
 pub extern "C" fn sentil_free_robustness(array: *mut SentilRobustness, count: size_t) {
     clear_error();
     ffi_panic_boundary((), || unsafe { free_boxed_array(array, count) });
+}
+
+#[no_mangle]
+pub extern "C" fn sentil_stream_monitor_last_probability(handle: *mut c_void) -> c_double {
+    clear_error();
+    ffi_panic_boundary(f64::NAN, || {
+        let monitor = borrow_handle!(handle, StreamMonitor, f64::NAN);
+        monitor.last_probability().unwrap_or(f64::NAN)
+    })
 }
 
 #[no_mangle]

@@ -325,6 +325,8 @@ sentil_interval_t *sentil_monitor_violations(const sentil_monitor_t *monitor,
 sentil_error_t sentil_monitor_symbol_index(sentil_monitor_t *monitor, const char *name,
                                            size_t *out_index, bool *out_found);
 
+double sentil_monitor_last_probability(const sentil_monitor_t *monitor);
+
 void sentil_monitor_reset(sentil_monitor_t *monitor);
 
 sentil_interval_t *sentil_violation_intervals(const double *times, size_t n, const double *signal,
@@ -378,6 +380,8 @@ sentil_robustness_t *sentil_stream_monitor_run(sentil_stream_monitor_t *monitor,
                                                const sentil_trace_t *trace, size_t *out_count);
 
 void sentil_free_robustness(sentil_robustness_t *array, size_t count);
+
+double sentil_stream_monitor_last_probability(const sentil_stream_monitor_t *monitor);
 
 void sentil_stream_monitor_reset(sentil_stream_monitor_t *monitor);
 void sentil_stream_monitor_destroy(sentil_stream_monitor_t *monitor);
