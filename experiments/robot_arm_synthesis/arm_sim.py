@@ -1,19 +1,4 @@
-"""Robot-arm reach-and-stay-safe synthesis, driven by the sentil_ros control node.
-
-A KUKA iiwa arm has to move its end effector to a target box without ever dropping it
-below the table. The end effector is a 3D double integrator; the sentil_control node
-synthesizes the accelerations online (receding horizon) to satisfy
-
-    eventually[0,30] (in the target box) and always[0,30] (z > 0.25)
-
-This script is the plant and the camera: it publishes the end-effector state, applies
-the synthesized command, moves the arm to the planned end-effector pose by inverse
-kinematics, and records the scene with a heads-up display of the live verdict, to mp4.
-Everything runs in one ROS 2 environment, so the node and this script discover each
-other on the loopback.
-
-Usage (with the control node already running): python arm_sim.py --out results
-"""
+"""Robot-arm reach-and-stay-safe synthesis, driven by the sentil_ros control node."""
 
 import argparse
 import json
@@ -159,7 +144,7 @@ def main():
 
     report = {
         "case_study": "robot_arm_reach_and_stay_safe_synthesis",
-        "spec": "eventually[0,30] (in target box) and always[0,30] (z > 0.25)",
+        "spec": "eventually[0,30] (over target in x,y) and always[0,30] (0.25 < z < 1.0)",
         "target": TARGET.tolist(),
         "reached": reached_at is not None,
         "reached_at_s": reached_at,

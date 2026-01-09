@@ -1,6 +1,6 @@
 {
   "case_study": "robot_arm_reach_and_stay_safe_synthesis",
-  "spec": "eventually[0,30] (in target box) and always[0,30] (z > 0.25)",
+  "spec": "eventually[0,30] (over target in x,y) and always[0,30] (0.25 < z < 1.0)",
   "target": [
     0.4,
     0.4,
