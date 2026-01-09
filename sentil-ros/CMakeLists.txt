@@ -31,6 +31,7 @@ find_package(SentilCpp CONFIG REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Robustness.msg
   msg/Probability.msg
+  msg/Control.msg
   srv/GetSpecInfo.srv
   DEPENDENCIES std_msgs sensor_msgs
 )
@@ -51,7 +52,20 @@ rclcpp_components_register_node(sentil_monitor_node
   PLUGIN "sentil_ros::MonitorNode"
   EXECUTABLE sentil_monitor)
 
-install(TARGETS sentil_monitor_node
+add_library(sentil_control_node SHARED
+  src/control_node.cpp)
+target_include_directories(sentil_control_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(sentil_control_node
+  rclcpp rclcpp_lifecycle rclcpp_components lifecycle_msgs std_msgs)
+target_link_libraries(sentil_control_node Sentil::cpp ${CMAKE_DL_LIBS})
+rosidl_target_interfaces(sentil_control_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+rclcpp_components_register_node(sentil_control_node
+  PLUGIN "sentil_ros::ControlNode"
+  EXECUTABLE sentil_control)
+
+install(TARGETS sentil_monitor_node sentil_control_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)

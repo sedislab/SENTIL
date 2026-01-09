@@ -88,6 +88,22 @@ Or have the launch start the bridge for you, aimed at the server:
 ros2 launch sentil_ros carla_monitor.launch.py launch_bridge:=true carla_host:=192.168.1.50 carla_port:=2000
 ```
 
+## Synthesizing and actuating control
+
+Beyond monitoring, the package ships a control node that synthesizes control from a specification and actuates it on ROS 2 topics. It is the same managed lifecycle component shape as the monitor, and it exposes the whole synthesis subsystem, chosen by the `mode` parameter:
+
+- `receding_horizon`: an online controller that, each step, plans over a short horizon and emits the first input within a hard deadline.
+- `open_loop`: offline trajectory synthesis, an input sequence that satisfies the spec, published as a trajectory and stepped out in real time.
+- `safety_filter`: a control-barrier-function shield that takes a nominal command and returns the closest input that respects the bounds and barriers.
+
+The system model (a linear state-space model), the spec, the input bounds, and the mode come from configuration; `config/control_params.yaml` is a complete double-integrator example. The current state arrives on a `std_msgs/Float64MultiArray` topic, and the command goes out as a `sentil_ros/Control` message (the input vector, the achieved robustness, whether the spec holds) with a plain `Float64MultiArray` alongside for easy consumption.
+
+```
+ros2 launch sentil_ros sentil_control.launch.py
+```
+
+`examples/control_loop.py` closes the loop around it on a double integrator: it publishes the state, applies the synthesized command, and you watch the controller drive the position into the band the spec asks for. Pair this with the monitor node and you have a synthesize, monitor, and re-plan loop in ROS.
+
 ## Credits and license
 
 SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab. Dual licensed under MIT or Apache-2.0.

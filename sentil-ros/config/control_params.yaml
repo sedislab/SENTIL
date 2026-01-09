@@ -1,0 +1,26 @@
+sentil_control:
+  ros__parameters:
+    mode: "receding_horizon"
+
+    spec:
+      formula: "always[0,20] (pos > 1.0 and pos < 9.0)"
+
+    model:
+      state_dim: 2
+      a: [1.0, 0.1, 0.0, 1.0]
+      b: [0.005, 0.1]
+      x0: [0.0, 0.0]
+      variables: ["pos", "vel"]
+      dt: 0.1
+      horizon: 20
+
+    input_width: 1
+    budget_ms: 20.0
+
+    bounds:
+      lower: [-3.0]
+      upper: [3.0]
+
+    state_topic: "/system/state"
+    control_topic: "/system/command"
+    rate_hz: 10.0
