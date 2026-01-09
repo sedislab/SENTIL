@@ -1,0 +1,18 @@
+{
+  "case_study": "robot_arm_reach_and_stay_safe_synthesis",
+  "spec": "eventually[0,30] (in target box) and always[0,30] (z > 0.25)",
+  "target": [
+    0.4,
+    0.4,
+    0.7
+  ],
+  "reached": true,
+  "reached_at_s": 3.1,
+  "min_ee_z": 0.4,
+  "stayed_above_table": true,
+  "final_ee": [
+    0.4,
+    0.4,
+    0.625
+  ]
+}

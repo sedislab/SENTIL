@@ -1,0 +1,38 @@
+sentil_control:
+  ros__parameters:
+    mode: "receding_horizon"
+
+    spec:
+      formula: >
+        eventually[0,30] (x > 0.32 and x < 0.48 and y > 0.32 and y < 0.48)
+        and always[0,30] (z > 0.25 and z < 1.0)
+
+    model:
+      state_dim: 6
+      a: [1.0, 0.0, 0.0, 0.1, 0.0, 0.0,
+          0.0, 1.0, 0.0, 0.0, 0.1, 0.0,
+          0.0, 0.0, 1.0, 0.0, 0.0, 0.1,
+          0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+          0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+          0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+      b: [0.005, 0.0, 0.0,
+          0.0, 0.005, 0.0,
+          0.0, 0.0, 0.005,
+          0.1, 0.0, 0.0,
+          0.0, 0.1, 0.0,
+          0.0, 0.0, 0.1]
+      x0: [0.5, -0.3, 0.4, 0.0, 0.0, 0.0]
+      variables: ["x", "y", "z", "vx", "vy", "vz"]
+      dt: 0.1
+      horizon: 30
+
+    input_width: 3
+    budget_ms: 60.0
+
+    bounds:
+      lower: [-0.8, -0.8, -0.8]
+      upper: [0.8, 0.8, 0.8]
+
+    state_topic: "/arm/ee_state"
+    control_topic: "/arm/ee_command"
+    rate_hz: 10.0

@@ -221,7 +221,7 @@ private:
       subscribe_state();
     } else if (mode_ == "open_loop") {
       sentil::SynthesisResult result =
-        has_bounds ? synth_with_bounds(model, spec, lower, upper)
+        has_bounds ? synth_with_bounds(model, spec, tile(lower, horizon), tile(upper, horizon))
                    : sentil::synthesis::synthesize(model, spec);
       plan_ = result.input;
       plan_robustness_ = result.robustness;
