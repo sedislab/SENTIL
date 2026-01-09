@@ -22,6 +22,8 @@ Latency is what makes online monitoring viable. The three deterministic conjunct
 
 The probabilistic check earns its place at the pedestrian encounter near t = 146 s. There the deterministic clearance still holds, 5.7 m to the nearest agent, so a classical monitor reports no problem. SENTIL puts the collision-free probability over the next ten seconds at essentially zero, because the pedestrian's predicted path, under its uncertainty, runs into the car's own recorded path inside the lookahead. The probabilistic verdict sat near 1.0 the whole time except at the few real encounters, where it dropped sharply, which is exactly the behavior you want from a risk monitor.
 
+`rtamt_compare.py` runs SENTIL and RTAMT, a widely used STL monitor, head to head as online monitors on these same signals. Both monitor the past-time fragment RTAMT's online engine supports (historically over the speed, following distance, and pedestrian clearance), one sample at a time. The two agree on the robustness exactly, every sample, which is the correctness check. On the timing, SENTIL runs at about 0.78 microseconds per sample and RTAMT at about 13, so SENTIL is roughly 17 times faster online, measured on the same machine and written to `results/rtamt.json`.
+
 ## Part 2: online monitoring through sentil_ros
 
 This part runs the actual `sentil_ros` node, the same managed lifecycle node any ROS 2 user would deploy, against a recorded drive, and produces the video in `results/carla_drive.mp4`.

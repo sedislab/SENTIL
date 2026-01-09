@@ -1,0 +1,63 @@
+{
+  "samples": 2000,
+  "specs": {
+    "speed_limit": {
+      "sentil_formula": "historically[0,10] (speed < 12.0)",
+      "rtamt_formula": "historically[0:10](speed <= 12.0)",
+      "robustness_max_abs_diff": 0.0,
+      "agree": true,
+      "sentil": {
+        "median_us": 0.781,
+        "p99_us": 0.881,
+        "mean_us": 0.804,
+        "throughput_hz": 1243537.5
+      },
+      "rtamt": {
+        "median_us": 13.054,
+        "p99_us": 24.906,
+        "mean_us": 13.22,
+        "throughput_hz": 75642.8
+      },
+      "speedup_median": 16.7
+    },
+    "following_distance": {
+      "sentil_formula": "historically[0,10] (front_distance > 6.0)",
+      "rtamt_formula": "historically[0:10](front_distance >= 6.0)",
+      "robustness_max_abs_diff": 0.0,
+      "agree": true,
+      "sentil": {
+        "median_us": 0.792,
+        "p99_us": 0.882,
+        "mean_us": 0.808,
+        "throughput_hz": 1237012.9
+      },
+      "rtamt": {
+        "median_us": 14.347,
+        "p99_us": 25.698,
+        "mean_us": 14.603,
+        "throughput_hz": 68477.1
+      },
+      "speedup_median": 18.1
+    },
+    "pedestrian_clearance": {
+      "sentil_formula": "historically[0,10] (pedestrian_distance > 5.0)",
+      "rtamt_formula": "historically[0:10](pedestrian_distance >= 5.0)",
+      "robustness_max_abs_diff": 0.0,
+      "agree": true,
+      "sentil": {
+        "median_us": 0.772,
+        "p99_us": 0.881,
+        "mean_us": 0.788,
+        "throughput_hz": 1268874.2
+      },
+      "rtamt": {
+        "median_us": 14.156,
+        "p99_us": 24.789,
+        "mean_us": 14.396,
+        "throughput_hz": 69464.2
+      },
+      "speedup_median": 18.3
+    }
+  },
+  "tool": "sentil vs rtamt, online past-time STL"
+}
