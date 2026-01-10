@@ -379,11 +379,15 @@ private:
       return;
     }
     last_stamp_ = stamp;
-    const auto verdicts = monitor_->update(stamp, state_);
-    for (const auto & [id, robustness] : verdicts) {
-      last_verdict_[id] = robustness;
-      publish(id, robustness);
-      publish_probability(id);
+    try {
+      const auto verdicts = monitor_->update(stamp, state_);
+      for (const auto & [id, robustness] : verdicts) {
+        last_verdict_[id] = robustness;
+        publish(id, robustness);
+        publish_probability(id);
+      }
+    } catch (const std::exception & e) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "update failed: %s", e.what());
     }
   }
 
