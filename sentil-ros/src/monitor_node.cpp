@@ -255,7 +255,12 @@ private:
 
     std::string formula_text = raw;
     sentil::LiftingRegistry lifting;
-    bool probabilistic = method == "smc" || method == "sprt";
+    if (method == "sprt") {
+      throw std::runtime_error(
+        "formula '" + id + "': verification.method 'sprt' is not available online; the streaming "
+        "monitor estimates the probability continuously, so use 'smc' or leave the method automatic");
+    }
+    bool probabilistic = method == "smc";
     if (!spec_name.empty()) {
       auto builder = sentil::SpecBuilder(spec_name);
       const std::string variant = declare_parameter<std::string>(base + ".variant", "");

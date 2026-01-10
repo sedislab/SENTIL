@@ -48,7 +48,7 @@ A formula is configured under `formulas.<id>`. `config/example_params.yaml` is a
 | `formulas.<id>.spec` | a premade specification name from the library, used instead of a raw formula |
 | `formulas.<id>.variant` | a variant of the named spec |
 | `formulas.<id>.spec_params.names` / `.values` | parallel arrays overriding the spec's parameters |
-| `formulas.<id>.verification.method` | `robustness` (deterministic), `smc`, `sprt`, or `automatic` |
+| `formulas.<id>.verification.method` | `robustness` (deterministic), `smc` (online probability estimate), or `automatic` (probabilistic when any variable carries noise) |
 | `formulas.<id>.signal_names` | the variable names the formula reads |
 | `formulas.<id>.variables.<v>.topic` | the topic carrying variable `v` |
 | `formulas.<id>.variables.<v>.field` | a dotted, optionally indexed path to the scalar, e.g. `twist.twist.linear.x` or `ranges[0]` |
