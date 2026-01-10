@@ -1,0 +1,59 @@
+sentil_monitor:
+  ros__parameters:
+    use_sim_time: false
+    formulas: ["geofence", "obstacle_clearance", "speed_limit", "collision_risk"]
+
+    formulas.geofence:
+      formula: "x > -4.0 and x < 4.0 and y > -4.0 and y < 4.0"
+      verification:
+        method: "robustness"
+      signal_names: ["x", "y"]
+      variables:
+        x:
+          topic: "/robot/odom"
+          field: "pose.pose.position.x"
+          type: "nav_msgs/msg/Odometry"
+        y:
+          topic: "/robot/odom"
+          field: "pose.pose.position.y"
+          type: "nav_msgs/msg/Odometry"
+
+    formulas.obstacle_clearance:
+      formula: "clearance > 0.6"
+      verification:
+        method: "robustness"
+      signal_names: ["clearance"]
+      variables:
+        clearance:
+          topic: "/robot/front_range"
+          field: "range"
+          type: "sensor_msgs/msg/Range"
+
+    formulas.speed_limit:
+      formula: "speed < 2.0"
+      verification:
+        method: "robustness"
+      signal_names: ["speed"]
+      variables:
+        speed:
+          topic: "/robot/odom"
+          field: "twist.twist.linear.x"
+          type: "nav_msgs/msg/Odometry"
+
+    formulas.collision_risk:
+      formula: "P>=0.95(clearance > 0.35)"
+      verification:
+        method: "smc"
+      signal_names: ["clearance"]
+      variables:
+        clearance:
+          topic: "/robot/front_range"
+          field: "range"
+          type: "sensor_msgs/msg/Range"
+          noise:
+            type: "gaussian"
+            mean: 0.0
+            std_dev: 0.3
+      config:
+        particles: 1000
+        confidence: 0.95

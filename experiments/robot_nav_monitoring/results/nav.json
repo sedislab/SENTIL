@@ -1,0 +1,23 @@
+{
+  "case_study": "mobile_robot_navigation_monitoring",
+  "obstacles": [
+    [
+      -0.91,
+      0.42
+    ],
+    [
+      -1.34,
+      -2.67
+    ],
+    [
+      0.98,
+      1.83
+    ]
+  ],
+  "min_clearance_m": 0.45,
+  "first_breach_s": 5.3,
+  "clearance_violation_frames": 18,
+  "final_probability": 1.0,
+  "geofence_held": true,
+  "speed_limit_held": true
+}
