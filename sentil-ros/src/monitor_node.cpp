@@ -77,8 +77,6 @@ TypeSupport load_type_support(const std::string & type_name)
   return ts;
 }
 
-/// Builds a noise model from the `<base>` parameter namespace, defaulting to a Dirac
-/// (no noise) when the family is unknown.
 sentil::NoiseModel noise_from_params(
   rclcpp_lifecycle::LifecycleNode * node, const std::string & base, const std::string & family)
 {
@@ -105,7 +103,9 @@ sentil::NoiseModel noise_from_params(
   if (family == "beta") {
     return sentil::NoiseModel::beta(d("alpha", 1.0), d("beta", 1.0));
   }
-  return sentil::NoiseModel::dirac(d("value", 0.0));
+  throw std::runtime_error(
+    "noise.type '" + family + "' is not recognized; expected gaussian, uniform, log_normal, "
+    "exponential, gamma, beta, or none");
 }
 
 }  // namespace
