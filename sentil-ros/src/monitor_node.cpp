@@ -1,6 +1,7 @@
 #include <dlfcn.h>
 
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -371,6 +372,13 @@ private:
       return;  // hold until every distinct variable has been seen at least once
     }
     const double stamp = now().seconds();
+    if (stamp <= last_stamp_) {
+      // The streaming monitor needs strictly increasing time; under a stalled or rewound
+      // clock skip the sample rather than feed it a non-monotonic stamp.
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "non-monotonic stamp %.6f, skipping", stamp);
+      return;
+    }
+    last_stamp_ = stamp;
     const auto verdicts = monitor_->update(stamp, state_);
     for (const auto & [id, robustness] : verdicts) {
       last_verdict_[id] = robustness;
@@ -452,6 +460,7 @@ private:
     labels_.clear();
     state_.clear();
     last_verdict_.clear();
+    last_stamp_ = -std::numeric_limits<double>::infinity();
   }
 
   std::unique_ptr<sentil::MultiMonitor> monitor_;
@@ -465,6 +474,7 @@ private:
   std::vector<std::string> labels_;
   std::map<std::string, double> state_;
   std::map<std::string, sentil::Robustness> last_verdict_;
+  double last_stamp_ = -std::numeric_limits<double>::infinity();
   bool active_ = false;
 };
 
