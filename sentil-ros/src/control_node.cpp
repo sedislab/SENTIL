@@ -179,7 +179,12 @@ private:
         std::to_string(budget_ms));
     }
     const auto budget_ns = static_cast<std::uint64_t>(budget_ms * 1e6);
-    period_ = std::chrono::duration<double>(1.0 / get_parameter("rate_hz").as_double());
+    const double rate_hz = get_parameter("rate_hz").as_double();
+    if (!(rate_hz >= 1e-3)) {
+      throw std::runtime_error(
+        "rate_hz must be a finite rate of at least 0.001 Hz, got " + std::to_string(rate_hz));
+    }
+    period_ = std::chrono::duration<double>(1.0 / rate_hz);
 
     const auto lower = get_parameter("bounds.lower").as_double_array();
     const auto upper = get_parameter("bounds.upper").as_double_array();
