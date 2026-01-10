@@ -83,7 +83,9 @@ sentil::NoiseModel noise_from_params(
   rclcpp_lifecycle::LifecycleNode * node, const std::string & base, const std::string & family)
 {
   const auto d = [&](const std::string & key, double fallback) {
-    return node->declare_parameter(base + "." + key, fallback);
+    const std::string name = base + "." + key;
+    return node->has_parameter(name) ? node->get_parameter(name).as_double()
+                                     : node->declare_parameter(name, fallback);
   };
   if (family == "gaussian") {
     return sentil::NoiseModel::gaussian(d("mean", 0.0), d("std_dev", 1.0));
@@ -167,6 +169,12 @@ private:
     rclcpp::GenericSubscription::SharedPtr subscription;
   };
 
+  template<typename T>
+  T declare_once(const std::string & name, const T & fallback)
+  {
+    return has_parameter(name) ? get_parameter(name).get_value<T>() : declare_parameter<T>(name, fallback);
+  }
+
   void build()
   {
     monitor_ = std::make_unique<sentil::MultiMonitor>();
@@ -248,11 +256,11 @@ private:
     std::map<std::string, std::string> & var_field, std::map<std::string, std::string> & var_type)
   {
     const std::string base = "formulas." + id;
-    const std::string spec_name = declare_parameter<std::string>(base + ".spec", "");
-    const std::string raw = declare_parameter<std::string>(base + ".formula", "");
-    const std::string method = declare_parameter<std::string>(base + ".verification.method", "automatic");
+    const std::string spec_name = declare_once<std::string>(base + ".spec", "");
+    const std::string raw = declare_once<std::string>(base + ".formula", "");
+    const std::string method = declare_once<std::string>(base + ".verification.method", "automatic");
     // A ROS parameter cannot be both a string array and a nested namespace.
-    const auto variables = declare_parameter<std::vector<std::string>>(base + ".signal_names", {});
+    const auto variables = declare_once<std::vector<std::string>>(base + ".signal_names", {});
 
     std::string formula_text = raw;
     sentil::LiftingRegistry lifting;
@@ -264,12 +272,12 @@ private:
     bool probabilistic = method == "smc";
     if (!spec_name.empty()) {
       auto builder = sentil::SpecBuilder(spec_name);
-      const std::string variant = declare_parameter<std::string>(base + ".variant", "");
+      const std::string variant = declare_once<std::string>(base + ".variant", "");
       if (!variant.empty()) {
         builder = std::move(builder).with_variant(variant);
       }
-      const auto names = declare_parameter<std::vector<std::string>>(base + ".spec_params.names", {});
-      const auto values = declare_parameter<std::vector<double>>(base + ".spec_params.values", {});
+      const auto names = declare_once<std::vector<std::string>>(base + ".spec_params.names", {});
+      const auto values = declare_once<std::vector<double>>(base + ".spec_params.values", {});
       if (names.size() != values.size()) {
         throw std::runtime_error("formula '" + id + "': spec_params names and values differ in length");
       }
@@ -282,10 +290,10 @@ private:
     }
     for (const auto & var : variables) {
       const std::string vbase = base + ".variables." + var;
-      var_topic[var] = declare_parameter<std::string>(vbase + ".topic", "");
-      var_field[var] = declare_parameter<std::string>(vbase + ".field", "");
-      var_type[var] = declare_parameter<std::string>(vbase + ".type", "");
-      const std::string family = declare_parameter<std::string>(vbase + ".noise.type", "none");
+      var_topic[var] = declare_once<std::string>(vbase + ".topic", "");
+      var_field[var] = declare_once<std::string>(vbase + ".field", "");
+      var_type[var] = declare_once<std::string>(vbase + ".type", "");
+      const std::string family = declare_once<std::string>(vbase + ".noise.type", "none");
       if (family != "none") {
         probabilistic = true;
         lifting.register_noise(var, noise_from_params(this, vbase + ".noise", family));
