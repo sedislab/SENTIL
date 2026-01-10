@@ -4,7 +4,6 @@
 #include <stdexcept>
 #include <string>
 
-#include <rclcpp/time.hpp>
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
 namespace sentil_ros
@@ -27,11 +26,6 @@ double extract_double_from_field(
   const std::string & field_name);
 
 }  // namespace introspection
-
-/// Reads `header.stamp` from a message that carries a `std_msgs/Header`, returning
-/// it as an `rclcpp::Time`. Throws if the message has no header.
-rclcpp::Time extract_header_time(
-  const void * msg_data, const rosidl_message_type_support_t * type_support);
 
 }  // namespace sentil_ros
 

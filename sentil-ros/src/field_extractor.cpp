@@ -177,48 +177,4 @@ double extract_double_from_field(
 
 }  // namespace introspection
 
-rclcpp::Time extract_header_time(
-  const void * msg_data, const rosidl_message_type_support_t * type_support)
-{
-  namespace intro = rosidl_typesupport_introspection_cpp;
-  if (msg_data == nullptr || type_support == nullptr) {
-    throw std::runtime_error("null message for header time");
-  }
-  if (std::string(type_support->typesupport_identifier) != intro::typesupport_identifier) {
-    throw std::runtime_error("expected introspection type support for header time");
-  }
-  const auto * top = static_cast<const intro::MessageMembers *>(type_support->data);
-  const auto * bytes = static_cast<const unsigned char *>(msg_data);
-  for (uint32_t i = 0; i < top->member_count_; ++i) {
-    const auto & header = top->members_[i];
-    if (std::string(header.name_) != "header" || header.type_id_ != intro::ROS_TYPE_MESSAGE) {
-      continue;
-    }
-    const auto * header_ts = static_cast<const rosidl_message_type_support_t *>(header.members_);
-    const auto * header_members = static_cast<const intro::MessageMembers *>(header_ts->data);
-    const unsigned char * header_data = bytes + header.offset_;
-    for (uint32_t j = 0; j < header_members->member_count_; ++j) {
-      const auto & stamp = header_members->members_[j];
-      if (std::string(stamp.name_) != "stamp" || stamp.type_id_ != intro::ROS_TYPE_MESSAGE) {
-        continue;
-      }
-      const auto * stamp_ts = static_cast<const rosidl_message_type_support_t *>(stamp.members_);
-      const auto * stamp_members = static_cast<const intro::MessageMembers *>(stamp_ts->data);
-      const unsigned char * stamp_data = header_data + stamp.offset_;
-      int32_t sec = 0;
-      uint32_t nanosec = 0;
-      for (uint32_t k = 0; k < stamp_members->member_count_; ++k) {
-        const auto & field = stamp_members->members_[k];
-        if (std::string(field.name_) == "sec") {
-          sec = *reinterpret_cast<const int32_t *>(stamp_data + field.offset_);
-        } else if (std::string(field.name_) == "nanosec") {
-          nanosec = *reinterpret_cast<const uint32_t *>(stamp_data + field.offset_);
-        }
-      }
-      return rclcpp::Time(sec, nanosec);
-    }
-  }
-  throw std::runtime_error("message has no header.stamp");
-}
-
 }  // namespace sentil_ros
