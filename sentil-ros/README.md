@@ -96,7 +96,7 @@ Beyond monitoring, the package ships a control node that synthesizes control fro
 - `open_loop`: offline trajectory synthesis, an input sequence that satisfies the spec, published as a trajectory and stepped out in real time.
 - `safety_filter`: a control-barrier-function shield that takes a nominal command and returns the closest input that respects the bounds and barriers.
 
-The system model (a linear state-space model), the spec, the input bounds, and the mode come from configuration; `config/control_params.yaml` is a complete double-integrator example. The current state arrives on a `std_msgs/Float64MultiArray` topic, and the command goes out as a `sentil_ros/Control` message (the input vector, the achieved robustness, whether the spec holds) with a plain `Float64MultiArray` alongside for easy consumption.
+The system model (a linear state-space model), the spec, the input bounds, and the mode come from configuration; `config/control_params.yaml` is a complete double-integrator example. The current state arrives on a `std_msgs/Float64MultiArray` topic, and the command goes out as a `sentil_ros/Control` message with a plain `Float64MultiArray` alongside for easy consumption. The message carries a real robustness and a `holds` verdict only in `open_loop` mode, where the whole sequence is synthesized against the spec; the online modes return an input without a verdict, so they report robustness as NaN and `holds` as false, with `feasible` marking that an input was produced.
 
 ```
 ros2 launch sentil_ros sentil_control.launch.py

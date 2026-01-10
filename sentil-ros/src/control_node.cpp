@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -258,7 +259,7 @@ private:
     state_ = msg.data;
     if (mode_ == "receding_horizon" && controller_) {
       try {
-        publish(controller_->control(state_), 0.0, true, true);
+        publish(controller_->control(state_), std::numeric_limits<double>::quiet_NaN(), false, true);
       } catch (const std::exception & e) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "control failed: %s", e.what());
       }
@@ -271,7 +272,7 @@ private:
       return;
     }
     try {
-      publish(filter_->filter(msg.data), 0.0, true, true);
+      publish(filter_->filter(msg.data), std::numeric_limits<double>::quiet_NaN(), false, true);
     } catch (const std::exception & e) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "filter failed: %s", e.what());
     }
