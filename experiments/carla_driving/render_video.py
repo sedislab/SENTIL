@@ -45,16 +45,24 @@ def latest(times, pts, t):
 
 
 def draw_hud(img, t, speed, verdicts, prob):
+    s = img.width / 800.0
     draw = ImageDraw.Draw(img, "RGBA")
-    f_title, f_row, f_small = font(22), font(19), font(15)
-    pad, row_h = 14, 30
-    rows = len(SPECS) + 1
-    w, h = 360, 70 + rows * row_h
-    draw.rectangle([10, 10, 10 + w, 10 + h], fill=(15, 18, 24, 205))
-    draw.text((24, 22), "SENTIL  online monitor", font=f_title, fill=WHITE)
-    draw.text((24, 48), "t = {:5.1f} s    speed = {:4.1f} m/s".format(t, speed),
+    f_title, f_row, f_small = font(int(22 * s)), font(int(19 * s)), font(int(15 * s))
+    row_h = int(30 * s)
+    m = int(10 * s)
+    w, h = int(360 * s), int(70 * s) + (len(SPECS) + 1) * row_h
+    draw.rectangle([m, m, m + w, m + h], fill=(15, 18, 24, 205))
+    draw.text((int(24 * s), int(22 * s)), "SENTIL  online monitor", font=f_title, fill=WHITE)
+    draw.text((int(24 * s), int(48 * s)),
+              "t = {:5.1f} s    speed = {:4.1f} m/s".format(t, speed),
               font=f_small, fill=(170, 180, 195))
-    y = 78
+    y = int(78 * s)
+
+    def row(color, label, detail):
+        draw.ellipse([int(24 * s), y + int(6 * s), int(38 * s), y + int(20 * s)], fill=color)
+        draw.text((int(48 * s), y), label, font=f_row, fill=WHITE)
+        draw.text((int(48 * s), y + int(18 * s)), detail, font=f_small, fill=color)
+
     for (fid, label) in SPECS:
         v = verdicts.get(fid)
         if v is None:
@@ -66,12 +74,9 @@ def draw_hud(img, t, speed, verdicts, prob):
             color = GREEN if sat else RED
             mark = "OK" if sat else "VIOLATED"
             val = "rho={:+.1f}".format(v[1]) if abs(v[1]) < 1e6 else ""
-        draw.ellipse([24, y + 6, 38, y + 20], fill=color)
-        draw.text((48, y), label, font=f_row, fill=WHITE)
-        draw.text((48, y + 18), "{}  {}".format(mark, val), font=f_small, fill=color)
+        row(color, label, "{}  {}".format(mark, val))
         y += row_h
-    # probabilistic row
-    _, _, thr = PROB_SPEC
+    thr = PROB_SPEC[2]
     if prob is None:
         color, txt = (120, 120, 120), "P = --"
     elif not prob[1]:
@@ -79,9 +84,7 @@ def draw_hud(img, t, speed, verdicts, prob):
     else:
         color = GREEN if prob[0] >= thr else (AMBER if prob[0] >= thr - 0.1 else RED)
         txt = "P = {:.2f}  (>= {:.2f})".format(prob[0], thr)
-    draw.ellipse([24, y + 6, 38, y + 20], fill=color)
-    draw.text((48, y), PROB_SPEC[1], font=f_row, fill=WHITE)
-    draw.text((48, y + 18), txt, font=f_small, fill=color)
+    row(color, PROB_SPEC[1], txt)
     return img
 
 
@@ -91,6 +94,7 @@ def main():
     ap.add_argument("--verdicts", default="results/verdicts_timeline.json")
     ap.add_argument("--out", default="results/carla_drive.mp4")
     ap.add_argument("--fps", type=int, default=20)
+    ap.add_argument("--crf", type=int, default=26, help="H.264 quality, lower is sharper and larger")
     args = ap.parse_args()
 
     cap = json.load(open(os.path.join(args.capture, "capture.json")))
@@ -105,7 +109,9 @@ def main():
     offset = min(all_t) if all_t else 0.0
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    writer = imageio.get_writer(args.out, fps=args.fps, quality=8, macro_block_size=8)
+    writer = imageio.get_writer(args.out, fps=args.fps, codec="libx264", macro_block_size=16,
+                               pixelformat="yuv420p",
+                               ffmpeg_params=["-crf", str(args.crf), "-preset", "slow"])
     n = cap["frames"]
     for i in range(n):
         path = os.path.join(frames_dir, "%06d.jpg" % i)

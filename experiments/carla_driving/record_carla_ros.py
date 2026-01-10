@@ -15,7 +15,7 @@ from PIL import Image
 
 import carla
 
-CAM_W, CAM_H = 800, 450
+CAM_W, CAM_H = 1280, 720
 
 
 def forward_clearance(ego_tf, ego_loc, others):
@@ -100,6 +100,7 @@ def main():
     client = carla.Client(args.host, args.port)
     client.set_timeout(120.0)
     world = client.get_world()
+    world.set_weather(carla.WeatherParameters.ClearNoon)
     settings = world.get_settings()
     settings.synchronous_mode = True
     settings.fixed_delta_seconds = args.dt
@@ -150,7 +151,7 @@ def main():
 
             arr = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((CAM_H, CAM_W, 4))
             rgb = arr[:, :, :3][:, :, ::-1]
-            Image.fromarray(rgb).save(os.path.join(frames_dir, "%06d.jpg" % frame), quality=85)
+            Image.fromarray(rgb).save(os.path.join(frames_dir, "%06d.jpg" % frame), quality=92)
 
             others = [v for v in traffic if v.is_alive]
             peds = [w for w in walkers if w.is_alive]
