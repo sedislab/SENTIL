@@ -62,7 +62,7 @@ A formula is configured under `formulas.<id>`. `config/example_params.yaml` is a
 Per formula `<id>`, the node publishes:
 
 - `~/<id>/robustness` (`sentil_ros/msg/Robustness`): the signed robustness, whether the verdict is concrete, and the interval bounds.
-- `~/<id>/probability` (`sentil_ros/msg/Probability`), for a probabilistic formula only: the running satisfaction probability the streaming monitor estimates over its lifted ensemble, with the ensemble size, so you can show a live probability next to the verdict.
+- `~/<id>/probability` (`sentil_ros/msg/Probability`), for a probabilistic formula only: the running satisfaction probability the streaming monitor estimates over its lifted ensemble, the ensemble size, how many member trajectories currently satisfy the formula, and a Wilson confidence interval at the configured level, the same band the offline statistical checker reports. Show a live probability and its interval next to the verdict.
 
 It also publishes a `diagnostic_msgs/DiagnosticStatus` per formula on `/diagnostics`, so the monitor shows up in `rqt_robot_monitor` and the diagnostic aggregator: satisfied is OK, violated is ERROR, an undecided probabilistic verdict is WARN, and no data yet is STALE.
 

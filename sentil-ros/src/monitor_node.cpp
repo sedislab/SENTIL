@@ -297,6 +297,7 @@ private:
       config.confidence = declare_parameter<double>(base + ".config.confidence", 0.95);
       monitor_->add_probabilistic(id, formula, lifting, config);
       prob_samples_[id] = config.samples;
+      prob_confidence_[id] = config.confidence;
       prob_publishers_[id] = create_publisher<msg::Probability>("~/" + id + "/probability", 10);
     } else {
       monitor_->add(id, formula);
@@ -405,6 +406,12 @@ private:
     out.estimate = *estimate;
     out.samples = samples;
     out.satisfactions = static_cast<std::uint64_t>(std::llround(*estimate * static_cast<double>(samples)));
+    // The running estimate is the satisfying fraction over the lifted ensemble, so a
+    // Wilson interval over those counts is the same band the offline SMC reports.
+    const auto interval = sentil::stats::wilson_interval(out.satisfactions, samples, prob_confidence_.at(id));
+    out.ci_lower = interval.lower;
+    out.ci_upper = interval.upper;
+    out.ci_confidence = interval.level;
     pub->second->publish(out);
   }
 
@@ -433,6 +440,7 @@ private:
     publishers_.clear();
     prob_publishers_.clear();
     prob_samples_.clear();
+    prob_confidence_.clear();
     diagnostics_.reset();
     spec_info_service_.reset();
     monitor_.reset();
@@ -446,6 +454,7 @@ private:
   std::map<std::string, rclcpp_lifecycle::LifecyclePublisher<msg::Robustness>::SharedPtr> publishers_;
   std::map<std::string, rclcpp_lifecycle::LifecyclePublisher<msg::Probability>::SharedPtr> prob_publishers_;
   std::map<std::string, std::uint64_t> prob_samples_;
+  std::map<std::string, double> prob_confidence_;
   std::unique_ptr<diagnostic_updater::Updater> diagnostics_;
   rclcpp::Service<srv::GetSpecInfo>::SharedPtr spec_info_service_;
   std::vector<std::string> labels_;
