@@ -22,7 +22,6 @@ find_package(lifecycle_msgs REQUIRED)
 find_package(diagnostic_updater REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(rosidl_typesupport_introspection_cpp REQUIRED)
-find_package(ament_index_cpp REQUIRED)
 find_package(rcpputils REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -44,7 +43,7 @@ target_include_directories(sentil_monitor_node PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(sentil_monitor_node
   rclcpp rclcpp_lifecycle rclcpp_components lifecycle_msgs
-  diagnostic_updater diagnostic_msgs ament_index_cpp rcpputils
+  diagnostic_updater diagnostic_msgs rcpputils
   rosidl_typesupport_introspection_cpp std_msgs sensor_msgs)
 target_link_libraries(sentil_monitor_node Sentil::cpp ${CMAKE_DL_LIBS})
 rosidl_target_interfaces(sentil_monitor_node ${PROJECT_NAME} "rosidl_typesupport_cpp")

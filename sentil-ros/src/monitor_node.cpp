@@ -1,5 +1,3 @@
-#include <dlfcn.h>
-
 #include <functional>
 #include <limits>
 #include <map>
@@ -8,11 +6,11 @@
 #include <string>
 #include <vector>
 
-#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <diagnostic_updater/diagnostic_updater.hpp>
 #include <lifecycle_msgs/msg/state.hpp>
 #include <rclcpp/generic_subscription.hpp>
 #include <rclcpp/serialized_message.hpp>
+#include <rclcpp/typesupport_helpers.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rcpputils/shared_library.hpp>
@@ -43,37 +41,15 @@ struct TypeSupport
   const rosidl_message_type_support_t * rmw = nullptr;
 };
 
-std::pair<std::string, std::string> split_type(const std::string & type_name)
-{
-  const auto slash = type_name.find('/');
-  const auto last = type_name.rfind('/');
-  if (slash == std::string::npos || last == std::string::npos) {
-    throw std::runtime_error("type '" + type_name + "' is not pkg/msg/Name");
-  }
-  return {type_name.substr(0, slash), type_name.substr(last + 1)};
-}
-
 TypeSupport load_type_support(const std::string & type_name)
 {
-  const auto [package, name] = split_type(type_name);
-  const std::string share = ament_index_cpp::get_package_share_directory(package);
-  const std::string lib_dir = share + "/../../lib";
-
   TypeSupport ts;
-  const std::string intro_path =
-    lib_dir + "/lib" + package + "__rosidl_typesupport_introspection_cpp.so";
-  const std::string rmw_path = lib_dir + "/lib" + package + "__rosidl_typesupport_cpp.so";
-  ts.introspection_lib = std::make_shared<rcpputils::SharedLibrary>(intro_path);
-  ts.rmw_lib = std::make_shared<rcpputils::SharedLibrary>(rmw_path);
-
-  const std::string intro_symbol =
-    "rosidl_typesupport_introspection_cpp__get_message_type_support_handle__" + package +
-    "__msg__" + name;
-  const std::string rmw_symbol =
-    "rosidl_typesupport_cpp__get_message_type_support_handle__" + package + "__msg__" + name;
-  using HandleFn = const rosidl_message_type_support_t * (*)();
-  ts.introspection = reinterpret_cast<HandleFn>(ts.introspection_lib->get_symbol(intro_symbol))();
-  ts.rmw = reinterpret_cast<HandleFn>(ts.rmw_lib->get_symbol(rmw_symbol))();
+  ts.introspection_lib =
+    rclcpp::get_typesupport_library(type_name, "rosidl_typesupport_introspection_cpp");
+  ts.introspection = rclcpp::get_typesupport_handle(
+    type_name, "rosidl_typesupport_introspection_cpp", *ts.introspection_lib);
+  ts.rmw_lib = rclcpp::get_typesupport_library(type_name, "rosidl_typesupport_cpp");
+  ts.rmw = rclcpp::get_typesupport_handle(type_name, "rosidl_typesupport_cpp", *ts.rmw_lib);
   return ts;
 }
 
