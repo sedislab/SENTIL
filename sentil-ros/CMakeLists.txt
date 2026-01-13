@@ -32,7 +32,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Probability.msg
   msg/Control.msg
   srv/GetSpecInfo.srv
-  DEPENDENCIES std_msgs sensor_msgs
+  DEPENDENCIES std_msgs
 )
 
 add_library(sentil_monitor_node SHARED
@@ -44,7 +44,7 @@ target_include_directories(sentil_monitor_node PUBLIC
 ament_target_dependencies(sentil_monitor_node
   rclcpp rclcpp_lifecycle rclcpp_components lifecycle_msgs
   diagnostic_updater diagnostic_msgs rcpputils
-  rosidl_typesupport_introspection_cpp std_msgs sensor_msgs)
+  rosidl_typesupport_introspection_cpp std_msgs)
 target_link_libraries(sentil_monitor_node Sentil::cpp ${CMAKE_DL_LIBS})
 rosidl_target_interfaces(sentil_monitor_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 rclcpp_components_register_node(sentil_monitor_node
