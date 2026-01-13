@@ -57,6 +57,20 @@ A formula is configured under `formulas.<id>`. `config/example_params.yaml` is a
 | `formulas.<id>.config.particles` | the ensemble size for a probabilistic estimate |
 | `formulas.<id>.config.confidence` | the confidence level |
 
+### Noise families
+
+A variable's `noise.type` selects the sensor noise lifted into a probabilistic estimate, and each family reads its own parameters under `noise`:
+
+| Family | Parameters |
+| --- | --- |
+| `gaussian` | `mean`, `std_dev` |
+| `uniform` | `low`, `high` |
+| `log_normal` | `mu`, `sigma` |
+| `exponential` | `rate` |
+| `gamma` | `shape`, `scale` |
+| `beta` | `alpha`, `beta` |
+| `none` | no noise (the default) |
+
 ## Topics and diagnostics
 
 Per formula `<id>`, the node publishes:
