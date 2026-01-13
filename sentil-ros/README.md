@@ -66,6 +66,8 @@ Per formula `<id>`, the node publishes:
 
 It also publishes a `diagnostic_msgs/DiagnosticStatus` per formula on `/diagnostics`, so the monitor shows up in `rqt_robot_monitor` and the diagnostic aggregator: satisfied is OK, violated is ERROR, an undecided probabilistic verdict is WARN, and no data yet is STALE.
 
+No formula publishes a verdict until every variable across all configured formulas has been received at least once, so one dead topic holds back every formula; the STALE diagnostic names the variables it is still waiting on. After that each variable holds its last reading between updates, so a silent topic keeps contributing its last value rather than going stale on its own.
+
 ## Inspecting the specification library
 
 The premade specifications are part of the engine, so you can reach them from a config (`spec:` above) or query one at runtime through the `~/get_spec_info` service (`sentil_ros/srv/GetSpecInfo`), which returns a spec's resolved deterministic and probabilistic formulas, its parameters as JSON, and its variants:

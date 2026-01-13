@@ -424,7 +424,13 @@ private:
     using diagnostic_msgs::msg::DiagnosticStatus;
     const auto it = last_verdict_.find(id);
     if (it == last_verdict_.end()) {
-      status.summary(DiagnosticStatus::STALE, "no data yet");
+      std::string waiting;
+      for (const auto & entry : bindings_) {
+        if (state_.find(entry.first) == state_.end()) {
+          waiting += waiting.empty() ? entry.first : ", " + entry.first;
+        }
+      }
+      status.summary(DiagnosticStatus::STALE, waiting.empty() ? "no data yet" : "waiting for: " + waiting);
       return;
     }
     const sentil::Robustness & r = it->second;
