@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>sentil</name>
+  <version>1.0.0</version>
+  <description>
+    Runtime verification and controller synthesis for Apollo Cyber RT. A monitor
+    component watches the perception, localization, and chassis channels against
+    Signal Temporal Logic and probabilistic STL specifications and publishes a
+    verdict; a control component synthesizes or shields a command against the same
+    specification. Built on the SENTIL engine, which ships inside the module.
+  </description>
+  <maintainer email="paapa_quansah1@baylor.edu">Paapa Kwesi Quansah</maintainer>
+  <license>Apache-2.0 OR MIT</license>
+  <author>Paapa Kwesi Quansah</author>
+  <author>Ernest Bonnah</author>
+  <author>SEDIS Lab</author>
+  <type>module</type>
+  <src_path>//modules/sentil</src_path>
+  <builder>bazel</builder>
+
+  <depend repo_name="cyber" type="binary">cyber</depend>
+  <depend repo_name="common-msgs" type="binary">common-msgs</depend>
+  <depend type="src">sentil-cpp</depend>
+</package>
