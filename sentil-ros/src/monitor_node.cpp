@@ -462,6 +462,7 @@ private:
     last_stamp_ = -std::numeric_limits<double>::infinity();
   }
 
+  // Callbacks all run on the node's default mutually exclusive group.
   std::unique_ptr<sentil::MultiMonitor> monitor_;
   std::map<std::string, Binding> bindings_;
   std::map<std::string, rclcpp_lifecycle::LifecyclePublisher<msg::Robustness>::SharedPtr> publishers_;
