@@ -139,6 +139,7 @@ public:
 private:
   struct Binding
   {
+    std::string name;
     std::string topic;
     std::string field;
     TypeSupport type_support;
@@ -166,21 +167,20 @@ private:
       configure_formula(id, var_topic, var_field, var_type);
     }
 
-    // One subscription per distinct variable, QoS-matched to the publisher.
     for (const auto & [var, topic] : var_topic) {
       Binding binding;
+      binding.name = var;
       binding.topic = topic;
       binding.field = var_field.at(var);
-      const std::string type_name = resolve_type(topic, var_type[var]);
+      const std::string type_name = resolve_type(topic, var_type.at(var));
       binding.type_support = load_type_support(type_name);
       const rclcpp::QoS qos = match_qos(topic);
-      const std::string captured = var;
-      binding.subscription = create_generic_subscription(
+      Binding & stored = bindings_.emplace(var, std::move(binding)).first->second;
+      stored.subscription = create_generic_subscription(
         topic, type_name, qos,
-        [this, captured](std::shared_ptr<rclcpp::SerializedMessage> msg) {
-          on_sample(captured, std::move(msg));
+        [this, ptr = &stored](std::shared_ptr<rclcpp::SerializedMessage> msg) {
+          on_sample(*ptr, std::move(msg));
         });
-      bindings_.emplace(var, std::move(binding));
     }
 
     diagnostics_ = std::make_unique<diagnostic_updater::Updater>(this);
@@ -322,12 +322,11 @@ private:
     return qos;
   }
 
-  void on_sample(const std::string & variable, std::shared_ptr<rclcpp::SerializedMessage> msg)
+  void on_sample(Binding & binding, std::shared_ptr<rclcpp::SerializedMessage> msg)
   {
     if (!active_) {
       return;
     }
-    const Binding & binding = bindings_.at(variable);
     const auto * members = static_cast<const rosidl_typesupport_introspection_cpp::MessageMembers *>(
       binding.type_support.introspection->data);
     std::vector<uint8_t> buffer(members->size_of_);
@@ -343,7 +342,7 @@ private:
       value = introspection::extract_double_from_field(
         buffer.data(), binding.type_support.introspection, binding.field);
     } catch (const std::exception & e) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "sample on %s: %s", variable.c_str(), e.what());
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "sample on %s: %s", binding.name.c_str(), e.what());
       ok = false;
     }
     members->fini_function(buffer.data());
@@ -351,7 +350,7 @@ private:
       return;
     }
 
-    state_[variable] = value;
+    state_[binding.name] = value;
     if (state_.size() < bindings_.size()) {
       return;  // hold until every distinct variable has been seen at least once
     }
