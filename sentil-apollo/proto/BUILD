@@ -24,4 +24,15 @@ cc_proto_library(
     deps = [":sentil_status_proto"],
 )
 
+proto_library(
+    name = "sentil_control_config_proto",
+    srcs = ["sentil_control_config.proto"],
+    deps = [":sentil_config_proto"],
+)
+
+cc_proto_library(
+    name = "sentil_control_config_cc_proto",
+    deps = [":sentil_control_config_proto"],
+)
+
 apollo_package()

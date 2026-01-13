@@ -1,0 +1,66 @@
+syntax = "proto2";
+
+package apollo.sentil;
+
+import "modules/sentil/proto/sentil_config.proto";
+
+enum ControlMode {
+  SHIELD = 0;
+  SYNTHESIZE = 1;
+  ADVISORY = 2;
+}
+
+// x_{t+1} = A x_t + B u_t, with a row-major n*n and b row-major n*input_width.
+message LinearModel {
+  repeated double a = 1;
+  repeated double b = 2;
+  repeated double x0 = 3;
+  repeated string variables = 4;
+  optional double dt = 5 [default = 0.1];
+  optional uint32 horizon = 6 [default = 20];
+}
+
+message Spec {
+  optional string expression = 1;
+  optional string name = 2;  // a premade specification
+  optional string variant = 3;
+}
+
+message Bounds {
+  repeated double lower = 1;
+  repeated double upper = 2;
+}
+
+message ControlOutput {
+  optional uint32 index = 1;
+  optional string field_path = 2;
+}
+
+message SmoothConfig {
+  optional double temperature = 1 [default = 10.0];
+}
+
+message ChanceConfig {
+  optional double probability = 1 [default = 0.95];
+  optional bool conservative = 2 [default = false];
+}
+
+message SentilControlConfig {
+  optional ControlMode mode = 1 [default = SHIELD];
+  optional Spec spec = 2;
+  optional LinearModel model = 3;
+  optional uint32 input_width = 4 [default = 1];
+
+  optional double control_period_ms = 5 [default = 10.0];
+  optional double deadline_fraction = 6 [default = 0.8];
+
+  repeated ChannelMapping state_inputs = 7;
+  optional Bounds bounds = 8;
+
+  optional string nominal_channel = 9 [default = "/apollo/control/nominal"];
+  optional string output_channel = 10 [default = "/apollo/control"];
+  repeated ControlOutput control_outputs = 11;
+
+  optional SmoothConfig smooth = 12;
+  optional ChanceConfig chance = 13;
+}
