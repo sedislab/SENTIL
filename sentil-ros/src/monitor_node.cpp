@@ -212,6 +212,8 @@ private:
       auto builder = request->spec_file.empty()
         ? sentil::SpecBuilder(request->spec_name)
         : sentil::SpecBuilder::from_file(request->spec_file);
+      // A spec may carry only the deterministic or only the probabilistic form; leave the
+      // absent one blank rather than failing the whole query.
       try {
         response->deterministic_formula = builder.build_deterministic();
       } catch (const std::exception &) {
