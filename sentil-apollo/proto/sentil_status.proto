@@ -1,0 +1,47 @@
+syntax = "proto2";
+
+package apollo.sentil;
+
+import "modules/common_msgs/basic_msgs/header.proto";
+
+enum Severity {
+  OK = 0;
+  WARN = 1;
+  ERROR = 2;
+  FATAL = 3;
+}
+
+message ConfidenceInterval {
+  optional double lower = 1;
+  optional double upper = 2;
+  optional double confidence_level = 3;
+}
+
+message ProbabilisticResult {
+  optional uint64 samples = 1;
+  optional uint64 satisfactions = 2;
+  optional double probability = 3;
+  optional ConfidenceInterval interval = 4;
+}
+
+message Robustness {
+  optional bool is_concrete = 1;
+  optional double min = 2;
+  optional double max = 3;
+}
+
+message FormulaResult {
+  optional uint64 id = 1;
+  optional string expression = 2;
+  optional Robustness robustness = 3;
+  optional bool satisfied = 4;
+  optional Severity severity = 5;
+  optional ProbabilisticResult prob_result = 6;
+}
+
+message SentilStatus {
+  optional apollo.common.Header header = 1;
+  repeated FormulaResult results = 2;
+  optional double computation_time_ms = 3;
+  optional bool all_satisfied = 4;
+}

@@ -1,0 +1,129 @@
+syntax = "proto2";
+
+package apollo.sentil;
+
+enum TimeSemantics {
+  DENSE = 0;
+  DISCRETE = 1;
+}
+
+enum InterpolationMode {
+  LINEAR = 0;
+  CONSTANT = 1;
+  SPLINE = 2;
+}
+
+enum ExecutionBackend {
+  CPU = 0;
+  GPU = 1;
+}
+
+enum ProbAlgo {
+  DETERMINISTIC = 0;
+  SMC = 1;
+  SPRT = 2;
+  AMS = 3;
+}
+
+enum NoiseInteraction {
+  ADDITIVE = 0;
+  MULTIPLICATIVE = 1;
+}
+
+message GaussianNoise {
+  optional double mean = 1 [default = 0.0];
+  optional double std_dev = 2 [default = 1.0];
+}
+
+message UniformNoise {
+  optional double low = 1 [default = 0.0];
+  optional double high = 2 [default = 1.0];
+}
+
+message LogNormalNoise {
+  optional double mu = 1 [default = 0.0];
+  optional double sigma = 2 [default = 1.0];
+}
+
+message ExponentialNoise {
+  optional double rate = 1 [default = 1.0];
+}
+
+message GammaNoise {
+  optional double shape = 1 [default = 1.0];
+  optional double scale = 2 [default = 1.0];
+}
+
+message BetaNoise {
+  optional double alpha = 1 [default = 1.0];
+  optional double beta = 2 [default = 1.0];
+}
+
+message TruncatedNormalNoise {
+  optional double mean = 1 [default = 0.0];
+  optional double std_dev = 2 [default = 1.0];
+  optional double lower = 3;
+  optional double upper = 4;
+}
+
+message NoiseModel {
+  oneof model {
+    double dirac = 1;
+    GaussianNoise gaussian = 2;
+    UniformNoise uniform = 3;
+    LogNormalNoise log_normal = 4;
+    ExponentialNoise exponential = 5;
+    GammaNoise gamma = 6;
+    BetaNoise beta = 7;
+    TruncatedNormalNoise truncated_normal = 8;
+  }
+}
+
+message LiftingEntry {
+  optional string variable = 1;
+  optional NoiseModel noise = 2;
+  optional NoiseInteraction interaction = 3 [default = ADDITIVE];
+}
+
+// A proto field path, dotted with [index] for repeated fields, or a builtin aggregate.
+message FieldMapping {
+  optional string variable = 1;
+  oneof source {
+    string field_path = 2;
+    string builtin = 3;  // NEAREST_OBSTACLE_DISTANCE, MIN_TTC, LATERAL_ERROR, FRONT_GAP
+  }
+}
+
+message ChannelMapping {
+  optional string channel = 1;
+  optional string message_type = 2;  // fully qualified proto type, e.g. apollo.canbus.Chassis
+  repeated FieldMapping fields = 3;
+}
+
+message Formula {
+  optional uint64 id = 1;
+  optional string expression = 2;
+}
+
+message SprtConfig {
+  optional double p0 = 1 [default = 0.90];
+  optional double p1 = 2 [default = 0.95];
+  optional double alpha = 3 [default = 0.01];
+  optional double beta = 4 [default = 0.01];
+}
+
+message SentilConfig {
+  repeated Formula formulas = 1;
+  repeated ChannelMapping input_channels = 2;
+  optional string output_channel = 3 [default = "/apollo/sentil/status"];
+
+  optional TimeSemantics semantics = 4 [default = DENSE];
+  optional InterpolationMode interpolation = 5 [default = LINEAR];
+  optional ExecutionBackend backend = 6 [default = CPU];
+  optional ProbAlgo algorithm = 7 [default = DETERMINISTIC];
+  optional uint64 sample_budget = 8 [default = 1000];
+  optional double confidence = 9 [default = 0.95];
+
+  optional SprtConfig sprt_config = 10;
+  repeated LiftingEntry lifting_registry = 11;
+}
