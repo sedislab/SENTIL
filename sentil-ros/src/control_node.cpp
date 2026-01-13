@@ -188,7 +188,12 @@ private:
 
     const auto lower = get_parameter("bounds.lower").as_double_array();
     const auto upper = get_parameter("bounds.upper").as_double_array();
-    const bool has_bounds = !lower.empty() && lower.size() == upper.size();
+    if (lower.size() != upper.size()) {
+      throw std::runtime_error(
+        "bounds.lower and bounds.upper must have the same length (" + std::to_string(lower.size()) +
+        " vs " + std::to_string(upper.size()) + "); leave both empty for no bounds");
+    }
+    const bool has_bounds = !lower.empty();
 
     control_pub_ = create_publisher<msg::Control>(get_parameter("control_topic").as_string(), 10);
     array_pub_ = create_publisher<Float64MultiArray>(
