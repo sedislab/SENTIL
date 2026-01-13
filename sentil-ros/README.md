@@ -2,7 +2,7 @@
 
 Monitor ROS 2 topic streams against Signal Temporal Logic and probabilistic STL specifications, online and in real time. You write a small YAML configuration that names each formula and binds its variables to topics and message fields; the node subscribes to those topics, evaluates the formulas as messages arrive, and publishes a verdict per formula along with a standard diagnostic. It is built on the SENTIL engine and works with messages of any type, resolved at runtime, so you monitor your existing topics without changing them.
 
-It builds against the current ROS 2 distributions, Humble, Iron, Jazzy, and Rolling, with the same features on each; Humble is the reference LTS. It uses only cross-distribution ROS 2 interfaces, so there is nothing distro-specific to port.
+It builds against the current ROS 2 distributions, Humble, Jazzy, and Rolling, with the same features on each; Humble is the reference LTS. It uses only cross-distribution ROS 2 interfaces, so there is nothing distro-specific to port.
 
 ## Why it is built the way it is
 
