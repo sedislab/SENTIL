@@ -143,6 +143,7 @@ private:
     std::string topic;
     std::string field;
     TypeSupport type_support;
+    std::vector<uint8_t> scratch;  // reused message storage, sized once at configure
     rclcpp::GenericSubscription::SharedPtr subscription;
   };
 
@@ -174,6 +175,9 @@ private:
       binding.field = var_field.at(var);
       const std::string type_name = resolve_type(topic, var_type.at(var));
       binding.type_support = load_type_support(type_name);
+      const auto * members = static_cast<const rosidl_typesupport_introspection_cpp::MessageMembers *>(
+        binding.type_support.introspection->data);
+      binding.scratch.resize(members->size_of_);
       const rclcpp::QoS qos = match_qos(topic);
       Binding & stored = bindings_.emplace(var, std::move(binding)).first->second;
       stored.subscription = create_generic_subscription(
@@ -329,23 +333,23 @@ private:
     }
     const auto * members = static_cast<const rosidl_typesupport_introspection_cpp::MessageMembers *>(
       binding.type_support.introspection->data);
-    std::vector<uint8_t> buffer(members->size_of_);
-    members->init_function(buffer.data(), rosidl_runtime_cpp::MessageInitialization::ZERO);
+    uint8_t * buffer = binding.scratch.data();
+    members->init_function(buffer, rosidl_runtime_cpp::MessageInitialization::ZERO);
     double value = 0.0;
     bool ok = true;
     try {
       if (rmw_deserialize(
-          &msg->get_rcl_serialized_message(), binding.type_support.rmw, buffer.data()) != RMW_RET_OK)
+          &msg->get_rcl_serialized_message(), binding.type_support.rmw, buffer) != RMW_RET_OK)
       {
         throw std::runtime_error("deserialize failed");
       }
       value = introspection::extract_double_from_field(
-        buffer.data(), binding.type_support.introspection, binding.field);
+        buffer, binding.type_support.introspection, binding.field);
     } catch (const std::exception & e) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "sample on %s: %s", binding.name.c_str(), e.what());
       ok = false;
     }
-    members->fini_function(buffer.data());
+    members->fini_function(buffer);
     if (!ok) {
       return;
     }
