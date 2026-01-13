@@ -34,7 +34,7 @@ Token parse_token(const std::string & token)
     return {token, -1};
   }
   const auto close = token.find(']', open);
-  if (close == std::string::npos || close < open) {
+  if (close == std::string::npos) {
     throw FieldExtractorError("malformed array index in '" + token + "'");
   }
   const std::string digits = token.substr(open + 1, close - open - 1);
