@@ -1,0 +1,43 @@
+formulas {
+  id: 1
+  expression: "always[0, 5.0] (ego_speed < 20.0)"
+}
+formulas {
+  id: 2
+  expression: "P>=0.99(always[0, 2.0] (front_gap > 5.0))"
+}
+
+input_channels {
+  channel: "/apollo/canbus/chassis"
+  message_type: "apollo.canbus.Chassis"
+  fields {
+    variable: "ego_speed"
+    field_path: "speed_mps"
+  }
+}
+input_channels {
+  channel: "/apollo/perception/obstacles"
+  message_type: "apollo.perception.PerceptionObstacles"
+  fields {
+    variable: "front_gap"
+    builtin: "FRONT_GAP"
+  }
+}
+
+output_channel: "/apollo/sentil/status"
+
+lifting_registry {
+  variable: "front_gap"
+  noise {
+    gaussian {
+      mean: 0.0
+      std_dev: 0.25
+    }
+  }
+  interaction: ADDITIVE
+}
+
+algorithm: SMC
+sample_budget: 1000
+confidence: 0.99
+semantics: DENSE

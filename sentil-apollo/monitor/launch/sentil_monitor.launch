@@ -1,0 +1,7 @@
+<cyber>
+  <module>
+    <name>sentil_safety_monitor</name>
+    <dag_conf>modules/sentil/monitor/dag/sentil_monitor.dag</dag_conf>
+    <process_name>sentil_monitor</process_name>
+  </module>
+</cyber>

@@ -1,0 +1,24 @@
+module_config {
+  module_library: "modules/sentil/monitor/libsentil_monitor_component.so"
+
+  components {
+    class_name: "SentilMonitorComponent"
+    config {
+      name: "sentil_safety_monitor"
+      config_file_path: "modules/sentil/monitor/conf/sentil_monitor.pb.txt"
+      readers {
+        channel: "/apollo/perception/obstacles"
+        qos_profile {
+          depth: 10
+        }
+        pending_queue_size: 10
+      }
+      readers {
+        channel: "/apollo/localization/pose"
+      }
+      readers {
+        channel: "/apollo/canbus/chassis"
+      }
+    }
+  }
+}

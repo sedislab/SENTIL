@@ -1,0 +1,12 @@
+module_config {
+  module_library: "modules/sentil/monitor/libsentil_timed_monitor_component.so"
+
+  timer_components {
+    class_name: "SentilTimedMonitorComponent"
+    config {
+      name: "sentil_safety_monitor"
+      config_file_path: "modules/sentil/monitor/conf/sentil_monitor.pb.txt"
+      interval: 100
+    }
+  }
+}
