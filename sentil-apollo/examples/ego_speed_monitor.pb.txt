@@ -1,0 +1,15 @@
+formulas {
+  id: 1
+  expression: "always[0, 5.0] (ego_speed < 20.0)"
+}
+input_channels {
+  channel: "/apollo/canbus/chassis"
+  message_type: "apollo.canbus.Chassis"
+  fields {
+    variable: "ego_speed"
+    field_path: "speed_mps"
+  }
+}
+output_channel: "/apollo/sentil/status"
+algorithm: DETERMINISTIC
+semantics: DENSE
