@@ -1,0 +1,30 @@
+mode: SHIELD
+input_width: 3
+
+bounds {
+  lower: 0.0
+  lower: 0.0
+  lower: -100.0
+  upper: 100.0
+  upper: 100.0
+  upper: 100.0
+}
+
+nominal_channel: "/apollo/control/nominal"
+output_channel: "/apollo/control"
+
+control_outputs {
+  index: 0
+  field_path: "throttle"
+}
+control_outputs {
+  index: 1
+  field_path: "brake"
+}
+control_outputs {
+  index: 2
+  field_path: "steering_target"
+}
+
+control_period_ms: 10.0
+deadline_fraction: 0.8

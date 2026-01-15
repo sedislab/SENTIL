@@ -1,0 +1,12 @@
+module_config {
+  module_library: "modules/sentil/control/libsentil_control_component.so"
+
+  timer_components {
+    class_name: "SentilControlComponent"
+    config {
+      name: "sentil_control"
+      config_file_path: "modules/sentil/control/conf/sentil_control.pb.txt"
+      interval: 10
+    }
+  }
+}

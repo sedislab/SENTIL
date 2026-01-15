@@ -1,0 +1,8 @@
+<cyber>
+  <module>
+    <name>sentil_control</name>
+    <dag_conf>modules/sentil/control/dag/sentil_control.dag</dag_conf>
+    <process_name>sentil_control</process_name>
+    <exception_handler>respawn</exception_handler>
+  </module>
+</cyber>
