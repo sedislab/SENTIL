@@ -1,0 +1,26 @@
+syntax = "proto2";
+
+package apollo.sentil.test;
+
+message Point {
+  optional double x = 1;
+  optional double y = 2;
+  optional double z = 3;
+}
+
+message Pose {
+  optional Point position = 1;
+  optional Point velocity = 2;
+  optional double heading = 3;
+}
+
+message Obstacle {
+  optional Point position = 1;
+  optional Point velocity = 2;
+  optional int32 id = 3;
+}
+
+message Perception {
+  repeated Obstacle perception_obstacle = 1;
+  optional uint32 frame = 2;
+}
