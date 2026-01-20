@@ -42,6 +42,26 @@ void set_actuation(google::protobuf::Message* message,
   }
 }
 
+// Open-loop synthesis bounds the whole horizon-long input, so repeat the per-step limits
+// across the horizon. Throws when the bounds are not one entry per input per step.
+::sentil::Bounds tile_bounds(const Bounds& proto, std::size_t input_width, std::size_t horizon) {
+  if (proto.lower_size() != static_cast<int>(input_width) ||
+      proto.upper_size() != static_cast<int>(input_width)) {
+    throw std::invalid_argument("control bounds need input_width lower and upper entries per step");
+  }
+  std::vector<double> lower;
+  std::vector<double> upper;
+  lower.reserve(horizon * input_width);
+  upper.reserve(horizon * input_width);
+  for (std::size_t step = 0; step < horizon; ++step) {
+    for (std::size_t i = 0; i < input_width; ++i) {
+      lower.push_back(proto.lower(i));
+      upper.push_back(proto.upper(i));
+    }
+  }
+  return ::sentil::Bounds(lower, upper);
+}
+
 }  // namespace
 
 bool SentilControlComponent::Init() {
@@ -52,9 +72,9 @@ bool SentilControlComponent::Init() {
   try {
     ResolveOutputs();
     const std::size_t input_width = config_.input_width();
-    ::sentil::Bounds bounds = config_.has_bounds() ? bounds_from_proto(config_.bounds())
-                                                   : ::sentil::Bounds::unbounded(input_width);
     if (config_.mode() == SHIELD) {
+      ::sentil::Bounds bounds = config_.has_bounds() ? bounds_from_proto(config_.bounds())
+                                                     : ::sentil::Bounds::unbounded(input_width);
       shield_ = std::make_unique<::sentil::SafetyFilter>(std::move(bounds));
       nominal_reader_ =
           node_->CreateReader<apollo::control::ControlCommand>(config_.nominal_channel());
@@ -63,6 +83,10 @@ bool SentilControlComponent::Init() {
       ::sentil::Formula spec = formula_from_spec(config_.spec());
       const auto budget_ns = static_cast<std::uint64_t>(
           config_.deadline_fraction() * config_.control_period_ms() * 1e6);
+      const std::size_t horizon = config_.model().horizon();
+      ::sentil::Bounds bounds = config_.has_bounds()
+                                    ? tile_bounds(config_.bounds(), input_width, horizon)
+                                    : ::sentil::Bounds::unbounded(horizon * input_width);
       controller_ = std::make_unique<::sentil::Controller>(std::move(model), std::move(spec),
                                                            input_width, budget_ns, &bounds);
       for (const std::string& variable : config_.model().variables()) {
@@ -123,8 +147,8 @@ bool SentilControlComponent::BuildState(std::vector<double>* state) {
   return true;
 }
 
-void SentilControlComponent::Emit(const std::vector<double>& input) {
-  apollo::control::ControlCommand command;
+void SentilControlComponent::ApplyInputs(const std::vector<double>& input,
+                                         apollo::control::ControlCommand* command) {
   for (const auto& output : outputs_) {
     if (output.first >= 0 && static_cast<std::size_t>(output.first) < input.size()) {
       set_actuation(command, output.second, input[output.first]);
@@ -132,8 +156,8 @@ void SentilControlComponent::Emit(const std::vector<double>& input) {
   }
 }
 
-void SentilControlComponent::ApplyInputs(const std::vector<double>& input,
-                                         apollo::control::ControlCommand* command) {
+void SentilControlComponent::Emit(const std::vector<double>& input) {
+  apollo::control::ControlCommand command;
   ApplyInputs(input, &command);
   control_writer_->Write(command);
 }
