@@ -114,6 +114,11 @@ bool SentilControlComponent::Init() {
 void SentilControlComponent::ResolveOutputs() {
   const google::protobuf::Descriptor* command = apollo::control::ControlCommand::descriptor();
   for (const ControlOutput& output : config_.control_outputs()) {
+    if (output.index() >= config_.input_width()) {
+      throw std::invalid_argument("control_outputs index " + std::to_string(output.index()) +
+                                  " is out of range for input_width " +
+                                  std::to_string(config_.input_width()));
+    }
     outputs_.emplace_back(static_cast<int>(output.index()),
                           resolve_actuation_field(command, output.field_path()));
   }
@@ -169,9 +174,9 @@ bool SentilControlComponent::Proc() {
     if (nominal == nullptr) {
       return true;
     }
-    std::vector<double> command(outputs_.size());
-    for (std::size_t i = 0; i < outputs_.size(); ++i) {
-      command[outputs_[i].first] = get_actuation(*nominal, outputs_[i].second);
+    std::vector<double> command(config_.input_width(), 0.0);
+    for (const auto& output : outputs_) {
+      command[output.first] = get_actuation(*nominal, output.second);
     }
     try {
       const std::vector<double> safe = shield_->filter(command);
