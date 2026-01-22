@@ -23,6 +23,9 @@ bool SentilMonitorComponent::Proc(
     const std::shared_ptr<apollo::perception::PerceptionObstacles>& perception,
     const std::shared_ptr<apollo::localization::LocalizationEstimate>& localization,
     const std::shared_ptr<apollo::canbus::Chassis>& chassis) {
+  if (perception == nullptr || localization == nullptr || chassis == nullptr) {
+    return true;
+  }
   SentilStatus status;
   try {
     if (engine_.Evaluate(*perception, *localization, *chassis, &status)) {
