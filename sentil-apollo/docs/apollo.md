@@ -39,7 +39,7 @@ input_channels {
 output_channel: "/apollo/sentil/status"
 ```
 
-Each input channel carries its message type, and each field is either a `field_path` or a `builtin`. A field path resolves a nested, optionally indexed path (`pose.position.x`, `perception_obstacle[0].position.x`) against the message descriptor once at startup, so a wrong path fails when the component initializes rather than reading a silent zero on the road. A builtin computes a quantity a raw path cannot, since the nearest obstacle is not the obstacle at index 0: `NEAREST_OBSTACLE_DISTANCE`, `MIN_TTC`, and `FRONT_GAP` reduce the obstacle list.
+Each input channel carries its message type, and each field is either a `field_path` or a `builtin`. A field path resolves a nested, optionally indexed path (`pose.position.x`, `perception_obstacle[0].position.x`) against the message descriptor once at startup, so a wrong path fails when the component initializes rather than reading a silent zero on the road. A builtin computes a quantity a raw path cannot, since the nearest obstacle is not the obstacle at index 0: `NEAREST_OBSTACLE_DISTANCE`, `MIN_TTC`, and `FRONT_GAP` reduce the obstacle list, reading each obstacle's position and velocity in the ego frame, so feed them perception that an upstream adapter has transformed out of the world frame.
 
 ## The component models
 

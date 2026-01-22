@@ -47,7 +47,7 @@ A `builtin` computes a quantity a raw path cannot express, because the nearest o
 | `MIN_TTC` | the smallest time to collision over obstacles closing ahead |
 | `FRONT_GAP` | the gap to the nearest obstacle within the ego lane corridor |
 
-The builtins read the standard perception obstacle list and treat each obstacle's position and velocity as ego relative.
+The builtins read the standard perception obstacle list and treat each obstacle's position and velocity as ego relative, so an upstream adapter must transform Apollo's world-frame perception into the ego frame before the monitor reads it.
 
 ## Choosing the component model
 
