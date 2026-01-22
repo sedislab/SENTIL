@@ -53,6 +53,8 @@ The builtins read the standard perception obstacle list and treat each obstacle'
 
 The monitor ships in two forms. The default, in `dag/sentil_monitor.dag`, is a fused component triggered by perception with localization and chassis as co-channels, so each verdict reflects a consistent message set. The timer form, in `dag/sentil_timed_monitor.dag`, reads the same channels through pull readers and emits a verdict at a fixed rate; use it when a steady cadence matters more than reacting to each perception frame.
 
+The online monitor evaluates on the samples as they arrive and reads whether a formula is probabilistic from its `P` prefix, so the `algorithm`, `semantics`, `interpolation`, and `backend` fields configure the offline `sentil_record_analyzer`, not the online monitor.
+
 ## Synthesis and shielding
 
 The control component, `control/`, turns a specification into a command. Set `mode` in `control/conf/sentil_control.pb.txt`:
