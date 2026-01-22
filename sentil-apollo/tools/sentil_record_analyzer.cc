@@ -2,6 +2,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@ namespace sentil {
   apollo::cyber::record::RecordMessage message;
   auto* factory = apollo::cyber::message::ProtobufFactory::Instance();
 
+  const std::set<std::string> wanted(variables.begin(), variables.end());
   std::map<std::string, double> state;
   std::vector<double> times;
   std::map<std::string, std::vector<double>> series;
@@ -57,8 +59,8 @@ namespace sentil {
     for (std::size_t i = 0; i < names.size(); ++i) {
       state[names[i]] = values[i];
     }
-    if (state.size() < variables.size()) {
-      continue;  // hold until every variable has been seen at least once
+    if (state.size() < wanted.size()) {
+      continue;
     }
     const double time = static_cast<double>(message.time) / 1e9;
     if (time <= last_time) {
@@ -86,7 +88,8 @@ void Analyze(const SentilConfig& config, const ::sentil::Trace& trace) {
     std::cout << "formula " << formula.id() << ": " << formula.expression() << "\n";
     switch (config.algorithm()) {
       case DETERMINISTIC: {
-        const double robustness = phi.robustness(trace);
+        const double robustness =
+            config.semantics() == DENSE ? phi.robustness_dense(trace) : phi.robustness(trace);
         std::cout << "  robustness " << robustness << " ("
                   << (robustness >= 0.0 ? "satisfied" : "violated") << ")\n";
         break;

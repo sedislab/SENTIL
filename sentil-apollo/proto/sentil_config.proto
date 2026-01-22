@@ -108,8 +108,8 @@ message Formula {
 message SprtConfig {
   optional double p0 = 1 [default = 0.90];
   optional double p1 = 2 [default = 0.95];
-  optional double alpha = 3 [default = 0.01];
-  optional double beta = 4 [default = 0.01];
+  optional double alpha = 3 [default = 0.05];
+  optional double beta = 4 [default = 0.05];
 }
 
 message SentilConfig {
