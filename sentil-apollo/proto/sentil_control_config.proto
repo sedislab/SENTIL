@@ -40,11 +40,6 @@ message SmoothConfig {
   optional double temperature = 1 [default = 10.0];
 }
 
-message ChanceConfig {
-  optional double probability = 1 [default = 0.95];
-  optional bool conservative = 2 [default = false];
-}
-
 message SentilControlConfig {
   optional ControlMode mode = 1 [default = SHIELD];
   optional Spec spec = 2;
@@ -62,5 +57,4 @@ message SentilControlConfig {
   repeated ControlOutput control_outputs = 11;
 
   optional SmoothConfig smooth = 12;
-  optional ChanceConfig chance = 13;
 }

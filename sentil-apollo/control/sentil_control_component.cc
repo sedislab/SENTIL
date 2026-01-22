@@ -87,8 +87,14 @@ bool SentilControlComponent::Init() {
       ::sentil::Bounds bounds = config_.has_bounds()
                                     ? tile_bounds(config_.bounds(), input_width, horizon)
                                     : ::sentil::Bounds::unbounded(horizon * input_width);
-      controller_ = std::make_unique<::sentil::Controller>(std::move(model), std::move(spec),
-                                                           input_width, budget_ns, &bounds);
+      ::sentil::SmoothConfig smooth;
+      const ::sentil::SmoothConfig* smooth_ptr = nullptr;
+      if (config_.has_smooth()) {
+        smooth.temperature = config_.smooth().temperature();
+        smooth_ptr = &smooth;
+      }
+      controller_ = std::make_unique<::sentil::Controller>(
+          std::move(model), std::move(spec), input_width, budget_ns, &bounds, smooth_ptr);
       for (const std::string& variable : config_.model().variables()) {
         variable_order_.push_back(variable);
       }
