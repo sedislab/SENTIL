@@ -48,7 +48,8 @@ void reference_control_surface() {
   sentil::SystemModel model = sentil::SystemModel::linear(a, b, x0, variables, 0.1, 10);
   sentil::Formula spec = sentil::Formula::parse("always (x > 0)");
   sentil::Bounds bounds({-1.0}, {1.0});
-  sentil::Controller controller(std::move(model), std::move(spec), 1, 1000000, &bounds);
+  sentil::SmoothConfig smooth;
+  sentil::Controller controller(std::move(model), std::move(spec), 1, 1000000, &bounds, &smooth);
   std::vector<double> command = controller.control({0.0});
 
   sentil::SafetyFilter filter(sentil::Bounds({-1.0}, {1.0}));
