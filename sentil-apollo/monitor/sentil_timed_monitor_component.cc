@@ -8,6 +8,16 @@ constexpr char kPerceptionChannel[] = "/apollo/perception/obstacles";
 constexpr char kLocalizationChannel[] = "/apollo/localization/pose";
 constexpr char kChassisChannel[] = "/apollo/canbus/chassis";
 
+std::string channel_for(const SentilConfig& config, const std::string& message_type,
+                        const std::string& fallback) {
+  for (const ChannelMapping& channel : config.input_channels()) {
+    if (channel.message_type() == message_type) {
+      return channel.channel();
+    }
+  }
+  return fallback;
+}
+
 }  // namespace
 
 bool SentilTimedMonitorComponent::Init() {
@@ -21,11 +31,12 @@ bool SentilTimedMonitorComponent::Init() {
     AERROR << "sentil monitor: configuration failed: " << error.what();
     return false;
   }
-  perception_reader_ =
-      node_->CreateReader<apollo::perception::PerceptionObstacles>(kPerceptionChannel);
-  localization_reader_ =
-      node_->CreateReader<apollo::localization::LocalizationEstimate>(kLocalizationChannel);
-  chassis_reader_ = node_->CreateReader<apollo::canbus::Chassis>(kChassisChannel);
+  perception_reader_ = node_->CreateReader<apollo::perception::PerceptionObstacles>(
+      channel_for(config_, "apollo.perception.PerceptionObstacles", kPerceptionChannel));
+  localization_reader_ = node_->CreateReader<apollo::localization::LocalizationEstimate>(
+      channel_for(config_, "apollo.localization.LocalizationEstimate", kLocalizationChannel));
+  chassis_reader_ = node_->CreateReader<apollo::canbus::Chassis>(
+      channel_for(config_, "apollo.canbus.Chassis", kChassisChannel));
   status_writer_ = node_->CreateWriter<SentilStatus>(config_.output_channel());
   AINFO << "sentil monitor: watching " << config_.formulas_size() << " formula(s) on a timer";
   return true;
