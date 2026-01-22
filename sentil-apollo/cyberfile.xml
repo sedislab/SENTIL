@@ -20,5 +20,4 @@
 
   <depend repo_name="cyber" type="binary">cyber</depend>
   <depend repo_name="common-msgs" type="binary">common-msgs</depend>
-  <depend type="src">sentil-cpp</depend>
 </package>
