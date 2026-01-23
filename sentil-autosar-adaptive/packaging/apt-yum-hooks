@@ -1,0 +1,3 @@
+# After install, register the manifests with the platform's Execution Management and the
+# vsomeip configs with the routing manager. On a vendor AP this is the integrator's
+# deployment step; on the stub it is the VSOMEIP_CONFIGURATION environment variable.
