@@ -1,6 +1,8 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <string>
 #include <thread>
 
 #include "ara/com/service.h"
@@ -27,8 +29,13 @@ int main() {
   ara::log::Logger log = ara::log::CreateLogger("sentil_control");
   ara::exec::ExecutionClient execution;
 
+  const char* mode = std::getenv("SENTIL_CONTROL_MODE");
+  const bool synthesize = mode != nullptr && std::string(mode) == "synthesize";
   sentil_ap::ControlApp app =
-      sentil_ap::ControlApp::shield({0.0, 0.0, -100.0}, {100.0, 100.0, 100.0});
+      synthesize ? sentil_ap::ControlApp::synthesize(
+                       {{1.0, 0.1}, {0.0, 1.0}}, {{0.005}, {0.1}}, {0.0, 0.0}, {"pos", "vel"}, 0.1,
+                       20, "always[0, 20] (pos > 1.0 and pos < 9.0)", {-3.0}, {3.0}, 8000000)
+                 : sentil_ap::ControlApp::shield({0.0, 0.0, -100.0}, {100.0, 100.0, 100.0});
 
   ara::com::Provider control("sentil_control", kControlService);
   control.offer_event(kControlCommandEvent, kGroup);
