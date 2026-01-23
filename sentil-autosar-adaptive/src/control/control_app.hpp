@@ -11,10 +11,6 @@
 
 namespace sentil_ap {
 
-/// Owns the SENTIL controller and safety filter and answers a ComputeControl request. Two
-/// modes: SHIELD projects a nominal command into the bounds and barriers (least
-/// restrictive), and SYNTHESIZE plans a command from the spec under a deadline. The
-/// transport is separate: the app main offers this over ara::com.
 class ControlApp {
  public:
   struct Outcome {
@@ -24,7 +20,6 @@ class ControlApp {
 
   static ControlApp shield(const std::vector<double>& lower, const std::vector<double>& upper);
 
-  /// A receding-horizon controller over a linear model and a spec, bounded per step.
   static ControlApp synthesize(const std::vector<std::vector<double>>& a,
                                const std::vector<std::vector<double>>& b,
                                const std::vector<double>& x0,
@@ -33,16 +28,34 @@ class ControlApp {
                                const std::vector<double>& lower,
                                const std::vector<double>& upper, std::uint64_t budget_ns);
 
-  /// Compute a command from the current state and the nominal command. SHIELD reads
-  /// nominal; SYNTHESIZE reads state. Throws a SentilError on an engine failure, which the
-  /// app main maps to an infeasible outcome and a DEM event.
   Outcome compute(const std::vector<double>& state, const std::vector<double>& nominal);
+
+  ::sentil::SynthesisResult plan() const;
+
+  ::sentil::Witness falsify() const;
+
+  ::sentil::ChanceReport validate_chance(double probability, double confidence,
+                                         double process_std) const;
 
  private:
   ControlApp() = default;
+  ::sentil::SystemModel build_model() const;
+  ::sentil::Bounds sequence_bounds() const;
 
   std::unique_ptr<::sentil::SafetyFilter> shield_;
   std::unique_ptr<::sentil::Controller> controller_;
+
+  bool has_problem_ = false;
+  std::vector<std::vector<double>> a_;
+  std::vector<std::vector<double>> b_;
+  std::vector<double> x0_;
+  std::vector<double> lower_;
+  std::vector<double> upper_;
+  std::vector<std::string> variables_;
+  double dt_ = 0.1;
+  std::size_t horizon_ = 0;
+  std::size_t input_width_ = 1;
+  std::string spec_;
 };
 
 }  // namespace sentil_ap

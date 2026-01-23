@@ -1,6 +1,7 @@
 #include "control_app.hpp"
 
-#include <cmath>
+#include <random>
+#include <stdexcept>
 
 namespace sentil_ap {
 
@@ -18,21 +19,35 @@ ControlApp ControlApp::synthesize(const std::vector<std::vector<double>>& a,
                                   const std::vector<double>& lower,
                                   const std::vector<double>& upper, std::uint64_t budget_ns) {
   ControlApp app;
-  ::sentil::SystemModel model = ::sentil::SystemModel::linear(a, b, x0, variables, dt, horizon);
-  ::sentil::Formula formula = ::sentil::Formula::parse(spec);
-  const std::size_t input_width = variables.empty() ? 1 : b.front().size();
-  // Open-loop and receding-horizon planning bound the whole input sequence, so tile the
-  // per-step limits across the horizon.
-  std::vector<double> seq_lower;
-  std::vector<double> seq_upper;
-  for (std::size_t step = 0; step < horizon; ++step) {
-    seq_lower.insert(seq_lower.end(), lower.begin(), lower.end());
-    seq_upper.insert(seq_upper.end(), upper.begin(), upper.end());
-  }
-  ::sentil::Bounds bounds(seq_lower, seq_upper);
-  app.controller_ = std::make_unique<::sentil::Controller>(std::move(model), std::move(formula),
-                                                          input_width, budget_ns, &bounds);
+  app.has_problem_ = true;
+  app.a_ = a;
+  app.b_ = b;
+  app.x0_ = x0;
+  app.variables_ = variables;
+  app.dt_ = dt;
+  app.horizon_ = horizon;
+  app.spec_ = spec;
+  app.lower_ = lower;
+  app.upper_ = upper;
+  app.input_width_ = b.empty() ? 1 : b.front().size();
+  ::sentil::Bounds bounds = app.sequence_bounds();
+  app.controller_ = std::make_unique<::sentil::Controller>(
+      app.build_model(), ::sentil::Formula::parse(spec), app.input_width_, budget_ns, &bounds);
   return app;
+}
+
+::sentil::SystemModel ControlApp::build_model() const {
+  return ::sentil::SystemModel::linear(a_, b_, x0_, variables_, dt_, horizon_);
+}
+
+::sentil::Bounds ControlApp::sequence_bounds() const {
+  std::vector<double> lower;
+  std::vector<double> upper;
+  for (std::size_t step = 0; step < horizon_; ++step) {
+    lower.insert(lower.end(), lower_.begin(), lower_.end());
+    upper.insert(upper.end(), upper_.begin(), upper_.end());
+  }
+  return ::sentil::Bounds(lower, upper);
 }
 
 ControlApp::Outcome ControlApp::compute(const std::vector<double>& state,
@@ -52,6 +67,51 @@ ControlApp::Outcome ControlApp::compute(const std::vector<double>& state,
     outcome.command = controller_->control(state);
   }
   return outcome;
+}
+
+::sentil::SynthesisResult ControlApp::plan() const {
+  if (!has_problem_) {
+    throw std::runtime_error("plan needs a synthesis problem, not a shield");
+  }
+  ::sentil::SystemModel model = build_model();
+  ::sentil::Formula spec = ::sentil::Formula::parse(spec_);
+  ::sentil::Bounds bounds = sequence_bounds();
+  return ::sentil::synthesis::synthesize(model, spec, &bounds);
+}
+
+::sentil::Witness ControlApp::falsify() const {
+  if (!has_problem_) {
+    throw std::runtime_error("falsify needs a synthesis problem, not a shield");
+  }
+  ::sentil::SystemModel model = build_model();
+  ::sentil::Bounds bounds = sequence_bounds();
+  return ::sentil::Formula::parse(spec_).falsify(model, bounds);
+}
+
+::sentil::ChanceReport ControlApp::validate_chance(double probability, double confidence,
+                                                   double process_std) const {
+  if (!has_problem_) {
+    throw std::runtime_error("chance check needs a synthesis problem, not a shield");
+  }
+  const std::vector<std::vector<double>> a = a_;
+  const std::vector<double> x0 = x0_;
+  const std::size_t n = variables_.size();
+  ::sentil::StochasticSystem system = ::sentil::StochasticSystem::custom(
+      variables_, dt_, horizon_, [x0](std::uint64_t) { return x0; },
+      [a, n, process_std](const std::vector<double>& prev, double, std::uint64_t seed) {
+        std::mt19937_64 rng(seed);
+        std::normal_distribution<double> noise(0.0, process_std);
+        std::vector<double> next(n, 0.0);
+        for (std::size_t i = 0; i < n; ++i) {
+          for (std::size_t j = 0; j < n && j < prev.size(); ++j) {
+            next[i] += a[i][j] * prev[j];
+          }
+          next[i] += noise(rng);
+        }
+        return next;
+      });
+  ::sentil::ChanceConstraint constraint(::sentil::Formula::parse(spec_), probability, confidence);
+  return constraint.validate(system);
 }
 
 }  // namespace sentil_ap
