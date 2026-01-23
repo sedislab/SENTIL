@@ -1,0 +1,6 @@
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+# set(CMAKE_CXX_COMPILER <vendor c++ compiler>)
+# set(CMAKE_SYSROOT <vendor sysroot>)
+# set(SENTIL_AP_VENDOR <vector|eb|apex> CACHE STRING "" FORCE)
+# set(ARA_COM_ROOT <vendor ara::com install>)
