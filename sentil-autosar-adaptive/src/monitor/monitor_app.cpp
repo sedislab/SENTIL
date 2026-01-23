@@ -26,6 +26,20 @@ void MonitorApp::add_probabilistic(const std::string& id, const std::string& for
   samples_[id] = samples;
 }
 
+bool MonitorApp::set_specification(const std::string& formula) {
+  try {
+    ::sentil::Formula::parse(formula);
+  } catch (const std::exception&) {
+    return false;
+  }
+  monitor_ = std::make_unique<::sentil::MultiMonitor>();
+  ids_.clear();
+  confidence_.clear();
+  samples_.clear();
+  add("spec", formula);
+  return true;
+}
+
 std::map<std::string, Verdict> MonitorApp::on_frame(const SignalFrame& frame) {
   std::map<std::string, double> values;
   for (std::size_t i = 0; i < frame.names.size() && i < frame.values.size(); ++i) {

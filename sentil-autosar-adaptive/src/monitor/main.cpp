@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <map>
 #include <thread>
 
@@ -36,9 +37,16 @@ int main() {
   ara::com::Provider verdict("sentil_monitor", kVerdictService);
   verdict.offer_event(kVerdictEvent, kGroup);
   verdict.offer_event(kViolationEvent, kGroup);
-  verdict.on_method(kSetSpecificationMethod, [&log](const ara::com::Bytes&) {
-    log.LogInfo() << "SetSpecification received";
-    return ara::com::Bytes{1};  // accepted
+  verdict.on_method(kSetSpecificationMethod, [&app, &log](const ara::com::Bytes& request) {
+    bool accepted = false;
+    try {
+      sentil_ap::detail::Reader reader(request);
+      accepted = app.set_specification(reader.get_string());
+    } catch (const std::exception& error) {
+      log.LogError() << "SetSpecification failed: " << error.what();
+    }
+    log.LogInfo() << "SetSpecification " << (accepted ? "accepted" : "rejected");
+    return ara::com::Bytes{static_cast<std::uint8_t>(accepted ? 1 : 0)};
   });
   verdict.offer();
 
