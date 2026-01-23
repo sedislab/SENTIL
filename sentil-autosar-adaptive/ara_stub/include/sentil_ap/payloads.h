@@ -2,8 +2,9 @@
 #define SENTIL_AP_PAYLOADS_H
 
 // The SENTIL service payloads and their byte encoding, shared by the apps, the examples,
-// and the tests. The encoding is a plain little-endian packing used as the SOME/IP event
-// and method payload, so any ara::com transport carries the same bytes.
+// and the tests, used as the SOME/IP event and method payload. Lengths are little-endian;
+// doubles are stored in the host byte order, so the two ends agree on a same-endian bus
+// (the common case) and a cross-endian link would byte-swap the doubles.
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>

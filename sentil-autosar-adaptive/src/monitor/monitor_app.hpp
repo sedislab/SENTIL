@@ -24,8 +24,6 @@ class MonitorApp {
                          const std::string& variable, double std_dev, double confidence,
                          std::uint64_t samples);
 
-  /// Fold one frame and return the verdict for each formula, or an empty map until every
-  /// monitored variable has been seen at least once.
   std::map<std::string, Verdict> on_frame(const SignalFrame& frame);
 
   const std::vector<std::string>& ids() const { return ids_; }
