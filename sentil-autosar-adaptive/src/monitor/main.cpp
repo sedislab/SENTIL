@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <map>
 #include <thread>
 
 #include "ara/com/service.h"
@@ -30,7 +31,7 @@ int main() {
   ara::exec::ExecutionClient execution;
 
   sentil_ap::MonitorApp app;
-  app.add("speed_limit", "always[0, 10] (speed < 30.0)");
+  app.add("follow_distance", "front_gap > 5.0");
 
   ara::com::Provider verdict("sentil_monitor", kVerdictService);
   verdict.offer_event(kVerdictEvent, kGroup);
@@ -41,7 +42,7 @@ int main() {
   });
   verdict.offer();
 
-  bool last_satisfied = true;
+  std::map<std::string, bool> last_satisfied;
   ara::com::Consumer signals("sentil_monitor", kSignalService);
   signals.subscribe(kSignalFrameEvent, kGroup, [&](const ara::com::Bytes& payload) {
     try {
@@ -49,10 +50,15 @@ int main() {
       for (const auto& entry : app.on_frame(frame)) {
         const sentil_ap::Verdict& result = entry.second;
         verdict.notify(kVerdictEvent, sentil_ap::serialize(result));
-        if (last_satisfied && !result.satisfied) {
+        if (!result.is_concrete) {
+          continue;
+        }
+        const auto previous = last_satisfied.find(entry.first);
+        const bool was_satisfied = previous == last_satisfied.end() || previous->second;
+        if (was_satisfied && !result.satisfied) {
           verdict.notify(kViolationEvent, sentil_ap::serialize(result));
         }
-        last_satisfied = result.satisfied;
+        last_satisfied[entry.first] = result.satisfied;
       }
     } catch (const std::exception& error) {
       log.LogError() << "frame failed: " << error.what();
