@@ -1,0 +1,19 @@
+{
+  "application": "sentil_control",
+  "services": [
+    {
+      "interface": "ControlInterface", "role": "provided",
+      "service": "0x6002", "instance": "0x0001",
+      "events": [
+        { "name": "ControlCommand", "event": "0x8003", "eventgroup": "0x0001" },
+        { "name": "ControllerStatus", "event": "0x8004", "eventgroup": "0x0001" }
+      ],
+      "methods": [ { "name": "ComputeControl", "method": "0x0001" } ]
+    },
+    {
+      "interface": "SignalInterface", "role": "required",
+      "service": "0x6000", "instance": "0x0001",
+      "events": [ { "name": "SignalFrame", "event": "0x8000", "eventgroup": "0x0001" } ]
+    }
+  ]
+}

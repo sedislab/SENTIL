@@ -1,0 +1,15 @@
+{
+  "unicast": "127.0.0.1",
+  "logging": { "level": "warning", "console": "true" },
+  "applications": [ { "name": "sentil_monitor", "id": "0x1001" } ],
+  "services": [
+    { "service": "0x6001", "instance": "0x0001", "unreliable": "30501" }
+  ],
+  "routing": "sentil_monitor",
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp"
+  }
+}

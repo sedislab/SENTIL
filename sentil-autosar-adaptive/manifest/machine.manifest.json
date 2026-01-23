@@ -1,0 +1,12 @@
+{
+  "machine": "sentil-ecu",
+  "unicast": "127.0.0.1",
+  "service_discovery": {
+    "multicast": "224.244.224.245",
+    "port": 30490
+  },
+  "function_groups": [
+    { "name": "MachineState", "states": ["Startup", "Running", "Shutdown"] },
+    { "name": "Driving", "states": ["Off", "On"] }
+  ]
+}

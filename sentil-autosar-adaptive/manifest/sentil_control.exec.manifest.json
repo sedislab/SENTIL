@@ -1,0 +1,15 @@
+{
+  "application": "sentil_control",
+  "executable": "bin/sentil_control",
+  "startup": [
+    {
+      "function_group_states": [
+        { "function_group": "MachineState", "state": "Running" },
+        { "function_group": "Driving", "state": "On" }
+      ],
+      "scheduling_policy": "FIFO",
+      "priority": 70,
+      "reporting_behavior": "REPORTS_EXECUTION_STATE"
+    }
+  ]
+}
