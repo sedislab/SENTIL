@@ -40,6 +40,10 @@ The monitor is a Platform Health Management Supervised Entity: it reports a chec
 
 SENTIL is a verdict source and a synthesis engine, not the safety case. The core is a QM element; a downstream safety monitor decides what to do with a verdict, and the integrator owns the ISO 26262 argument. The Lean-proved monotonic deque is offered as formal-methods evidence for the streaming monitor, not as a safety certification.
 
+## Synthesis surface
+
+The control application carries the whole synthesis subsystem. Online, `ComputeControl` runs the receding-horizon controller or the safety-filter shield within a deadline. Offline, the same application plans an open-loop input sequence over the horizon, searches for a counterexample input that violates the spec, and runs a chance-constraint check against the model under Gaussian process noise. These are the design-time companions to the online controller, sharing one engine and one model, so a plan validated offline is the policy the controller runs online.
+
 ## Examples
 
 `examples/adas_fca_monitor` is a self-contained forward-collision demo: a perception publisher, the monitor, and a planner that consumes the verdict, all over the stub on one box, with its own vsomeip config and a one-command `run.sh`. The lead vehicle closes in, the follow-distance verdict flips, and the planner logs the violation. The control side follows the same shape: a client calls `sentil_control`'s `ComputeControl` over ara::com to shield a nominal command, then actuates the result.
