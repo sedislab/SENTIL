@@ -60,6 +60,13 @@ inline void put_string(Bytes& out, const std::string& value) {
   out.insert(out.end(), value.begin(), value.end());
 }
 
+inline void put_doubles(Bytes& out, const std::vector<double>& values) {
+  put_u32(out, static_cast<std::uint32_t>(values.size()));
+  for (double value : values) {
+    put_double(out, value);
+  }
+}
+
 /// A bounds-checked cursor over a byte buffer; every read throws on an overrun rather
 /// than reading past the end, so a truncated payload never corrupts memory.
 class Reader {
@@ -95,6 +102,16 @@ class Reader {
   bool get_bool() {
     need(1);
     return bytes_[pos_++] != 0;
+  }
+
+  std::vector<double> get_doubles() {
+    const std::uint32_t count = get_u32();
+    std::vector<double> out;
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      out.push_back(get_double());
+    }
+    return out;
   }
 
  private:
@@ -166,6 +183,48 @@ inline Verdict parse_verdict(const Bytes& bytes) {
   verdict.ci_lower = reader.get_double();
   verdict.ci_upper = reader.get_double();
   return verdict;
+}
+
+/// A ComputeControl request: the current state and the nominal command to shield.
+struct ControlRequest {
+  std::vector<double> state;
+  std::vector<double> nominal;
+};
+
+/// A ComputeControl response: the command and whether a feasible one was found.
+struct ControlResponse {
+  std::vector<double> command;
+  bool feasible = false;
+};
+
+inline Bytes serialize(const ControlRequest& request) {
+  Bytes out;
+  detail::put_doubles(out, request.state);
+  detail::put_doubles(out, request.nominal);
+  return out;
+}
+
+inline ControlRequest parse_control_request(const Bytes& bytes) {
+  detail::Reader reader(bytes);
+  ControlRequest request;
+  request.state = reader.get_doubles();
+  request.nominal = reader.get_doubles();
+  return request;
+}
+
+inline Bytes serialize(const ControlResponse& response) {
+  Bytes out;
+  detail::put_doubles(out, response.command);
+  out.push_back(response.feasible ? 1 : 0);
+  return out;
+}
+
+inline ControlResponse parse_control_response(const Bytes& bytes) {
+  detail::Reader reader(bytes);
+  ControlResponse response;
+  response.command = reader.get_doubles();
+  response.feasible = reader.get_bool();
+  return response;
 }
 
 }  // namespace sentil_ap
