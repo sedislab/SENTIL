@@ -65,6 +65,8 @@ The control component, `control/`, turns a specification into a command. Set `mo
 
 The control component runs on a timer at `control_period_ms` and emits on its deadline even if an input goes quiet; its launch file sets `exception_handler: respawn`, so a failure degrades rather than dies. Pair it with the monitor running the same spec and you have a synthesize, monitor, and re-plan loop in one dag.
 
+For the design-time work the online controller cannot afford per tick, `tools/sentil_synthesizer` reads the same control config and runs the offline side of the subsystem. `--op=plan` synthesizes the open-loop input sequence that satisfies the spec over the horizon, `--op=witness` searches for a counterexample input that violates it, and `--op=chance` estimates whether the spec holds with at least a target probability under Gaussian process noise. It needs no Cyber RT runtime, only the config bridge and the engine, so it runs on any host.
+
 ## Building and installing
 
 The module links the SENTIL core through a Bazel external repository `@sentil_cpp` that wraps a prebuilt `libsentil.so` and the headers. Build SENTIL once (`cargo build --release -p sentil-ffi` and install the C++ headers), then declare the repository in your Apollo workspace pointing at the install tree, with `bzl/sentil_cpp.BUILD` as its build file. With that in place:
