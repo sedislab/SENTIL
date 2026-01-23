@@ -45,6 +45,15 @@ install(TARGETS sentil_monitor sentil_control RUNTIME DESTINATION bin)
 install(FILES "${SENTIL_ROOT}/lib/libsentil.so" DESTINATION lib)
 install(DIRECTORY manifest DESTINATION .)
 
+if(SENTIL_AP_VENDOR STREQUAL "stub")
+  add_executable(perception_publisher examples/adas_fca_monitor/perception_publisher.cpp)
+  target_link_libraries(perception_publisher PRIVATE ara_com)
+  target_include_directories(perception_publisher PRIVATE include)
+  add_executable(planner_subscriber examples/adas_fca_monitor/planner_subscriber.cpp)
+  target_link_libraries(planner_subscriber PRIVATE ara_com)
+  target_include_directories(planner_subscriber PRIVATE include)
+endif()
+
 enable_testing()
 
 add_executable(parity_test test/parity_test.cpp)

@@ -42,7 +42,7 @@ SENTIL is a verdict source and a synthesis engine, not the safety case. The core
 
 ## Examples
 
-`examples/adas_fca_monitor` is a self-contained forward-collision demo: a perception publisher, the monitor, and a planner that consumes the verdict, all over the stub on one box. `examples/lane_keep_cbf_control` shields an unsafe steering command. `examples/monitor_plus_control` wires the synthesize, monitor, and re-plan loop. Each carries its own manifests and a one-command `run.sh`.
+`examples/adas_fca_monitor` is a self-contained forward-collision demo: a perception publisher, the monitor, and a planner that consumes the verdict, all over the stub on one box, with its own vsomeip config and a one-command `run.sh`. The lead vehicle closes in, the follow-distance verdict flips, and the planner logs the violation. The control side follows the same shape: a client calls `sentil_control`'s `ComputeControl` over ara::com to shield a nominal command, then actuates the result.
 
 ## Credits and license
 
