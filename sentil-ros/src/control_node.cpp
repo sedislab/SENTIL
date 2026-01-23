@@ -1,24 +1,10 @@
-// The SENTIL control node is a managed (lifecycle) component that synthesizes control
-// from a PrSTL specification and actuates it on ROS 2 topics. It exposes the whole
-// synthesis subsystem:
-//
-//   receding_horizon  an online controller that, each step, plans over a short horizon
-//                     and emits the first input within a hard deadline
-//   open_loop         offline trajectory synthesis: an input sequence that satisfies
-//                     the spec, published as a trajectory and stepped out in real time
-//   safety_filter     a control-barrier-function shield that takes a nominal command
-//                     and returns the closest input that respects the bounds and barriers
-//
-// The system model, spec, input bounds, and mode come from configuration. The current
-// state arrives on a std_msgs/Float64MultiArray topic; the control command goes out as
-// a sentil_ros/Control message and a plain Float64MultiArray.
-
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -59,6 +45,9 @@ public:
     declare_parameter<double>("budget_ms", 20.0);
     declare_parameter<std::vector<double>>("bounds.lower", {});
     declare_parameter<std::vector<double>>("bounds.upper", {});
+    declare_parameter<double>("chance.probability", 0.95);
+    declare_parameter<double>("chance.confidence", 0.95);
+    declare_parameter<double>("chance.process_std", 0.0);
     declare_parameter<std::string>("state_topic", "~/state");
     declare_parameter<std::string>("nominal_topic", "~/nominal");
     declare_parameter<std::string>("control_topic", "~/command");
@@ -83,9 +72,11 @@ public:
   {
     LifecycleNode::on_activate(state);
     active_ = true;
-    if (mode_ == "open_loop") {
+    if (mode_ == "open_loop" || mode_ == "witness") {
       step_ = 0;
       timer_ = create_wall_timer(period_, [this]() { emit_open_loop_step(); });
+    } else if (mode_ == "chance" && chance_valid_) {
+      publish({chance_estimate_, chance_lower_}, chance_estimate_, chance_holds_, true);
     }
     return CallbackReturn::SUCCESS;
   }
@@ -239,8 +230,47 @@ private:
       plan_holds_ = result.holds;
       RCLCPP_INFO(get_logger(), "synthesized a %zu-input plan, robustness %.4f, holds %s",
                   plan_.size(), plan_robustness_, plan_holds_ ? "true" : "false");
+    } else if (mode_ == "witness") {
+      if (!has_bounds) {
+        throw std::runtime_error("witness needs bounds.lower and bounds.upper to search over");
+      }
+      sentil::Bounds bounds(tile(lower, horizon), tile(upper, horizon));
+      sentil::Witness w = spec.falsify(model, bounds);
+      plan_ = w.input;
+      plan_robustness_ = w.robustness;
+      plan_holds_ = false;
+      RCLCPP_INFO(get_logger(), "found a counterexample over %zu input(s), robustness %.4f",
+                  plan_.size(), plan_robustness_);
+    } else if (mode_ == "chance") {
+      const double probability = get_parameter("chance.probability").as_double();
+      const double confidence = get_parameter("chance.confidence").as_double();
+      const double process_std = get_parameter("chance.process_std").as_double();
+      const std::size_t n = vars.size();
+      sentil::StochasticSystem system = sentil::StochasticSystem::custom(
+        vars, dt, horizon, [x0](std::uint64_t) { return x0; },
+        [a, n, process_std](const std::vector<double> & prev, double, std::uint64_t seed) {
+          std::mt19937_64 rng(seed);
+          std::normal_distribution<double> noise(0.0, process_std);
+          std::vector<double> next(n, 0.0);
+          for (std::size_t i = 0; i < n; ++i) {
+            for (std::size_t j = 0; j < n && j < prev.size(); ++j) {
+              next[i] += a[i][j] * prev[j];
+            }
+            next[i] += noise(rng);
+          }
+          return next;
+        });
+      sentil::ChanceConstraint constraint(std::move(spec), probability, confidence);
+      sentil::ChanceReport report = constraint.validate(system);
+      chance_estimate_ = report.estimate;
+      chance_lower_ = report.lower_bound;
+      chance_holds_ = report.holds;
+      chance_valid_ = true;
+      RCLCPP_INFO(get_logger(), "chance check: estimate %.4f, lower bound %.4f, holds %s",
+                  chance_estimate_, chance_lower_, chance_holds_ ? "true" : "false");
     } else {
-      throw std::runtime_error("mode must be receding_horizon, open_loop, or safety_filter");
+      throw std::runtime_error(
+        "mode must be receding_horizon, open_loop, safety_filter, witness, or chance");
     }
   }
 
@@ -340,6 +370,11 @@ private:
   double plan_robustness_ = 0.0;
   bool plan_holds_ = false;
   std::size_t step_ = 0;
+
+  double chance_estimate_ = 0.0;
+  double chance_lower_ = 0.0;
+  bool chance_holds_ = false;
+  bool chance_valid_ = false;
 
   std::mutex mutex_;
   std::vector<double> state_;
