@@ -1,0 +1,19 @@
+syntax = "proto2";
+
+package apollo.perception;
+
+message Point3D {
+  optional double x = 1;
+  optional double y = 2;
+  optional double z = 3;
+}
+
+message PerceptionObstacle {
+  optional int32 id = 1;
+  optional Point3D position = 2;
+  optional Point3D velocity = 3;
+}
+
+message PerceptionObstacles {
+  repeated PerceptionObstacle perception_obstacle = 1;
+}
