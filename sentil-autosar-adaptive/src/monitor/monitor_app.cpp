@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <optional>
+#include <utility>
 
 namespace sentil_ap {
 
@@ -13,9 +14,10 @@ void MonitorApp::add(const std::string& id, const std::string& formula) {
 }
 
 void MonitorApp::add_probabilistic(const std::string& id, const std::string& formula,
-                                   const std::string& variable, double std_dev, double confidence,
+                                   const std::string& variable, ::sentil::NoiseModel noise,
+                                   ::sentil::NoiseInteraction interaction, double confidence,
                                    std::uint64_t samples) {
-  lifting_.register_noise(variable, ::sentil::NoiseModel::gaussian(0.0, std_dev));
+  lifting_.register_noise(variable, std::move(noise), interaction);
   ::sentil::Formula parsed = ::sentil::Formula::parse(formula);
   ::sentil::SmcConfig config;
   config.samples = samples;

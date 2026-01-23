@@ -68,6 +68,11 @@ target_include_directories(synthesis_test PRIVATE test)
 target_link_libraries(synthesis_test PRIVATE sentil_apps)
 add_test(NAME synthesis COMMAND synthesis_test)
 
+add_executable(probabilistic_test test/probabilistic_test.cpp)
+target_include_directories(probabilistic_test PRIVATE test)
+target_link_libraries(probabilistic_test PRIVATE sentil_apps)
+add_test(NAME probabilistic COMMAND probabilistic_test)
+
 add_library(vendor_contract_check OBJECT src/monitor/main.cpp src/control/main.cpp)
 target_include_directories(vendor_contract_check PRIVATE
   test/vendor_contract include src/monitor src/control)

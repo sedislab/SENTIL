@@ -18,10 +18,9 @@ class MonitorApp {
 
   void add(const std::string& id, const std::string& formula);
 
-  /// Add a P~p formula tracked online over an ensemble lifted with Gaussian noise on the
-  /// named variable. Throws on a parse error.
   void add_probabilistic(const std::string& id, const std::string& formula,
-                         const std::string& variable, double std_dev, double confidence,
+                         const std::string& variable, ::sentil::NoiseModel noise,
+                         ::sentil::NoiseInteraction interaction, double confidence,
                          std::uint64_t samples);
 
   /// Replace the monitored formulas with a single deterministic one, validating it first.
