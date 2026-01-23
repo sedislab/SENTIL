@@ -16,4 +16,15 @@ apollo_cc_binary(
     ],
 )
 
+apollo_cc_binary(
+    name = "sentil_synthesizer",
+    srcs = ["sentil_synthesizer.cc"],
+    deps = [
+        "//modules/sentil/common:engine_config",
+        "//modules/sentil/proto:sentil_control_config_cc_proto",
+        "@com_github_gflags_gflags//:gflags",
+        "@sentil_cpp//:sentil_cpp",
+    ],
+)
+
 apollo_package()

@@ -43,6 +43,20 @@ apollo_cc_test(
 )
 
 apollo_cc_test(
+    name = "synthesizer_test",
+    size = "small",
+    srcs = [
+        "sentil_test.hpp",
+        "synthesizer_test.cc",
+    ],
+    deps = [
+        "//modules/sentil/common:engine_config",
+        "//modules/sentil/proto:sentil_control_config_cc_proto",
+        "@sentil_cpp//:sentil_cpp",
+    ],
+)
+
+apollo_cc_test(
     name = "example_synthesis_test",
     size = "small",
     srcs = [
