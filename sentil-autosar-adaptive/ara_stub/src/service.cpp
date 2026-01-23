@@ -42,10 +42,17 @@ void Provider::on_method(MethodId method, std::function<Bytes(const Bytes&)> han
   app_->register_message_handler(
       id_.service, id_.instance, method,
       [this, method](const std::shared_ptr<vsomeip::message>& request) {
-        const Bytes response_bytes = methods_.at(method)(read_payload(request));
-        std::shared_ptr<vsomeip::message> response = vsomeip::runtime::get()->create_response(request);
-        response->set_payload(make_payload(response_bytes));
-        app_->send(response);
+        // The vsomeip dispatch thread must not see an exception.
+        try {
+          const auto it = methods_.find(method);
+          if (it == methods_.end()) {
+            return;
+          }
+          std::shared_ptr<vsomeip::message> response = vsomeip::runtime::get()->create_response(request);
+          response->set_payload(make_payload(it->second(read_payload(request))));
+          app_->send(response);
+        } catch (...) {
+        }
       });
 }
 
@@ -82,7 +89,14 @@ void Consumer::subscribe(EventId event, EventGroupId group,
   app_->register_message_handler(
       id_.service, id_.instance, event,
       [this, event](const std::shared_ptr<vsomeip::message>& message) {
-        handlers_.at(event)(read_payload(message));
+        // The vsomeip dispatch thread must not see an exception.
+        try {
+          const auto it = handlers_.find(event);
+          if (it != handlers_.end()) {
+            it->second(read_payload(message));
+          }
+        } catch (...) {
+        }
       });
   app_->subscribe(id_.service, id_.instance, group);
 }
