@@ -1,5 +1,7 @@
 #include "modules/sentil/common/engine_config.h"
 
+#include <cstdint>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -105,6 +107,51 @@ std::vector<std::vector<double>> reshape(const google::protobuf::RepeatedField<d
     return builder.build_formula();
   }
   throw std::invalid_argument("control spec has neither an expression nor a name");
+}
+
+::sentil::Bounds tile_bounds(const Bounds& proto, std::size_t input_width, std::size_t horizon) {
+  if (proto.lower_size() != static_cast<int>(input_width) ||
+      proto.upper_size() != static_cast<int>(input_width)) {
+    throw std::invalid_argument("control bounds need input_width lower and upper entries per step");
+  }
+  std::vector<double> lower;
+  std::vector<double> upper;
+  lower.reserve(horizon * input_width);
+  upper.reserve(horizon * input_width);
+  for (std::size_t step = 0; step < horizon; ++step) {
+    for (std::size_t i = 0; i < input_width; ++i) {
+      lower.push_back(proto.lower(i));
+      upper.push_back(proto.upper(i));
+    }
+  }
+  return ::sentil::Bounds(lower, upper);
+}
+
+::sentil::StochasticSystem chance_system_from_model(const LinearModel& proto, double process_std) {
+  const std::size_t n = proto.variables_size();
+  if (n == 0) {
+    throw std::invalid_argument("model has no state variables");
+  }
+  const std::vector<std::vector<double>> a = reshape(proto.a(), n, n, "model.a");
+  const std::vector<double> x0(proto.x0().begin(), proto.x0().end());
+  if (x0.size() != n) {
+    throw std::invalid_argument("model.x0 must have " + std::to_string(n) + " entries");
+  }
+  std::vector<std::string> variables(proto.variables().begin(), proto.variables().end());
+  return ::sentil::StochasticSystem::custom(
+      variables, proto.dt(), proto.horizon(), [x0](std::uint64_t) { return x0; },
+      [a, n, process_std](const std::vector<double>& prev, double, std::uint64_t seed) {
+        std::mt19937_64 rng(seed);
+        std::normal_distribution<double> noise(0.0, process_std);
+        std::vector<double> next(n, 0.0);
+        for (std::size_t i = 0; i < n; ++i) {
+          for (std::size_t j = 0; j < n && j < prev.size(); ++j) {
+            next[i] += a[i][j] * prev[j];
+          }
+          next[i] += noise(rng);
+        }
+        return next;
+      });
 }
 
 }  // namespace sentil

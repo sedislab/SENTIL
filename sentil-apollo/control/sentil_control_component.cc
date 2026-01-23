@@ -42,26 +42,6 @@ void set_actuation(google::protobuf::Message* message,
   }
 }
 
-// Open-loop synthesis bounds the whole horizon-long input, so repeat the per-step limits
-// across the horizon. Throws when the bounds are not one entry per input per step.
-::sentil::Bounds tile_bounds(const Bounds& proto, std::size_t input_width, std::size_t horizon) {
-  if (proto.lower_size() != static_cast<int>(input_width) ||
-      proto.upper_size() != static_cast<int>(input_width)) {
-    throw std::invalid_argument("control bounds need input_width lower and upper entries per step");
-  }
-  std::vector<double> lower;
-  std::vector<double> upper;
-  lower.reserve(horizon * input_width);
-  upper.reserve(horizon * input_width);
-  for (std::size_t step = 0; step < horizon; ++step) {
-    for (std::size_t i = 0; i < input_width; ++i) {
-      lower.push_back(proto.lower(i));
-      upper.push_back(proto.upper(i));
-    }
-  }
-  return ::sentil::Bounds(lower, upper);
-}
-
 }  // namespace
 
 bool SentilControlComponent::Init() {

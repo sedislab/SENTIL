@@ -22,5 +22,9 @@ namespace sentil {
 
 ::sentil::Formula formula_from_spec(const Spec& spec);
 
+::sentil::Bounds tile_bounds(const Bounds& proto, std::size_t input_width, std::size_t horizon);
+
+::sentil::StochasticSystem chance_system_from_model(const LinearModel& proto, double process_std);
+
 }  // namespace sentil
 }  // namespace apollo
