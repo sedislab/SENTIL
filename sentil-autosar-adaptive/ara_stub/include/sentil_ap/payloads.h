@@ -38,7 +38,6 @@ struct ControllerStatus {
   bool deadline_met = false;
   bool feasible = false;
   bool cbf_active = false;
-  double robustness = 0.0;
 };
 
 using Bytes = std::vector<std::uint8_t>;
@@ -226,6 +225,12 @@ inline ControlResponse parse_control_response(const Bytes& bytes) {
   response.command = reader.get_doubles();
   response.feasible = reader.get_bool();
   return response;
+}
+
+inline Bytes serialize(const ControllerStatus& status) {
+  return Bytes{static_cast<std::uint8_t>(status.deadline_met ? 1 : 0),
+               static_cast<std::uint8_t>(status.feasible ? 1 : 0),
+               static_cast<std::uint8_t>(status.cbf_active ? 1 : 0)};
 }
 
 }  // namespace sentil_ap

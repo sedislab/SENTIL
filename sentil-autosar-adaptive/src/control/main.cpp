@@ -13,7 +13,6 @@
 namespace {
 
 constexpr ara::com::ServiceId kControlService{0x6002, 0x0001};
-constexpr vsomeip::event_t kControlCommandEvent = 0x8003;
 constexpr ara::com::EventId kControlCommandEvent = 0x8003;
 constexpr ara::com::EventId kControllerStatusEvent = 0x8004;
 constexpr ara::com::MethodId kComputeControlMethod = 0x0001;
@@ -33,15 +32,15 @@ int main() {
 
   ara::com::Provider control("sentil_control", kControlService);
   control.offer_event(kControlCommandEvent, kGroup);
-  control.offer_event(kControlCommandEvent, kGroup);
   control.offer_event(kControllerStatusEvent, kGroup);
-  control.on_method(kComputeControlMethod, [&app, &log](const ara::com::Bytes& request_bytes) {
+  control.on_method(kComputeControlMethod, [&app, &log, &control](const ara::com::Bytes& request_bytes) {
     try {
       const sentil_ap::ControlRequest request = sentil_ap::parse_control_request(request_bytes);
       const sentil_ap::ControlApp::Outcome outcome = app.compute(request.state, request.nominal);
       if (outcome.status.feasible) {
         control.notify(kControlCommandEvent, sentil_ap::serialize(sentil_ap::ControlCommand{outcome.command}));
       }
+      control.notify(kControllerStatusEvent, sentil_ap::serialize(outcome.status));
       return sentil_ap::serialize(sentil_ap::ControlResponse{outcome.command, outcome.status.feasible});
     } catch (const std::exception& error) {
       log.LogError() << "compute control failed: " << error.what();
