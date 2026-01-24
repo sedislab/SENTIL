@@ -45,16 +45,18 @@ The remaining distributors are listed in the project layout, and each one's publ
 | GitHub Releases (C/C++) | tarball, `.deb`, `.rpm` | `gh-release` | wired |
 | Maven Central | `io.github.sedislab:sentil` | Sonatype, Gradle publish | sentil-java |
 | Julia General Registry | `Sentil` | Registrator and TagBot | sentil-jl |
-| vcpkg and Conan | `sentil` | registry PR from the port files | sentil-cpp packaging |
+| vcpkg | port `sentil` | `release-vcpkg` fills the SHA512 tokens, validates an overlay install, stages the port; maintainer opens the registry PR | packaging/vcpkg |
+| Conan | `sentil` | `release-conan` fills the sha256, runs `conan create`, stages the recipe; maintainer opens the conan-center PR | packaging/conan |
 | Homebrew, Scoop, Winget | CLI, Winget id `SEDIS.SENTIL` | tap, bucket, and manifest PRs | sentil-cli |
 | MATLAB File Exchange | toolbox | linked GitHub release | sentil-matlab |
-| ROS rosdistro | ROS 2 package | bloom release | sentil-ros |
+| ROS rosdistro | `sentil_ros` | `release-ros` validates bloom readiness; maintainer runs `bloom-release` per distro | sentil-ros |
+| Arch Linux (AUR) | `sentil` | `release-pacman` fills, validates with makepkg and namcap, then pushes when `AUR_SSH_PRIVATE_KEY` is set | packaging/aur |
 | GitHub Releases (embedded) | every package and the raw archives | `release-embedded` on a tag | wired |
 | Arduino Library Manager | library | one-time index PR, then tags auto-update | sentil-embedded |
 | PlatformIO registry | `Sentil` | `pio pkg publish`, `PLATFORMIO_AUTH_TOKEN` secret | wired (secret-gated) |
 | ESP component registry | `sedislab/sentil` | `compote component upload`, `IDF_COMPONENT_API_TOKEN` secret | wired (secret-gated) |
 
-The C and C++ port files for vcpkg and Conan already live in `sentil-cpp`, so that row is packaging-complete; landing it is opening the registry PR, which is a maintainer step rather than an automated push.
+The vcpkg port and the Conan recipe build and validate in CI on a tag, then upload the filled files as artifacts; landing each is opening the registry PR to microsoft/vcpkg and conan-io/conan-center-index, which is a maintainer step rather than an automated push. The AUR push happens automatically once the SSH key secret is set, and rosdistro is a maintainer `bloom-release` after the readiness workflow is green. Each of these names a permanent registry coordinate, so confirm it is free and claimed before the first publish.
 
 ## Cutting the release, in order
 

@@ -1,0 +1,68 @@
+name: release-ros
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    name: bloom readiness on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: humble, image: "ros:humble-ros-base-jammy" }
+          - { distro: jazzy, image: "ros:jazzy-ros-base-noble" }
+          - { distro: rolling, image: "ros:rolling-ros-base-noble" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install bloom
+        run: |
+          apt-get update
+          apt-get install -y python3-bloom fakeroot dpkg-dev debhelper
+      - name: resolve package dependencies
+        run: |
+          rosdep update
+          rosdep install --from-paths sentil-ros --ignore-src -y --skip-keys SentilCpp
+      - name: build and install the SENTIL core and C++ package
+        run: |
+          cargo build --release -p sentil-ffi
+          cmake -S sentil-cpp -B /tmp/cpp-build -DCMAKE_INSTALL_PREFIX=/opt/sentil -DBUILD_TESTING=OFF
+          cmake --build /tmp/cpp-build --target install -j"$(nproc)"
+          install -D sentil-ffi/include/sentil.h /opt/sentil/include/sentil.h
+          install -D target/release/libsentil.so /opt/sentil/lib/libsentil.so
+          install -D sentil-ffi/cmake/SentilConfig.cmake.in /opt/sentil/lib/cmake/Sentil/SentilConfig.cmake
+      - name: confirm the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' sentil-ros/package.xml | head -1)"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "tag ${tag_version} does not match package.xml version ${pkg_version}"
+            exit 1
+          fi
+      - name: generate the rosdebian metadata
+        run: |
+          source "/opt/ros/${{ matrix.distro }}/setup.bash"
+          cd sentil-ros
+          ROS_DISTRO="${{ matrix.distro }}" bloom-generate rosdebian --ros-distro "${{ matrix.distro }}" --place-template-files
+          ROS_DISTRO="${{ matrix.distro }}" bloom-generate rosdebian --ros-distro "${{ matrix.distro }}" --process-template-files
+          test -f debian/control
+          test -f debian/rules
+          test -f debian/changelog
+      - name: check the generated control file
+        run: |
+          expected="ros-${{ matrix.distro }}-sentil-ros"
+          if ! grep -q "^Source: ${expected}" sentil-ros/debian/control; then
+            echo "generated Source is not ${expected}"
+            cat sentil-ros/debian/control
+            exit 1
+          fi
