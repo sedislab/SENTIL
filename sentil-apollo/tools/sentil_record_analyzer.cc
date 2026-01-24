@@ -45,7 +45,7 @@ namespace sentil {
   std::map<std::string, std::vector<double>> series;
   double last_time = -1.0;
   while (reader.ReadMessage(&message)) {
-    const std::string type = reader.GetHeader().message_type(message.channel_name);
+    const std::string type = reader.GetMessageType(message.channel_name);
     if (type.empty()) {
       continue;
     }

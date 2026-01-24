@@ -7,7 +7,7 @@ apollo_cc_binary(
     srcs = ["sentil_record_analyzer.cc"],
     deps = [
         "//cyber",
-        "//cyber/record:record_reader",
+        "//cyber/record:cyber_record",
         "//modules/sentil/common:engine_config",
         "//modules/sentil/common:field_extractor",
         "//modules/sentil/proto:sentil_config_cc_proto",
