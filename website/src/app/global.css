@@ -257,6 +257,46 @@ body::before {
   background: var(--color-fd-muted);
 }
 
+#nd-page pre,
+#nd-page pre code,
+#nd-page pre span {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.4rem;
+  font-weight: 700;
+  font-variant-ligatures: none;
+}
+
+#nd-page figure:is([data-language='bash'], [data-language='sh'], [data-language='shell'], [data-language='zsh'], [data-language='console']) .line:not(:empty)::before {
+  content: '$ ';
+  color: #6272a4;
+  user-select: none;
+}
+#nd-page figure:is([data-language='powershell'], [data-language='ps1']) .line:not(:empty)::before {
+  content: '> ';
+  color: #6272a4;
+  user-select: none;
+}
+#nd-page figure[data-language] .line:has(> span:first-child[style*='6A737D' i])::before {
+  content: none;
+}
+.dark
+  #nd-page
+  figure:is(
+    [data-language='bash'],
+    [data-language='sh'],
+    [data-language='shell'],
+    [data-language='zsh'],
+    [data-language='console']
+  )
+  .line:not(:empty)::before,
+.dark #nd-page figure:is([data-language='powershell'], [data-language='ps1']) .line:not(:empty)::before {
+  color: #8b96c4;
+}
+.dark #nd-page figure.shiki span[style*='6A737D' i] {
+  color: #8b96c4 !important;
+}
+
 #nd-sidebar {
   border-right: 1px solid var(--color-fd-border);
   transition-duration: 100ms;
