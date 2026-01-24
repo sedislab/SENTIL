@@ -1,0 +1,19 @@
+# Per-platform release bundles for sentil/1.0.0. Each archive is a GitHub Release
+# asset built by .github/workflows/release-ffi.yml and carries include/sentil.h,
+# the shared and static libraries, sentil.pc, and the CMake config under one prefix.
+# The sha256 tokens are filled at release time by .github/workflows/release-conan.yml
+# from the downloaded assets, so the recipe is never committed with a stale hash.
+sources:
+  "1.0.0":
+    linux-x86_64:
+      url: "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-linux-x86_64.tar.gz"
+      sha256: "REPLACE_WITH_LINUX_X86_64_SHA256"
+    macos-x86_64:
+      url: "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-macos-x86_64.tar.gz"
+      sha256: "REPLACE_WITH_MACOS_X86_64_SHA256"
+    macos-arm64:
+      url: "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-macos-arm64.tar.gz"
+      sha256: "REPLACE_WITH_MACOS_ARM64_SHA256"
+    windows-x86_64:
+      url: "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-windows-x86_64.tar.gz"
+      sha256: "REPLACE_WITH_WINDOWS_X86_64_SHA256"

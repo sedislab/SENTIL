@@ -1,0 +1,94 @@
+name: release-conan
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: fill checksums and conan create
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: install conan
+        run: |
+          pip install 'conan>=2.0,<3'
+          conan profile detect --force
+      - name: resolve the version
+        id: ver
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version="1.0.0"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: fill the per-platform checksums
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          base="https://github.com/sedislab/SENTIL/releases/download/v${VERSION}"
+          data="packaging/conan/sentil/conandata.yml"
+          fill() {
+            local platform="$1" token="$2"
+            local file="sentil-${VERSION}-${platform}.tar.gz"
+            curl -fsSL -o "$file" "${base}/${file}"
+            local sum
+            sum="$(sha256sum "$file" | awk '{print $1}')"
+            sed -i "s/${token}/${sum}/" "$data"
+          }
+          fill linux-x86_64   REPLACE_WITH_LINUX_X86_64_SHA256
+          fill macos-x86_64   REPLACE_WITH_MACOS_X86_64_SHA256
+          fill macos-arm64    REPLACE_WITH_MACOS_ARM64_SHA256
+          fill windows-x86_64 REPLACE_WITH_WINDOWS_X86_64_SHA256
+          sed -i "s/1\\.0\\.0/${version}/g" "$data" packaging/conan/sentil/conanfile.py || true
+          if grep -q REPLACE_WITH "$data"; then
+            echo "a checksum token was left unfilled" >&2
+            exit 1
+          fi
+      - name: conan create on linux
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: conan create packaging/conan/sentil --version "$VERSION" -tf=""
+      - name: stage the filled recipe
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p staged/recipes/sentil/all staged/recipes/sentil/config
+          cp packaging/conan/sentil/conanfile.py staged/recipes/sentil/all/conanfile.py
+          cp packaging/conan/sentil/conandata.yml staged/recipes/sentil/all/conandata.yml
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version="1.0.0"
+          printf 'versions:\n  "%s":\n    folder: all\n' "$version" > staged/recipes/sentil/config/config.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conan-center-recipe
+          path: staged/**
+
+      - name: open the conan-center pull request
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_PR_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then echo "no REGISTRY_PR_TOKEN; the recipe stays staged as an artifact"; exit 0; fi
+          gh repo fork conan-io/conan-center-index --clone=false --remote=false 2>/dev/null || true
+          owner=$(gh api user --jq .login)
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${owner}/conan-center-index.git" fork
+          cd fork
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "sentil-${VERSION}"
+          mkdir -p recipes/sentil
+          cp -r ../staged/recipes/sentil/. recipes/sentil/
+          git add -A && git commit -m "sentil: add ${VERSION}"
+          git push -u origin "sentil-${VERSION}"
+          gh pr create --repo conan-io/conan-center-index \
+            --head "${owner}:sentil-${VERSION}" --base master \
+            --title "sentil: add ${VERSION}" \
+            --body "Adds the \`sentil\` recipe at ${VERSION}. Runtime verification for Signal Temporal Logic and its probabilistic extension. \`conan create\` was run in CI against this recipe."
