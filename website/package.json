@@ -27,9 +27,13 @@
     "typescript": "^6.0.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.11",
-    "serve": "^14.2.6"
+    "serve": "^14.2.6",
+    "@tailwindcss/postcss": "^4.3.1",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.1"
   },
   "overrides": {
+    "postcss": "$postcss",
     "sharp": "0.35.0"
   }
 }
