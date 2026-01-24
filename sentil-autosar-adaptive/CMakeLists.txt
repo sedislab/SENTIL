@@ -8,10 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 add_compile_options(-Wall -Wextra)
 
-# Which Adaptive Platform supplies ara::*. The stub ships an open-source ara::com over
-# vsomeip so the examples run on a plain Linux box; a vendor AP is a toolchain swap that
-# points FindAraCom at the vendor binding, leaving the app source unchanged.
-set(SENTIL_AP_VENDOR "stub" CACHE STRING "Adaptive Platform vendor: stub, vector, eb, apex")
+set(SENTIL_AP_VENDOR "stub" CACHE STRING "Adaptive Platform vendor: stub, vector, eb, apex, none")
 
 set(SENTIL_ROOT "" CACHE PATH "SENTIL install tree (include/ and lib/libsentil)")
 add_library(sentil::cpp SHARED IMPORTED)
@@ -35,15 +32,17 @@ target_include_directories(sentil_apps PUBLIC
   include src/monitor src/control)
 target_link_libraries(sentil_apps PUBLIC sentil::cpp)
 
-add_executable(sentil_monitor src/monitor/main.cpp)
-target_link_libraries(sentil_monitor PRIVATE sentil_apps ara_com)
+if(NOT SENTIL_AP_VENDOR STREQUAL "none")
+  add_executable(sentil_monitor src/monitor/main.cpp)
+  target_link_libraries(sentil_monitor PRIVATE sentil_apps ara_com)
 
-add_executable(sentil_control src/control/main.cpp)
-target_link_libraries(sentil_control PRIVATE sentil_apps ara_com)
+  add_executable(sentil_control src/control/main.cpp)
+  target_link_libraries(sentil_control PRIVATE sentil_apps ara_com)
 
-install(TARGETS sentil_monitor sentil_control RUNTIME DESTINATION bin)
-install(FILES "${SENTIL_ROOT}/lib/libsentil.so" DESTINATION lib)
-install(DIRECTORY manifest DESTINATION .)
+  install(TARGETS sentil_monitor sentil_control RUNTIME DESTINATION bin)
+  install(FILES "${SENTIL_ROOT}/lib/libsentil.so" DESTINATION lib)
+  install(DIRECTORY manifest DESTINATION .)
+endif()
 
 if(SENTIL_AP_VENDOR STREQUAL "stub")
   add_executable(perception_publisher examples/adas_fca_monitor/perception_publisher.cpp)
