@@ -3,6 +3,7 @@ import type { MDXComponents } from 'mdx/types';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Card, Cards } from '@/components/card';
+import { OsTab, OsTabs } from '@/components/os-tabs';
 import { CodeBlockWithNotes } from '@/components/code-block';
 
 export function getMDXComponents(components?: MDXComponents) {
@@ -15,6 +16,8 @@ export function getMDXComponents(components?: MDXComponents) {
     Steps,
     Card,
     Cards,
+    OsTabs,
+    OsTab,
     ...components,
   } satisfies MDXComponents;
 }
