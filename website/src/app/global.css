@@ -68,11 +68,11 @@ html > body[data-scroll-locked] {
 }
 
 .dark {
-  --color-fd-background: #17181a;
+  --color-fd-background: #16171e;
   --color-fd-foreground: #f5f1f3;
-  --color-fd-muted: #232426;
+  --color-fd-muted: #222329;
   --color-fd-muted-foreground: #9ca3af;
-  --color-fd-popover: #1c1d1f;
+  --color-fd-popover: #1b1c23;
   --color-fd-popover-foreground: #f5f1f3;
   --color-fd-card: #1b1c23;
   --color-fd-card-foreground: #f5f1f3;
