@@ -1,4 +1,4 @@
-import { source } from '@/lib/source';
+import { getPageMarkdownUrl, source } from '@/lib/source';
 import {
   DocsBody,
   DocsDescription,
@@ -10,6 +10,7 @@ import { Pencil } from 'lucide-react';
 import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
+import { CopyPage } from '@/components/copy-page';
 import type { ReactNode } from 'react';
 
 const SITE = 'https://sentil.pages.dev';
@@ -32,6 +33,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const markdownUrl = getPageMarkdownUrl(page).url;
   const editUrl = `https://github.com/sedislab/SENTIL/edit/main/website/content/docs/${page.path}`;
   const eyebrow = parentSection(source.getPageTree().children, page.url, null);
 
@@ -62,6 +64,9 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
       )}
       <div className="@container/page-header flex flex-row items-center justify-between gap-4">
         <DocsTitle className="mb-0">{page.data.title}</DocsTitle>
+        <div className="hidden @[520px]/page-header:flex">
+          <CopyPage markdownUrl={markdownUrl} editUrl={editUrl} />
+        </div>
       </div>
       <DocsDescription className="page-subtitle">{page.data.description}</DocsDescription>
       <DocsBody>
