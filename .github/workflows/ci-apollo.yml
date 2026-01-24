@@ -1,0 +1,71 @@
+name: ci-apollo
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: apollo deterministic build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install protobuf and gtest
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libgtest-dev
+      - name: build the SENTIL core and stage the install tree
+        run: |
+          cargo build --release -p sentil-ffi
+          install -d /opt/sentil/include/sentil /opt/sentil/lib /opt/sentil/share/sentil
+          cp sentil-cpp/include/sentil/*.hpp /opt/sentil/include/sentil/
+          install -m644 sentil-ffi/include/sentil.h /opt/sentil/include/sentil.h
+          install -m644 target/release/libsentil.so /opt/sentil/lib/libsentil.so
+          install -m644 benchmarks/deterministic/oracle.json /opt/sentil/share/sentil/oracle.json
+      - name: compile and run the deterministic tests
+        run: |
+          set -e
+          B=/tmp/apollo
+          mkdir -p "$B/modules/sentil/proto" "$B/modules/sentil/common" "$B/modules/sentil/tests"
+          cp sentil-apollo/proto/*.proto "$B/modules/sentil/proto/"
+          cp sentil-apollo/common/*.h sentil-apollo/common/*.cc "$B/modules/sentil/common/"
+          cp sentil-apollo/tests/* "$B/modules/sentil/tests/"
+          cd "$B"
+          PB="$(pkg-config --cflags --libs protobuf)"
+          protoc -I=. --cpp_out=. modules/sentil/proto/sentil_config.proto \
+            modules/sentil/proto/sentil_control_config.proto modules/sentil/tests/test_messages.proto
+          echo "::group::field extractor (protobuf reflection)"
+          g++ -std=c++17 -I. modules/sentil/common/field_extractor.cc \
+            modules/sentil/tests/field_extractor_test.cc \
+            modules/sentil/proto/sentil_config.pb.cc modules/sentil/tests/test_messages.pb.cc \
+            $PB -lgtest -lgtest_main -lpthread -o fx_test
+          ./fx_test
+          echo "::endgroup::"
+          echo "::group::oracle parity through the engine bridge"
+          g++ -std=c++17 -I. -I/opt/sentil/include -Imodules/sentil/tests \
+            -DSENTIL_ORACLE_PATH="\"$GITHUB_WORKSPACE/benchmarks/deterministic/oracle.json\"" \
+            modules/sentil/common/engine_config.cc modules/sentil/tests/oracle_parity_test.cc \
+            modules/sentil/proto/sentil_config.pb.cc modules/sentil/proto/sentil_control_config.pb.cc \
+            -L/opt/sentil/lib -lsentil $PB -lpthread -o oracle_test
+          LD_LIBRARY_PATH=/opt/sentil/lib ./oracle_test
+          echo "::endgroup::"
+          echo "::group::synthesis bridge (plan, falsify, chance)"
+          g++ -std=c++17 -I. -I/opt/sentil/include -Imodules/sentil/tests \
+            modules/sentil/common/engine_config.cc modules/sentil/tests/synthesizer_test.cc \
+            modules/sentil/proto/sentil_config.pb.cc modules/sentil/proto/sentil_control_config.pb.cc \
+            -L/opt/sentil/lib -lsentil $PB -lpthread -o synth_test
+          LD_LIBRARY_PATH=/opt/sentil/lib ./synth_test
+          echo "::endgroup::"
+          echo "::group::the shipped SYNTHESIZE example config"
+          g++ -std=c++17 -I. -I/opt/sentil/include -Imodules/sentil/tests \
+            -DSENTIL_EXAMPLE_CONFIG="\"$GITHUB_WORKSPACE/sentil-apollo/examples/synthesize_control.pb.txt\"" \
+            modules/sentil/common/engine_config.cc modules/sentil/tests/example_synthesis_test.cc \
+            modules/sentil/proto/sentil_config.pb.cc modules/sentil/proto/sentil_control_config.pb.cc \
+            -L/opt/sentil/lib -lsentil $PB -lpthread -o example_synthesis_test
+          LD_LIBRARY_PATH=/opt/sentil/lib ./example_synthesis_test
+          echo "::endgroup::"
+          echo "::group::symbol reference"
+          g++ -std=c++17 -I/opt/sentil/include modules/sentil/tests/symbol_reference.cc \
+            -L/opt/sentil/lib -lsentil -o symbol_reference
+          LD_LIBRARY_PATH=/opt/sentil/lib ./symbol_reference
+          echo "::endgroup::"
