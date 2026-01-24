@@ -1,0 +1,20 @@
+pkgbase = sentil
+	pkgdesc = Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL, with a C library and the sentil CLI
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/sedislab/SENTIL
+	arch = x86_64
+	license = MIT
+	license = Apache
+	depends = gcc-libs
+	optdepends = cmake: find_package(Sentil) support for C and C++ projects
+	optdepends = pkgconf: pkg-config discovery of the C library
+	provides = libsentil.so
+	options = !strip
+	options = !debug
+	source = sentil-1.0.0-linux-x86_64.tar.gz::https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-linux-x86_64.tar.gz
+	source = sentil-1.0.0-x86_64-unknown-linux-gnu.tar.gz::https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-x86_64-unknown-linux-gnu.tar.gz
+	sha256sums = REPLACE_WITH_X86_64_LINUX_CABI_SHA256
+	sha256sums = REPLACE_WITH_X86_64_LINUX_CLI_SHA256
+
+pkgname = sentil

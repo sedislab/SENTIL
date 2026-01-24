@@ -1,0 +1,99 @@
+name: release-pacman
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: build and validate the AUR package
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install tooling
+        run: pacman -Syu --needed --noconfirm namcap openssh git
+
+      - name: resolve the version
+        id: ver
+        run: |
+          if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^pkgver=//p' packaging/aur/PKGBUILD)"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: fill the checksums from the release assets
+        working-directory: packaging/aur
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          base="https://github.com/sedislab/SENTIL/releases/download/v${VERSION}"
+          cabi="sentil-${VERSION}-linux-x86_64.tar.gz"
+          cli="sentil-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fLsS -o "$cabi" "${base}/${cabi}"
+          curl -fLsS -o "$cli" "${base}/${cli}"
+          cabi_sha="$(sha256sum "$cabi" | cut -d' ' -f1)"
+          cli_sha="$(sha256sum "$cli" | cut -d' ' -f1)"
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${VERSION}/" \
+            -e "s/REPLACE_WITH_X86_64_LINUX_CABI_SHA256/${cabi_sha}/" \
+            -e "s/REPLACE_WITH_X86_64_LINUX_CLI_SHA256/${cli_sha}/" \
+            PKGBUILD
+          if grep -q REPLACE_WITH PKGBUILD; then
+            echo "a checksum placeholder was left unfilled" >&2
+            exit 1
+          fi
+          rm -f "$cabi" "$cli"
+
+      - name: validate
+        working-directory: packaging/aur
+        run: |
+          useradd -m builder
+          chown -R builder .
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+          sudo -u builder namcap PKGBUILD
+          sudo -u builder makepkg --verifysource --noconfirm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aur-sentil
+          path: |
+            packaging/aur/PKGBUILD
+            packaging/aur/.SRCINFO
+
+      - name: push to the AUR
+        if: github.ref_type == 'tag'
+        working-directory: packaging/aur
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if [ -z "${AUR_SSH_PRIVATE_KEY}" ]; then
+            echo "no AUR_SSH_PRIVATE_KEY; skipping the AUR push"
+            exit 0
+          fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+          git config --global user.name "Paapa Kwesi Quansah"
+          git config --global user.email "paapa_quansah1@baylor.edu"
+          git config --global --add safe.directory '*'
+          git clone ssh://aur@aur.archlinux.org/sentil.git aur-repo
+          cp PKGBUILD .SRCINFO aur-repo/
+          cd aur-repo
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "AUR already at this version; nothing to push"
+            exit 0
+          fi
+          git commit -m "sentil ${VERSION}"
+          git push origin master
