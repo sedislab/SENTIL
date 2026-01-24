@@ -1,0 +1,29 @@
+name: ci-autosar
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: autosar deterministic build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: build the SENTIL core and stage the install tree
+        run: |
+          cargo build --release -p sentil-ffi
+          install -d /opt/sentil/include/sentil /opt/sentil/lib
+          cp sentil-cpp/include/sentil/*.hpp /opt/sentil/include/sentil/
+          install -m644 sentil-ffi/include/sentil.h /opt/sentil/include/sentil.h
+          install -m644 target/release/libsentil.so /opt/sentil/lib/libsentil.so
+      - name: cmake build and ctest with no transport
+        run: |
+          cmake -S sentil-autosar-adaptive -B build -G Ninja \
+            -DSENTIL_AP_VENDOR=none -DSENTIL_ROOT=/opt/sentil
+          cmake --build build -j"$(nproc)"
+          ctest --test-dir build --output-on-failure
