@@ -67,6 +67,30 @@ html > body[data-scroll-locked] {
   --animate-fd-dialog-out: sentil-dialog-out 150ms ease-out;
 }
 
+.dark {
+  --color-fd-background: #17181a;
+  --color-fd-foreground: #f5f1f3;
+  --color-fd-muted: #232426;
+  --color-fd-muted-foreground: #9ca3af;
+  --color-fd-popover: #1c1d1f;
+  --color-fd-popover-foreground: #f5f1f3;
+  --color-fd-card: #1b1c23;
+  --color-fd-card-foreground: #f5f1f3;
+  --color-fd-border: #2c2d33;
+  --color-fd-primary: #74b8ff;
+  --color-fd-primary-foreground: #16171e;
+  --color-fd-secondary: #222329;
+  --color-fd-secondary-foreground: #f5f1f3;
+  --color-fd-accent: #262730;
+  --color-fd-accent-foreground: #d1d5db;
+  --color-fd-ring: #74b8ff;
+  --color-fd-overlay: rgb(0 0 0 / 0.5);
+  --color-fd-info: #74b8ff;
+  --color-fd-success: #4ade80;
+  --color-fd-warning: #fbbf24;
+  --color-fd-error: #f87171;
+}
+
 /* Figure strokes. The border colour is tuned for a box sitting on the page and
    is far too faint for a connector line a reader has to follow, so figures get
    their own two weights. */
@@ -590,6 +614,14 @@ body::before {
   box-shadow: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
 [data-header-tabs] a[href="/docs/languages"] {
   margin-left: auto;
 }
