@@ -1,0 +1,113 @@
+name: release-vcpkg
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stage:
+    name: stage and validate the vcpkg port
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: resolve the version
+        id: ver
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$version" = "$GITHUB_REF_NAME" ]; then version="1.0.0"; fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: download the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ steps.ver.outputs.version }}"
+          mkdir -p assets
+          for plat in linux-x86_64 macos-x86_64 macos-arm64 windows-x86_64; do
+            gh release download "v${version}" \
+              --repo sedislab/SENTIL \
+              --pattern "sentil-${version}-${plat}.tar.gz" \
+              --dir assets
+          done
+
+      - name: fill the portfile tokens
+        run: |
+          version="${{ steps.ver.outputs.version }}"
+          port=packaging/vcpkg/ports/sentil/portfile.cmake
+
+          sha512() { sha512sum "$1" | awk '{print $1}'; }
+
+          linux="$(sha512 "assets/sentil-${version}-linux-x86_64.tar.gz")"
+          mac_x86="$(sha512 "assets/sentil-${version}-macos-x86_64.tar.gz")"
+          mac_arm="$(sha512 "assets/sentil-${version}-macos-arm64.tar.gz")"
+          windows="$(sha512 "assets/sentil-${version}-windows-x86_64.tar.gz")"
+
+          curl -fsSL "https://raw.githubusercontent.com/sedislab/SENTIL/v${version}/LICENSE-MIT" -o LICENSE-MIT
+          curl -fsSL "https://raw.githubusercontent.com/sedislab/SENTIL/v${version}/LICENSE-APACHE" -o LICENSE-APACHE
+          lic_mit="$(sha512 LICENSE-MIT)"
+          lic_apache="$(sha512 LICENSE-APACHE)"
+
+          sed -i \
+            -e "s/SENTIL_SHA512_LINUX/${linux}/" \
+            -e "s/SENTIL_SHA512_MACOS_X86_64/${mac_x86}/" \
+            -e "s/SENTIL_SHA512_MACOS_ARM64/${mac_arm}/" \
+            -e "s/SENTIL_SHA512_WINDOWS/${windows}/" \
+            -e "s/SENTIL_SHA512_LICENSE_MIT/${lic_mit}/" \
+            -e "s/SENTIL_SHA512_LICENSE_APACHE/${lic_apache}/" \
+            "$port"
+
+          if grep -q 'SENTIL_SHA512_' "$port"; then
+            echo "a SHA512 token was left unfilled" >&2
+            exit 1
+          fi
+
+      - name: get vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: validate the port builds
+        run: |
+          ./vcpkg/vcpkg install sentil \
+            --overlay-ports=packaging/vcpkg/ports \
+            --triplet x64-linux
+
+      - name: stage the port for the registry PR
+        run: |
+          mkdir -p staged/ports
+          cp -r packaging/vcpkg/ports/sentil staged/ports/sentil
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-port
+          path: staged/ports/**
+
+      - name: open the vcpkg pull request
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then echo "no REGISTRY_PR_TOKEN; the port stays staged as an artifact"; exit 0; fi
+          version="${GITHUB_REF_NAME#v}"
+          gh repo fork microsoft/vcpkg --clone=false --remote=false 2>/dev/null || true
+          owner=$(gh api user --jq .login)
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${owner}/vcpkg.git" fork
+          cd fork
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "sentil-${version}"
+          mkdir -p ports/sentil
+          cp -r ../staged/ports/sentil/. ports/sentil/
+          ./bootstrap-vcpkg.sh -disableMetrics || echo "vcpkg bootstrap failed" >&2
+          git add -A && git commit -m "[sentil] add new port ${version}"
+          git push -u origin "sentil-${version}"
+          gh pr create --repo microsoft/vcpkg \
+            --head "${owner}:sentil-${version}" --base master \
+            --title "[sentil] add new port ${version}" \
+            --body "Adds the \`sentil\` port at ${version}. Runtime verification for Signal Temporal Logic and its probabilistic extension. Validated with an overlay install on x64-linux in CI."
