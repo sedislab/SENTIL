@@ -1,16 +1,11 @@
 load("//tools:apollo_package.bzl", "apollo_cc_test", "apollo_package")
-load("//tools/proto:proto.bzl", "cc_proto_library", "proto_library")
+load("//tools/proto:proto.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
 proto_library(
     name = "test_messages_proto",
     srcs = ["test_messages.proto"],
-)
-
-cc_proto_library(
-    name = "test_messages_cc_proto",
-    deps = [":test_messages_proto"],
 )
 
 apollo_cc_test(
