@@ -2,6 +2,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import localFont from 'next/font/local';
 import type { Metadata } from 'next';
 import { Provider } from '@/components/provider';
+import { ScrollTop } from '@/components/scroll-top';
 import './global.css';
 
 const SITE = 'https://sentil.pages.dev';
@@ -111,6 +112,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
+        <ScrollTop />
         <Provider>{children}</Provider>
       </body>
     </html>
