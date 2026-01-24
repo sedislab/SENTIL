@@ -1,7 +1,10 @@
 'use client';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { ComponentProps, FC, ReactNode } from 'react';
+
+const SearchDialog = dynamic(() => import('@/components/search'));
 
 const Link: FC<ComponentProps<'a'> & { prefetch?: boolean }> = ({
   href = '#',
@@ -11,7 +14,7 @@ const Link: FC<ComponentProps<'a'> & { prefetch?: boolean }> = ({
 
 export function Provider({ children }: { children: ReactNode }) {
   return (
-    <RootProvider components={{ Link }}>
+    <RootProvider search={{ SearchDialog }} components={{ Link }}>
       {children}
     </RootProvider>
   );

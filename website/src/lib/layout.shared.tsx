@@ -2,6 +2,7 @@ import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import Link from 'next/link';
 import { Download } from 'lucide-react';
 import { appName } from './shared';
+import { SearchToggle } from '@/components/search-toggle';
 
 function Logo() {
   return (
@@ -41,6 +42,9 @@ export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       title: <Logo />,
+    },
+    searchToggle: {
+      components: { lg: <SearchToggle /> },
     },
     githubUrl: 'https://github.com/sedislab/SENTIL',
     links: [
