@@ -1,0 +1,35 @@
+---
+title: "Welcome to SENTIL"
+description: "SENTIL is a tool for Signal Temporal Logic and its Probabilistic extension, PrSTL."
+---
+
+import { Download, Rocket, Activity, Sigma, Workflow } from 'lucide-react';
+
+New to Signal Temporal Logic? Read [what STL is](/docs/monitoring/concepts/what-is-stl) first, then come back here.
+
+<Cards>
+  <Card icon={<Download />} title="Install" href="/docs/start/install" description="Get SENTIL for your language.">
+    `pip install sentil`
+  </Card>
+  <Card icon={<Rocket />} title="Your first monitor" href="/docs/start/first-monitor" description="Parse a formula, evaluate it, and read the robustness value quickly.">
+    Start here
+  </Card>
+  <Card icon={<Activity />} title="Monitor a signal" href="/docs/monitoring" description="Write an STL formula and read quantitative robustness over a trace, online or offline.">
+    The runtime monitor
+  </Card>
+  <Card icon={<Sigma />} title="Verify under noise" href="/docs/probabilistic" description="Lift noisy readings into a fitted distribution and estimate satisfaction probability.">
+    The statistical layer
+  </Card>
+  <Card icon={<Workflow />} title="Synthesize a controller" href="/docs/synthesis" description="Turn a specification into an input sequence or a feedback controller.">
+    From spec to controller
+  </Card>
+</Cards>
+
+## Where to go next
+
+<Cards>
+  <Card title="Monitor a live stream" href="/docs/start/live-stream" description="Feed samples one at a time and watch the verdict resolve as the window fills." />
+  <Card title="Run on a recorded trace" href="/docs/start/recorded-trace" description="Load a CPS trace from a file and locate the interval where the property fails." />
+  <Card title="Learn interactively" href="/docs/start/interactive-stl" description="Work one trace through predicates, booleans, and the temporal operators with every value checked by hand." />
+  <Card title="Troubleshooting" href="/docs/start/troubleshooting" description="The errors a first run tends to hit, and the one-line fix for each." />
+</Cards>

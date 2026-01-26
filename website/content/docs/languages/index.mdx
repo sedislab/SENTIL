@@ -1,0 +1,38 @@
+---
+title: "Languages"
+description: "SENTIL ships native SDKs for Rust, Python, C, C++, Java, Julia, MATLAB, and the command line, plus platform modules for ROS 2, Apollo, AUTOSAR, and microcontrollers."
+icon: Braces
+---
+
+SENTIL is written in Rust but it's made as independent as possible. A Python user needs no Rust toolchain and no C compiler, because the wheel carries the compiled core inside it, and the same holds for every other package. 
+
+## Language SDKs
+
+| Binding | Distributor | Install | Capability |
+|---|---|---|---|
+| [Rust](/docs/languages/rust) | crates.io | `cargo add sentil` | Full |
+| [Python](/docs/languages/python) | PyPI | `pip install sentil` | Full |
+| [C](/docs/languages/c) | GitHub release / vcpkg / Conan | release `.deb` or `.rpm`, or `vcpkg install sentil` | Full |
+| [C++](/docs/languages/cpp) | vcpkg / Conan | `vcpkg install sentil-cpp` | Full |
+| [Java](/docs/languages/java) | Maven Central | `io.github.sedislab:sentil:0.3.0` | Full |
+| [Julia](/docs/languages/julia) | General registry | `] add Sentil` | Full |
+| [MATLAB](/docs/languages/matlab) | File Exchange | `Sentil.mltbx` (R2021b+) | Full |
+| [CLI](/docs/languages/cli) | crates.io / Homebrew / Scoop / Winget | `cargo install sentil-cli` | Full |
+
+## Platform integrations
+
+| Integration | Distributor | Install | Capability |
+|---|---|---|---|
+| [ROS 2](/docs/languages/ros) | rosdistro | `sudo apt install ros-humble-sentil-ros` (Humble, Jazzy, Rolling) | Full |
+| [Apollo](/docs/languages/apollo) | source module | Bazel module `modules/sentil` | Full |
+| [AUTOSAR Adaptive](/docs/languages/autosar) | source component | `sentil-autosar-adaptive` over `ara::com` | Full |
+| [Embedded](/docs/languages/embedded) | Arduino / PlatformIO / ESP-IDF / Zephyr | Arduino Library Manager: `Sentil` | Monitoring and on-chip planning |
+
+Full capability means the binding has all the same features and capabilities of the core. The embedded target runs the streaming STL monitor in full, plus offline robustness, multi-formula monitoring, and on-chip planning with the receding-horizon controller and safety filter. It cannot host statistical model checking or the GPU path, because a microcontroller has neither the memory nor the parallel hardware those need. The full scope is on the [embedded page](/docs/languages/embedded).
+
+## Across bindings
+
+<Cards>
+  <Card title="Errors across bindings" href="/docs/languages/across/handle-errors" description="How the core's message reaches each language's error type." />
+  <Card title="Bind a new language" href="/docs/languages/across/new-language-cabi" description="Reach the C ABI from a language without a ready SDK." />
+</Cards>

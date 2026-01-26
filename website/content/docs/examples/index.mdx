@@ -1,0 +1,40 @@
+---
+title: "Examples"
+description: "Short recipes for the tasks you actually need to hit the ground running on a project."
+---
+
+We include five examples in every language binding, namely, offline monitoring in discrete time, offline monitoring in dense time, online streaming, probabilistic monitoring, and synthesis. Each example is a self-contained program that you can run to see the monitor in action and it's purpose is to get you started quickly with SENTIL.
+
+## The canonical set
+
+<Cards>
+  <Card title="Offline monitoring, discrete time" href="/docs/examples/canonical/offline-discrete" description="Evaluate a trace against a formula and read the robustness, the per-sample signal, and the violation intervals." />
+  <Card title="Offline monitoring, dense time" href="/docs/examples/canonical/offline-dense" description="Read the same trace as a continuous signal so that a dip between two samples is counted." />
+  <Card title="Online streaming" href="/docs/examples/canonical/online-streaming" description="Fold one timestamped sample at a time and read a running verdict." />
+  <Card title="Checking a PrSTL property" href="/docs/examples/canonical/prstl" description="Register a sensor noise model, lift each reading into an ensemble, and estimate satisfaction probability with a confidence interval." />
+  <Card title="Synthesis" href="/docs/examples/canonical/synthesis" description="Solve a specification for a control input, then shield a nominal controller with a safety filter." />
+</Cards>
+
+## Migrating from another tool
+
+If you already have formulas written for another monitor, these pages translate them and show you how to migrate from that tool to SENTIL.
+
+<Cards>
+  <Card title="Coming from RTAMT" href="/docs/examples/migrations/coming-from-rtamt" description="Discrete and dense STL monitoring, offline and online, with the operator names lined up." />
+  <Card title="Coming from Breach" href="/docs/examples/migrations/coming-from-breach" description="Dense-time robustness, with a reference case study." />
+  <Card title="Coming from UPPAAL-SMC" href="/docs/examples/migrations/coming-from-uppaal" description="Statistical model checking of a probabilistic property against a known satisfaction probability." />
+</Cards>
+
+## Recipes
+
+Short, task-shaped answers for the work that comes after the first monitor runs.
+
+<Cards>
+  <Card title="Load traces" href="/docs/examples/recipes/load-traces" description="Read CSV, Parquet, Arrow, and the other trace formats into a Trace." />
+  <Card title="Use the spec library" href="/docs/examples/recipes/use-spec-library" description="Reach for a premade, standards-derived specification instead of writing one." />
+  <Card title="The Simulink block" href="/docs/examples/recipes/simulink-block" description="Drop the streaming monitor into a model as an S-Function block." />
+  <Card title="Reproduce a claim" href="/docs/examples/recipes/reproduce-claim" description="Run a single entry from the claims ledger and check the artifact against the expected value." />
+  <Card title="Run the benchmarks" href="/docs/examples/recipes/benchmark" description="Drive the benchmark runners and plot SENTIL against the baseline tools." />
+</Cards>
+
+New to the library? Start with [your first monitor](/docs/start/first-monitor), then come back here to see the same idea in every language.
