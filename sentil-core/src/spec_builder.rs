@@ -1194,7 +1194,8 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
     fn response_and_reach_specs_score_holding_and_violating_traces() {
         use crate::{Formula, Trace};
 
-        let cases: &[(&str, &[(&str, f64)], &[(&str, f64)])] = &[
+        type Case = (&'static str, &'static [(&'static str, f64)], &'static [(&'static str, f64)]);
+        let cases: &[Case] = &[
             ("medical/hypoglycemia_recovery", &[("glucose", 100.0)], &[("glucose", 50.0)]),
             ("medical/sustained_euglycemia", &[("glucose", 110.0)], &[("glucose", 40.0)]),
             (
