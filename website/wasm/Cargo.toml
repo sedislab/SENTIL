@@ -1,0 +1,17 @@
+# Standalone (detached from the sentil workspace) so building the browser engine
+# never touches the repo's Cargo.lock or the core crate.
+[package]
+name = "sentil-engine"
+version = "0.3.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sentil = { path = "../../sentil-core", default-features = false, features = ["std", "statistical", "synthesis"] }
+wasm-bindgen = "0.2"
+serde_json = "1"
