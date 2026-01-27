@@ -18,6 +18,6 @@
   "rss_steady_mb": 11.0,
   "rss_growth_mb": 1.0,
   "hardware": "x86_64 dev login node (regression guard, not the Pi 4 reference)",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "runs": 1
 }

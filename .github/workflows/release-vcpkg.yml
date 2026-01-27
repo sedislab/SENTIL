@@ -19,7 +19,7 @@ jobs:
         id: ver
         run: |
           version="${GITHUB_REF_NAME#v}"
-          if [ "$version" = "$GITHUB_REF_NAME" ]; then version="1.0.0"; fi
+          if [ "$version" = "$GITHUB_REF_NAME" ]; then version="0.3.0"; fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: download the release assets

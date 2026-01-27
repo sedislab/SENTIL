@@ -1,12 +1,3 @@
-// The SENTIL Java runner. Emits one JSON record per measurement to standard output,
-// matching the Rust runner's schema so the Java binding is timed against the core on
-// identical work. Run with the binding jar on the classpath, which carries the bundled
-// native library, so no SENTIL_LIB is needed:
-//   java -cp ../sentil-java/target/sentil-1.0.0.jar runners/sentil_runner.java scalability
-//
-// It builds the x-only oracle trace the C runner builds, not the Rust runner's
-// three-signal trace, so at the largest sizes it can read faster than the Rust number;
-// that is a trace-composition artifact, not a real speedup.
 import io.github.sedislab.sentil.Monitor;
 import io.github.sedislab.sentil.OnlineMonitor;
 import io.github.sedislab.sentil.Robustness;
@@ -79,7 +70,7 @@ class SentilRunner {
         long rss = peakRssBytes();
         String rssField = rss >= 0 ? Long.toString(rss) : "null";
         StringBuilder out = new StringBuilder();
-        out.append("{\"tool\":\"sentil\",\"version\":\"1.0.0\",\"language\":\"java\",\"benchmark\":\"")
+        out.append("{\"tool\":\"sentil\",\"version\":\"0.3.0\",\"language\":\"java\",\"benchmark\":\"")
                 .append(benchmark).append("\",");
         out.append(String.format("\"formula\":\"%s\",\"question\":\"%s\",\"size\":%d,\"robustness\":%.17g,",
                 FORMULA, question, size, robustness));

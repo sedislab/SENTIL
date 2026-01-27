@@ -1,7 +1,7 @@
 // Online streaming: fold one timestamped sample at a time.
 //
-//   javac -cp ../target/sentil-1.0.0.jar OnlineStreaming.java
-//   java -cp ../target/sentil-1.0.0.jar:. OnlineStreaming
+//   javac -cp ../target/sentil-0.3.0.jar OnlineStreaming.java
+//   java -cp ../target/sentil-0.3.0.jar:. OnlineStreaming
 import io.github.sedislab.sentil.OnlineMonitor;
 import io.github.sedislab.sentil.Robustness;
 import java.util.Collections;

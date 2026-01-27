@@ -9,7 +9,7 @@ PREFIX ?= /usr/local
 ROOT := $(abspath ..)
 LIBDIR := $(ROOT)/target/release
 INCLUDE := include
-VERSION := 1.0.0
+VERSION := 0.3.0
 ARCH := $(shell uname -m)
 ifeq ($(shell uname -s),Darwin)
 	OSNAME := macos

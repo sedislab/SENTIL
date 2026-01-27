@@ -80,7 +80,7 @@ static long peak_rss_bytes() {
 static void emit(const char* benchmark, const char* formula, const char* question,
                  std::uint64_t size, double robustness, const Timing& t, std::uint64_t runs) {
     long rss = peak_rss_bytes();
-    std::printf("{\"tool\":\"sentil\",\"version\":\"1.0.0\",\"language\":\"cpp\",\"benchmark\":\"%s\","
+    std::printf("{\"tool\":\"sentil\",\"version\":\"0.3.0\",\"language\":\"cpp\",\"benchmark\":\"%s\","
                 "\"formula\":\"%s\",\"question\":\"%s\",\"size\":%llu,\"robustness\":%.17g,",
                 benchmark, formula, question, static_cast<unsigned long long>(size), robustness);
     std::printf("\"timing\":{\"mean_ms\":%.17g,\"std_ms\":%.17g,\"min_ms\":%.17g,\"p50_ms\":%.17g,"

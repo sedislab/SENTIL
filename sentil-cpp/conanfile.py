@@ -6,7 +6,7 @@ from conan.tools.files import copy
 
 class SentilCppConan(ConanFile):
     name = "sentil-cpp"
-    version = "1.0.0"
+    version = "0.3.0"
     license = "MIT OR Apache-2.0"
     description = "C++ bindings for SENTIL, runtime verification for STL and PrSTL"
     homepage = "https://github.com/sedislab/SENTIL"
@@ -15,7 +15,7 @@ class SentilCppConan(ConanFile):
     no_copy_source = True
 
     def requirements(self):
-        self.requires("sentil/1.0.0", transitive_headers=True, transitive_libs=True)
+        self.requires("sentil/0.3.0", transitive_headers=True, transitive_libs=True)
 
     def export_sources(self):
         copy(self, "*", os.path.join(self.recipe_folder, "include"),

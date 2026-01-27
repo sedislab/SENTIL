@@ -17,7 +17,7 @@ gpu = ["sentil/gpu", "dep:pollster"]
 formats = ["sentil/parquet", "sentil/arrow", "sentil/sqlite"]
 
 [dependencies]
-sentil = { path = "../sentil-core", default-features = false, features = [
+sentil = { path = "../sentil-core", version = "0.3.0", default-features = false, features = [
     "std",
     "statistical",
     "synthesis",

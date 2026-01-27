@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sentil"
-version = "1.0.0"
+version = "0.3.0"
 description = "Runtime verification for signal temporal logic and its probabilistic extension"
 readme = "README.md"
 requires-python = ">=3.8"

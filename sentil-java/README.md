@@ -28,14 +28,14 @@ From Maven Central, once published:
 <dependency>
   <groupId>io.github.sedislab</groupId>
   <artifactId>sentil</artifactId>
-  <version>1.0.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
 or with Gradle:
 
 ```groovy
-implementation 'io.github.sedislab:sentil:1.0.0'
+implementation 'io.github.sedislab:sentil:0.3.0'
 ```
 
 The published jar bundles the native library for Linux, macOS, and Windows on common architectures, so nothing else is needed.
@@ -48,7 +48,7 @@ Building the jar compiles the Rust core and a small JNI shim, then packages both
 mvn -DskipTests package
 ```
 
-That runs `cargo build --release` for the core, configures and builds the shim with CMake, and writes `target/sentil-1.0.0.jar` with the native library inside under `native/<os>-<arch>/`. The same command works on each platform: it produces `libsentil.so` on Linux, `libsentil.dylib` on macOS, and `sentil.dll` on Windows, and the loader picks the right one at run time. To assemble a single jar that runs on every platform, build on each and merge the per-platform `native/` trees, which is what the release workflow does.
+That runs `cargo build --release` for the core, configures and builds the shim with CMake, and writes `target/sentil-0.3.0.jar` with the native library inside under `native/<os>-<arch>/`. The same command works on each platform: it produces `libsentil.so` on Linux, `libsentil.dylib` on macOS, and `sentil.dll` on Windows, and the loader picks the right one at run time. To assemble a single jar that runs on every platform, build on each and merge the per-platform `native/` trees, which is what the release workflow does.
 
 ## Examples
 

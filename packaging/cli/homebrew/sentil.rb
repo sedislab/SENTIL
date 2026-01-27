@@ -1,22 +1,22 @@
 class Sentil < Formula
   desc "Runtime verification for Signal Temporal Logic and PrSTL"
   homepage "https://github.com/sedislab/SENTIL"
-  version "1.0.0"
+  version "0.3.0"
   license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
     on_arm do
-      url "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-aarch64-apple-darwin.tar.gz"
+      url "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-apple-darwin.tar.gz"
       sha256 "REPLACE_WITH_AARCH64_DARWIN_SHA256"
     end
     on_intel do
-      url "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-apple-darwin.tar.gz"
       sha256 "REPLACE_WITH_X86_64_DARWIN_SHA256"
     end
   end
 
   on_linux do
-    url "https://github.com/sedislab/SENTIL/releases/download/v1.0.0/sentil-1.0.0-x86_64-unknown-linux-gnu.tar.gz"
+    url "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz"
     sha256 "REPLACE_WITH_X86_64_LINUX_SHA256"
   end
 

@@ -332,8 +332,8 @@ impl From<sentil::SoftKind> for SentilSoftKind {
     }
 }
 
-const VERSION_MAJOR: u32 = 1;
-const VERSION_MINOR: u32 = 0;
+const VERSION_MAJOR: u32 = 0;
+const VERSION_MINOR: u32 = 3;
 const VERSION_PATCH: u32 = 0;
 
 #[no_mangle]

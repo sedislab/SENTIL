@@ -28,7 +28,7 @@ jobs:
       - name: stage bundle
         shell: bash
         run: |
-          stage="sentil-1.0.0-${{ matrix.name }}"
+          stage="sentil-0.3.0-${{ matrix.name }}"
           mkdir -p "$stage/lib/pkgconfig" "$stage/lib/cmake/Sentil" "$stage/include" "$stage/share/sentil"
           cp sentil-ffi/include/sentil.h "$stage/include/"
           cp -r sentil-cpp/include/sentil "$stage/include/"
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.name }}
-          path: sentil-1.0.0-*.tar.gz
+          path: sentil-0.3.0-*.tar.gz
 
   packages:
     name: deb and rpm

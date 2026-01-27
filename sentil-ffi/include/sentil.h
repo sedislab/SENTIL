@@ -10,8 +10,8 @@
 extern "C" {
 #endif
 
-#define SENTIL_VERSION_MAJOR 1
-#define SENTIL_VERSION_MINOR 0
+#define SENTIL_VERSION_MAJOR 0
+#define SENTIL_VERSION_MINOR 3
 #define SENTIL_VERSION_PATCH 0
 
 typedef enum sentil_error {

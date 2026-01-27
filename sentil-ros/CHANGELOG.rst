@@ -2,7 +2,7 @@
 Changelog for package sentil_ros
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1.0.0
+0.3.0
 -----
 * First release. A lifecycle monitor node that watches ROS 2 topic streams against
   STL and PrSTL specifications, with generic introspection-based subscriptions, a

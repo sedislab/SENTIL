@@ -1,7 +1,7 @@
 // Synthesize a control input that satisfies a spec, then shield it online.
 //
-//   javac -cp ../target/sentil-1.0.0.jar Synthesis.java
-//   java -cp ../target/sentil-1.0.0.jar:. Synthesis
+//   javac -cp ../target/sentil-0.3.0.jar Synthesis.java
+//   java -cp ../target/sentil-0.3.0.jar:. Synthesis
 import io.github.sedislab.sentil.Backend;
 import io.github.sedislab.sentil.Bounds;
 import io.github.sedislab.sentil.Formula;

@@ -6,6 +6,6 @@ includedir=${prefix}/include
 Name: sentil
 Description: Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL
 URL: https://github.com/sedislab/SENTIL
-Version: 1.0.0
+Version: 0.3.0
 Libs: -L${libdir} -lsentil
 Cflags: -I${includedir}

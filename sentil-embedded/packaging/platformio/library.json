@@ -1,6 +1,6 @@
 {
   "name": "Sentil",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "description": "Runtime verification with Signal Temporal Logic on a microcontroller: a streaming STL monitor plus on-board synthesis and a receding-horizon controller.",
   "keywords": "temporal-logic, runtime-verification, monitoring, control, stl",
   "license": "MIT OR Apache-2.0",

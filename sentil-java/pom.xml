@@ -6,7 +6,7 @@
 
   <groupId>io.github.sedislab</groupId>
   <artifactId>sentil</artifactId>
-  <version>1.0.0</version>
+  <version>0.3.0</version>
   <packaging>jar</packaging>
 
   <name>SENTIL</name>

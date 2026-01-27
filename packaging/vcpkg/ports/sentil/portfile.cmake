@@ -1,4 +1,4 @@
-set(SENTIL_VERSION 1.0.0)
+set(SENTIL_VERSION 0.3.0)
 set(SENTIL_RELEASE "https://github.com/sedislab/SENTIL/releases/download/v${SENTIL_VERSION}")
 
 vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)

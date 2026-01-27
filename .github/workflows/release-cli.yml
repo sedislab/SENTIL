@@ -33,7 +33,7 @@ jobs:
           ext=""
           [ "${{ matrix.triple }}" = "x86_64-pc-windows-msvc" ] && ext=".exe"
           bin="target/${{ matrix.triple }}/release/sentil${ext}"
-          packaging/cli/stage.sh "${{ matrix.triple }}" "1.0.0" "$bin" "${{ matrix.fmt }}"
+          packaging/cli/stage.sh "${{ matrix.triple }}" "0.3.0" "$bin" "${{ matrix.fmt }}"
       - uses: actions/upload-artifact@v4
         with:
           name: sentil-${{ matrix.name }}

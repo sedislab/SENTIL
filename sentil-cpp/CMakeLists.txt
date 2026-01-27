@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(SentilCpp
-    VERSION 1.0.0
+    VERSION 0.3.0
     DESCRIPTION "C++ bindings for SENTIL, runtime verification for STL and PrSTL"
     LANGUAGES CXX)
 

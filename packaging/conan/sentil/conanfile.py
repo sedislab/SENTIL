@@ -7,7 +7,7 @@ from conan.tools.files import copy, get
 
 class SentilConan(ConanFile):
     name = "sentil"
-    version = "1.0.0"
+    version = "0.3.0"
     license = "MIT OR Apache-2.0"
     description = "C ABI for SENTIL, runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL"
     homepage = "https://github.com/sedislab/SENTIL"

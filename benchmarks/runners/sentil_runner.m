@@ -77,7 +77,7 @@ end
 function emit(benchmark, formula, question, size, robustness, t, runs)
 rss = peak_rss_bytes();
 if rss >= 0, rss_field = sprintf('%d', rss); else, rss_field = 'null'; end
-fprintf('{"tool":"sentil","version":"1.0.0","language":"matlab","benchmark":"%s",', benchmark);
+fprintf('{"tool":"sentil","version":"0.3.0","language":"matlab","benchmark":"%s",', benchmark);
 fprintf('"formula":"%s","question":"%s","size":%d,"robustness":%.17g,', formula, question, size, robustness);
 fprintf('"timing":{"mean_ms":%.17g,"std_ms":%.17g,"min_ms":%.17g,"p50_ms":%.17g,"p99_ms":%.17g},', ...
     t.mean, t.std, t.min, t.p50, t.p99);

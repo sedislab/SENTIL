@@ -7,7 +7,7 @@
 # carries the named placeholder tokens so it is never published with a stale hash.
 
 pkgname=sentil
-pkgver=1.0.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL, with a C library and the sentil CLI"
 arch=('x86_64')

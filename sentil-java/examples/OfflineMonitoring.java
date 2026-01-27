@@ -1,7 +1,7 @@
 // Offline robustness over a recorded trace, in discrete and dense time.
 //
-//   javac -cp ../target/sentil-1.0.0.jar OfflineMonitoring.java
-//   java -cp ../target/sentil-1.0.0.jar:. OfflineMonitoring
+//   javac -cp ../target/sentil-0.3.0.jar OfflineMonitoring.java
+//   java -cp ../target/sentil-0.3.0.jar:. OfflineMonitoring
 import io.github.sedislab.sentil.Formula;
 import io.github.sedislab.sentil.Interval;
 import io.github.sedislab.sentil.Trace;
