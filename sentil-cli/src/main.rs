@@ -91,7 +91,10 @@ fn main() -> ExitCode {
         Ok(exit) => ExitCode::from(exit),
         Err(err) => {
             let exit = err.exit_code();
-            eprintln!("{:?}", miette::Report::new(err));
+            // An interrupt exits 130 in silence, the way a shell prompt does.
+            if !err.is_interrupt() {
+                eprintln!("{:?}", miette::Report::new(err));
+            }
             ExitCode::from(exit)
         }
     }

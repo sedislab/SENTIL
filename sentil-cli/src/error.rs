@@ -59,6 +59,11 @@ pub enum CliError {
     #[error("{0}")]
     #[diagnostic(code(sentil::internal))]
     Internal(String),
+
+    /// Ctrl+C or Escape a prompt.
+    #[error("interrupted")]
+    #[diagnostic(code(sentil::interrupted))]
+    Interrupted,
 }
 
 impl CliError {
@@ -68,7 +73,12 @@ impl CliError {
             Self::NotFound { .. } => code::NO_INPUT,
             Self::Backend(..) => code::UNAVAILABLE,
             Self::Internal(_) => code::INTERNAL,
+            Self::Interrupted => code::INTERRUPTED,
         }
+    }
+
+    pub fn is_interrupt(&self) -> bool {
+        matches!(self, Self::Interrupted)
     }
 }
 

@@ -116,7 +116,7 @@ fn prompt_select(message: &str, options: &[&str]) -> Result<String, CliError> {
 fn cancel_or_error(error: InquireError) -> CliError {
     match error {
         InquireError::OperationCanceled | InquireError::OperationInterrupted => {
-            CliError::Input("cancelled".into(), None)
+            CliError::Interrupted
         }
         other => CliError::Input(format!("prompt failed: {other}"), None),
     }
