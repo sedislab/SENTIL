@@ -14,6 +14,7 @@ use serde_json::json;
 use crate::cli::{Algo, Interval};
 use crate::engine;
 use crate::error::{code, CliError, Run};
+use crate::interrupt;
 use crate::output::{self, Out};
 
 const BAYES_FACTOR: f64 = 100.0; // a bayes factor of 100 is solid on the Jeffreys scale
@@ -59,12 +60,13 @@ pub fn run(
 
     let spinner = out.spinner("simulating");
     let start = Instant::now();
-    let report = match algo {
-        Algo::Smc => smc(&parsed, &trace, &lifting, budget, confidence, interval, seed)?,
+    // so that it can be stopped with Ctrl+C
+    let outcome = interrupt::run_or_interrupt(move || match algo {
+        Algo::Smc => smc(&parsed, &trace, &lifting, budget, confidence, interval, seed),
         Algo::Chernoff => {
             let sized = chernoff_hoeffding_samples(epsilon, 1.0 - confidence)
                 .map_err(|e| CliError::Input(format!("chernoff sample sizing: {e}"), None))?;
-            smc(&parsed, &trace, &lifting, sized, confidence, interval, seed)?
+            smc(&parsed, &trace, &lifting, sized, confidence, interval, seed)
         }
         Algo::Sprt => sprt(
             &parsed,
@@ -76,11 +78,15 @@ pub fn run(
             confidence,
             budget,
             seed,
-        )?,
-        Algo::Bayes => bayes(&parsed, &trace, &lifting, op, threshold, budget, seed)?,
-    };
+        ),
+        Algo::Bayes => bayes(&parsed, &trace, &lifting, op, threshold, budget, seed),
+    });
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     output::clear_spinner(spinner);
+    let report = match outcome {
+        Some(result) => result?,
+        None => return Ok(code::INTERRUPTED),
+    };
 
     if out.is_text() {
         out.heading("smc");

@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::cli::Method;
 use crate::error::{code, CliError, Run};
+use crate::interrupt;
 use crate::output::{self, Out};
 use crate::{engine, model};
 
@@ -30,22 +31,28 @@ pub fn run(
             Some("add a bounds {\"lower\": [...], \"upper\": [...]} block to the model file".into()),
         )
     })?;
+    if matches!(method, Method::Milp) {
+        return Err(CliError::Input(
+            "falsify searches with gradient or cmaes, not milp".into(),
+            None,
+        ));
+    }
 
     let spinner = out.spinner("searching for a counterexample");
-    let witness = match method {
-        Method::Gradient => {
+    // so a long budget or many restarts can be stopped with Ctrl+C
+    let outcome = interrupt::run_or_interrupt(move || {
+        let witness = if matches!(method, Method::CmaEs) {
+            parsed.falsify(&loaded.model, &bounds, CmaConfig::default(), restarts)
+        } else {
             parsed.find_counterexample(&loaded.model, &bounds, budget, SmoothConfig::default())
-        }
-        Method::CmaEs => parsed.falsify(&loaded.model, &bounds, CmaConfig::default(), restarts),
-        Method::Milp => {
-            return Err(CliError::Input(
-                "falsify searches with gradient or cmaes, not milp".into(),
-                None,
-            ))
-        }
-    }
-    .map_err(|e| CliError::Engine(e.to_string()))?;
+        };
+        witness.map_err(|e| CliError::Engine(e.to_string()))
+    });
     output::clear_spinner(spinner);
+    let witness = match outcome {
+        Some(res) => res?,
+        None => return Ok(code::INTERRUPTED),
+    };
 
     let found = witness.robustness < 0.0;
     if out.is_text() {

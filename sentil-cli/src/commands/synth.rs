@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::cli::Method;
 use crate::error::{code, CliError, Run};
+use crate::interrupt;
 use crate::output::{self, Out};
 use crate::{engine, model};
 
@@ -23,17 +24,23 @@ pub fn run(
     let (formula_text, _builder) = engine::resolve_formula(formula, spec, variant, params, false)?;
     let spec_formula = engine::parse_or_diagnose(&formula_text)?;
     let loaded = model::load(model_path, horizon)?;
-
-    let mut problem = SynthesisProblem::new(&loaded.model, &spec_formula)
-        .with_backend(backend_of(method))
-        .with_budget(budget);
-    if let Some(bounds) = loaded.bounds {
-        problem = problem.with_bounds(bounds);
-    }
+    let backend = backend_of(method);
 
     let spinner = out.spinner("synthesizing");
-    let result = Synthesizer::solve(&problem).map_err(|e| CliError::Engine(e.to_string()))?;
+    let outcome = interrupt::run_or_interrupt(move || {
+        let mut problem = SynthesisProblem::new(&loaded.model, &spec_formula)
+            .with_backend(backend)
+            .with_budget(budget);
+        if let Some(bounds) = loaded.bounds {
+            problem = problem.with_bounds(bounds);
+        }
+        Synthesizer::solve(&problem).map_err(|e| CliError::Engine(e.to_string()))
+    });
     output::clear_spinner(spinner);
+    let result = match outcome {
+        Some(res) => res?,
+        None => return Ok(code::INTERRUPTED),
+    };
 
     if out.is_text() {
         let feasible = if result.holds {
