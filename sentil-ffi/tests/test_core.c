@@ -4,7 +4,7 @@
 int main(void) {
     uint32_t mj = 0, mn = 0, pa = 0;
     sentil_version(&mj, &mn, &pa);
-    CHECK(mj == 1 && mn == 0 && pa == 0);
+    CHECK(mj == 0 && mn == 3 && pa == 0);
     sentil_version(NULL, NULL, NULL);
 
     sentil_formula_t *f = sentil_formula_parse("always[0,5] (x > 0)");
