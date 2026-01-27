@@ -1,0 +1,441 @@
+---
+title: "Your first monitor"
+description: "Write an STL formula, evaluate it over a five-sample trace, and read the result."
+---
+
+SENTIL is available on your platform. The [install page](/docs/start/install) has all you need.
+
+## Traces and formulas
+
+Our signal is a speed that is read at five timesteps, and the property we want to check is that,"speed always stays above five".
+
+| time | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| speed | 12 | 9 | 7 | 4 | 6 |
+
+The formula is `G (speed > 5)`.
+
+## Run it
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="first_monitor.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+
+print("robustness:", phi.robustness(trace))
+print("per sample:", phi.robustness_signal(trace))
+print("violations:", [(v.start, v.end) for v in phi.violations(trace)])
+```
+
+```text
+robustness: -1.0
+per sample: [-1. -1. -1. -1.  1.]
+violations: [(0.0, 3.0)]
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="first_monitor.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+    trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+
+    let phi = Formula::parse("G (speed > 5)")?;
+    println!("robustness: {}", phi.robustness(&trace)?);
+    println!("per sample: {:?}", phi.robustness_signal(&trace)?);
+    println!("violations: {:?}", phi.violations(&trace)?);
+    Ok(())
+}
+```
+
+```text
+robustness: -1
+per sample: [-1.0, -1.0, -1.0, -1.0, 1.0]
+violations: [(0.0, 3.0)]
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="first_monitor.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    double times[] = {0.0, 1.0, 2.0, 3.0, 4.0};
+    double speed[] = {12.0, 9.0, 7.0, 4.0, 6.0};
+    sentil_trace_t *trace = sentil_trace_from_signal(times, 5, "speed", speed, 5);
+    sentil_formula_t *phi = sentil_formula_parse("G (speed > 5)");
+    if (trace == NULL || phi == NULL) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+
+    double rho = 0.0;
+    sentil_formula_robustness(phi, trace, &rho);
+    printf("robustness: %.1f\n", rho);
+
+    sentil_formula_destroy(phi);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+```text
+robustness: -1.0
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="first_monitor.cpp"
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+int main() {
+    sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12.0, 9.0, 7.0, 4.0, 6.0});
+    sentil::Formula phi = sentil::Formula::parse("G (speed > 5)");
+
+    std::cout << "robustness: " << phi.robustness(trace) << "\n";
+    for (const sentil::Interval& v : phi.violations(trace)) {
+        std::cout << "violation [" << v.start << ", " << v.end << "]\n";
+    }
+    return 0;
+}
+```
+
+```text
+robustness: -1
+violation [0, 3]
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="FirstMonitor.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.Interval;
+import io.github.sedislab.sentil.Trace;
+import java.util.Arrays;
+
+public class FirstMonitor {
+    public static void main(String[] args) throws Exception {
+        try (Trace trace = Trace.create(new double[] {0, 1, 2, 3, 4});
+                Formula phi = Formula.parse("G (speed > 5)")) {
+            trace.addSignal("speed", new double[] {12, 9, 7, 4, 6});
+
+            System.out.println("robustness: " + phi.robustness(trace));
+            System.out.println("per sample: " + Arrays.toString(phi.robustnessSignal(trace)));
+            for (Interval v : phi.violations(trace)) {
+                System.out.println("violation [" + v.start() + ", " + v.end() + "]");
+            }
+        }
+    }
+}
+```
+
+```text
+robustness: -1.0
+per sample: [-1.0, -1.0, -1.0, -1.0, 1.0]
+violation [0.0, 3.0]
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="first_monitor.jl"
+using Sentil
+
+phi = formula("G (speed > 5)")
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12.0, 9.0, 7.0, 4.0, 6.0])
+
+println("robustness: ", robustness(phi, trace))
+println("per sample: ", robustness_signal(phi, trace))
+for span in violations(phi, trace)
+    println("violation [", span.start, ", ", span.stop, "]")
+end
+```
+
+```text
+robustness: -1.0
+per sample: [-1.0, -1.0, -1.0, -1.0, 1.0]
+violation [0.0, 3.0]
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="first_monitor.m"
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('G (speed > 5)');
+
+fprintf('robustness: %g\n', phi.robustness(trace));
+fprintf('per sample: %s\n', mat2str(phi.robustness_signal(trace)));
+
+spans = phi.violations(trace);
+for i = 1:size(spans, 1)
+    fprintf('violation [%g, %g]\n', spans(i, 1), spans(i, 2));
+end
+```
+
+```text
+robustness: -1
+per sample: [-1 -1 -1 -1 1]
+violation [0, 3]
+```
+
+</Tab>
+<Tab value="CLI">
+
+Save the trace as `speeds.csv`:
+
+```csv title="speeds.csv"
+time,speed
+0,12
+1,9
+2,7
+3,4
+4,6
+```
+
+Then check it:
+
+```bash
+sentil check -f 'G (speed > 5)' -t speeds.csv --semantics discrete
+```
+
+```text
+check
+  formula     G (speed > 5)
+  trace       speeds.csv
+  semantics   discrete
+  verdict     violated
+  robustness  -1.000000
+```
+
+The flag `--semantics discrete` lets the evaluation be at each timestep. [Discrete vs dense](/docs/monitoring/guides/discrete-vs-dense) covers all available evaluation modes and when to choose one over the other.
+
+Add `--signal` to print the margin at every sample, or `--violations` to print the failing intervals. The exit code is the boolean interpretation of the verdict: `0` when the spec holds, `10` when it fails. This is so that cases where you want a deployment on a pass i.e., `sentil check ... && deploy` can be constructed.
+
+</Tab>
+</Tabs>
+
+Every binding answers the same three questions and reports the same numbers. Only the formatting differs, since each language prints a float and a list its own way.
+
+## Why the number is what it is
+
+The predicate `speed > 5` scores `speed - 5` at each step. The `G`, read always, takes the smallest of those margins, because a conjunction over time is only as satisfied as its weakest moment.
+
+| time | 0 | 1 | 2 | 3 | 4 | `G` |
+|---|---|---|---|---|---|---|
+| `speed - 5` | 7 | 4 | 2 | -1 | 1 | -1.0 |
+
+The worst step is time 3, where speed drops to 4 and the margin is `-1`. That is the robustness of the whole formula: a violation, missed by exactly one unit. If the value at time 4 was 5, the robustness rises to 0 and above 5, the property holds. The [robustness concept](/docs/monitoring/concepts/what-is-stl) works through how the robustness value is calculated for various operators and why this is the value SENTIL uses for determining satisfaction.
+
+## The same rule under sensor noise
+
+A deterministic STL monitor treats the five readings as exact but in practice, a speedometer is not exact. If the true reading differs from the recorded one, the property may have been violated even if the monitor says it was satisfied. A probabilistic STL monitor can account for this uncertainty. PrSTL answers the question, given what the sensor reports and how much it is known to wander, how likely is it that the true speed satisfied the rule?
+
+`P>=0.9 (G (speed > 5))` asserts that the true speed stayed above five with probability at least 0.9, and the sensor here is taken to be Gaussian around the reading with a standard deviation of 0.7.
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="first_prstl.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel, SmcConfig
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+
+lifting = LiftingRegistry()
+lifting.register("speed", NoiseModel.gaussian(0.0, 0.7))
+
+phi = Formula.parse("P>=0.9 (G (speed > 5))")
+result = phi.check(trace, lifting, SmcConfig(samples=5000))
+
+print(f"estimate {result.probability:.3f}")
+print(f"95% interval [{result.interval.lower:.3f}, {result.interval.upper:.3f}]")
+print(f"holds {result.holds}")
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="first_prstl.rs"
+use sentil::{LiftingRegistry, Monitor, MonitorConfig, NoiseInteraction, NoiseModel, SmcConfig};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = sentil::Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+    trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+
+    let mut lifting = LiftingRegistry::new();
+    lifting.register("speed", NoiseModel::gaussian(0.0, 0.7)?, NoiseInteraction::Additive);
+
+    let config = MonitorConfig::new().smc(SmcConfig { samples: 5000, ..SmcConfig::default() });
+    let monitor = Monitor::new("P>=0.9 (G (speed > 5))", config)?;
+    let result = monitor.check(&trace, &lifting)?;
+
+    println!("estimate {:.3}", result.probability);
+    println!("95% interval [{:.3}, {:.3}]", result.interval.lower, result.interval.upper);
+    println!("holds {}", result.holds);
+    Ok(())
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="first_prstl.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    double times[] = {0.0, 1.0, 2.0, 3.0, 4.0};
+    double speed[] = {12.0, 9.0, 7.0, 4.0, 6.0};
+    sentil_trace_t *trace = sentil_trace_from_signal(times, 5, "speed", speed, 5);
+
+    sentil_lifting_registry_t *lifting = sentil_lifting_registry_create();
+    sentil_lifting_registry_register(lifting, "speed", sentil_noise_gaussian(0.0, 0.7),
+                                     SENTIL_NOISE_ADDITIVE);
+
+    sentil_formula_t *phi = sentil_formula_parse("P>=0.9 (G (speed > 5))");
+    sentil_smc_config_t config = sentil_smc_config_default();
+    config.samples = 5000;
+    sentil_smc_result_t result;
+    sentil_formula_check(phi, trace, lifting, &config, &result);
+    printf("estimate %.3f\n95%% interval [%.3f, %.3f]\nholds %s\n", result.probability,
+           result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+
+    sentil_formula_destroy(phi);
+    sentil_lifting_registry_destroy(lifting);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="first_prstl.cpp"
+#include <sentil/sentil.hpp>
+#include <cstdio>
+
+int main() {
+    sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12.0, 9.0, 7.0, 4.0, 6.0});
+
+    sentil::LiftingRegistry lifting;
+    lifting.register_noise("speed", sentil::NoiseModel::gaussian(0.0, 0.7));
+
+    sentil::Formula phi = sentil::Formula::parse("P>=0.9 (G (speed > 5))");
+    sentil::SmcConfig config;
+    config.samples = 5000;
+    sentil::SmcResult result = phi.check(trace, lifting, config);
+    std::printf("estimate %.3f\n95%% interval [%.3f, %.3f]\nholds %s\n", result.probability,
+                result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="FirstPrstl.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.LiftingRegistry;
+import io.github.sedislab.sentil.NoiseModel;
+import io.github.sedislab.sentil.SmcConfig;
+import io.github.sedislab.sentil.SmcResult;
+import io.github.sedislab.sentil.Trace;
+
+public class FirstPrstl {
+    public static void main(String[] args) throws Exception {
+        try (Trace trace = Trace.create(new double[] {0, 1, 2, 3, 4});
+                LiftingRegistry lifting = new LiftingRegistry();
+                Formula phi = Formula.parse("P>=0.9 (G (speed > 5))")) {
+            trace.addSignal("speed", new double[] {12, 9, 7, 4, 6});
+            lifting.register("speed", NoiseModel.gaussian(0.0, 0.7));
+
+            SmcResult result = phi.check(trace, lifting, new SmcConfig().samples(5000));
+            System.out.printf("estimate %.3f%n", result.probability());
+            System.out.printf("95%% interval [%.3f, %.3f]%n",
+                    result.interval().lower(), result.interval().upper());
+            System.out.printf("holds %b%n", result.holds());
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="first_prstl.jl"
+using Sentil
+
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12.0, 9.0, 7.0, 4.0, 6.0])
+
+lifting = LiftingRegistry()
+register_noise!(lifting, "speed", gaussian(0.0, 0.7))
+
+phi = formula("P>=0.9 (G (speed > 5))")
+result = check(phi, trace, lifting; config = SmcConfig(samples = 5000))
+
+println("estimate ", round(result.probability; digits = 3))
+println("95% interval [", round(result.interval.lower; digits = 3), ", ",
+        round(result.interval.upper; digits = 3), "]")
+println("holds ", result.holds)
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="first_prstl.m"
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+
+lifting = sentil.LiftingRegistry();
+lifting.register('speed', sentil.NoiseModel.gaussian(0.0, 0.7));
+
+phi = sentil.Formula.parse('P>=0.9 (G (speed > 5))');
+config = sentil.SmcConfig;
+config.samples = 5000;
+
+result = phi.check(trace, lifting, config);
+fprintf('estimate %.3f\n', result.probability);
+fprintf('95%% interval [%.3f, %.3f]\n', result.interval.lower, result.interval.upper);
+fprintf('holds %d\n', result.holds);
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+sentil smc -f 'P>=0.9 (G (speed > 5))' -t speeds.csv --noise speed=gaussian:0,0.7 --samples 5000
+```
+
+The exit code follows the verdict, `0` when the property holds and `10` otherwise, the same convention `sentil check` uses.
+
+</Tab>
+</Tabs>
+
+Running the Python version prints:
+
+```text
+estimate 0.071
+95% interval [0.064, 0.078]
+holds False
+```
+
+Of the 5000 sampled ensembles, 355 kept speed above five throughout. That is a satisfaction probability of about 0.071, far far short of the 0.9 the formula asks for, so the verdict is that the property does not hold.
+
+[Your first probabilistic property](/docs/start/first-prstl) works through the probabilistic operator, the noise model, and the confidence interval in full.
+
+## Next
+
+Feed samples one at a time in [monitor a live stream](/docs/start/live-stream), or load a real file in [run on a recorded trace](/docs/start/recorded-trace).
