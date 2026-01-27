@@ -5,9 +5,7 @@
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
 
-/// The exit codes, surfaced to the user by `sentil help exit-codes`. The verdict
-/// codes (0 and 10) report a successful run; the rest report a failure and follow
-/// the sysexits convention so they read the same as other Unix tools.
+/// exit codes
 pub mod code {
     pub const SUCCESS: u8 = 0;
     /// The run succeeded and the specification did not hold.
