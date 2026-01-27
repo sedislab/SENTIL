@@ -1,0 +1,260 @@
+---
+title: "Install SENTIL"
+description: "Install SENTIL for your ecosystem via package managers or build it yourself from source."
+---
+
+## Overview
+
+Every SENTIL package carries the compiled engine inside it, so your package manager is the whole install.
+
+## From a package manager
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI","ROS 2"]}>
+<Tab value="Python">
+
+You need Python 3.8 or newer.
+
+```bash
+pip install sentil
+```
+
+Verify:
+
+```python title="check.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+print(Formula.parse("G (speed > 5)").robustness(trace))
+```
+
+```text
+-1.0
+```
+
+The [Python page](/docs/languages/python) has the pandas extra, streaming, probabilistic checking, and the full API.
+
+</Tab>
+<Tab value="Rust">
+
+You need a stable Rust toolchain. In your project:
+
+```bash
+cargo add sentil
+```
+
+Verify:
+
+```rust title="src/main.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+    trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+    println!("{}", Formula::parse("G (speed > 5)")?.robustness(&trace)?);
+    Ok(())
+}
+```
+
+```text
+-1
+```
+
+The [Rust page](/docs/languages/rust) covers the feature flags, the monitor-only build, and the full API.
+
+</Tab>
+<Tab value="C">
+
+The C ABI ships as `sentil`, through either package manager:
+
+```bash
+vcpkg install sentil
+```
+
+```bash
+conan install --requires=sentil/0.3.0
+```
+
+Verify the toolchain sees it:
+
+```bash
+pkg-config --modversion sentil
+```
+
+```text
+0.3.0
+```
+
+The [C page](/docs/languages/c) wires it into CMake or pkg-config, gives the full API reference, and covers the `.deb` and `.rpm` packages and the release archives.
+
+</Tab>
+<Tab value="C++">
+
+The C++ wrapper ships as `sentil-cpp` and pulls the C ABI in with it, so this one package is enough:
+
+```bash
+vcpkg install sentil-cpp
+```
+
+```bash
+conan install --requires=sentil-cpp/0.3.0
+```
+
+Verify the toolchain sees it:
+
+```bash
+pkg-config --modversion sentil
+```
+
+```text
+0.3.0
+```
+
+The [C++ page](/docs/languages/cpp) wires it into CMake or pkg-config, gives the full API reference, and covers the `.deb` and `.rpm` packages and the release archives.
+
+</Tab>
+<Tab value="Java">
+
+Requires JDK 11 or later.
+
+```xml
+<dependency>
+  <groupId>io.github.sedislab</groupId>
+  <artifactId>sentil</artifactId>
+  <version>0.3.0</version>
+</dependency>
+```
+
+For Gradle: `implementation("io.github.sedislab:sentil:0.3.0")`.
+
+Verify:
+
+```java title="Main.java"
+import io.github.sedislab.sentil.*;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        try (Trace trace = Trace.create(new double[]{0, 1, 2, 3, 4});
+             Formula phi = Formula.parse("G (speed > 5)")) {
+            trace.addSignal("speed", new double[]{12, 9, 7, 4, 6});
+            System.out.println(phi.robustness(trace));   // -1.0
+        }
+    }
+}
+```
+
+The [Java page](/docs/languages/java) covers the handle lifecycle and the full API reference.
+
+</Tab>
+<Tab value="Julia">
+
+```julia
+] add Sentil
+```
+
+Verify:
+
+```julia
+using Sentil
+
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12, 9, 7, 4, 6])
+println(robustness(formula("G (speed > 5)"), trace))
+```
+
+```text
+-1.0
+```
+
+The [Julia page](/docs/languages/julia) covers streaming, probabilistic checking, and the full API.
+
+</Tab>
+<Tab value="MATLAB">
+
+You need MATLAB R2021b or newer. Get `Sentil.mltbx` from the File Exchange or a [GitHub release](https://github.com/sedislab/SENTIL/releases), then double-click it or install from the command window:
+
+```matlab
+matlab.addons.toolbox.installToolbox('Sentil.mltbx')
+```
+
+Verify:
+
+```matlab
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('G (speed > 5)');
+phi.robustness(trace)   % -1
+```
+
+The [MATLAB page](/docs/languages/matlab) covers the Simulink block and the full API.
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+# macOS or Linux
+brew install sedislab/sentil/sentil
+```
+
+```powershell
+# Windows
+winget install SEDIS.SENTIL
+```
+
+Scoop, the AUR, `cargo install sentil-cli`, and the per-platform archives are on the [CLI page](/docs/languages/cli).
+
+Verify:
+
+```bash
+sentil --version
+```
+
+```text
+sentil 0.3.0
+```
+
+The [CLI page](/docs/languages/cli) has every subcommand, the Raspberry Pi install, and the output formats.
+
+</Tab>
+<Tab value="ROS 2">
+
+For Humble, Jazzy, and Rolling; swap the distribution name into the package:
+
+```bash
+sudo apt install ros-humble-sentil-ros
+```
+
+Verify:
+
+```bash
+ros2 pkg xml sentil_ros | head -3
+```
+
+A `<name>sentil_ros</name>` line means SENTIL is available in the workspace. The [ROS page](/docs/languages/ros) has the colcon build, the monitor node, and its parameters.
+
+</Tab>
+</Tabs>
+
+## Don't have a package manager?
+
+<Cards>
+<Card title="Raspberry Pi" href="/docs/languages/cli#on-a-raspberry-pi" description="ARM archives, which board takes which, and the on-device library install." />
+<Card title="Microcontrollers" href="/docs/languages/embedded" description="Arduino, PlatformIO, ESP-IDF, Zephyr, and bare metal." />
+<Card title="Apollo" href="/docs/languages/apollo" description="Drop modules/sentil into an Apollo checkout and build it with Bazel." />
+<Card title="AUTOSAR Adaptive" href="/docs/languages/autosar" description="Build the adaptive applications against a vendor stack or the bundled stub." />
+</Cards>
+
+## From source
+
+You need a Rust toolchain.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+cargo install --path sentil-cli          # the CLI, onto your path
+cargo build --release -p sentil-ffi      # libsentil + sentil-ffi/include/sentil.h
+```
+
+Each language page has its own from-source section for building that binding against a local core.
+
+## Next step
+
+With SENTIL installed, [write your first monitor](/docs/start/first-monitor).

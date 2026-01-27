@@ -1,1 +1,1 @@
-{ "root": true, "title": "Get started", "icon": "Rocket", "pages": ["---[Rocket]Get started---", "index"] }
+{ "root": true, "title": "Get started", "icon": "Rocket", "pages": ["---[Rocket]Get started---", "index", "install"] }
