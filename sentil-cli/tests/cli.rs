@@ -452,3 +452,43 @@ fn version_carries_the_commit() {
         .success()
         .stdout(predicate::str::contains("commit:"));
 }
+
+#[cfg(unix)]
+#[test]
+fn monitor_stops_cleanly_on_interrupt() {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let mut child = Command::new(assert_cmd::cargo::cargo_bin("sentil"))
+        .args(["monitor", "-f", "always (x > 0)", "--quiet"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn monitor");
+    std::thread::sleep(Duration::from_millis(400));
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+    }
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("wait on monitor") {
+            break status;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "monitor did not exit after the interrupt"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(130), "an interrupt should exit 130");
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert!(stderr.is_empty(), "interrupt left output on stderr: {stderr:?}");
+}

@@ -54,6 +54,7 @@ clap_mangen = "0.2"
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3"
+libc = "0.2"
 
 [package.metadata.deb]
 name = "sentil"
