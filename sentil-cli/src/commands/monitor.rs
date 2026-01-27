@@ -2,14 +2,16 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, IsTerminal, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::Duration;
 
 use sentil::{Formula, MultiFormulaMonitor, Robustness, SmcConfig};
 use serde_json::json;
 
 use crate::engine;
 use crate::error::{code, CliError, Run};
+use crate::interrupt;
 use crate::output::{self, Out};
 
 type Row = (String, Robustness, Option<f64>);
@@ -69,9 +71,7 @@ pub fn run(
         added.map_err(|e| CliError::Engine(e.to_string()))?;
     }
 
-    let interrupted = Arc::new(AtomicBool::new(false));
-    let flag = interrupted.clone();
-    let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));
+    let interrupted = interrupt::flag();
 
     let live = out.is_text() && !out.quiet && std::io::stdout().is_terminal();
     let mut dashboard = live.then(|| Dashboard::new(formulas.iter().map(|s| s.to_string()).collect()));
@@ -83,15 +83,20 @@ pub fn run(
         eprintln!("{}", out.paint(&banner, output::dim()));
     }
 
-    let stdin = std::io::stdin();
+    let reader = spawn_reader();
     let mut stdout = std::io::stdout();
     let mut samples = 0u64;
     let mut skipped = 0u64;
-    for line in stdin.lock().lines() {
+    loop {
         if interrupted.load(Ordering::SeqCst) {
             break;
         }
-        let line = line.map_err(|e| CliError::Input(format!("reading input: {e}"), None))?;
+        let line = match reader.recv_timeout(Duration::from_millis(50)) {
+            Ok(Ok(line)) => line,
+            Ok(Err(e)) => return Err(CliError::Input(format!("reading input: {e}"), None)),
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -149,6 +154,38 @@ pub fn run(
     } else {
         code::SUCCESS
     })
+}
+
+/// Reads stdin line by line on its own thread, forwarding each line over a channel
+/// so the monitor loop never blocks on the read. A trailing newline is stripped
+/// here since the loop trims anyway. An `Interrupted` read, which is how a SIGINT
+/// surfaces on a blocked terminal read on some platforms, ends the thread cleanly
+/// instead of travelling to the loop as an error.
+fn spawn_reader() -> mpsc::Receiver<std::io::Result<String>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        let mut handle = stdin.lock();
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match handle.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let text = line.trim_end_matches(['\n', '\r']).to_string();
+                    if tx.send(Ok(text)).is_err() {
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => break,
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    break;
+                }
+            }
+        }
+    });
+    rx
 }
 
 struct Dashboard {

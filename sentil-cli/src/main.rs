@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod engine;
 mod error;
+mod interrupt;
 mod model;
 mod output;
 
