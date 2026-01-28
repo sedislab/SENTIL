@@ -180,3 +180,22 @@ impl From<sentil::Error> for SentilError {
         code
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CStr;
+
+    #[test]
+    fn a_panic_is_caught_and_recorded_at_the_boundary() {
+        clear_error();
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let value = ffi_panic_boundary(-1_i32, || panic!("boom in the core"));
+        std::panic::set_hook(previous);
+        assert_eq!(value, -1);
+        assert!(matches!(last_error_code(), SentilError::Panic));
+        let message = unsafe { CStr::from_ptr(last_error_ptr()) };
+        assert!(message.to_str().unwrap().contains("boom"));
+    }
+}
