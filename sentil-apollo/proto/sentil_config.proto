@@ -90,7 +90,7 @@ message FieldMapping {
   optional string variable = 1;
   oneof source {
     string field_path = 2;
-    string builtin = 3;  // NEAREST_OBSTACLE_DISTANCE, MIN_TTC, LATERAL_ERROR, FRONT_GAP
+    string builtin = 3;  // NEAREST_OBSTACLE_DISTANCE, MIN_TTC, FRONT_GAP
   }
 }
 
