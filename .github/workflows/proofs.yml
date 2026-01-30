@@ -1,0 +1,33 @@
+name: proofs
+
+on:
+  push:
+    paths:
+      - 'proofs/**'
+      - '.github/workflows/proofs.yml'
+  pull_request:
+    paths:
+      - 'proofs/**'
+      - '.github/workflows/proofs.yml'
+
+jobs:
+  lake:
+    name: lean proof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: proofs
+      - name: axioms stay clean
+        working-directory: proofs
+        run: |
+          out=$(lake env lean MonotonicDeque.lean 2>&1)
+          echo "$out"
+          if echo "$out" | grep -q 'sorryAx'; then
+            echo "::error::the proof depends on sorry"; exit 1
+          fi
+          for thm in deque_sliding_window_min_correct deque_sliding_window_max_correct; do
+            echo "$out" | grep -qF "'$thm' depends on axioms: [propext, Quot.sound]" \
+              || { echo "::error::axiom footprint of $thm changed"; exit 1; }
+          done
