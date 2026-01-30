@@ -25,10 +25,18 @@ GPU_TEST := tests/gpu_test.c
 CPU_TESTS := $(filter-out $(GPU_TEST),$(TESTS))
 LINK := -L$(LIBDIR) -lsentil -Wl,-rpath,$(LIBDIR) -lm
 
-.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-cpp bench-py bench-jl bench-java dist install clean
+.PHONY: build test-ffi test-ffi-gpu leakcheck examples bench-c bench-cpp bench-py bench-jl bench-java dist install clean
 
 build:
 	$(CARGO) build --release -p sentil-ffi
+
+examples: build
+	@for e in examples/*.c; do \
+		echo "  cc $$e"; out=$$(mktemp); \
+		$(CC) $(CFLAGS) -I$(INCLUDE) $$e $(LINK) -o $$out || exit 1; \
+		$$out || exit 1; rm -f $$out; \
+	done
+	@echo "all examples ran"
 
 test-ffi: build
 	@for t in $(CPU_TESTS); do \
