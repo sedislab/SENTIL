@@ -15,3 +15,12 @@ crate-type = ["cdylib"]
 sentil = { path = "../../sentil-core", default-features = false, features = ["std", "statistical", "synthesis"] }
 wasm-bindgen = "0.2"
 serde_json = "1"
+# The browser RNG backend for the statistical layer. Paired with the rustflag in
+# .cargo/config.toml; the core crate needs no change.
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

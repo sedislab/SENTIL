@@ -1,0 +1,12 @@
+[target.wasm32-unknown-unknown]
+# The wasm_js RNG backend for the statistical layer, plus path remaps so the
+# panic-location strings compiled into the release binary carry no build-machine
+# home directory or username. Most specific prefix first; the last entry is the
+# catch-all for anything else under the home root.
+rustflags = [
+  '--cfg', 'getrandom_backend="wasm_js"',
+  '--remap-path-prefix=/u/pquansah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/=',
+  '--remap-path-prefix=/u/pquansah/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/=',
+  '--remap-path-prefix=/u/pquansah/code/sentil/sentil-repo/=',
+  '--remap-path-prefix=/u/pquansah/=',
+]
