@@ -756,3 +756,6 @@ end Exec
 #eval Exec.verifyMax #[⟨1,2⟩, ⟨2,4⟩, ⟨3,6⟩, ⟨4,8⟩, ⟨5,10⟩] 2
 #eval Exec.verifyMax #[⟨1,5⟩, ⟨2,3⟩, ⟨3,1⟩, ⟨4,2⟩, ⟨5,4⟩] 100
 #eval Exec.verify #[⟨10,42⟩] 1
+
+#print axioms deque_sliding_window_min_correct
+#print axioms deque_sliding_window_max_correct
