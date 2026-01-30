@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
 fn err(msg: impl std::fmt::Display) -> String {
-    msg.to_string()
+    json!({ "ok": false, "error": msg.to_string() }).to_string()
 }
 
 fn build_trace(req: &Value) -> Result<Trace, String> {
