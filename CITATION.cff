@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic"
+type: software
+
+authors:
+  - family-names: "Quansah"
+    given-names: "Paapa Kwesi"
+    affiliation: "Baylor University"
+  - family-names: "Bonnah"
+    given-names: "Ernest"
+    affiliation: "Baylor University"
+  - name: "SEDIS Lab, Baylor University"
+
+contact:
+  - email: "paapa_quansah1@baylor.edu"
+
+repository-code: "https://github.com/sedislab/SENTIL"
+url: "https://github.com/sedislab/SENTIL"
+license:
+  - MIT
+  - Apache-2.0
+version: "0.3.0"
+date-released: "2026-01-30"
+
+preferred-citation:
+  type: article
+  title: "SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic"
+  authors:
+    - family-names: "Quansah"
+      given-names: "Paapa Kwesi"
+    - family-names: "Bonnah"
+      given-names: "Ernest"
+  notes: "Submitted to the International Conference on Computer-Aided Verification (CAV), 2026."
+  year: 2026
