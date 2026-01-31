@@ -153,8 +153,10 @@ export default function Exercise(props: Props) {
       }
     } else {
       const written = input.trim();
-      const parsed = await ask({ op: 'parse', formula: written });
-      if (!parsed?.ok) {
+      const parsed = written ? await ask({ op: 'parse', formula: written }) : null;
+      if (!written) {
+        next = { state: 'wrong', note: 'Write a formula first.', unread: true };
+      } else if (!parsed?.ok) {
         next = { state: 'wrong', note: parsed?.error ?? 'That formula does not parse.' };
       } else {
         next = { state: 'right' };
