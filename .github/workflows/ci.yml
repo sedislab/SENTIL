@@ -8,6 +8,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  core:
+    name: core engine and cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy
+        run: cargo clippy -p sentil -p sentil-cli --all-targets -- -D warnings
+      - name: minimal build
+        run: cargo build -p sentil --no-default-features
+      - name: engine tests
+        run: cargo test -p sentil
+      - name: cli tests
+        run: cargo test -p sentil-cli
+      - name: everything resolves and links
+        run: cargo build --workspace --all-targets
   ffi:
     name: c abi build and tests
     runs-on: ubuntu-latest
