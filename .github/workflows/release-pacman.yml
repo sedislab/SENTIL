@@ -84,8 +84,8 @@ jobs:
           chmod 600 ~/.ssh/aur
           ssh-keyscan -t ed25519,rsa aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
-          git config --global user.name "Paapa Kwesi Quansah"
-          git config --global user.email "paapa_quansah1@baylor.edu"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global --add safe.directory '*'
           git clone ssh://aur@aur.archlinux.org/sentil.git aur-repo
           cp PKGBUILD .SRCINFO aur-repo/
