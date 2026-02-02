@@ -1,0 +1,25 @@
+services:
+  # The CPU claim tier: builds the core and runs the hardware-independent verification
+  # offline. `docker compose up sentil-verify`.
+  sentil-verify:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: base
+    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+
+  # The empirical GPU tier. Needs an NVIDIA GPU and the nvidia-container-toolkit.
+  # `docker compose up sentil-gpu`.
+  sentil-gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: gpu
+    image: ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

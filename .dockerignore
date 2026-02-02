@@ -1,0 +1,11 @@
+.git
+target
+**/target
+website/node_modules
+website/.next
+website/out
+website/.source
+**/__pycache__
+**/*.pyc
+**/build
+prebuilt-core
