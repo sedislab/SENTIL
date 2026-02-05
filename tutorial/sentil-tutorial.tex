@@ -1,0 +1,101 @@
+% The SENTIL tutorial. This file is the structure only, following the agreed outline.
+% The authors write the prose of each section; the part, chapter, and section headings
+% here are the scaffold and the table of contents the CI build compiles to a PDF.
+
+\documentclass[11pt]{book}
+
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\title{SENTIL: Runtime Verification for Probabilistic Signal Temporal Logic}
+\author{Paapa Kwesi Quansah \and Ernest Bonnah \and The SEDIS Lab}
+\date{}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+
+\chapter{Preface}
+\chapter{Notation and conventions}
+\chapter{A capability gallery}
+
+\mainmatter
+
+\part{Getting started}
+\chapter{Introduction and overview}
+\section{What SENTIL does}
+\section{Where monitoring fits: offline and online, STL and PrSTL and statistical}
+\section{The architecture at a glance}
+\section{A brief comparison to RTAMT, Breach, and S-TaLiRo}
+\section{A roadmap for this book}
+\chapter{Installation}
+\section{Supported platforms and languages}
+\section{Per-language install}
+\section{The optional native and GPU backends}
+\section{Verifying the install}
+\section{The docker sandbox}
+\section{Troubleshooting}
+\chapter{Your first monitor in five minutes}
+\chapter{STL by example}
+
+\part{Deterministic monitoring}
+\chapter{STL syntax and quantitative semantics}
+\section{Predicates and boolean connectives}
+\section{Bounded and unbounded temporal operators}
+\section{The past operators}
+\chapter{Discrete and dense time}
+\chapter{The streaming online monitor}
+\section{The monotonic-deque intuition}
+\chapter{The CLI and the bindings side by side}
+
+\part{Probabilistic and statistical monitoring}
+\chapter{Stochastic signal lifting and noise models}
+\chapter{Monte Carlo statistical model checking}
+\section{The Wilson and Clopper-Pearson intervals}
+\chapter{Sequential probability ratio testing}
+\chapter{Rare-event splitting}
+\chapter{Choosing a regime}
+
+\part{Synthesis}
+\chapter{Smooth robustness}
+\chapter{Open-loop trajectory synthesis}
+\chapter{The receding-horizon controller}
+\chapter{Chance constraints}
+\chapter{The control-barrier-function safety filter}
+\chapter{Witnesses and counterexamples}
+
+\part{The specifications library}
+\chapter{Reaching for a vetted spec}
+\chapter{Parameterizing a spec}
+\chapter{Citing a spec}
+
+\part{Bindings}
+\chapter{Rust}
+\chapter{Python}
+\chapter{C and C++}
+\chapter{Java}
+\chapter{Julia}
+\chapter{MATLAB}
+\chapter{The command-line tool}
+\chapter{ROS 2}
+\chapter{Embedded}
+
+\part{Case studies}
+\chapter{CARLA and Apollo autonomous driving}
+\chapter{The medical device study}
+\chapter{The circadian gene-regulatory network}
+\chapter{The embedded Raspberry Pi deployment}
+
+\part{Reference}
+\chapter{The full operator semantics}
+\chapter{The grammar}
+\chapter{The API per language}
+\chapter{The command-line tool}
+\chapter{Exit codes}
+\chapter{The claims ledger}
+
+\end{document}
