@@ -75,7 +75,43 @@ fn scalability() -> Vec<Record> {
             runs,
         ));
     }
+
+    let samples = 200_000usize;
+    for depth in [1u64, 2, 4, 8, 16] {
+        let mut nested = String::from("x > 5");
+        for _ in 0..depth {
+            nested = format!("eventually[0, 5]({nested})");
+        }
+        records.push(measure_stream("scalability/depth", &nested, samples, depth));
+    }
+
+    for w in [10u64, 100, 1_000, 10_000, 100_000] {
+        let bounded = format!("always[0, {w}](x > 5)");
+        records.push(measure_stream("scalability/bound", &bounded, samples, w));
+    }
+
     records
+}
+
+fn measure_stream(benchmark: &str, formula: &str, samples: usize, param: u64) -> Record {
+    let mut monitor = StreamMonitor::new(formula).expect("a streamable formula");
+    let idx = monitor.symbol_index("x").expect("x is referenced");
+    let mut packed = [0.0f64];
+    let mut latencies = Vec::with_capacity(samples);
+    let mut last = 0.0;
+    for i in 0..samples {
+        packed[idx] = 15.0 * (i as f64 * 0.1).sin();
+        let start = Instant::now();
+        let verdict = black_box(
+            monitor
+                .update_packed(i as f64, &packed)
+                .expect("a streaming verdict"),
+        );
+        latencies.push(start.elapsed().as_secs_f64() * 1e3);
+        last = verdict.lower();
+    }
+    let timing = summarize(&mut latencies);
+    record(benchmark, formula, Question::Monitoring, param, last, timing, samples as u64)
 }
 
 fn streaming() -> Vec<Record> {
