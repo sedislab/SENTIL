@@ -1,0 +1,60 @@
+---
+title: "Signals, traces, and time"
+description: "What SENTIL means by a signal, and how to setup a Trace."
+---
+
+How SENTIL represents a signal, a trace, and time itself decides how you load data, what a formula means, and how to read a result.
+
+## Signals
+
+A signal is a function from time to a real value. SENTIL takes a finite sequence of timestamped samples, and the monitor reconstructs the value between samples by interpolation.
+
+The reconstruction has two modes. In discrete time, the signal is defined only at the sampled timestamps, and a formula evaluates against those exact points. In dense time, the samples are read as observations of an underlying piecewise-continuous function, and the monitor interpolates to evaluate at any time in range. Which you want depends on what the formula is meant to prove. SENTIL offers three interpolation modes for dense time, linear, zero-order hold, and cubic spline, and [how to choose discrete or dense time](/docs/monitoring/guides/discrete-vs-dense) covers the tradeoff.
+
+## Traces
+
+A trace is a signal paired with the time. In SENTIL, a `Trace` is a first-class object that you build it from the sample times and one or more named signals, then pass it to `robustness` or `check`. The trace is a separate value, so the same trace can be scored against several formulas.
+
+```python
+import sentil
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+```
+
+The horizon matters for unbounded operators. A property like `G[0, inf](phi)` only makes sense over the time the trace actually covers. If the trace ends at $t = 4$ and the formula reaches past it, the monitor reports the robustness it can compute from the data on hand.
+
+## Multiple variables
+
+Real systems carry many signals at once. A vehicle streams speed, heading, obstacle distance, and steering angle together. A `Trace` stores each signal independently under its own name, so a formula referring to several variables reads each at the current time and combines the results through its operators.
+
+```python
+trace = sentil.Trace(
+    [0, 1, 2, 3, 4],
+    {"speed": [12, 9, 7, 4, 6], "gap": [30, 22, 18, 9, 14]},
+)
+phi = sentil.Formula.parse("G ((speed > 5) & (gap > 10))")
+```
+
+Add signals one at a time with the same effect. In Rust, `Trace::new(times)?` followed by `trace.add_signal("speed", ...)?` builds the same object the dictionary form does; every signal shares the trace's one sequence of times.
+
+## Time and monotonicity
+
+The sample times must be strictly increasing. SENTIL rejects a repeated or out-of-order timestamp, so a trace has exactly one value per time.
+
+<Callout type="info">
+This is stricter than some tools, which accept duplicate timestamps as two observations at the same instant. SENTIL does not: `Trace::new([0.0, 1.0, 1.0])` returns a non-monotonic-time error. If your source has duplicate times, resolve them upstream before building the trace.
+</Callout>
+
+The time origin is yours to choose. A formula evaluated at $t = 0$ references the earliest time in the trace, whatever that number is. Data recorded from a Unix clock starting at 1700000000 is read with that value as the origin. Most monitoring workflows shift timestamps to start at zero for readability, but SENTIL does not require it.
+
+## Streaming
+
+Offline, you hand the monitor a whole `Trace`. Online, you feed it one timed observation at a time with `Monitor.update`, and the monitor answers as each sample arrives without waiting for the trace to close. Both paths run the same semantics and reach the same robustness on the same data. See [monitoring with STL](/docs/monitoring) for the two call types of monitoring side by side.
+
+## What a signal is not
+
+A SENTIL signal is not a statistical time-series object. It carries no units, no resampling policy, and no notion of a missing value beyond the gap between two samples. The monitor evaluates temporal logic and leaves data preparation to upstream code.
+
+## Ensembles
+
+A deterministic trace is one recorded run. A probabilistic property is checked over an ensemble, the distribution of runs you would see under repeated draws of sensor noise around the same ground truth. You never build that ensemble by hand. SENTIL constructs it from your trace and a noise model. That is the subject of the probabilistic layer. See [signals and lifting in the probabilistic tab](/docs/probabilistic/concepts/what-is-prstl).

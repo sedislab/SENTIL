@@ -1,0 +1,63 @@
+---
+title: "What signal temporal logic is"
+description: "STL and how it is evaluated."
+---
+
+`G (speed > 5)` is a Signal Temporal Logic (STL) formula and it is read as, "at every step, the speed stays above five". STL formulas are composed of atoms and ooperators.Atoms are the smallest possible signal. Atoms are then composed with and over temporal and boolean operators to form formulas that express some property of a system. STL was designed for continuous signals, and this separates it from logics that reason over discrete states.
+
+A monitor takes a signal and a formula and reports whether the signal satisfies the formula and by how much.
+
+## Robustness is a signed distance
+
+Every STL formula evaluates to a robustness. It's a real number that measures how strongly a signal satisfies or violates the formula. A positive robustness value means that the property holds and a negative means it fails. The magnitude is how much it holds or fails and it gives you an idea of how much room the trace has to failing or how badly the trace missed.
+
+## Formula Evaluation
+
+Formula evaluation starts at the atom. An atomic predicate compares terms against each other or a constant, and we evaluate the robustness of an atom by calculating the signed distance to that comparison boundary.
+
+| Comparison | Robustness at time $t$ |
+|---|---|
+| `f(x) > c`, `f(x) >= c` | $f(x(t)) - c$ |
+| `f(x) < c`, `f(x) <= c` | $c - f(x(t))$ |
+| `f(x) == c` | $-\lvert f(x(t)) - c \rvert$ |
+| `f(x) != c` | $\lvert f(x(t)) - c \rvert$ |
+
+Given a formula like `speed > 5`, the robustness at a sample where the speed value is 9, is $9 - 5 = 4$. The property holds with four units to spare. If the speed value is 4, the robustness is $4 - 5 = -1$. The property fails by 1 unit. Equality is most satisfied when the robustness is zero and grows less satisfied as the values diverge. Strict and non-strict comparisons share a margin, so the two can differ only when the margin is exactly zero; [bounded operators](/docs/monitoring/guides/bounded-operators) computes that boundary case. The term $f(x)$ can be any arithmetic expression over the signal channels, and [multi-dimensional predicates](/docs/monitoring/guides/multidim-predicate) builds on that.
+
+## Boolean connectives are min, max, and negation
+
+Once a predicate yields a number, the boolean operators combine those robustness numbers.
+
+| Formula | Robustness |
+|---|---|
+| `!phi` | negate robustness of phi |
+| `phi & psi` | `min(rho_phi, rho_psi)` |
+| `phi \| psi` | `max(rho_phi, rho_psi)` |
+| `phi -> psi` | `max(-rho_phi, rho_psi)` |
+
+Conjunction takes the minimum. Disjunction takes the maximum. A tautology carries robustness $+\infty$ and a contradiction $-\infty$, and this is how the [probabilistic operator](/docs/probabilistic/concepts/what-is-prstl) collapses a satisfied inner formula to a hard bound.
+
+This concept of evaluating the robustness values goes all the way up to evaluating temporal operators.
+
+## A first formula
+
+```python title="first_monitor.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+print(phi.robustness(trace))  # -1.0
+```
+
+The predicate `speed > 5` scores $\text{speed} - 5$ at each step: $7, 4, 2, -1, 1$. The `G` operator takes the worst of those, the infimum over the trace, which is $-1$ at $t = 3$ where the signal dips to four. The verdict is a violation.
+
+## Where to go next
+
+<Cards>
+<Card title="The temporal operators" href="/docs/monitoring/concepts/temporal-operators" description="G, F, U, and the past operators." />
+<Card title="Signals, traces, and time" href="/docs/monitoring/concepts/signals-and-traces" description="What a signal is, and how discrete and dense time change what a formula means." />
+<Card title="Robustness semantics" href="/docs/reference/language/robustness-semantics" description="The exact recursive definition for every operator, in discrete and dense time." />
+</Cards>
+
+Probabilistic properties, where a formula holds with a stated probability under sensor noise, are a separate layer built on this one. See [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl) once the deterministic picture is clear.

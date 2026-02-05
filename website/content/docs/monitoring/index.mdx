@@ -1,0 +1,90 @@
+---
+title: "Monitoring with STL"
+description: "Deterministic signal temporal logic monitoring in SENTIL."
+---
+
+Signal temporal logic states how a real-valued signal should behave over time, and a monitor checks a trace against that specification.
+
+## Your first monitor
+
+Take a five-sample speed trace and the property that speed always stays above five.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="first_monitor.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+phi.robustness(trace)   # -1.0
+```
+</Tab>
+<Tab value="Rust">
+```rust title="first_monitor.rs"
+use sentil::{Formula, Trace};
+
+let trace = Trace::from_signal([0.0, 1.0, 2.0, 3.0, 4.0], "speed", [12.0, 9.0, 7.0, 4.0, 6.0])?;
+let phi = Formula::parse("G (speed > 5)")?;
+let rho = phi.robustness(&trace)?;   // -1.0
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil check -f 'G (speed > 5)' -t speeds.csv
+```
+```text
+check
+  formula     G (speed > 5)
+  trace       speeds.csv
+  semantics   dense
+  verdict     violated
+  robustness  -1.000000
+```
+</Tab>
+</Tabs>
+
+## Offline and Online
+
+There are two types of deterministic runtime monitoring. Offline monitoring takes a whole recorded trace at once and checks it. Online monitoring feeds the monitor one timed sample at a time as a sensor produces it, and each update returns a verdict without waiting for the trace to end. The robustness values agree between the modes on the same data. The difference is whether you hold the full trace in memory or stream it past the monitor.
+
+Select and use offline runtime monitoring when you have recorded data and you want to do something with it. Go for online monitoring when you monitor a live loop and need a verdict per step within a deadline.
+
+## Robustness options
+
+`Formula.robustness` over a `Trace` returns one number, the robustness at the earliest time in the trace. It is the offline call for a single verdict.
+
+`Formula.robustness_signal` over a `Trace` returns the robustness at every sample, so you can plot how the margin evolves. `Formula.violations` reports the intervals where that signal is negative.
+
+`OnlineMonitor.update` takes a timestamp and the current variable values and returns a `Robustness` carrying whether the verdict has resolved, whether it is satisfied, and the value. This is the streaming surface; the whole-trace `Monitor` accepts the same fold, and [the three-stage pipeline](/docs/monitoring/concepts/pipeline) draws the line between the two classes.
+
+```python title="streaming.py"
+from sentil import OnlineMonitor
+
+monitor = OnlineMonitor("G[0, 10](speed > 5)")
+for t, speed in enumerate([12, 9, 7, 4, 6]):
+    r = monitor.update(float(t), {"speed": float(speed)})
+    if r.resolved and not r.satisfied:
+        print(f"violated at t={t}, margin {r.value}")
+```
+
+## Concepts
+
+<Cards>
+<Card title="What signal temporal logic is" href="/docs/monitoring/concepts/what-is-stl" description="Robustness rules, the min-max connectives, and evaluating a formula." />
+<Card title="The temporal operators" href="/docs/monitoring/concepts/temporal-operators" description="G, F, U, the past operators, and X." />
+<Card title="Signals, traces, and time" href="/docs/monitoring/concepts/signals-and-traces" description="What a signal is, discrete versus dense time, and how a trace works." />
+<Card title="Why the deque is O(1) amortized" href="/docs/monitoring/concepts/monotonic-deque" description="The sliding-window engine behind online streaming, and its Lean proof." />
+<Card title="The three-stage pipeline" href="/docs/monitoring/concepts/pipeline" description="Lifting, robustness, and aggregation as separable layers, the Monitor and OnlineMonitor split, and the feature gates." />
+</Cards>
+
+## How-to guides
+
+<Cards>
+<Card title="Choose discrete or dense time" href="/docs/monitoring/guides/discrete-vs-dense" description="Evaluation at the sample points or in between them." />
+<Card title="Multi-dimensional predicates" href="/docs/monitoring/guides/multidim-predicate" description="Write one predicate over several signal channels instead of splitting it into separate formulas." />
+<Card title="Past operators" href="/docs/monitoring/guides/past-operators" description="Historically, Once, and Since." />
+<Card title="Bound a temporal operator" href="/docs/monitoring/guides/bounded-operators" description="Let the operation of the temporal operator be over a section of the trace rather than the full thing." />
+</Cards>
+
+When you need the exact syntax, the reference tab has [the grammar](/docs/reference/language/grammar), with every alias and precedence rule, and [the operators](/docs/reference/language/operators) with formal semantics and edge cases.
