@@ -1,0 +1,134 @@
+---
+title: "The temporal operators"
+description: "G, F, U, the past operators, and X."
+---
+
+A temporal operator quantifies its subformula over a window of time measured from the evaluation instant. We look at how to evaluate each operator over a small trace on this page. The exact recursive definitions, edge cases, and syntax live on the [operators reference](/docs/reference/language/operators).
+
+## The trace
+
+The running example we'll use on this page is a file transfer over a radio link. There are two signals involved: `link` is the link margin and it is positive when the link is up, and `done` is the completion score and it is also positive once the transfer has landed. We take five seconds of this.
+
+```python title="handoff.py"
+import sentil
+
+trace = sentil.Trace(
+    [0, 1, 2, 3, 4],
+    {"link": [5, 4, 3, 6, -2], "done": [-6, -5, -4, 3, 2]},
+)
+```
+
+## The Always operator (G)
+
+`G[a, b](phi)`, read always, holds when `phi` holds at every sample in the window $[t+a, t+b]$, so its robustness is the worst inner margin anywhere in the window.
+
+```python
+Formula.parse("G[0, 4](link > 0)").robustness(trace)   # -2.0
+```
+
+The margins across the window are 5, 4, 3, 6, -2, and the infimum is -2 at $t = 4$ where the link drops. A bare `G (phi)` is shorthand for `G[0, inf] (phi)`, the whole remaining trace.
+
+## The Eventually operator (F)
+
+`F[a, b](phi)`, read eventually, needs `phi` at some sample in the window, so it takes the supremum.
+
+```python
+Formula.parse("F[0, 4](done > 0)").robustness(trace)   # 3.0
+Formula.parse("F[0, 2](done > 0)").robustness(trace)   # -4.0
+```
+
+Over the whole trace the best `done` margin is 3 at $t = 3$: the transfer completes, three units clear. When you want something to do done in some amount of time, we use a bounded `F`.
+
+## The Until operator (U)
+
+`(phi1) U[a, b] (phi2)`, read until, asks for a witness instant in the window where `phi2` holds, with `phi1` maintained on the way there. Its value is the witness margin capped by the worst guard margin before it, maximized over candidate witnesses.
+
+```python
+Formula.parse("(link > 0) U[0, 4] (done > 0)").robustness(trace)   # 3.0
+```
+
+The best witness is $t = 3$, where `done` scores 3. On the way there, the link scores 5, 4, 3, and the tightest of those is 3 at $t = 2$. The value is min(3, 3) = 3.0: three units of slack in both the guard and the witness.
+
+## U is not F
+
+It is tempting to write `F (done > 0)` and call the requirement stated, or to strengthen it to `G (link > 0) & F (done > 0)`.
+
+The conjunction fails on the trace above:
+
+```python
+Formula.parse(
+    "(G[0, 4](link > 0)) & (F[0, 4](done > 0))"
+).robustness(trace)   # -2.0
+```
+
+It demands the link through the whole window, including after the transfer has already landed, so the drop at $t = 4$ sinks it to -2.0 even though nothing went wrong. `U` holds at 3.0, because the link's job ends at the witness.
+
+Now break the link before the handoff instead of after it.
+
+```python
+broken = sentil.Trace(
+    [0, 1, 2, 3, 4],
+    {"link": [5, 4, -2, 6, 6], "done": [-6, -5, -4, 3, 2]},
+)
+Formula.parse("F[0, 4](done > 0)").robustness(broken)               # 3.0
+Formula.parse("(link > 0) U[0, 4] (done > 0)").robustness(broken)   # -2.0
+```
+
+`F` still reports 3.0. It never looks at the link, so it cannot see that the transfer went through a dead connection. `U` reports -2.0: every candidate witness now lies past the drop at $t = 2$, so every candidate is capped by that -2 margin. `U` allows you to express something that must hold till another thing becomes true.
+
+## The past operators
+
+`H`, read historically, `O`, read once, and `S`, read since, are the past time equivalents of `G`, `F` and `U` respectively.
+
+```python
+Formula.parse("H[0, 2](link > 0)").robustness_signal(trace)
+# [5.0, 4.0, 3.0, 3.0, -2.0]
+Formula.parse("O[0, 2](done > 0)").robustness_signal(trace)
+# [-6.0, -5.0, -4.0, 3.0, 3.0]
+```
+
+At $t = 4$, `H[0, 2](link > 0)` reads the window $[2, 4]$ which has margins 3, 6, -2, worst -2. The link has not held for the last two seconds, and the value says by how much. `O[0, 2](done > 0)` at the same instant reads `done` over the same window and reports the best, 3 at $t = 3$: the transfer completed within the last two seconds.
+
+`(link > 0) S[0, 4] (done > 0)` at $t = 4$ evaluates to 2.0, the `done` margin at $t = 4$ itself: a witness at the current instant needs no guard, while the earlier witness at $t = 3$ is capped at -2 by the link drop between it and now. [Past operators](/docs/monitoring/guides/past-operators) covers these in some more detail.
+
+## The Next operator (X)
+
+`X (phi)`, read next, shifts evaluation one sample forward.
+
+```python
+Formula.parse("X(done > 0)").robustness_signal(trace)
+# [-5.0, -4.0, 3.0, 2.0, -inf]
+```
+
+Each entry is the `done` margin one sample later. The last entry is negative infinity: there is no sample after $t = 4$, and a step with no successor cannot be satisfied.
+
+## Nesting
+
+You can nest operators to get more expressive formulas. For example, assuming we want to represent a response-time requirement. 
+
+```python
+Formula.parse("G[0, 2](F[0, 2](done > 0))").robustness(trace)   # -4.0
+```
+
+The inner `F` scores -4, 3, 3 at $t = 0, 1, 2$: the best `done` margin within two seconds of each instant. The outer `G` takes the worst of those, -4. At $t = 0$ the transfer is not going to land within two seconds, and that is a failure. The sliding-window engine evaluates nested windows at the same amortized cost per sample; see [why the deque is O(1) amortized](/docs/monitoring/concepts/monotonic-deque).
+
+<Exercise
+  formula="F[0, 2](G[0, 2](done > 0))"
+  trace={{ times: [0, 1, 2, 3, 4], signals: { link: [5, 4, 3, 6, -2], done: [-6, -5, -4, 3, 2] } }}
+  at={1}
+  hint="Work inward. Score G[0, 2](done > 0) at every time first, then take the best of those over the window that opens at t = 1."
+  explanation="The inner G scores -6, -5, -4, 2, 2 as its window slides, and F takes the best of the three entries from t = 1 through t = 3, which is 2. The other order scores 3 at that same instant: eventually-always and always-eventually ask different questions, and the numbers say so."
+>
+
+Swap the two operators. What does `F[0, 2](G[0, 2](done > 0))` score at t = 1?
+
+</Exercise>
+
+## Definitions
+
+All the operators we've seen so far have been represented by their letters. In SENTIL, you can use the spelled-out forms as well. `always`, `globally`, `eventually`, `finally`, `until`, `next`, `historically`, `once`, and `since` are all allowed.
+
+<Cards>
+<Card title="Operator reference" href="/docs/reference/language/operators" description="Formal semantics, full syntax, and the edge cases for every operator." />
+<Card title="Grammar" href="/docs/reference/language/grammar" description="The complete syntax, including every alias and precedence rule." />
+</Cards>
