@@ -56,3 +56,23 @@ pub struct SmcRecord {
     pub runs: u64,
     pub hardware: Hardware,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SynthRecord {
+    pub tool: String,
+    pub version: String,
+    pub language: String,
+    /// `"open_loop"` or `"receding_horizon"`.
+    pub mode: String,
+    pub case: String,
+    pub formula: String,
+    pub backend: String,
+    pub timing: Timing,
+    pub robustness: f64,
+    pub holds: bool,
+    pub deadline_ms: Option<f64>,
+    pub deadline_misses: Option<u64>,
+    pub steps: Option<u64>,
+    pub runs: u64,
+    pub hardware: Hardware,
+}
