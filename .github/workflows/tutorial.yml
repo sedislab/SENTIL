@@ -1,0 +1,34 @@
+name: tutorial
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'tutorial/**'
+      - '.github/workflows/tutorial.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: compile the tutorial
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compile to pdf
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: tutorial
+          root_file: sentil-tutorial.tex
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentil-tutorial
+          path: tutorial/sentil-tutorial.pdf
+      - name: attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          draft: true
+          files: tutorial/sentil-tutorial.pdf
