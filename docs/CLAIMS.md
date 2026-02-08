@@ -145,6 +145,16 @@ Tolerance: robustness within 1e-3 of the recorded value with zero deadline misse
 Tier: CPU.
 Artifact: `benchmarks/results/sentil_synth.jsonl`.
 
+## Confidence intervals and sequential testing
+
+Coverage on synthetic ground truth. Over 4000 batches of 100 Bernoulli draws at a known p of 0.3, counting how often the 95 percent interval contains p, the Wilson interval covers within 0.03 of its nominal 0.95 and the Clopper-Pearson interval covers at least 0.94, the conservative behavior it is built for. The seed is fixed, so the run is deterministic.
+Command: `cargo test --offline -p sentil --features statistical wilson_and_clopper_pearson_cover_at_their_nominal_rate`.
+Expected: Wilson coverage within 0.03 of 0.95, Clopper-Pearson at least 0.94. Tolerance: as stated in the assertion. Tier: CPU, every commit.
+
+SPRT error rates stay under their nominal bounds. Wald's test with p0 = 0.3, p1 = 0.7, and alpha = beta = 0.05, run 400 times against a process at p = 0.2 (deep in H0) and again at p = 0.8 (deep in H1), accepts the wrong hypothesis at most 10 percent of the time on each side, inside the nominal error the test is configured for.
+Command: `cargo test --offline -p sentil --features statistical the_error_rates_stay_within_the_bounds`.
+Expected: Type I rate at most 0.1, Type II rate at most 0.1. Tolerance: as stated. Tier: CPU, every commit.
+
 ## Statistical model checking, against UPPAAL-SMC, PRISM, Modest
 
 On the reference model set, `verifyta` segfaults on all five models under the container it was run in, so no UPPAAL-SMC timing is available to compare against; SENTIL completes the same checks. A speedup is quoted only against a model UPPAAL actually finishes. PRISM and Modest have models and scripts but no committed run on this hardware; their expected values are recorded from the reference project rather than measured here.
