@@ -22,6 +22,28 @@ ctest --test-dir build
 
 A vendor Adaptive Platform is a toolchain swap, not a code change: set `-DSENTIL_AP_VENDOR=vector|eb|apex` with the vendor toolchain file and point `ARA_COM_ROOT` at the vendor ara::com. The app source is unchanged; `cmake/FindAraCom.cmake` locates the vendor binding and `codegen/generate.sh` runs the vendor generator on `model/*.arxml`.
 
+## Installing from a GitHub release
+
+To build without cloning, download the source archive for the tag you want from the GitHub release and build it the same as the from-source path above. Tags are at https://github.com/sedislab/SENTIL/releases.
+
+Linux and macOS:
+
+```
+curl -L -o sentil-v0.3.0.tar.gz https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz
+tar xzf sentil-v0.3.0.tar.gz
+cd SENTIL-0.3.0/sentil-autosar-adaptive
+```
+
+Windows (PowerShell):
+
+```
+Invoke-WebRequest https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -OutFile sentil-v0.3.0.tar.gz
+tar xzf sentil-v0.3.0.tar.gz
+cd SENTIL-0.3.0\sentil-autosar-adaptive
+```
+
+From there run the same cmake configure and build as above, against the stub or a vendor Adaptive Platform. For an on-ECU install, the `.deb` and `.rpm` place the apps, manifests, and the compiled SENTIL core under `/opt/sentil`; that layout is documented in `packaging/opt-layout`.
+
 ## The service interfaces
 
 Three interfaces live in `model/`, separate from their deployment in `manifest/` per the AUTOSAR methodology split.

@@ -6,6 +6,38 @@ The stable C ABI for SENTIL, a runtime verification engine for Signal Temporal L
 
 `libsentil.{so,dylib,dll}` plus a static `libsentil.a`, and one hand-written header, `include/sentil.h`. The linker flag is `-lsentil`. Every function clears the calling thread's last error on entry; a failed call returns a sentinel (a null handle, a NaN, or a nonzero `sentil_error_t`) and leaves a code and message that `sentil_get_last_error_code` and `sentil_get_last_error` read back.
 
+## Install a prebuilt release
+
+Grab `sentil-0.3.0-<os>-<arch>.tar.gz` from the GitHub release and unpack it. The archive is a self-contained prefix: `lib/` holds the shared `libsentil.{so,dylib}` (or `sentil.dll` with its import library) beside the static `libsentil.a`, `include/` holds `sentil.h`, and the discovery files sit at `lib/pkgconfig/sentil.pc` and `lib/cmake/Sentil`.
+
+Unpack on Linux or macOS:
+
+```
+tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
+```
+
+Unpack on Windows, where `tar` ships in Windows 10 and later:
+
+```
+tar -xzf sentil-0.3.0-windows-x86_64.tar.gz
+```
+
+Put the extracted prefix where the tools look. On Linux and macOS, add it to the search paths or copy it over `/usr/local`:
+
+```
+export PKG_CONFIG_PATH=$PWD/sentil-0.3.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH
+export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.0-linux-x86_64:$CMAKE_PREFIX_PATH
+# or: cp -r sentil-0.3.0-linux-x86_64/* /usr/local/
+```
+
+On Windows there is no pkg-config, so set `CMAKE_PREFIX_PATH` in PowerShell and use the CMake path; MSVC links `sentil.dll` through the bundled import library:
+
+```
+$env:CMAKE_PREFIX_PATH = "$PWD\sentil-0.3.0-windows-x86_64"
+```
+
+With the prefix on those paths, the pkg-config and CMake steps under [Linking](#linking) apply unchanged.
+
 ## Build from source
 
 You need a Rust toolchain (the version is pinned in `rust-toolchain.toml`) and a C compiler.

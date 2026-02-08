@@ -17,6 +17,10 @@ phi.violations(trace)     % the time spans where it fails
 
 From the MATLAB File Exchange, install the packaged toolbox by opening `Sentil.mltbx` in MATLAB, or with `matlab.addons.toolbox.installToolbox('Sentil.mltbx')`. The toolbox ships the compiled core inside it, so no Rust toolchain and no separate library are needed.
 
+## Installing from a GitHub release
+
+Download `Sentil.mltbx` from the assets on the GitHub release and install it by double-clicking it in MATLAB, or with `matlab.addons.toolbox.installToolbox('Sentil.mltbx')`. The steps are the same on Windows, macOS, and Linux.
+
 ## Building from source
 
 The toolbox compiles the core and the MEX gateway in one step. From this directory, with a C toolchain and the Rust toolchain on the path:

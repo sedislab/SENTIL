@@ -22,7 +22,7 @@ A `Formula`, `Trace`, `Monitor`, and the other native-backed types hold a handle
 
 ## Installing
 
-From Maven Central, once published:
+From Maven Central:
 
 ```xml
 <dependency>
@@ -39,6 +39,24 @@ implementation 'io.github.sedislab:sentil:0.3.0'
 ```
 
 The published jar bundles the native library for Linux, macOS, and Windows on common architectures, so nothing else is needed.
+
+## Downloading a release
+
+If you would rather not use Maven, download the `sentil-0.3.0.jar` attached to the GitHub release and put it on the classpath directly. The jar carries the native library inside under `native/<os>-<arch>/`, so nothing else is needed. The classpath separator differs by platform: a colon on macOS and Linux, a semicolon on Windows.
+
+On macOS or Linux:
+
+```sh
+javac -cp sentil-0.3.0.jar MyMonitor.java
+java -cp .:sentil-0.3.0.jar MyMonitor
+```
+
+On Windows:
+
+```bat
+javac -cp sentil-0.3.0.jar MyMonitor.java
+java -cp .;sentil-0.3.0.jar MyMonitor
+```
 
 ## Building from source
 

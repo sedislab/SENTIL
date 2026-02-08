@@ -10,7 +10,7 @@ The monitor is a managed lifecycle node, so it can be configured, paused, resume
 
 ## Install
 
-From a release, through rosdep and your distribution's package manager once it is published to rosdistro:
+From a release, through rosdep and your distribution's package manager:
 
 ```
 sudo apt install ros-humble-sentil-ros
@@ -22,6 +22,29 @@ From source, in a colcon workspace with the SENTIL C++ package (`SentilCpp`) ava
 cd ~/ros2_ws
 colcon build --packages-select sentil_ros
 source install/setup.bash
+```
+
+From a GitHub release archive, the same build as from source without the clone, on any machine with a ROS 2 install. Download the source archive for the tag from the release, extract it into your workspace `src/`, then build as above.
+
+On Linux or macOS:
+
+```
+cd ~/ros2_ws/src
+curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz | tar xz
+cd ~/ros2_ws
+colcon build --packages-select sentil_ros
+source install/setup.bash
+```
+
+On Windows, from a command prompt with ROS 2 sourced:
+
+```
+cd %USERPROFILE%\ros2_ws\src
+curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.zip
+tar xf sentil.zip
+cd %USERPROFILE%\ros2_ws
+colcon build --packages-select sentil_ros
+call install\setup.bat
 ```
 
 ## Run it

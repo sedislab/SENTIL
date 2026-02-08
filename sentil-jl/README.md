@@ -17,7 +17,7 @@ violations(phi, trace)            # the time spans where it fails
 
 ## Installing
 
-From the Julia General Registry, once the package is published:
+From the Julia General Registry:
 
 ```julia
 import Pkg
@@ -25,6 +25,28 @@ Pkg.add("Sentil")
 ```
 
 That pulls in the compiled core as an artifact, so nothing else is needed.
+
+### From a prebuilt GitHub release
+
+You can also fetch the compiled core straight from a GitHub release. Download `libsentil` for your platform from the release, inside `sentil-0.3.0-<os>-<arch>.tar.gz`, unpack it, and set `SENTIL_LIB` to the library's path before you load the package, the same override a developer build uses.
+
+On Linux the file is `libsentil.so`:
+
+```sh
+export SENTIL_LIB="/path/to/libsentil.so"
+```
+
+On macOS it is `libsentil.dylib`:
+
+```sh
+export SENTIL_LIB="/path/to/libsentil.dylib"
+```
+
+On Windows it is `libsentil.dll`, set from PowerShell:
+
+```powershell
+$env:SENTIL_LIB = "C:\path\to\libsentil.dll"
+```
 
 To build from source, compile the core and point `SENTIL_LIB` at it:
 

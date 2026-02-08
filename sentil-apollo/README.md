@@ -78,6 +78,28 @@ buildtool install sentil
 
 In the dev container the source build is `aem start`, `buildtool build -p sentil`, then `cyber_launch start modules/sentil/monitor/launch/sentil_monitor.launch`.
 
+## Installing from a GitHub release
+
+To install a tagged release without cloning, download the source archive for that tag from the [releases page](https://github.com/sedislab/SENTIL/releases), unpack it, and drop `sentil-apollo` into your Apollo workspace as `modules/sentil`. Run the following from the workspace root.
+
+Linux and macOS:
+
+```
+curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -o sentil.tar.gz
+tar -xzf sentil.tar.gz
+cp -r SENTIL-0.3.0/sentil-apollo modules/sentil
+```
+
+Windows (PowerShell):
+
+```
+Invoke-WebRequest https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.zip -OutFile sentil.zip
+Expand-Archive sentil.zip -DestinationPath .
+Copy-Item -Recurse SENTIL-0.3.0\sentil-apollo modules\sentil
+```
+
+With the module in `modules/sentil`, wire up the `@sentil_cpp` repository and run `buildtool build -p sentil` then `buildtool install sentil` as in Building and installing above.
+
 ## Acting on the verdict
 
 Planning subscribes to `/apollo/sentil/status` and engages a fallback when `all_satisfied` is false or a probabilistic interval drops below threshold; `examples/safety_planner_subscriber.cc` is a small standalone version. For the heavier algorithms a per-tick budget cannot afford, `tools/sentil_record_analyzer` replays a recorded drive offline and runs SMC or SPRT over the same config.

@@ -10,6 +10,24 @@ pip install sentil
 
 The optional extras pull in their dependencies: `sentil[pandas]` for DataFrame ingest, `sentil[plotting]` for the robustness plots.
 
+## Install from a GitHub release
+
+Every tagged release attaches prebuilt wheels to the GitHub release page. Download the wheel that matches your Python version and platform, then install it from the downloaded file. The filename ends in a platform tag that differs per operating system: `manylinux` on Linux, `macosx` on macOS, and `win_amd64` on Windows.
+
+On Linux and macOS the shell expands the wildcard, so the glob resolves to the file you downloaded:
+
+```
+pip install ./sentil-0.3.0-*.whl
+uv pip install ./sentil-0.3.0-*.whl
+```
+
+On Windows the shell leaves the wildcard unexpanded, so pass the exact filename you downloaded:
+
+```
+pip install .\sentil-0.3.0-cp311-cp311-win_amd64.whl
+uv pip install .\sentil-0.3.0-cp311-cp311-win_amd64.whl
+```
+
 ## A first monitor
 
 ```python
