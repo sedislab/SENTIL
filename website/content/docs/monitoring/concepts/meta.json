@@ -1,1 +1,1 @@
-{ "title": "Concepts", "icon": "Lightbulb", "pages": ["what-is-stl", "temporal-operators", "signals-and-traces"] }
+{ "title": "Concepts", "icon": "Lightbulb", "pages": ["what-is-stl", "temporal-operators", "signals-and-traces", "monotonic-deque", "pipeline"] }

@@ -1,0 +1,55 @@
+---
+title: "The three-stage pipeline"
+description: "How SENTIL's engine is layered."
+---
+
+A probabilistic check runs in three stages. Stochastic signal lifting turns one recorded trace and a fitted noise model into an ensemble of candidate trajectories. Robustness evaluation scores the formula on each trajectory. Statistical aggregation turns those scores into a satisfaction probability with a confidence bound. Deterministic monitoring, the subject of this tab, is the middle stage running alone.
+
+<PipelineDiagram />
+
+If you evaluate a trace with no noise model, you are running the classical STL monitor built up in [what signal temporal logic is](/docs/monitoring/concepts/what-is-stl). If you feed the same operators lifted ensembles instead, they drive a probabilistic monitor. The outer two stages are taught in the probabilistic tab, starting at [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl).
+
+## Monitor and OnlineMonitor
+
+There are two classes for monitoring: `Monitor` and `OnlineMonitor`.
+
+Two classes expose the engine, and the split is by how data arrives, not by capability.
+
+`Monitor` takes in one formula and works over whole traces. The verdict can be accessed by `robustness`, `robustness_signal`, or `violations` for deterministic evaluation, plus the statistical checks `check`, `check_sequential`, and `check_rare` when the formula is probabilistic. It also accepts a sample-at-a-time `update`, so it can be driven live.
+
+`OnlineMonitor` on the other hand, folds a timestamped sample into a verdict. It is what should be used for a real-time loop.
+
+```python title="two_monitors.py"
+import sentil
+from sentil import Monitor, OnlineMonitor
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+
+offline = Monitor("G (speed > 5)")
+offline.robustness(trace)   # -1.0
+
+live = OnlineMonitor("G[0, 10](speed > 5)")
+live.update(0.0, {"speed": 12.0})
+```
+
+Which one a task calls for is covered on [monitoring with STL](/docs/monitoring).
+
+## Features
+
+The stages map to Cargo features. `--no-default-features --features std` is the monitor-only build and we recommend you only use this for embedded or a dependency-averse target. The `statistical` feature adds the noise models, lifting, and aggregation. The `synthesis` feature adds smooth robustness and the optimizers. The default build enables `std`, `statistical`, `ingest`, `parallel`, `synthesis`, `specs`, and `sqlite`, and the GPU path stays behind the opt-in `gpu` feature.
+
+```toml title="Cargo.toml"
+[dependencies]
+sentil = { version = "0.3.0", default-features = false, features = ["std"] }
+```
+
+The [features reference](/docs/reference/methods/features) lists the full set.
+
+## Where each stage is documented
+
+<Cards>
+<Card title="What PrSTL is" href="/docs/probabilistic/concepts/what-is-prstl" description="The probabilistic operator and what the full pipeline computes." />
+<Card title="Noise models" href="/docs/probabilistic/concepts/noise-models" description="The families you can fit and how lifting draws realizations." />
+<Card title="Confidence intervals" href="/docs/probabilistic/concepts/confidence-intervals" description="How aggregation bounds the estimate and decides the verdict." />
+<Card title="Cargo features" href="/docs/reference/methods/features" description="Every feature flag and what it gates." />
+</Cards>

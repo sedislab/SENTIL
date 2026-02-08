@@ -1,0 +1,69 @@
+---
+title: "Why the deque is O(1) amortized"
+description: "The sliding-window, the two deque invariants and the amortized analysis."
+---
+
+Evaluating the bounded temporal operators reduce to one problem which is calculating the minimum or maximum of a signal over a window that slides forward in time. `G` takes an infimum over its window, `F` takes a supremum, and the past operators the same over a backward window. How fast that sliding extremum runs is what sets the per-sample cost of the whole monitor, and we're able to achieve an amortized constant time by using a monotonic deque.
+
+## The problem
+
+`G` over `[a, b]` computes the minimum of its subformula over a window of some size $m$ samples. A brute-force implementation would rescan the window at every sample, which is $O(m)$ per sample and $O(nm)$ across a trace of $n$ samples. When the window is large, and a signal sampled at kilohertz rates over multi-second windows puts $m$ in the tens of thousands, that rescan is the bottleneck.
+
+The monotonic deque computes the same values in $O(n)$ total, independent of the window size, and holds only $O(m)$ samples at once.
+
+## The data structure
+
+Keep a double-ended queue of timestamped values with two invariants. For a minimum-tracking deque:
+1. Timestamps strictly increase from front to back.
+2. Values are nondecreasing from front to back.
+
+Given both, the front of the deque is always the minimum of the samples it holds. The deque never holds every sample in the window, only the ones that could still become the window minimum.
+
+## The update
+
+When a new sample $(t_k, v_k)$ arrives, three steps restore the invariants.
+
+1. The back is popped while its value is greater than or equal to $v_k$. Such a sample can never again be the minimum of a window that also contains the new one, since the new value is at least as small and more recent. This is the step that keeps the values nondecreasing.
+
+2. The new sample is pushed to the back.
+
+3. The front is popped while its timestamp has fallen strictly below the window's left edge, $t_k - w$. An entry exactly on the edge stays, since the window is inclusive at both ends. Because timestamps strictly increase in the deque, any expired entry sits at the front, so this pop stops as soon as the front is in range.
+
+After the three steps, the front holds the minimum of the current window.
+
+## The eviction
+
+Take values $5, 2, 7, 1, 3$ arriving in order, and follow the back-eviction that keeps the deque monotone. Each row is the deque state after the new value is pushed, front on the left.
+
+```text
+push 5   ->  [5]
+push 2   ->  [2]          5 popped: 5 >= 2
+push 7   ->  [2, 7]       7 kept:   2 < 7
+push 1   ->  [1]          7 then 2 popped: both >= 1
+push 3   ->  [1, 3]       3 kept:   1 < 3
+```
+
+The front tracks the minimum of the live samples at every step. The maximum case pops the back while its value is less than or equal to the incoming value, and the front holds the maximum. Past operators use a window that reaches backward, $[t - b, t - a]$ instead of $[t + a, t + b]$, and the same machinery applies unchanged.
+
+## The amortized analysis
+
+Each sample is pushed to the back exactly once and popped at most once, from either end, over its whole life in the deque. Two pushes or pops can never touch the same sample twice. Across $n$ samples the total work is therefore $O(n)$, whatever the window size. A single sample can trigger many back-pops when it undercuts a long run of larger predecessors, so the worst case for one sample is $O(m)$, but that cost is paid out of pushes those predecessors already accounted for. Averaged over the trace, the cost is $O(1)$ per sample.
+
+The memory is $O(m)$ because the deque never holds more than the samples inside one window. A trace of a hundred million samples monitored under a small window uses memory proportional to the window, not the trace, which is what lets the streaming monitor run unbounded.
+
+## Complexity, stated honestly
+
+| Approach | Time over $n$ samples | Memory |
+|---|---|---|
+| Naive window rescan | $O(nm)$ | $O(m)$ |
+| Monotonic deque | $O(n)$ | $O(m)$ |
+
+We're able to reduce the gap from $O(nm)$ to $O(n)$ with this and as a result, remove the window size from time complexity. Against RTAMT on full-signal robustness, that difference shows up as a measured 130x to 168x across trace lengths from one thousand to one million samples.
+
+## The correctness proof
+
+Replacing the naive rescan with the deque is only safe if the two produce identical output. SENTIL's test suite asserts that equivalence on every commit against a random-input property test, and the equivalence is also proved in Lean under `proofs/` in the repo.
+
+The theorem states that for a stream of timestamped values processed in time order, the value at the front of the deque after the $k$-th sample equals the minimum over the window $[t_k - w, t_k]$ inclusive, given the two invariants, the strict front eviction at $t_k - w$, and the back eviction of values that exceed the incoming one. The `F` and maximum case is proved the same way.
+
+For the operator semantics the deque implements, read [the temporal operators](/docs/monitoring/concepts/temporal-operators). For the numbers this engine produces on real workloads, see the [claims document](/docs/start/understand/claims-philosophy).
