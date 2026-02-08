@@ -63,7 +63,40 @@ The monitoring value costs the same whatever the length of trace behind it, beca
 | 100,000 | 0.0045 ms | 3.64 ms |
 | 10,000,000 | 0.0048 ms | 391.8 ms |
 
-Expected: flat in trace length, low single-digit microseconds for a bounded formula. Tolerance: within a small factor across machines; the defining property is that it does not grow with length. Tier: CPU. This is not quoted as the RTAMT speedup, since RTAMT answers the full-signal question.
+Expected: Flat in trace length, low single-digit microseconds for a bounded formula.
+Tolerance: It does not grow with length.
+Tier: CPU.
+
+Breach is a dense-time tool, so the comparison is on the dense robustness value and on the monitoring question its `STL_Eval`/`CheckSpec` answers at time zero. The robustness matches bit for bit: on the length sweep formula both read -18.0736, and on the five oracle formulas SENTIL and Breach agree to the value.
+
+On the monitoring question SENTIL answers in microseconds where Breach needs milliseconds, because Breach carries a fixed MATLAB and mex call overhead of a couple of milliseconds that dominates at these sizes while SENTIL reads only the formula's horizon.
+
+| samples | SENTIL | Breach | speedup |
+| --- | --- | --- | --- |
+| 1,000 | 4.5 us | 4.86 ms | 1083x |
+| 10,000 | 4.5 us | 2.11 ms | 473x |
+| 100,000 | 4.5 us | 2.49 ms | 549x |
+| 1,000,000 | 4.6 us | 6.97 ms | 1514x |
+
+Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- scalability` and the Breach runner `matlab -batch "breach_runner('scalability')"` with Breach on the path, then `python benchmarks/runners/plot.py`.
+Expected: Identical robustness and SENTIL a few hundred to a few thousand times faster.
+Tolerance: 0 tolerance for the robustness.
+Tier: CPU.
+Artifact: `benchmarks/results/sentil_scalability.jsonl`, `breach_scalability.jsonl`, `breach_deterministic.jsonl`.
+
+Computing the whole dense robustness signal, SENTIL's cost grows linearly with length and runs about 7x to 12x the discrete full-signal cost, the price of the segment interpolation dense time needs.
+
+| samples | dense full signal | discrete full signal |
+| --- | --- | --- |
+| 1,000 | 0.31 ms | 0.037 ms |
+| 100,000 | 44.2 ms | 3.64 ms |
+| 1,000,000 | 389 ms | 37.06 ms |
+
+Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- dense`.
+Expected: a single-digit multiple of the discrete cost.
+Tolerance: 
+Tier: CPU.
+Artifact: `benchmarks/results/sentil_dense.jsonl`.
 
 ## Streaming
 
@@ -72,6 +105,45 @@ Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- stream
 Measured on one EPYC core over a million samples: median 81 ns, p99 120 ns, mean 87 ns. Each update is timed on its own, so two clock reads of a few tens of nanoseconds are folded into every figure and the true per-sample cost is lower. The tail sits within about one and a half times the median, and the monitor sustains over eleven million updates per second, far above the ten kilohertz target. Tolerance: report the measured number, do not target one; the exact figure is hardware-bound. Tier: CPU.
 
 Memory is proportional to the largest temporal window, not the trace length, so an arbitrarily long stream holds steady resident memory for a given formula.
+
+## Cross-language call overhead
+
+The same streaming monitor driven one sample at a time from each binding, on the nested formula above, every binding reading the identical robustness -17.99212. The per-sample time is the cost of one call across the language boundary into the core plus the update itself.
+
+| binding | per-sample update |
+| --- | --- |
+| C | 74 ns |
+| Rust (core, no FFI) | 112 ns |
+| Julia | 114 ns |
+| C++ | 134 ns |
+| Python | 521 ns |
+| Java | 680 ns |
+| MATLAB | 6.49 us |
+
+Command: run each language's streaming runner, for instance `python benchmarks/runners/sentil_runner.py streaming`, then `python benchmarks/runners/plot.py` for the cross-language figure.
+Expected: every binding under a microsecond except MATLAB's interpreter path.
+Tolerance: The claim is that the call overhead is indicated roughly by these scales.
+Tier: CPU.
+Artifact: `benchmarks/results/sentil_streaming_*.jsonl`.
+
+## Synthesis
+
+Open-loop trajectory synthesis finds an input sequence that satisfies the spec on a linear model, and the receding-horizon controller plans one online within a hard step deadline.
+
+| case | backend | robustness | time |
+| --- | --- | --- | --- |
+| hold, offline | gradient | 0.50 | 1.72 ms |
+| reach, offline | gradient | 4.00 | 1.26 ms |
+| bounded input, offline | gradient | 0.40 | 2.90 ms |
+| hold, offline | CMA-ES | 0.50 | 5.87 ms |
+| integrator hold, online | gradient | 0.50 | 0.099 ms/step |
+
+The online controller ran 200 steps against a 5 ms deadline with a p99 of 0.112 ms and no misses, so it plans each input in about a tenth of a millisecond with room to spare.
+Command: `cargo run --release -p sentil-benchmarks --bin sentil_synth_runner`.
+Expected: every offline case reaches a positive robustness (the spec holds on the model), the online controller misses no deadline.
+Tolerance: robustness within 1e-3 of the recorded value with zero deadline misses.
+Tier: CPU.
+Artifact: `benchmarks/results/sentil_synth.jsonl`.
 
 ## Statistical model checking, against UPPAAL-SMC, PRISM, Modest
 
