@@ -20,9 +20,12 @@ fn main() -> ExitCode {
     let records = match suite.as_str() {
         "deterministic" => deterministic(),
         "scalability" => scalability(),
+        "dense" => dense(),
         "streaming" => streaming(),
         other => {
-            eprintln!("unknown suite `{other}`; use `deterministic`, `scalability`, or `streaming`");
+            eprintln!(
+                "unknown suite `{other}`; use `deterministic`, `scalability`, `dense`, or `streaming`"
+            );
             return ExitCode::FAILURE;
         }
     };
@@ -112,6 +115,30 @@ fn measure_stream(benchmark: &str, formula: &str, samples: usize, param: u64) ->
     }
     let timing = summarize(&mut latencies);
     record(benchmark, formula, Question::Monitoring, param, last, timing, samples as u64)
+}
+
+fn dense() -> Vec<Record> {
+    let phi = Formula::parse(SWEEP).expect("a valid formula");
+    let sizes = [1_000u64, 10_000, 100_000, 1_000_000];
+    let mut records = Vec::new();
+    for &size in &sizes {
+        let tr = trace(size as usize);
+        let runs = if size <= 100_000 { 20 } else { 5 };
+        let robustness = phi.robustness_dense_signal(&tr).expect("a finite dense signal")[0];
+        let timing = time_runs(runs, || {
+            phi.robustness_dense_signal(&tr).expect("a finite dense signal")
+        });
+        records.push(record(
+            "dense/length",
+            SWEEP,
+            Question::FullSignal,
+            size,
+            robustness,
+            timing,
+            runs,
+        ));
+    }
+    records
 }
 
 fn streaming() -> Vec<Record> {
