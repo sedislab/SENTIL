@@ -216,6 +216,14 @@ Reference (STORM paper, Apollo on an A100 node): median 0.64 ms, 99th 1.83 ms, e
 
 The probabilistic conjunct is what the deterministic checks cannot do. At the pedestrian encounter near t = 146 s the deterministic clearance still reads 5.7 m, above the 5 m bound, while the collision-free probability over the lookahead falls to essentially zero, because the pedestrian's predicted path under its uncertainty meets the car's recorded path inside ten seconds. The probabilistic verdict holds near 1.0 across the rest of the drive and drops only at the few real encounters. This mirrors the STORM paper's intersection event, where deterministic bounds held and the collision-free probability fell to 0.94. Tier: CPU.
 
+## Medical device, artificial-pancreas glucose control
+
+SENTIL checks a closed-loop insulin controller on a type-1 patient simulated with the FDA-accepted UVA/Padova model (Dalla Man 2007, S2013 risk-based utilization, average-adult parameters) over a 24-hour day of three meals, against clinical safety specifications, both on the true glucose and probabilistically under the continuous-glucose-monitor noise. The model holds fasting glucose at about 120 mg/dL and gives a bolused meal a peak near 180 that recovers, matching the reference. Two controllers run: one that skips the lunch bolus, a real and dangerous lapse, and a tuned one that doses every meal.
+
+The missed-bolus controller violates the euglycemia band (robustness -105 mg/dL, the excursion reported as the interval [809, 1424] minutes as glucose runs from lunch to the end of the day and peaks near 285), while the tuned controller holds it (robustness +8). Both stay clear of severe hypoglycemia, and the probabilistic hypoglycemia-safety check `P>=0.95(always (glucose > 70))` holds for both at probability about 1.0, since neither goes low. The point is that the deterministic euglycemia verdict separates the two controllers while the hypoglycemia risk stays low under sensor noise for both.
+Command: `python experiments/glucose_control/glucose_control.py`.
+Expected: euglycemia violated for the missed-bolus controller (about -105) and satisfied for the tuned one (about +8), the missed-bolus excursion near [809, 1424] min, both hypoglycemia probabilities near 1.0. Tolerance: missed-bolus robustness within 6 mg/dL, tuned within 2.5, identical verdicts, probability within 0.01. Tier: CPU. Artifact: `experiments/glucose_control/results/glucose.json`.
+
 ## The Lean proof
 
 The monotonic-deque sliding-window theorem is machine-checked, for both the minimum (always, historically) and the maximum (eventually, once) cases, over a decidable linear order.
