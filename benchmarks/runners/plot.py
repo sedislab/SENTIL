@@ -137,6 +137,73 @@ def smc_accuracy(records):
     plt.close(fig)
     print("wrote", out)
 
+def cross_language(records):
+    rows = [r for r in records if r.get("benchmark") == "streaming"]
+    if not rows:
+        return
+    by_lang = {}
+    for r in rows:
+        by_lang[r["language"]] = r["timing"]["mean_ms"] * 1000.0
+    order = sorted(by_lang, key=by_lang.get)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.bar(order, [by_lang[l] for l in order])
+    ax.set_yscale("log")
+    ax.set_ylabel("per-sample update (us)")
+    ax.set_title("Streaming cost per sample, across bindings")
+    ax.grid(True, axis="y", which="both", linewidth=0.3)
+    fig.tight_layout()
+    out = os.path.join(RESULTS, "streaming.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print("wrote", out)
+
+def dense(records):
+    d = [(r["size"], r["timing"]["mean_ms"]) for r in records if r.get("benchmark") == "dense/length"]
+    disc = [
+        (r["size"], r["timing"]["mean_ms"])
+        for r in records
+        if r.get("benchmark") == "scalability/length"
+        and r.get("tool") == "sentil"
+        and r.get("question") == "full_signal"
+    ]
+    if not d or not disc:
+        return
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for points, label in ((sorted(d), "dense"), (sorted(disc), "discrete")):
+        ax.plot([p[0] for p in points], [p[1] for p in points], marker="o", label=label)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("trace length (samples)")
+    ax.set_ylabel("full-signal time (ms)")
+    ax.set_title("Dense versus discrete robustness cost")
+    ax.grid(True, which="both", linewidth=0.3)
+    ax.legend()
+    fig.tight_layout()
+    out = os.path.join(RESULTS, "dense.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print("wrote", out)
+
+def synthesis(records):
+    rows = [r for r in records if "mode" in r]
+    if not rows:
+        return
+    rows.sort(key=lambda r: (r["mode"], r["case"]))
+    labels = [r["case"] for r in rows]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    colors = ["C0" if r["mode"] == "open_loop" else "C1" for r in rows]
+    ax.bar(range(len(rows)), [r["timing"]["mean_ms"] for r in rows], color=colors)
+    ax.set_xticks(range(len(rows)))
+    ax.set_xticklabels(labels, rotation=30, ha="right")
+    ax.set_ylabel("synthesis time (ms)")
+    ax.set_title("Open-loop synthesis and one online planning step")
+    ax.grid(True, axis="y", linewidth=0.3)
+    fig.tight_layout()
+    out = os.path.join(RESULTS, "synthesis.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print("wrote", out)
+
 def main():
     records = load()
     if not records:
@@ -144,6 +211,9 @@ def main():
         return
     scalability(records)
     deterministic(records)
+    cross_language(records)
+    dense(records)
+    synthesis(records)
     smc_throughput(records)
     smc_accuracy(records)
 
