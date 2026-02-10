@@ -6,9 +6,14 @@ target/
 # Lean proof build output (lake-manifest.json is committed)
 .lake/
 
-# Python runner bytecode
+# Python: bytecode, virtualenvs, packaging metadata, test cache. Built wheels land
+# under target/ and are already covered above.
 __pycache__/
 *.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
 
 # Editor and OS noise
 .idea/
