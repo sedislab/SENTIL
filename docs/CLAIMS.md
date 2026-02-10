@@ -224,6 +224,14 @@ The missed-bolus controller violates the euglycemia band (robustness -105 mg/dL,
 Command: `python experiments/glucose_control/glucose_control.py`.
 Expected: euglycemia violated for the missed-bolus controller (about -105) and satisfied for the tuned one (about +8), the missed-bolus excursion near [809, 1424] min, both hypoglycemia probabilities near 1.0. Tolerance: missed-bolus robustness within 6 mg/dL, tuned within 2.5, identical verdicts, probability within 0.01. Tier: CPU. Artifact: `experiments/glucose_control/results/glucose.json`.
 
+## Gene-regulatory network, circadian oscillation
+
+SENTIL verifies that a Barkai-Leibler circadian gene network keeps oscillating, a temporal property no single threshold captures, over a reference ensemble of 100 stochastic realizations of the activator protein sampled hourly for 270 hours. The oscillation is expressed as two recurrences, a peak above 3000 within every 24-hour window and a trough below 2000 within every window, and the network must satisfy both.
+
+On the ensemble mean the peak recurrence holds with robustness about +2530 and the trough recurrence with about +1040, the measured period is 23.8 hours, and the amplitude runs from 403 to 6218. All 100 realizations satisfy the joint property, so the empirical satisfaction probability is 1.0, and a probabilistic check that lifts each reading by a measurement error holds at probability 1.0 because the peak margin dwarfs the noise.
+Command: `python experiments/circadian_gene_network/circadian_gene_network.py`.
+Expected: both recurrences satisfied on the mean (peaks about +2530, troughs about +1040), period near 24 hours, all 100 realizations oscillating. Tolerance: robustness within a few percent, period within about 1 hour, verdicts identical, the ensemble fraction exact on the shipped traces. Tier: CPU. Artifact: `experiments/circadian_gene_network/results/circadian.json`.
+
 ## The Lean proof
 
 The monotonic-deque sliding-window theorem is machine-checked, for both the minimum (always, historically) and the maximum (eventually, once) cases, over a decidable linear order.
