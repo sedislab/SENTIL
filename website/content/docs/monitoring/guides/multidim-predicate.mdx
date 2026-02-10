@@ -1,0 +1,61 @@
+---
+title: "Multi-dimensional predicates"
+description: "A predicate can read several channels at once."
+---
+
+The base term in a formula is a predicate which is an arithmetic expression compared against another. Nothing forces that expression to use a single variable. It can read as many channels as you like and combine them with arithmetic and functions, and the whole thing still counts as one atomic predicate with one robustness margin. We'll use a bound on a vehicle's speed from its velocity components is the standard example.
+
+```text
+sqrt(vx*vx + vy*vy) < vmax
+```
+
+At each time the evaluator reads `vx`, `vy`, and `vmax` from the trace, forms `sqrt(vx*vx + vy*vy)`, and scores the comparison. For a `<` predicate the margin is `vmax` minus the left side, so a positive value is the speed headroom and a negative value is the overshoot. The temporal operator wrapping the predicate then works on that single margin signal.
+
+## How the robustness is evaluated
+
+A predicate is one arithmetic expression, then a comparison operator, and finally a second arithmetic expression. Each side is evaluated at the current time by looking up every channel it names, then applying the operators in precedence order. The comparison turns the two numbers into a signed margin under the [robustness rules](/docs/monitoring/concepts/what-is-stl). Both sides can be expressions, so `left > right` scores `left - right`, which is how you compare two channels directly, as in `altitude > terrain + 30`.
+
+Because the whole expression collapses to one number per time step, `speed - 0.5 * wind > 10` is a single predicate. Write boolean connectives when you mean separate conditions, and arithmetic when you mean one derived quantity.
+
+## Functions
+
+Twelve functions are available inside an expression. Each takes numeric arguments and returns a number.
+
+| Function | Meaning |
+|---|---|
+| `abs(x)` | absolute value |
+| `sqrt(x)` | square root |
+| `exp(x)` | exponential, base e |
+| `ln(x)` | natural logarithm |
+| `log(x)` | base-10 logarithm |
+| `sin(x)`, `cos(x)`, `tan(x)` | trigonometric, radians |
+| `floor(x)`, `ceil(x)` | round down, round up |
+| `min(a, b)`, `max(a, b)` | two-argument minimum and maximum |
+
+`log` is base 10 and `ln` is the natural logarithm, following the convention of a scientific calculator rather than of C. `min` and `max` each take exactly two arguments.
+
+The arithmetic operators are `+`, `-`, `*`, `/`, `%` for modulo, and `^` for power. Power is right-associative, so `2 ^ 3 ^ 2` is `2 ^ 9`, which is 512. Unary minus binds tighter than the binary operators.
+
+## A predicate over speed and heading
+
+Angles and magnitudes mix freely. A predicate that a vehicle is both slow enough and pointed roughly north reads its speed and heading channels in the same term like this.
+
+```python title="cruise_check.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace(
+    [0, 1, 2, 3],
+    {"speed": [8.0, 12.0, 15.0, 9.0], "heading": [0.05, 0.10, 0.30, 0.02]},
+)
+phi = Formula.parse("G (speed * cos(heading) < 14)")
+phi.robustness(trace)  # about -0.33
+```
+
+`speed * cos(heading)` is the forward component of velocity. The predicate bounds it, and `G` reports the smallest margin across the trace. That worst margin lands at `t = 2`: the along-track speed is `15 * cos(0.3)`, which is 14.33, so the margin is `14 - 14.33`, about -0.33, and the property fails by a third of a unit.
+
+## Nonlinear predicates and dense time
+
+A predicate that is nonlinear in the channels, such as the `sqrt` speed bound above, has no exact piecewise-linear reading between samples, so it is available in discrete time but not in dense time. Read those formulas discretely, where every function listed here works. A predicate that is affine in the channels, like `altitude > terrain + 30`, works in both modes. See [discrete or dense time](/docs/monitoring/guides/discrete-vs-dense) for the tradeoff and [the grammar](/docs/reference/language/grammar) for the full expression syntax.
+
+For how a predicate's margin turns into a verdict once operators wrap it, read [what signal temporal logic is](/docs/monitoring/concepts/what-is-stl).

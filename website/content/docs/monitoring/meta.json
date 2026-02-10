@@ -1,1 +1,1 @@
-{ "root": true, "title": "Monitoring", "icon": "Activity", "pages": ["---[Activity]Monitoring---", "index", "concepts"] }
+{ "root": true, "title": "Monitoring", "icon": "Activity", "pages": ["---[Activity]Monitoring---", "index", "concepts", "guides"] }

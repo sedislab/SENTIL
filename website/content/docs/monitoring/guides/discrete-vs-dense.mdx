@@ -1,0 +1,106 @@
+---
+title: "Discrete or dense time"
+description: "Discrete robustness reads a trace only at its sample times snd dense robustness reads it as a continuous signal."
+---
+
+A trace is a finite set of timed samples and there are two ways to read a temporal formula over it. Discrete time evaluates the formula only at the sample timestamps and treats everything between them as unseen. Dense time joins the samples by interpolation and reads the formula over that continuous signal, so everything that happens between two samples is added to the evaluation. The two agree at the samples and can disagree everywhere else.
+
+The difference is important because violations can happen between samples. For example, a speed signal sampled once a millisecond can cross a limit at 1.4ms and be back under it by the 2nd millisecond. Discrete time never considers this so it'll report that the property held, while dense time interpolates to the crossing and reports the violation.
+
+## Differentiating between dense and discrete time
+
+Take a three-sample trace and the property that `x` stays positive over the first 1.5 seconds.
+
+```python title="dense_vs_discrete.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2], {"x": [1, 1, -3]})
+phi = Formula.parse("G[0, 1.5](x > 0)")
+
+phi.robustness(trace)        # 1.0  discrete: holds
+phi.robustness_dense(trace)  # -1.0 dense: violates
+```
+
+Discrete time reads `x` at the samples inside `[0, 1.5]`, which are `t = 0` and `t = 1`, both at value 1, so the infimum is 1 and the property holds. Dense time interpolates and it finds out that, between the samples at `t = 1` (value 1) and `t = 2` (value -3), the line crosses through `x = -1` at `t = 1.5`. That point sits on the window edge, and it drives the robustness to -1.
+
+## Selecting the mode
+
+Discrete is the default in the library API and dense is a separate call. On the command line though, `check` defaults to dense, and discrete is what is requested for.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+
+```python
+phi.robustness(trace)         # discrete
+phi.robustness_dense(trace)   # dense
+phi.robustness_signal(trace)        # discrete, one value per sample
+phi.robustness_dense_signal(trace)  # dense, one value per sample
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+use sentil::{Monitor, MonitorConfig, TimeMode};
+
+let discrete = Monitor::new("G[0, 1.5](x > 0)", MonitorConfig::new())?;
+let dense = Monitor::new(
+    "G[0, 1.5](x > 0)",
+    MonitorConfig::new().time(TimeMode::Dense),
+)?;
+discrete.robustness(&trace)?; // 1.0
+dense.robustness(&trace)?;    // -1.0
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+sentil check -f 'G[0,1.5](x > 0)' -t signal.csv                       # dense (default)
+sentil check -f 'G[0,1.5](x > 0)' -t signal.csv --semantics discrete  # discrete
+```
+
+</Tab>
+</Tabs>
+
+## Cost of Dense-time evaluation
+
+Reading a formula densely means solving for the interior extrema of every temporal window before evaluating with those points. On the full-signal benchmark, the dense path runs 7 to 12 times the cost of the discrete path. This does not mean SENTIL is slow though. Against Breach on the same dense semantics, at one million samples, SENTIL finishes in 4.6 microseconds per full-signal evaluation against Breach's 6.97 milliseconds. A 1000x fold difference.
+
+## Two limits of dense-time evaluation
+
+Dense robustness reads the trace as a piecewise-linear signal, which stays piecewise-linear only under a predicate that is affine in the signal channels. A predicate that is nonlinear in the channels, such as `sqrt(vx*vx + vy*vy) < vmax`, has no exact piecewise-linear reading, so the dense call will error out. Evaluate those formulas in discrete time, where every function is available. See [multi-dimensional predicates](/docs/monitoring/guides/multidim-predicate) for the function set.
+
+The `X` operator, also has no dense meaning, because it steps to the following sample rather than to a real-valued time. A formula containing `X` must be read discretely.
+
+## Discrete against dense at a glance
+
+| | Discrete | Dense |
+|---|---|---|
+| Reads the trace | at sample times only | as a continuous piecewise-linear signal |
+| Catches a between-sample dip | no | yes |
+| Relative full-signal cost | 1x | 7 to 12x |
+| Predicates nonlinear in channels | supported | not supported |
+| `X` operator | supported | not supported |
+| API call | `robustness` | `robustness_dense` |
+
+## Interpolation
+
+Dense robustness fixes the reading between samples to a straight line. Resampling, moving a trace onto a different set of times, is a separate step with its own choice of how to fill the gaps. Three modes are available.
+
+| Mode | Between two samples | Suits |
+|---|---|---|
+| `Linear` | a straight line | a continuous physical quantity |
+| `ZeroOrderHold` | the previous sample, held | a latched or commanded value that jumps |
+| `CubicSpline` | a natural cubic through the samples | a quantity known to vary smoothly |
+
+```python title="resample.py"
+import sentil
+
+held = trace.resample([0.0, 0.5, 1.0, 1.5, 2.0], sentil.Interpolation.ZeroOrderHold)
+```
+
+`Linear` reproduces the same shape dense robustness reads, so resampling a signal under it and then monitoring discretely on the finer grid approaches the dense answer. `ZeroOrderHold` is the correct model for a signal that genuinely steps. `CubicSpline` gives a continuous second derivative for a signal known to be smooth, at the risk of overshoot near a sharp transition.
+
+For the exact recursive definition of robustness in both modes, read the [robustness semantics reference](/docs/reference/language/robustness-semantics). For the streaming monitor, which is always discrete because it sees one sample at a time, see [bounded operators](/docs/monitoring/guides/bounded-operators).
