@@ -1,0 +1,44 @@
+{
+  "case_study": "circadian_gene_regulatory_network",
+  "model": "Barkai-Leibler activator-repressor circadian oscillator",
+  "traces": 100,
+  "duration_h": 270.0,
+  "amplitude": {
+    "min": 403.1,
+    "max": 6217.6
+  },
+  "period_h": 23.8,
+  "deterministic": {
+    "oscillation_peaks": {
+      "formula": "always[0,240] (eventually[0,24] (activator > 3000.0))",
+      "robustness": 2528.32,
+      "satisfied": true
+    },
+    "oscillation_troughs": {
+      "formula": "always[0,240] (eventually[0,24] (activator < 2000.0))",
+      "robustness": 1035.12,
+      "satisfied": true
+    },
+    "within_capacity": {
+      "formula": "always (activator < 7000)",
+      "robustness": 782.44,
+      "satisfied": true
+    }
+  },
+  "ensemble_oscillation": {
+    "spec": "peaks and troughs both recur every period",
+    "holds": 100,
+    "of": 100,
+    "fraction": 1.0
+  },
+  "probabilistic_under_noise": {
+    "formula": "P>=0.9(always[0,240] (eventually[0,24] (activator > 3000.0)))",
+    "probability": 1.0,
+    "confidence_interval": [
+      0.999,
+      1.0
+    ],
+    "holds": true,
+    "measurement_sigma": 250.0
+  }
+}
