@@ -1,0 +1,83 @@
+---
+title: "Past operators"
+description: "H, O, and S and how to write them and when to use them."
+---
+
+Every future-time operator has a past-time equivalent. Where `G` and `F` look forward from the current time, `H`, read historically, and `O`, read once, look backward, and `S`, read since, is the backward reading of `U`. The window runs over `[t - b, t - a]` instead of `[t + a, t + b]`, so the operator asks about what already happened rather than what is still to come.
+
+At time `t` the past is complete and every sample the window covers has already arrived. A future operator at `t` may depend on samples that have not been read yet, so its verdict stays provisional until the window closes. A past operator has all its evidence in hand, so its verdict is final the instant the sample lands.
+
+## The three operators
+
+`H[a, b](phi)` means `phi` held throughout the past window. `O[a, b](phi)` means that `phi` held at some point in the window. `phi S[a, b] psi` means that a past time where `psi` held, with `phi` maintained from there to now. The aliases `historically`, `once`, and `since` parse to the same operators. [The temporal operators](/docs/monitoring/concepts/temporal-operators) walks all three over a trace with computed values, and the [operators reference](/docs/reference/language/operators) has the formal definitions.
+
+## Example
+
+Let's look at an example for using the past operators. Assuming an alarm should fire if the signal has stepped out of bounds at any point in a recent window. That is `O` over the magnitude of the deviation.
+
+```python title="rolling_window.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace(
+    [0, 1, 2, 3, 4, 5, 6, 7],
+    {"x": [0.5, 1.2, 4.5, 0.3, 0.8, 1.1, 0.4, 0.9]},
+)
+Formula.parse("O[0, 3](abs(x) > 3.0)").robustness_signal(trace)
+# [-2.5, -1.8, 1.5, 1.5, 1.5, 1.5, -1.9, -1.9]
+```
+
+The spike scores `abs(4.5) - 3 = 1.5`. That margin enters the window at `t = 2` and holds the alarm at exactly 1.5 through `t = 5`, four consecutive samples. At `t = 6` the window `[3, 6]` no longer reaches back to the spike, and the value falls to -1.9, the closest approach among the samples still in view.
+
+<Exercise
+  formula="O[1, 2](abs(x) > 3.0)"
+  trace={{ times: [0, 1, 2, 3, 4, 5, 6, 7], signals: { x: [0.5, 1.2, 4.5, 0.3, 0.8, 1.1, 0.4, 0.9] } }}
+  at={5}
+  hint="At t = 5 this window covers times 3 and 4. The spike sits at t = 2, so ask whether it is still in view."
+  explanation="The window holds x = 0.3 and x = 0.8, scoring -2.7 and -2.2, and O takes the better of them, -2.2. What ended the alarm is the upper bound: b is how far back the window reaches, so cutting it from 3 to 2 drops the spike out of view a sample sooner. Raising a alone would not have; [1, 3] still reaches the spike at t = 5 and still scores 1.5."
+>
+
+If we narrow the window to the two samples before now, what does `O[1, 2](abs(x) > 3.0)` score at t = 5?
+
+</Exercise>
+
+## Streaming a past formula
+
+Because a past formula resolves on every update, the streaming loop reads a settled verdict at each step.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+
+```python title="rolling_alarm.py"
+import sentil
+
+monitor = sentil.OnlineMonitor("O[0, 10](abs(x) > 3.0)")
+
+for t, x in sensor:
+    r = monitor.update(t, {"x": x})
+    if r.resolved and r.satisfied:
+        raise_alarm(t)
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="rolling_alarm.rs"
+use sentil::{Monitor, MonitorConfig};
+
+let mut monitor = Monitor::new("O[0, 10](abs(x) > 3.0)", MonitorConfig::new())?;
+
+for (t, x) in sensor {
+    let r = monitor.update(t, &[("x", x)])?;
+    if r.is_resolved() && r.is_satisfied() {
+        raise_alarm(t);
+    }
+}
+```
+
+</Tab>
+</Tabs>
+
+The `resolved` check is what separates the two families in a live loop. For a past formula, `resolved` is true on every update. If you use a future operator such as `F[0, 10]`, the same loop returns an unresolved interval until the window closes, at which point the verdict settles.
+
+For the exact infimum and supremum definitions of each operator, see the [operators reference](/docs/reference/language/operators). For how the backward window is sized in memory, read [bounded operators](/docs/monitoring/guides/bounded-operators).

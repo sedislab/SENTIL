@@ -1,0 +1,81 @@
+---
+title: "Bounded operators"
+description: "How a temporal operator with an interval is computed."
+---
+
+A temporal operator reads its subformula over `[t + a, t + b]`. So, if we write `G[a, b]`, the `Global` operator is evaluated over a finite span from time `a` to `b`. If we want the operator to go on till the end of the trace, we use `inf`. We look at how this is evaluated and how the trace can inform the intervals you select.
+
+## Picking the interval
+
+The requirement usually tells us what the interval should be. For example, if the requirement is to respond within two seconds, the formula would be `F[0, 2]`. If the requirement needs to stay clear for the next minute, the formula would be `G[0, 60]`. On the other hand, if the requirement has no deadline, the interval would be `[a, inf]` or you can just go with the bare form of the operator.
+
+The rest of the page is the edge cases.
+
+```python title="edges.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"x": [2, 1, 3, 1.5, 4]})
+```
+
+## An empty window
+
+What happens when we describe intervals for an operator that opens past the data available? On the trace above, we have 5 timesteps so an interval of `[10, 20]` opens past the last sample entirely.
+
+```python
+Formula.parse("G[10, 20](x > 0)").robustness(trace)   # inf
+Formula.parse("F[10, 20](x > 0)").robustness(trace)   # -inf
+```
+
+`G` takes an infimum, and the infimum over the empty set is positive infinity. `F` takes a supremum, and the supremum over an empty set is negative infinity. With a positive lower offset, the window empties near the end of the trace even when the interval looks modest. `G[2, 3]` runs out of samples two seconds before the data does:
+
+```python
+Formula.parse("G[2, 3](x > 0)").robustness_signal(trace)
+# [1.5, 1.5, 4.0, inf, inf]
+```
+
+At $t = 0$ the window $[2, 3]$ holds the samples 3 and 1.5, worst 1.5. At $t = 2$ it holds only the sample at $t = 4$, value 4. From $t = 3$ on, the window starts at $t = 5$, past everything, and the vacuous positive infinity takes over.
+
+<Exercise
+  formula="F[2, 3](x > 0)"
+  trace={{ times: [0, 1, 2, 3, 4], signals: { x: [2, 1, 3, 1.5, 4] } }}
+  at={3}
+  unbounded="-inf"
+  hint="From t = 3 the window covers times 5 through 6. Count the samples of this five-second trace that fall in it, then ask which way a supremum goes when there are none."
+  explanation="No sample lies in [5, 6], so the supremum runs over the empty set and the answer is -inf. The same window under G gives +inf. The two conventions are opposites on purpose: nothing can satisfy an eventually, and nothing can break an always."
+>
+
+Same trace as above. What is the robustness of `F[2, 3](x > 0)` at t = 3?
+
+</Exercise>
+
+## A horizon longer than the trace
+
+What happens when the operator's ending interval reaches past the end of the available data? So, if our data is up to timestep $x$ and our operator is of the form `G[0,x+10]`, how does the evaluation work?
+
+A window that reaches past the end but still contains samples is not empty. It is read over the samples it has.
+
+```python
+Formula.parse("G[0, 100](x > 0)").robustness(trace)   # 1.0
+```
+
+The window `[0, 100]` covers the whole five-sample trace, so the infimum is the trace minimum, 1 at $t = 1$.
+
+## A margin of exactly zero
+
+Strict and non-strict comparisons share the same margin rule. `speed - 5` is the evaluation method for both `speed > 5` and `speed >= 5`. The difference could only surface at a margin of exactly zero.
+
+```python
+boundary = sentil.Trace([0, 1, 2], {"speed": [6, 5, 7]})
+
+Formula.parse("G (speed > 5)").robustness(boundary)    # 0.0
+Formula.parse("G (speed >= 5)").robustness(boundary)   # 0.0
+```
+
+Both formulas score 0.0 because the sample at $t = 1$ sits exactly on the threshold. SENTIL reads a robustness of zero as satisfied, the convention that a predicate holds on its boundary, so both verdicts come back true and `violations` reports no interval for either. If your requirement genuinely turns on which side of a boundary a value falls, do not encode that in the choice of `>` against `>=`; move the constant so the distinction carries a margin the monitor can measure.
+
+## The end of the trace
+
+`X (phi)` at the end of a trace, is negative infinity there, because no successor exists to step to; the [operators reference](/docs/reference/language/operators) states it alongside the other edge cases. And in streaming, a future-bounded window that has not yet closed returns a provisional verdict until its last sample arrives, while past operators settle immediately; [past operators](/docs/monitoring/guides/past-operators) draws that line in a live loop.
+
+For what the operators mean, read [the temporal operators](/docs/monitoring/concepts/temporal-operators).
