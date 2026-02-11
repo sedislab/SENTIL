@@ -3,6 +3,7 @@ import type { MDXComponents } from 'mdx/types';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Card, Cards } from '@/components/card';
+import { PlaygroundLazy } from '@/components/playground/PlaygroundLazy';
 import { ExerciseLazy } from '@/components/exercise/ExerciseLazy';
 import { PipelineDiagram } from '@/components/PipelineDiagram';
 import { OsTab, OsTabs } from '@/components/os-tabs';
@@ -18,6 +19,7 @@ export function getMDXComponents(components?: MDXComponents) {
     Steps,
     Card,
     Cards,
+    Playground: PlaygroundLazy,
     Exercise: ExerciseLazy,
     PipelineDiagram,
     OsTabs,
