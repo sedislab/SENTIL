@@ -172,6 +172,10 @@ Expected: a GPU-over-one-core speedup near two orders of magnitude; the exact fi
 
 Rare events. The adaptive multilevel splitting resolves satisfaction probabilities that plain Monte Carlo cannot reach at the same sample budget. On the A40 it recovers a three-sigma crossing probability of about 0.0027 within 25 percent of the analytic value over eight seeds, and agrees within a factor of two with the CPU last-particle splitter, a different but equally valid estimator, so a rare-event probability differs by scheme as well as by seed. Splitting is the mechanism that carries the resolvable probability into the 1e-7 to 1e-9 range a flat Monte Carlo run of feasible size never reaches. Tier: GPU.
 
+Particle-count convergence. On a Gaussian random walk, the continuous-score regime the splitter is built for, the estimate tightens toward a Monte Carlo reference as the particle population grows. For a moderate event, truth 3.3e-2, the mean relative error over five seeds falls from 0.16 at 100 particles to 0.01 at 8000; for a rare event, truth 6.0e-5, which a thousand-sample plain run never sees, it falls from 0.38 to 0.07. On a discrete score with heavy ties the level selection biases the estimate, so this is measured where the score is continuous.
+Command: `cargo run --release -p sentil-benchmarks --bin sentil_particle_runner`.
+Expected: the mean relative error decreases with particle count and sits under about 0.15 at 8000 particles for both events. Tolerance: the reference is an 8e6-sample Monte Carlo run in the same runner; the estimate has seed and scheme variance. Tier: CPU. Artifact: `benchmarks/results/sentil_particles.jsonl`.
+
 ## Embedded deployment, Raspberry Pi 4
 
 SENTIL runs as the safety monitor in an autonomous-driving stack on a Raspberry Pi 4 Model B (Broadcom BCM2711, quad-core Cortex-A72 at 1.5 GHz, 4 GB LPDDR4, 64-bit Raspberry Pi OS), under 4 W. One cycle ingests the latest observation and evaluates 60 safety specifications, returning a robustness score for each, at 85 Hz over a 120-minute drive of 612,000 cycles. The streaming monitor's flat per-sample cost is what carries the whole workload inside the deadline.

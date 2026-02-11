@@ -63,6 +63,19 @@ def circadian():
     ok = report["ensemble_oscillation"]["fraction"] == 1.0 and 22 <= report["period_h"] <= 26 and report["deterministic"]["oscillation_peaks"]["robustness"] > 0
     check("circadian network oscillates", ok, f"period {report['period_h']} h, {report['ensemble_oscillation']['holds']}/{report['ensemble_oscillation']['of']} realizations")
 
+def particle_convergence():
+    records = load(os.path.join(RESULTS, "sentil_particles.jsonl"))
+    by_event = {}
+    for r in records:
+        by_event.setdefault(r["event"], {}).setdefault(r["particles"], []).append(r["rel_error"])
+    worst = 0.0
+    for event, by_count in by_event.items():
+        top = max(by_count)
+        errs = by_count[top]
+        mean = sum(errs) / len(errs)
+        worst = max(worst, mean)
+    check("rare-event estimate converges with particles", worst <= 0.2, f"worst mean relative error at the largest particle count is {worst:.3f} (target 0.2)")
+
 def glucose():
     report = json.load(open(os.path.join(EXPERIMENTS, "glucose_control", "results", "glucose.json"), encoding="utf-8"))
     missed = report["controllers"]["missed_lunch_bolus"]["specifications"]["euglycemia"]["robustness"]
@@ -70,7 +83,7 @@ def glucose():
     check("glucose euglycemia separates the controllers", missed < 0 < tuned, f"missed-bolus {missed}, tuned {tuned}")
 
 def main():
-    for stage in (rtamt_speedup, monitoring_flat, dense_multiple, smc_accuracy, synthesis, circadian, glucose):
+    for stage in (rtamt_speedup, monitoring_flat, dense_multiple, smc_accuracy, synthesis, particle_convergence, circadian, glucose):
         try:
             stage()
         except (FileNotFoundError, KeyError) as err:
