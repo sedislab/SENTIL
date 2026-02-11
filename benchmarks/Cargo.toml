@@ -9,6 +9,7 @@ sentil = { path = "../sentil-core" }
 serde = { workspace = true }
 serde_json = "1.0"
 rand = { workspace = true }
+rand_distr = { workspace = true }
 rand_chacha = { workspace = true }
 
 [features]
@@ -25,6 +26,10 @@ path = "src/bin/sentil_smc_runner.rs"
 [[bin]]
 name = "sentil_synth_runner"
 path = "src/bin/sentil_synth_runner.rs"
+
+[[bin]]
+name = "sentil_particle_runner"
+path = "src/bin/sentil_particle_runner.rs"
 
 [[bin]]
 name = "oracle_export"
