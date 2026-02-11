@@ -80,6 +80,16 @@ Every fallible call throws a checked `SentilException` rather than crashing: `Pa
 
 The full guide, with the API reference and worked lessons, is on the documentation site. The other bindings expose the same operations under the same names, so an example in any of them reads across.
 
+## Contributing
+
+Maven compiles the JNI shim against the bundled core and runs the tests:
+
+```
+cd sentil-java && mvn -B test
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## License
 
 Dual licensed under MIT or Apache 2.0, at your option. See the repository root for the full texts.

@@ -104,6 +104,17 @@ With the module in `modules/sentil`, wire up the `@sentil_cpp` repository and ru
 
 Planning subscribes to `/apollo/sentil/status` and engages a fallback when `all_satisfied` is false or a probabilistic interval drops below threshold; `examples/safety_planner_subscriber.cc` is a small standalone version. For the heavier algorithms a per-tick budget cannot afford, `tools/sentil_record_analyzer` replays a recorded drive offline and runs SMC or SPRT over the same config.
 
+## Contributing
+
+With the module in `modules/sentil` and `@sentil_cpp` wired up, build and test it in the Apollo workspace:
+
+```
+buildtool build -p sentil
+bazel test //modules/sentil/tests/...
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Credits and license
 
 SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab. Dual licensed under MIT or Apache-2.0.

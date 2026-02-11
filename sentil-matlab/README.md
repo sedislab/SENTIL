@@ -58,6 +58,16 @@ The full guide, with the per-language API reference and worked lessons, is on th
 
 Every fallible call throws an `MException` rather than crashing, with an identifier under the `sentil:` namespace: `sentil:parse` for a malformed formula, `sentil:semantic` for an input the engine cannot make sense of, and a descriptive message that points at the offending construct or states both sizes of a dimension mismatch. A handle used after `delete` throws rather than reaching freed memory.
 
+## Contributing
+
+Build the MEX artifacts and run the tests from MATLAB:
+
+```
+cd('sentil-matlab'); build_sentil; addpath(pwd); runtests('tests')
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## License
 
 Dual licensed under MIT or Apache 2.0, at your option. See the repository root for the full texts.

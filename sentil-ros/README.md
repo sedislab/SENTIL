@@ -145,6 +145,17 @@ ros2 launch sentil_ros sentil_control.launch.py
 
 `examples/control_loop.py` closes the loop around it on a double integrator: it publishes the state, applies the synthesized command, and you watch the controller drive the position into the band the spec asks for. Pair this with the monitor node and you have a synthesize, monitor, and re-plan loop in ROS.
 
+## Contributing
+
+With `SentilCpp` installed (see the build above), build and test just this package:
+
+```
+colcon build --packages-select sentil_ros
+colcon test --packages-select sentil_ros --return-code-on-test-failure
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Credits and license
 
 SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab. Dual licensed under MIT or Apache-2.0.

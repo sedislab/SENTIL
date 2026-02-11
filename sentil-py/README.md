@@ -87,6 +87,17 @@ pytest tests/               # run the test suite
 
 The whole engine is here: STL and PrSTL monitoring offline and online, the statistical layer, synthesis, the specifications library, and the GPU path. A few low-level hooks that pass a Python callable into the Rust engine are not exposed, because the engine runs them across worker threads where holding the GIL is unsafe: optimizing an arbitrary Python objective with CMA-ES, a system model whose dynamics are a Python function, and a sequential test driven by a Python Bernoulli source. The declarative equivalents cover the same ground: build a `SimModel` or a `LinearModel`, synthesize against it, and check or falsify it.
 
+## Contributing
+
+Build the extension into your environment and run the suite:
+
+```
+maturin develop --release
+pytest tests/
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## More
 
 Per-language guides and runnable examples live at the documentation site. SENTIL is by Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab at Baylor University, dual licensed under MIT or Apache-2.0.

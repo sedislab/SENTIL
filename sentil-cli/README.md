@@ -110,6 +110,14 @@ Then `sentil highway -t drive.csv` runs the lane-keeping check on that trace, an
 
 The CLI links the engine as one compilation unit, with no FFI boundary, so it runs at native engine speed. The streaming monitor holds an O(1) amortized per-sample cost with memory proportional to the formula's windows, not the length of the stream.
 
+## Contributing
+
+```
+cargo test -p sentil-cli
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Credits and license
 
 SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab at Baylor University. Dual licensed under MIT or Apache-2.0; see the `LICENSE-MIT` and `LICENSE-APACHE` files at the repository root. The full documentation lives at the SENTIL site linked from the project repository.

@@ -69,6 +69,16 @@ The full guide, with the per-language API reference and worked lessons, is on th
 
 Every fallible call raises a typed exception rather than crashing: `ParseError` for a malformed formula, `SemanticError` for an input the engine cannot make sense of, and `EvaluationError` for a runtime fault. Catch `SentilError` to handle any of them. A closed handle raises on use rather than reaching freed memory.
 
+## Contributing
+
+Point `SENTIL_LIB` at a built `libsentil` (see Install), then run the tests:
+
+```
+julia --project=sentil-jl -e 'using Pkg; Pkg.test()'
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## License
 
 Dual licensed under MIT or Apache 2.0, at your option. See the repository root for the full texts.

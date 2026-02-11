@@ -84,6 +84,10 @@ The build compiles `libsentil` first, so a test never runs against a stale core.
 
 The whole engine, with nothing the Rust core can do left out: deterministic STL monitoring offline and online, the statistical layer (noise models, lifting, statistical model checking, the sequential tests, rare-event splitting), synthesis (the smooth robustness and its gradients, the numerics, open-loop synthesis, the receding-horizon controller, the safety filter, chance constraints, and the counterexample search), and the specifications library of vetted PrSTL specs you reach by name with `SpecBuilder` (`SpecBuilder::available()` lists them). Beyond the declarative paths it also wraps the hooks that take a host callback: optimizing your own objective with maximize and CMA-ES, a stochastic system or a system model whose dynamics are your own function, the adaptive-multilevel-splitting interface over your own simulator, the sequential tests over your own Bernoulli source, and parameter mining. The engine runs those callbacks across worker threads, so a callback must be thread-safe; an exception it throws is caught and resurfaced as a normal C++ error rather than unwinding through the engine.
 
+## Contributing
+
+The build under Build from source compiles `libsentil` first, so `ctest --test-dir build` runs a change against a fresh core. The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## More
 
 Per-language guides and the full reference live at the documentation site. SENTIL is by Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab at Baylor University, dual licensed under MIT or Apache-2.0.

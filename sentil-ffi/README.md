@@ -102,6 +102,17 @@ int main(void) {
 
 Every `_create` and builder pairs with one `_destroy`. Strings come back owned and are freed with `sentil_free_string`; arrays with the typed free the header names for each (`sentil_free_doubles`, `sentil_free_string_array`, `sentil_free_samples`, `sentil_free_intervals`, `sentil_free_robustness`, `sentil_free_named_robustness`, `sentil_free_bank_results`). The builders that take handles consume them, even on a failed return, so a caller never double-frees an operand.
 
+## Contributing
+
+The C ABI builds with the Cargo workspace, so no external core is needed. Run the Rust and C tests for a change:
+
+```
+cargo test -p sentil-ffi
+make -C sentil-ffi test-ffi
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## More
 
 Per-language guides and runnable examples live at the documentation site. SENTIL is by Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab at Baylor University, dual licensed under MIT or Apache-2.0.

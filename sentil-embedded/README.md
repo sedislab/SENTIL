@@ -124,6 +124,16 @@ Bad input comes back as a status code, never a fault. A malformed formula gives 
 
 The streaming monitor holds an O(1) amortized per-sample cost with memory proportional to the window. The `packaging/arduino/examples/Benchmark` sketch reports the microseconds per update on a named board; that number is hardware-bound and recorded in the claims ledger with the board it was measured on.
 
+## Contributing
+
+The host tests run the monitor and synthesis off the board:
+
+```
+make -C sentil-embedded test
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Credits and license
 
 SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab at Baylor University. Dual licensed under MIT or Apache-2.0; see the `LICENSE-MIT` and `LICENSE-APACHE` files at the repository root. The full documentation lives at the SENTIL site linked from the project repository.

@@ -70,6 +70,18 @@ The control application carries the whole synthesis subsystem. Online, `ComputeC
 
 `examples/adas_fca_monitor` is a self-contained forward-collision demo: a perception publisher, the monitor, and a planner that consumes the verdict, all over the stub on one box, with its own vsomeip config and a one-command `run.sh`. The lead vehicle closes in, the follow-distance verdict flips, and the planner logs the violation. The control side follows the same shape: a client calls `sentil_control`'s `ComputeControl` over ara::com to shield a nominal command, then actuates the result.
 
+## Contributing
+
+The deterministic tests build with no transport, against a staged core at `SENTIL_ROOT`:
+
+```
+cmake -S sentil-autosar-adaptive -B build -DSENTIL_AP_VENDOR=none -DSENTIL_ROOT=/opt/sentil
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Credits and license
 
 SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab. Dual licensed under MIT or Apache-2.0.
