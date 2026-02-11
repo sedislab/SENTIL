@@ -203,4 +203,35 @@ mod tests {
         let constraint = ChanceConstraint::new(Formula::parse("x > 0").unwrap(), 0.5).unwrap();
         assert!(constraint.validate(&standard_normal_start(), 0, 1).is_err());
     }
+
+    #[test]
+    #[cfg(feature = "parallel")]
+    fn a_confined_system_stays_on_the_calling_thread() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+        use std::thread::ThreadId;
+        let seen: Arc<Mutex<HashSet<ThreadId>>> = Arc::new(Mutex::new(HashSet::new()));
+        let on_init = Arc::clone(&seen);
+        let on_step = Arc::clone(&seen);
+        let system = StochasticSystem::new(
+            ["x"],
+            1.0,
+            2,
+            move |rng| {
+                on_init.lock().unwrap().insert(std::thread::current().id());
+                vec![StandardNormal.sample(rng)]
+            },
+            move |prev, _t, _rng| {
+                on_step.lock().unwrap().insert(std::thread::current().id());
+                prev.to_vec()
+            },
+        )
+        .unwrap()
+        .thread_confined();
+        ChanceConstraint::new(Formula::parse("x > 0").unwrap(), 0.4)
+            .unwrap()
+            .validate(&system, 2000, 7)
+            .unwrap();
+        assert_eq!(seen.lock().unwrap().len(), 1, "confined system ran on more than one thread");
+    }
 }
