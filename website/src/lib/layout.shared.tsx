@@ -48,6 +48,7 @@ export function baseOptions(): BaseLayoutProps {
     },
     githubUrl: 'https://github.com/sedislab/SENTIL',
     links: [
+      { text: 'Playground', url: '/playground' },
       { text: 'Cite', url: '/docs/reference/methods/citation' },
       { type: 'custom', children: <InstallButton /> },
     ],
