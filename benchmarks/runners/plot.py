@@ -204,6 +204,31 @@ def synthesis(records):
     plt.close(fig)
     print("wrote", out)
 
+def particles(records):
+    rows = [r for r in records if r.get("benchmark") == "rare_event/particles"]
+    if not rows:
+        return
+    events = {}
+    for r in rows:
+        events.setdefault(r["event"], {}).setdefault(r["particles"], []).append(r["rel_error"])
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for event, by_count in sorted(events.items()):
+        counts = sorted(by_count)
+        errs = [sum(by_count[c]) / len(by_count[c]) for c in counts]
+        ax.plot(counts, errs, marker="o", label=event)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("particles")
+    ax.set_ylabel("relative error vs Monte Carlo truth")
+    ax.set_title("Rare-event estimate converges as particles grow")
+    ax.grid(True, which="both", linewidth=0.3)
+    ax.legend()
+    fig.tight_layout()
+    out = os.path.join(RESULTS, "particles.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print("wrote", out)
+
 def main():
     records = load()
     if not records:
@@ -214,6 +239,7 @@ def main():
     cross_language(records)
     dense(records)
     synthesis(records)
+    particles(records)
     smc_throughput(records)
     smc_accuracy(records)
 
