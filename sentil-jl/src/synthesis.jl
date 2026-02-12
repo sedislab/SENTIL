@@ -53,11 +53,7 @@ end
 # C reads row-major, Julia stores column-major.
 _rowmajor(m::AbstractMatrix{<:Real}) = collect(Float64, vec(permutedims(m)))
 
-"""
-    solve_qp(P, q, G, h; max_iters=200) -> Vector{Float64}
-
-Minimize `½ uᵀ P u + qᵀ u` subject to `G u ≤ h`. `P` is `n×n`, `G` is `m×n`.
-"""
+"""Minimize `1/2 u^T P u + q^T u` subject to `G u <= h`."""
 function solve_qp(P::AbstractMatrix{<:Real}, q::AbstractVector{<:Real},
                   G::AbstractMatrix{<:Real}, h::AbstractVector{<:Real}; max_iters::Integer = 200)
     n = length(q)
@@ -176,12 +172,7 @@ end
 
 close!(m::SystemModel) = _destroy(m)
 
-"""
-    linear_model(A, B, x0, variables, dt, horizon) -> SystemModel
-
-A discrete-time linear model `x' = A x + B u` over the named variables. `A` is `n×n`,
-`B` is `n×b`, and `x0` is the initial state of length `n`.
-"""
+"""A discrete-time linear model `x' = A x + B u` over the named variables."""
 function linear_model(A::AbstractMatrix{<:Real}, B::AbstractMatrix{<:Real},
                       x0::AbstractVector{<:Real}, variables, dt::Real, horizon::Integer)
     n = length(x0)
@@ -325,13 +316,7 @@ close!(f::SafetyFilter) = _destroy(f)
 SafetyFilter(bounds::Bounds) =
     SafetyFilter(ccall((:sentil_safety_filter_create, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(bounds)))
 
-"""
-    safe_input(safety_filter, nominal; barriers=[]) -> Vector{Float64}
-
-The input closest to `nominal` that satisfies the bounds and each barrier `(coeff, bound)`
-meaning `coeff · u ≥ bound`. Each coeff has the same length as `nominal`. Named to avoid
-clashing with `Base.filter`.
-"""
+"""The input closest to `nominal` that satisfies the bounds and each barrier `(coeff, bound)`, meaning `coeff . u >= bound`."""
 function safe_input(sf::SafetyFilter, nominal::AbstractVector{<:Real};
                     barriers::AbstractVector = Tuple{Vector{Float64},Float64}[])
     nom = convert(Vector{Float64}, nominal)

@@ -192,11 +192,7 @@ end
 and(a::Formula, b::Formula) = a & b
 or(a::Formula, b::Formula) = a | b
 
-"""
-    implies(a, b) -> Formula
-
-The formula `a → b`, equal to `!a | b`.
-"""
+"""The formula `a -> b`, equal to `!a | b`."""
 function implies(a::Formula, b::Formula)
     l, r = _consume_all!(a, b)
     Formula(ccall((:sentil_formula_implies, libsentil[]), Ptr{Cvoid},
