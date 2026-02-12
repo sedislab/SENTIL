@@ -32,5 +32,9 @@ name = "sentil_particle_runner"
 path = "src/bin/sentil_particle_runner.rs"
 
 [[bin]]
+name = "sentil_ctmc_runner"
+path = "src/bin/sentil_ctmc_runner.rs"
+
+[[bin]]
 name = "oracle_export"
 path = "src/bin/oracle_export.rs"
