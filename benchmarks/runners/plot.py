@@ -33,10 +33,13 @@ def length_series(records, tool, lang, question, benchmark="scalability/length")
 def discrete_offline(records):
     sx, sy = length_series(records, "sentil", "full_signal")
     rx, ry = length_series(records, "rtamt", "full_signal")
+    mx, my = length_series(records, "moonlight", "full_signal")
     if not sx or not rx:
         return
     fig, ax = plt.subplots()
     ax.plot(rx, ry, color=style.TOOL["rtamt"], marker="s", label="RTAMT")
+    if mx:
+        ax.plot(mx, my, color=style.TOOL["moonlight"], marker="^", label="MoonLight")
     style.hero_line(ax, sx, sy, "SENTIL")
     shared = sorted(set(sx) & set(rx))[-1]
     style.annotate_speedup(ax, shared, dict(zip(sx, sy))[shared], dict(zip(rx, ry))[shared],
@@ -44,7 +47,7 @@ def discrete_offline(records):
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("trace length (samples)")
     ax.set_ylabel("time for the whole robustness signal (ms)")
-    ax.set_title("Offline discrete STL: SENTIL vs RTAMT")
+    ax.set_title("Offline discrete STL: SENTIL vs RTAMT and MoonLight")
     ax.legend(loc="upper left")
     save(fig, "discrete_offline.png")
 
