@@ -78,6 +78,7 @@ export default function Playground({
 }) {
   const workerRef = useRef<Worker | null>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const seqRef = useRef(1);
   const [source, setSource] = useState(
     code ?? (EXAMPLES.find((e) => e.label === example) ?? EXAMPLES[0]).code,
   );
@@ -101,10 +102,12 @@ export default function Playground({
       workerRef.current = new Worker('/engine/py-worker.js', { type: 'module' });
     }
     const worker = workerRef.current;
+    const id = seqRef.current++;
     setLines([]);
     setStatus('running');
     const onMessage = (event: MessageEvent) => {
       const msg = event.data;
+      if (msg.id !== id) return;
       if (msg.status === 'booting') setStatus('booting');
       if (msg.status === 'running') setStatus('running');
       if (msg.stream) setLines((prev) => [...prev, { stream: msg.stream, text: msg.text }]);
