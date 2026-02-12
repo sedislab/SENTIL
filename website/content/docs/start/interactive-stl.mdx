@@ -1,0 +1,237 @@
+---
+title: "Interactive: STL and robustness"
+description: "Learn STL and quantitative robustness."
+---
+
+Signal Temporal Logic describes properties about what a signal should do over time, and it produces a robustness which is just a signed number about how well a trace satisfied that property. We'll look at how to actually calculate robustness given a signal and a handful of formulas.
+
+<Callout type="info">
+The editor below runs SENTIL in Python, in your browser. Change the trace or the formula and press Run, then check the arithmetic against the worked numbers further down. The full playground lives at [/playground](/playground).
+</Callout>
+
+<Playground compact />
+
+## The signal we will use
+
+The signal is speed and we take five samples that are measured every second.
+
+| $t$ | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| `speed` | 12 | 9 | 7 | 4 | 6 |
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+```python title="stl.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+print(phi.robustness(trace))   # -1.0
+```
+</Tab>
+<Tab value="Rust">
+```rust title="stl.rs"
+use sentil::{Formula, Trace};
+
+let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+let phi = Formula::parse("G (speed > 5)")?;
+println!("{}", phi.robustness(&trace)?);
+```
+
+```text
+-1
+```
+</Tab>
+<Tab value="C">
+```c title="stl.c"
+#include "sentil.h"
+#include <stdio.h>
+
+double times[] = {0.0, 1.0, 2.0, 3.0, 4.0};
+double speed[] = {12.0, 9.0, 7.0, 4.0, 6.0};
+sentil_trace_t *trace = sentil_trace_from_signal(times, 5, "speed", speed, 5);
+sentil_formula_t *phi = sentil_formula_parse("G (speed > 5)");
+
+double rho = 0.0;
+sentil_formula_robustness(phi, trace, &rho);
+printf("%.1f\n", rho);
+```
+
+```text
+-1.0
+```
+</Tab>
+<Tab value="C++">
+```cpp title="stl.cpp"
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12.0, 9.0, 7.0, 4.0, 6.0});
+sentil::Formula phi = sentil::Formula::parse("G (speed > 5)");
+std::cout << phi.robustness(trace) << "\n";
+```
+
+```text
+-1
+```
+</Tab>
+<Tab value="Java">
+```java title="StlLesson.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.Trace;
+
+try (Trace trace = Trace.create(new double[] {0, 1, 2, 3, 4});
+        Formula phi = Formula.parse("G (speed > 5)")) {
+    trace.addSignal("speed", new double[] {12, 9, 7, 4, 6});
+    System.out.println(phi.robustness(trace));
+}
+```
+
+```text
+-1.0
+```
+</Tab>
+<Tab value="Julia">
+```julia title="stl.jl"
+using Sentil
+
+phi = formula("G (speed > 5)")
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12.0, 9.0, 7.0, 4.0, 6.0])
+println(robustness(phi, trace))
+```
+
+```text
+-1.0
+```
+</Tab>
+<Tab value="MATLAB">
+```matlab title="stl.m"
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('G (speed > 5)');
+fprintf('%g\n', phi.robustness(trace));
+```
+
+```text
+-1
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil check -f 'G (speed > 5)' -t speed.csv --semantics discrete
+```
+```text
+check
+  formula     G (speed > 5)
+  trace       speed.csv
+  semantics   discrete
+  verdict     violated
+  robustness  -1.000000
+```
+</Tab>
+</Tabs>
+
+Change the formula string and rerun. Every result below comes from that same trace.
+
+## Predicates
+
+The smallest formula compares a term against a constant. Its robustness is the signed distance to the boundary: `f(x) - c` for `>` and `>=`, and `c - f(x)` for `<` and `<=`.
+
+Take `speed > 5` at $t = 0$. The signal reads 12, so robustness is $12 - 5 = 7$. The property holds with seven units to spare. Now take `speed < 10` at $t = 0$. That scores $10 - 12 = -2$, a violation, because the signal starts two units above the ceiling.
+
+Evaluated across the whole trace, `speed > 5` produces a robustness signal, one value per sample:
+
+| $t$ | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| `speed - 5` | 7 | 4 | 2 | -1 | 1 |
+
+The dip to $-1$ at $t = 3$ is the only violation.
+
+## Boolean connectives
+
+Once we solve for the predicates and get a number, the boolean operators then work on numbers. Conjunction takes the minimum, disjunction the maximum, negation flips the sign, and implication, `phi -> psi`, is `max(-rho_phi, rho_psi)`.
+
+Conjunction is the minimum because a formula is only as satisfied as its weakest part. Consider `(speed > 5) & (speed < 10)` at $t = 0$. The first conjunct scores $7$, the second $-2$, and the minimum is $-2$. The conjunction fails, and it fails by the amount the ceiling is breached.
+
+## G is the worst case over a window
+
+`G[a, b] phi`, read always, says phi holds at every point from $t + a$ to $t + b$. Its robustness is the infimum of the inner robustness over that window.
+
+$$
+\rho(\mathbf{G}_{[a,b]}\, \varphi, x, t) = \inf_{s \in [t+a,\, t+b]} \rho(\varphi, x, s)
+$$
+
+Unbounded, `G (speed > 5)` takes the infimum of $\{7, 4, 2, -1, 1\}$, which is $-1$ at $t = 3$. That $-1$ sets the verdict for the whole trace. If we relax the threshold, the worst case improves. `G (speed > 3)` scores $\{9, 6, 4, 1, 3\}$ and its infimum is $1$: the property holds, with the tightest moment again at $t = 3$ where the margin is one.
+
+Bound the window and only the samples inside it count. `G[0, 2] (speed > 5)` at $t = 0$ looks at $t = 0, 1, 2$, the values $\{7, 4, 2\}$, and reports $2$. The violation at $t = 3$ sits outside the window, so within the first two seconds the property holds comfortably. The same `G[0, 2] (speed > 5)` at $t = 1$ looks at $t = 1, 2, 3$, the values $\{4, 2, -1\}$, and reports $-1$. In this case, the violation is part of the considered values so it doesn't hold.
+
+<Exercise
+  formula="G[1, 2] (speed > 5)"
+  trace={{ times: [0, 1, 2, 3, 4], signals: { speed: [12, 9, 7, 4, 6] } }}
+  at={3}
+  hint="From t = 3 the window covers times 4 through 5, and the trace stops at 4. Score what is inside it."
+  explanation="Only t = 4 falls in the window, where the speed reads 6, so the infimum is 6 - 5 = 1. A window that runs off the end of the trace is not empty; it is read over the samples it has, and the answer is the worst of those."
+>
+
+The window moves with the evaluation time. What does `G[1, 2] (speed > 5)` score at t = 3?
+
+</Exercise>
+
+## F is the best case over a window
+
+`F[a, b] phi`, read eventually says phi holds at some point from $t + a$ to $t + b$. Its robustness is the supremum of the inner robustness over that window.
+
+$$
+\rho(\mathbf{F}_{[a,b]}\, \varphi, x, t) = \sup_{s \in [t+a,\, t+b]} \rho(\varphi, x, s)
+$$
+
+`F (speed > 10)` scores the predicate `speed - 10` across the trace, $\{2, -1, -3, -6, -4\}$, and takes the supremum, $2$ at $t = 0$. The speed climbs above ten at exactly one instant, and that one instant is enough to satisfy an `F`.
+
+<Exercise
+  formula="F[1, 2] (speed > 10)"
+  trace={{ times: [0, 1, 2, 3, 4], signals: { speed: [12, 9, 7, 4, 6] } }}
+  hint="The bound moves the window off the sample that made the unbounded answer positive. Which samples are left, and what is the best of them?"
+  explanation="The window holds t = 1 and t = 2, where the speed reads 9 and 7, so the supremum is 9 - 10 = -1. The peak of 12 sits at t = 0, outside the window, so bounding the operator turns a satisfied property into a violated one."
+>
+
+The unbounded `F (speed > 10)` scored 2. What does `F[1, 2] (speed > 10)` score at t = 0?
+
+</Exercise>
+
+## Until
+
+`U`, read until, is the one binary temporal operator. `phi1 U[a, b] phi2` wants a witness time where `phi2` holds, with `phi1` maintained the whole way there.
+
+$$
+\rho(\varphi_1\, \mathbf{U}_{[a,b]}\, \varphi_2, x, t) = \sup_{s \in [t+a,\, t+b]} \min\!\left( \rho(\varphi_2, x, s),\; \inf_{r \in [t,\, s]} \rho(\varphi_1, x, r) \right)
+$$
+
+Read `(speed > 5) U (speed < 8)` at $t = 0$. The first predicate scores $\{7, 4, 2, -1, 1\}$ and the second, `8 - speed`, scores $\{-4, -1, 1, 4, 2\}$. The best witness is $t = 2$: there `speed < 8` holds with margin $1$, and `speed > 5` held with margin at least $2$ over $t = 0, 1, 2$, so the witness contributes $\min(1, 2) = 1$. Later witnesses look tempting on `speed < 8` alone, but by $t = 3$ the speed has already broken the `speed > 5` guard, which caps their contribution at $-1$. The supremum over all witnesses is $1$, so the property holds.
+
+<Exercise
+  answer="G[0, 2] (speed < 10)"
+  cases={[
+    { times: [0, 1, 2, 3, 4], signals: { speed: [12, 9, 7, 4, 6] } },
+    { times: [0, 1, 2, 3, 4], signals: { speed: [2, 3, 4, 5, 20] } },
+    { times: [0, 1, 2], signals: { speed: [11, 1, 1] } },
+  ]}
+  placeholder="G[0, 2] (...)"
+  hint="Never reaching a ceiling over a span is an always over a bounded window, and the bound is the span itself. Check which way the comparison points."
+  explanation="G[0, 2] (speed < 10) scores -2 on the lesson trace: the speed starts at 12, two above the ceiling, and G keeps the worst point in the window. Anything scoring the same at every sample of every trace is accepted, so the spelled-out always[0, 2] (speed < 10) counts too."
+>
+
+Your turn to write one. Over the first two seconds the speed never reaches 10. Write that as a formula.
+
+</Exercise>
+
+## Where to go next
+
+The exact recursive definition for every operator, including the past-time forms and dense-time interpolation, is on the [robustness semantics](/docs/reference/language/robustness-semantics) and [temporal operators](/docs/monitoring/concepts/temporal-operators) pages. To run these formulas against your own data instead of a fixed table, follow [your first monitor](/docs/start/first-monitor). When you are ready for signals under sensor noise, the sign of the number gives way to a probability in the [PrSTL lesson](/docs/start/interactive-prstl).
+
+<Cards>
+<Card title="Robustness semantics" href="/docs/reference/language/robustness-semantics" description="The full quantitative semantics for boolean, temporal, and probabilistic operators." />
+<Card title="Temporal operators" href="/docs/monitoring/concepts/temporal-operators" description="Every operator walked through with worked examples, including the past-time forms." />
+<Card title="Your first monitor" href="/docs/start/first-monitor" description="Install SENTIL and run these formulas on a trace of your own in about five minutes." />
+<Card title="PrSTL and probability" href="/docs/start/interactive-prstl" description="Add sensor noise and the sign of the number becomes a satisfaction probability." />
+</Cards>
