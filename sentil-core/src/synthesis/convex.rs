@@ -1,18 +1,5 @@
-//! The convex fast path for the online controller.
-//!
-//! When the dynamics are affine and the specification is a min of affine
-//! predicates, the robustness is concave in the packed input and the
-//! receding-horizon step is a small convex program rather than a gradient climb.
-//! The fragment is `and`, `always[a, b]`, and `not` over affine predicates, the
-//! shapes whose robustness reduces to a minimum of linear terms.
-//!
-//! The step maximizes the worst-case margin over the box: with `rho` the smallest
-//! term, it solves `max rho s.t. rho <= a_i · u + b_i, u in box`. That epigraph is
-//! a linear program, posed as a tiny quadratic program so the same dual solver the
-//! safety filter uses applies. Because the spec's robustness is the minimum of the
-//! affine terms, the maximized `rho` is the exact robustness, so a feasible spec
-//! gives a satisfying input and an infeasible one the minimally violating input
-//! the rest of synthesis returns, never an error.
+//! The convex fast path for the online controller, over `and`, `always[a, b]`, and
+//! `not` on affine predicates of an affine model.
 
 #![allow(
     clippy::many_single_char_names,
@@ -33,15 +20,13 @@ const MIN_MARGIN_WEIGHT: f64 = 100.0;
 
 const QP_ITERS: usize = 4000;
 
-/// A linear robustness term `coeffs · u + constant` over the packed input. Its
-/// minimum over the spec's terms is the rollout's robustness, which the epigraph
-/// program maximizes.
+/// A linear robustness term `coeffs . u + constant` over the packed input.
 struct Term {
     coeffs: Vec<f64>,
     constant: f64,
 }
 
-/// An affine form over the packed input: `coeffs · u + constant`.
+/// An affine form over the packed input: `coeffs . u + constant`.
 #[derive(Clone)]
 struct Affine {
     coeffs: Vec<f64>,
@@ -255,15 +240,7 @@ pub(super) fn step(
 }
 
 /// Maximizes the worst-case margin `rho` subject to every term clearing `rho` and
-/// the box, over the stacked variable `[u, rho]`. The epigraph `max rho` is a
-/// linear program; the identity cost keeps it positive-definite and well scaled for
-/// the dual solver, and a reward on `rho` pins it to its constraint-limited maximum
-/// while the unit ridge on `u` selects the least-norm input there.
-///
-/// The reward is set just above the largest margin the box can produce, so it always
-/// dominates the `rho²` ridge yet stays proportional to the data; a fixed large
-/// weight would either fail to dominate a wide-margin spec or, scaled up blindly,
-/// stall the dual ascent.
+/// the box, over the stacked variable `[u, rho]`.
 fn maximize_margin(constraints: &[Term], bounds: &Bounds, n: usize) -> Result<Vec<f64>> {
     let dim = n + 1;
     let p: Vec<Vec<f64>> = (0..dim)
@@ -282,7 +259,6 @@ fn maximize_margin(constraints: &[Term], bounds: &Bounds, n: usize) -> Result<Ve
         .collect();
     let mut h = box_h;
     for c in constraints {
-        // rho <= coeffs · u + constant is -coeffs · u + rho <= constant.
         let mut row: Vec<f64> = c.coeffs.iter().map(|x| -x).collect();
         row.push(1.0);
         g.push(row);
@@ -292,14 +268,7 @@ fn maximize_margin(constraints: &[Term], bounds: &Bounds, n: usize) -> Result<Ve
     Ok(z[..n].to_vec())
 }
 
-/// A reward weight that strictly exceeds the largest margin the box admits, so the
-/// epigraph pins `rho` to a constraint rather than to the weight itself.
-///
-/// Each term `coeffs · u + constant` is bounded over the box by `|constant|` plus
-/// the input span it can reach; the worst margin cannot exceed the largest such
-/// bound. Twice that, floored at [`MIN_MARGIN_WEIGHT`], dominates while staying on
-/// the data's scale. An unbounded coordinate the term reads makes the bound
-/// infinite, so the floor stands; the controller always runs with a finite box.
+/// A reward weight that strictly exceeds the largest margin the box admits.
 fn margin_weight(constraints: &[Term], bounds: &Bounds) -> f64 {
     let reach = |term: &Term| -> f64 {
         let span: f64 = term

@@ -1,11 +1,4 @@
 //! Control-barrier-function safety filter.
-//!
-//! A safety filter shields a nominal controller: when the nominal input would
-//! breach a barrier, it returns the closest input that does not, and otherwise
-//! passes the nominal through unchanged. Each barrier is a linear inequality
-//! `a · u >= b` on the input, the control-barrier condition for one step; the
-//! filter solves the least-change quadratic program subject to those barriers and
-//! the actuator bounds, so it overrides the controller as little as safety allows.
 
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
@@ -29,8 +22,8 @@ impl SafetyFilter {
         }
     }
 
-    /// Returns the input closest to `nominal` that satisfies every barrier
-    /// `a · u >= b` and stays inside the bounds; a safe `nominal` passes through.
+    /// The input closest to `nominal` that satisfies every barrier `a . u >= b` and
+    /// stays inside the bounds.
     ///
     /// # Errors
     ///

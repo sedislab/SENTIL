@@ -275,8 +275,6 @@ where
     )
 }
 
-/// `sum_j scales[j] * dot(eigenvectors[j], vector) * eigenvectors[j]`, the action
-/// of a matrix `B diag(scales) Bᵀ` on `vector` given its eigenvectors.
 fn transform(eigenvectors: &[Vec<f64>], scales: &[f64], vector: &[f64]) -> Vec<f64> {
     let mut out = vec![0.0; vector.len()];
     for (basis, &scale) in eigenvectors.iter().zip(scales) {

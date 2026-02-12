@@ -1,11 +1,4 @@
 //! A small dense convex quadratic program.
-//!
-//! The control-barrier safety filter projects a nominal input onto the safe set,
-//! which is a quadratic program: minimize `½ uᵀP u + qᵀu` subject to `G u <= h`.
-//! Rather than a combinatorial active-set search with its own feasibility phase,
-//! this solves the Lagrangian dual, which is a concave maximization over the
-//! non-negative multipliers and so is always feasible at `λ = 0`. The dual reuses
-//! the projected-gradient ascent and the Cholesky solve already in the crate.
 
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
@@ -14,7 +7,7 @@ use super::numerics::solve_spd;
 use super::pgrad::maximize;
 use crate::error::{Error, Result};
 
-/// Minimizes `½ uᵀP u + qᵀu` subject to `G u <= h`, for a symmetric
+/// Minimizes `1/2 u^TP u + q^Tu` subject to `G u <= h`, for a symmetric
 /// positive-definite `P`.
 ///
 /// # Errors
@@ -69,7 +62,6 @@ pub fn solve_qp(
             .collect()
     };
 
-    // Maximize the dual g(λ) = -½ wᵀP⁻¹w - hᵀλ over λ >= 0, where w = q + Gᵀλ.
     let dual = |lambda: &[f64]| -> Result<(f64, Vec<f64>)> {
         let w = residual(lambda);
         let pinv_w = apply_inverse(&w);
@@ -80,7 +72,6 @@ pub fn solve_qp(
     let bounds = Bounds::new(vec![0.0; m], vec![f64::INFINITY; m])?;
     let (lambda, _) = maximize(dual, &vec![0.0; m], &bounds, max_iters)?;
 
-    // Recover u = -P⁻¹(q + Gᵀλ).
     let u = apply_inverse(&residual(&lambda));
     Ok(u.iter().map(|x| -x).collect())
 }
@@ -95,8 +86,6 @@ mod tests {
 
     #[test]
     fn projects_the_origin_onto_a_half_space() {
-        // min ½|u|^2 s.t. u0 + u1 >= 2, written as -u0 - u1 <= -2. The closest point
-        // to the origin on that half-space is (1, 1).
         let p = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
         let u = solve_qp(&p, &[0.0, 0.0], &[vec![-1.0, -1.0]], &[-2.0], 400).unwrap();
         assert!((u[0] - 1.0).abs() < 1e-3 && (u[1] - 1.0).abs() < 1e-3);
@@ -104,8 +93,6 @@ mod tests {
 
     #[test]
     fn an_inactive_constraint_leaves_the_unconstrained_minimum() {
-        // min ½(u - 5)^2 s.t. u <= 3: the unconstrained minimum 5 is infeasible, so
-        // the solution sits on the active bound, u = 3.
         let u = solve_qp(&[vec![1.0]], &[-5.0], &[vec![1.0]], &[3.0], 400).unwrap();
         assert!((u[0] - 3.0).abs() < 1e-3);
     }

@@ -71,9 +71,8 @@ pub fn symmetric_eigen(matrix: &[Vec<f64>]) -> Result<(Vec<f64>, Vec<Vec<f64>>)>
     Ok((eigenvalues, eigenvectors))
 }
 
-/// Applies the Jacobi rotation in the `(p, q)` plane to the working matrix `a`
-/// (as `Jᵀ A J`) and accumulates it into the eigenvector matrix `v`, driving
-/// `a[p][q]` to zero.
+/// Applies the Jacobi rotation in the `(p, q)` plane to `a` and accumulates it
+/// into `v`.
 #[allow(
     clippy::many_single_char_names,
     clippy::needless_range_loop,
@@ -99,7 +98,7 @@ fn rotate(a: &mut [Vec<f64>], v: &mut [Vec<f64>], p: usize, q: usize, c: f64, s:
 }
 
 /// Solves `A x = b` for a symmetric positive-definite `A` by Cholesky
-/// factorization (`A = L Lᵀ`, then forward and back substitution).
+/// factorization.
 ///
 /// ```
 /// use sentil::synthesis::solve_spd;
