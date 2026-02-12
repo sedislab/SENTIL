@@ -84,6 +84,17 @@ export default function Playground({
   const [lines, setLines] = useState<Line[]>([]);
   const [status, setStatus] = useState<'idle' | 'booting' | 'running'>('idle');
 
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      workerRef.current ??= new Worker('/engine/py-worker.js', { type: 'module' });
+      workerRef.current.postMessage({ op: 'warm' });
+    }, 250);
+    return () => {
+      clearTimeout(handle);
+      workerRef.current?.terminate();
+    };
+  }, []);
+
   const run = useCallback(() => {
     if (status !== 'idle') return;
     if (!workerRef.current) {
