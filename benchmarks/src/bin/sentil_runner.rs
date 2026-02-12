@@ -22,9 +22,10 @@ fn main() -> ExitCode {
         "scalability" => scalability(),
         "dense" => dense(),
         "streaming" => streaming(),
+        "memory" => memory(env::args().nth(2)),
         other => {
             eprintln!(
-                "unknown suite `{other}`; use `deterministic`, `scalability`, `dense`, or `streaming`"
+                "unknown suite `{other}`; use `deterministic`, `scalability`, `dense`, `streaming`, or `memory <n>`"
             );
             return ExitCode::FAILURE;
         }
@@ -144,6 +145,25 @@ fn dense() -> Vec<Record> {
 fn streaming() -> Vec<Record> {
     let n = 1_000_000usize;
     vec![measure_stream("streaming", SWEEP, n, n as u64)]
+}
+
+fn memory(size_arg: Option<String>) -> Vec<Record> {
+    let n: usize = size_arg.and_then(|s| s.parse().ok()).unwrap_or(1_000_000);
+    let mut monitor = StreamMonitor::new(SWEEP).expect("a streamable formula");
+    let idx = monitor.symbol_index("x").expect("x is referenced");
+    let mut packed = [0.0f64];
+    let mut last = 0.0;
+    let start = Instant::now();
+    for i in 0..n {
+        packed[idx] = 15.0 * (i as f64 * 0.1).sin();
+        last = monitor
+            .update_packed(i as f64, &packed)
+            .expect("a streaming verdict")
+            .lower();
+    }
+    let mut elapsed = vec![start.elapsed().as_secs_f64() * 1e3];
+    let timing = summarize(&mut elapsed);
+    vec![record("memory/length", SWEEP, Question::Monitoring, n as u64, last, timing, 1)]
 }
 
 fn measure_full(
