@@ -1,0 +1,1 @@
+{"tool":"prism","version":"4.9","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"F<=20 (a>=100)","probability":0.0438,"ci_half_width":0.005271694327733267,"samples":10000,"time_ms":27192.0}

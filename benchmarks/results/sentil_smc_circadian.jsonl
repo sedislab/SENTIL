@@ -1,0 +1,1 @@
+{"tool":"sentil","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"eventually[0,20](a>=100)","probability":0.037800,"samples":10000,"time_ms":1007.0,"peak_rss_bytes":4194304,"cpu":"AMD EPYC 7763 64-Core Processor"}
