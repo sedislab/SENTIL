@@ -187,6 +187,22 @@ def particles(records):
     ax.legend(loc="upper right")
     save(fig, "particles.png")
 
+def smc_circadian(records):
+    s = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "sentil"), None)
+    p = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "prism"), None)
+    if not s or not p:
+        return
+    fig, ax = plt.subplots(figsize=(5.6, 4.6))
+    tools, times, probs = ["PRISM", "SENTIL"], [p["time_ms"], s["time_ms"]], [p["probability"], s["probability"]]
+    bars = ax.bar(tools, times, color=[style.TOOL["prism"], style.TOOL["sentil"]], width=0.52)
+    ax.set_yscale("log")
+    ax.set_ylabel("time for 10,000 samples (ms)")
+    ax.set_title("SMC on the circadian CTMC, same model and property")
+    for b, t, pr in zip(bars, times, probs):
+        ax.text(b.get_x() + b.get_width() / 2, t * 1.15, f"P = {pr:.3f}\n{t:.0f} ms", ha="center", va="bottom", fontsize=9.5, color=style.INK)
+    ax.set_ylim(top=max(times) * 3)
+    save(fig, "smc_circadian.png")
+
 def synthesis(records):
     rows = [r for r in records if "mode" in r]
     if not rows:
@@ -208,7 +224,7 @@ def main():
         print("no results found under", RESULTS)
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online, scaling,
-                   memory, smc_throughput, smc_accuracy, particles, synthesis):
+                   memory, smc_throughput, smc_accuracy, smc_circadian, particles, synthesis):
         figure(records)
 
 if __name__ == "__main__":
