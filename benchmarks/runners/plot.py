@@ -1,17 +1,11 @@
-"""Plot the benchmark results.
-
-Reads every record under benchmarks/results, groups by the question a
-measurement answers, and writes the figures next to the JSON. Run as
-`python plot.py` from anywhere.
-"""
-
 import json
 import os
 
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+import style
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.normpath(os.path.join(HERE, "..", "results"))
@@ -24,185 +18,152 @@ def load():
                 records.extend(json.loads(line) for line in handle if line.strip())
     return records
 
-def scalability(records):
-    rows = [r for r in records if r.get("benchmark") == "scalability/length"]
-    if not rows:
-        return
-    fig, ax = plt.subplots(figsize=(7, 5))
-    series = {}
-    for r in rows:
-        series.setdefault((r["tool"], r["question"]), []).append(
-            (r["size"], r["timing"]["mean_ms"])
-        )
-    for (tool, question), points in sorted(series.items()):
-        points.sort()
-        ax.plot(
-            [p[0] for p in points],
-            [p[1] for p in points],
-            marker="o",
-            label=f"{tool} ({question})",
-        )
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("trace length (samples)")
-    ax.set_ylabel("time per evaluation (ms)")
-    ax.set_title("Robustness cost versus trace length")
-    ax.grid(True, which="both", linewidth=0.3)
-    ax.legend()
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "scalability.png")
-    fig.savefig(out, dpi=150)
+def save(fig, name):
+    out = os.path.join(RESULTS, name)
+    fig.savefig(out)
     plt.close(fig)
     print("wrote", out)
 
-def deterministic(records):
-    rows = [
-        r
-        for r in records
-        if r.get("benchmark") == "deterministic" and r.get("question") == "full_signal"
-    ]
+def length_series(records, tool, lang, question, benchmark="scalability/length"):
+    rows = [r for r in records if r.get("tool") == tool and r.get("language") == lang
+            and r.get("benchmark") == benchmark and r.get("question") == question]
+    pts = sorted((r["size"], r["timing"]["mean_ms"]) for r in rows)
+    return [p[0] for p in pts], [p[1] for p in pts]
+
+def discrete_offline(records):
+    sx, sy = length_series(records, "sentil", "full_signal")
+    rx, ry = length_series(records, "rtamt", "full_signal")
+    if not sx or not rx:
+        return
+    fig, ax = plt.subplots()
+    ax.plot(rx, ry, color=style.TOOL["rtamt"], marker="s", label="RTAMT")
+    style.hero_line(ax, sx, sy, "SENTIL")
+    shared = sorted(set(sx) & set(rx))[-1]
+    style.annotate_speedup(ax, shared, dict(zip(sx, sy))[shared], dict(zip(rx, ry))[shared],
+                           f"{dict(zip(rx, ry))[shared] / dict(zip(sx, sy))[shared]:.0f}x")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("trace length (samples)")
+    ax.set_ylabel("time for the whole robustness signal (ms)")
+    ax.set_title("Offline discrete STL: SENTIL vs RTAMT")
+    ax.legend(loc="upper left")
+    save(fig, "discrete_offline.png")
+
+def dense_offline(records):
+    sx, sy = length_series(records, "sentil", "monitoring")
+    bx, by = length_series(records, "breach", "monitoring")
+    if not sx or not bx:
+        return
+    fig, ax = plt.subplots()
+    ax.plot(bx, by, color=style.TOOL["breach"], marker="s", label="Breach (dense-time)")
+    style.hero_line(ax, sx, sy, "SENTIL")
+    shared = sorted(set(sx) & set(bx))[-1]
+    style.annotate_speedup(ax, shared, dict(zip(sx, sy))[shared], dict(zip(bx, by))[shared],
+                           f"{dict(zip(bx, by))[shared] / dict(zip(sx, sy))[shared]:.0f}x")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("trace length (samples)")
+    ax.set_ylabel("time to answer the monitoring query (ms)")
+    ax.set_title("Dense-time monitoring: SENTIL vs Breach")
+    ax.legend(loc="center left")
+    save(fig, "dense_offline.png")
+
+def dense_cost(records):
+    dense = sorted((r["size"], r["timing"]["mean_ms"]) for r in records if r.get("benchmark") == "dense/length")
+    disc = length_series(records, "sentil", "rust", "full_signal")
+    if not dense or not disc[0]:
+        return
+    fig, ax = plt.subplots()
+    ax.plot([p[0] for p in dense], [p[1] for p in dense], color=style.TOOL["sentil"], marker="o", label="dense time")
+    ax.plot(disc[0], disc[1], color=style.FAINT, marker="o", label="discrete grid")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("trace length (samples)")
+    ax.set_ylabel("time for the whole robustness signal (ms)")
+    ax.set_title("Cost of dense over discrete time, both linear")
+    ax.legend(loc="upper left")
+    save(fig, "dense_cost.png")
+
+def streaming_online(records):
+    rows = [r for r in records if r.get("benchmark") == "streaming"]
     if not rows:
         return
-    formulas = sorted({r["formula"] for r in rows})
-    tools = sorted({r["tool"] for r in rows})
-    fig, ax = plt.subplots(figsize=(9, 5))
-    width = 0.8 / max(len(tools), 1)
-    for i, tool in enumerate(tools):
-        by_formula = {r["formula"]: r["timing"]["mean_ms"] for r in rows if r["tool"] == tool}
-        xs = [j + i * width for j in range(len(formulas))]
-        ax.bar(xs, [by_formula.get(f, 0.0) for f in formulas], width=width, label=tool)
+    us = {r["language"]: r["timing"]["mean_ms"] * 1000.0 for r in rows}
+    order = sorted(us, key=us.get)
+    colors = [style.TOOL["sentil"] if lang in ("rust", "c") else style.FAINT for lang in order]
+    fig, ax = plt.subplots()
+    bars = ax.bar(order, [us[l] for l in order], color=colors, width=0.66)
+    ax.axhline(100.0, color=style.TOOL["rtamt"], linestyle=(0, (4, 3)), linewidth=1.1)
+    ax.text(len(order) - 0.5, 108, "10 kHz real-time budget (100 us)", ha="right", va="bottom",
+            fontsize=9, color=style.INK)
     ax.set_yscale("log")
-    ax.set_xticks([j + width * (len(tools) - 1) / 2 for j in range(len(formulas))])
-    ax.set_xticklabels([f"phi{j + 1}" for j in range(len(formulas))])
+    ax.set_ylabel("per-sample update (us)")
+    ax.set_title("Online streaming cost per sample, every binding")
+    for b, l in zip(bars, order):
+        ax.text(b.get_x() + b.get_width() / 2, us[l] * 1.12, f"{us[l]:.2f}", ha="center", va="bottom", fontsize=8.5, color=style.INK)
+    save(fig, "streaming_online.png")
+
+def scaling(records):
+    fx, fy = length_series(records, "sentil", "rust", "full_signal")
+    mx, my = length_series(records, "sentil", "rust", "monitoring")
+    if not fx or not mx:
+        return
+    fig, ax = plt.subplots()
+    ax.plot(fx, fy, color=style.FAINT, marker="o", label="whole signal (linear)")
+    style.hero_line(ax, mx, my, "monitoring query (flat)")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("trace length (samples)")
     ax.set_ylabel("time per evaluation (ms)")
-    ax.set_title("Full-signal robustness on the oracle formulas")
-    ax.grid(True, axis="y", which="both", linewidth=0.3)
-    ax.legend()
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "deterministic.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
+    ax.legend(loc="center left")
+    save(fig, "scaling.png")
+
+def memory(records):
+    rows = sorted((r["size"], r["peak_rss_bytes"] / 1e6) for r in records if r.get("benchmark") == "memory/length")
+    if not rows:
+        return
+    fig, ax = plt.subplots()
+    style.hero_line(ax, [p[0] for p in rows], [p[1] for p in rows], "resident memory")
+    ax.set_xscale("log")
+    ax.set_ylim(0, max(p[1] for p in rows) * 2.2)
+    ax.set_xlabel("samples streamed")
+    ax.set_ylabel("peak resident memory (MB)")
+    ax.set_title("Memory is set by the window, not the stream length")
+    save(fig, "memory.png")
 
 THROUGHPUT_MODELS = ("single_step", "always_ten", "eventually_ten")
 
 def smc_throughput(records):
-    rows = [r for r in records if "device" in r and r["model"] in THROUGHPUT_MODELS]
+    rows = [r for r in records if "device" in r and r.get("model") in THROUGHPUT_MODELS and "throughput_per_s" in r]
     if not rows:
         return
-    fig, ax = plt.subplots(figsize=(7, 5))
     series = {}
     for r in rows:
-        series.setdefault((r["device"], r["model"]), []).append(
-            (r["samples"], r["throughput_per_s"] / 1e6)
-        )
-    for (device, model), points in sorted(series.items()):
-        points.sort()
-        ax.plot(
-            [p[0] for p in points],
-            [p[1] for p in points],
-            marker="o",
-            label=f"{device}: {model}",
-        )
-    ax.set_xscale("log")
+        series.setdefault(r["device"], []).append((r["samples"], r["throughput_per_s"] / 1e6))
+    fig, ax = plt.subplots()
+    color = {"gpu": style.TOOL["sentil"], "cpu": style.FAINT}
+    for device, pts in sorted(series.items()):
+        agg = {}
+        for n, t in pts:
+            agg.setdefault(n, []).append(t)
+        xs = sorted(agg)
+        ys = [max(agg[n]) for n in xs]
+        ax.plot(xs, ys, color=color.get(device, style.INK), marker="o", label=device.upper())
+    ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("samples")
-    ax.set_ylabel("throughput (million realization-steps/s)")
-    ax.set_title("Statistical model checking throughput, CPU versus GPU")
-    ax.grid(True, which="both", linewidth=0.3)
-    ax.legend()
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "smc_throughput.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
+    ax.set_ylabel("throughput (million realizations/s)")
+    ax.set_title("Statistical model checking throughput, GPU vs CPU")
+    ax.legend(loc="lower right")
+    save(fig, "smc_throughput.png")
 
 def smc_accuracy(records):
-    rows = [
-        r
-        for r in records
-        if "device" in r and r.get("ground_truth") is not None and r["samples"] <= 100_000
-    ]
+    rows = [r for r in records if "device" in r and r.get("ground_truth") is not None and r["samples"] <= 100_000]
     if not rows:
         return
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.plot([0, 1], [0, 1], linewidth=0.8, color="gray")
-    ax.scatter([r["ground_truth"] for r in rows], [r["probability"] for r in rows], s=20)
+    fig, ax = plt.subplots(figsize=(5.4, 5.4))
+    ax.plot([0, 1], [0, 1], color=style.FAINT, linewidth=1.0, zorder=1)
+    ax.scatter([r["ground_truth"] for r in rows], [r["probability"] for r in rows],
+               s=34, color=style.TOOL["sentil"], edgecolor="white", linewidth=0.5, zorder=3)
     ax.set_xlabel("known probability")
-    ax.set_ylabel("estimated probability")
-    ax.set_title("Estimate versus closed-form truth")
-    ax.grid(True, linewidth=0.3)
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "smc_accuracy.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
-
-def cross_language(records):
-    rows = [r for r in records if r.get("benchmark") == "streaming"]
-    if not rows:
-        return
-    by_lang = {}
-    for r in rows:
-        by_lang[r["language"]] = r["timing"]["mean_ms"] * 1000.0
-    order = sorted(by_lang, key=by_lang.get)
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.bar(order, [by_lang[l] for l in order])
-    ax.set_yscale("log")
-    ax.set_ylabel("per-sample update (us)")
-    ax.set_title("Streaming cost per sample, across bindings")
-    ax.grid(True, axis="y", which="both", linewidth=0.3)
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "streaming.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
-
-def dense(records):
-    d = [(r["size"], r["timing"]["mean_ms"]) for r in records if r.get("benchmark") == "dense/length"]
-    disc = [
-        (r["size"], r["timing"]["mean_ms"])
-        for r in records
-        if r.get("benchmark") == "scalability/length"
-        and r.get("tool") == "sentil"
-        and r.get("question") == "full_signal"
-    ]
-    if not d or not disc:
-        return
-    fig, ax = plt.subplots(figsize=(7, 5))
-    for points, label in ((sorted(d), "dense"), (sorted(disc), "discrete")):
-        ax.plot([p[0] for p in points], [p[1] for p in points], marker="o", label=label)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("trace length (samples)")
-    ax.set_ylabel("full-signal time (ms)")
-    ax.set_title("Dense versus discrete robustness cost")
-    ax.grid(True, which="both", linewidth=0.3)
-    ax.legend()
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "dense.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
-
-def synthesis(records):
-    rows = [r for r in records if "mode" in r]
-    if not rows:
-        return
-    rows.sort(key=lambda r: (r["mode"], r["case"]))
-    labels = [r["case"] for r in rows]
-    fig, ax = plt.subplots(figsize=(8, 5))
-    colors = ["C0" if r["mode"] == "open_loop" else "C1" for r in rows]
-    ax.bar(range(len(rows)), [r["timing"]["mean_ms"] for r in rows], color=colors)
-    ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels(labels, rotation=30, ha="right")
-    ax.set_ylabel("synthesis time (ms)")
-    ax.set_title("Open-loop synthesis and one online planning step")
-    ax.grid(True, axis="y", linewidth=0.3)
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "synthesis.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
+    ax.set_ylabel("SENTIL estimate")
+    ax.set_title("Estimate against closed-form truth")
+    save(fig, "smc_accuracy.png")
 
 def particles(records):
     rows = [r for r in records if r.get("benchmark") == "rare_event/particles"]
@@ -211,37 +172,41 @@ def particles(records):
     events = {}
     for r in rows:
         events.setdefault(r["event"], {}).setdefault(r["particles"], []).append(r["rel_error"])
-    fig, ax = plt.subplots(figsize=(7, 5))
-    for event, by_count in sorted(events.items()):
+    fig, ax = plt.subplots()
+    for i, (event, by_count) in enumerate(sorted(events.items())):
         counts = sorted(by_count)
         errs = [sum(by_count[c]) / len(by_count[c]) for c in counts]
-        ax.plot(counts, errs, marker="o", label=event)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
+        ax.plot(counts, errs, color=style.CYCLE[i], marker="o", label=event)
+    ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("particles")
     ax.set_ylabel("relative error vs Monte Carlo truth")
-    ax.set_title("Rare-event estimate converges as particles grow")
-    ax.grid(True, which="both", linewidth=0.3)
-    ax.legend()
-    fig.tight_layout()
-    out = os.path.join(RESULTS, "particles.png")
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print("wrote", out)
+    ax.set_title("Rare-event estimate sharpens with particles")
+    ax.legend(loc="upper right")
+    save(fig, "particles.png")
+
+def synthesis(records):
+    rows = [r for r in records if "mode" in r]
+    if not rows:
+        return
+    rows.sort(key=lambda r: (r["mode"], r["case"]))
+    fig, ax = plt.subplots(figsize=(8.0, 4.6))
+    colors = [style.TOOL["sentil"] if r["mode"] == "open_loop" else style.CYCLE[2] for r in rows]
+    ax.bar(range(len(rows)), [r["timing"]["mean_ms"] for r in rows], color=colors, width=0.64)
+    ax.set_xticks(range(len(rows)))
+    ax.set_xticklabels([r["case"] for r in rows], rotation=25, ha="right")
+    ax.set_ylabel("synthesis time (ms)")
+    ax.set_title("Open-loop synthesis and one online planning step")
+    save(fig, "synthesis.png")
 
 def main():
+    style.apply()
     records = load()
     if not records:
         print("no results found under", RESULTS)
         return
-    scalability(records)
-    deterministic(records)
-    cross_language(records)
-    dense(records)
-    synthesis(records)
-    particles(records)
-    smc_throughput(records)
-    smc_accuracy(records)
+    for figure in (discrete_offline, dense_offline, dense_cost, streaming_online, scaling,
+                   memory, smc_throughput, smc_accuracy, particles, synthesis):
+        figure(records)
 
 if __name__ == "__main__":
     main()
