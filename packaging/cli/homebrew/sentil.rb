@@ -21,12 +21,12 @@ class Sentil < Formula
   end
 
   def install
-    prefix.install Dir["*"]
-    bin.install_symlink prefix/"bin/sentil"
-    man1.install prefix/"man/sentil.1" if (prefix/"man/sentil.1").exist?
-    bash_completion.install prefix/"completions/sentil.bash" => "sentil" if (prefix/"completions/sentil.bash").exist?
-    zsh_completion.install prefix/"completions/_sentil" if (prefix/"completions/_sentil").exist?
-    fish_completion.install prefix/"completions/sentil.fish" if (prefix/"completions/sentil.fish").exist?
+    libexec.install Dir["*"]
+    bin.install_symlink libexec/"bin/sentil"
+    man1.install libexec/"man/sentil.1" if (libexec/"man/sentil.1").exist?
+    bash_completion.install libexec/"completions/sentil.bash" => "sentil" if (libexec/"completions/sentil.bash").exist?
+    zsh_completion.install libexec/"completions/_sentil" if (libexec/"completions/_sentil").exist?
+    fish_completion.install libexec/"completions/sentil.fish" if (libexec/"completions/sentil.fish").exist?
   end
 
   test do
