@@ -3,6 +3,7 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -34,7 +35,10 @@ class MonitorApp {
 
  private:
   Verdict to_verdict(double time, const std::string& id, const ::sentil::Robustness& robustness);
+  void add_unlocked(const std::string& id, const std::string& formula);
 
+  // ara::com dispatches the methods and the frame handler on separate threads.
+  mutable std::mutex mutex_;
   std::unique_ptr<::sentil::MultiMonitor> monitor_;
   ::sentil::LiftingRegistry lifting_;
   std::vector<std::string> ids_;
