@@ -14,11 +14,9 @@ WORKDIR /sentil
 COPY . .
 
 RUN cargo build --release -p sentil -p sentil-ffi \
-    && cargo test --no-run -p sentil
+    && cargo test --no-run -p sentil -p sentil-benchmarks -p sentil-cli
 
-# The CPU claim tier: the engine suite, including the deterministic oracle and the
-# no-panic fuzz, then the C ABI tests against the built libsentil, all offline.
-CMD ["bash", "-lc", "cargo test --offline -p sentil && make -C sentil-ffi test-ffi CARGO='cargo --offline'"]
+CMD ["make", "verify"]
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS gpu
 
