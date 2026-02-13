@@ -1,0 +1,201 @@
+---
+title: "Monitor a live stream"
+description: "Monitor a sensor signal at runtime at nanosecond-scale per-sample cost and memory proportional to the window."
+---
+
+There are two types of evaluations. Offline evaluation takes the whole trace and determines the robustness. Online evaluation handles those cases where samples arrive one at a time, and you want to know the current verdict after each sample and ideally, before the next one arrives. The streaming monitor folds each timestamped sample into its state and returns the verdict so far. It costs a median of 81 nanoseconds per sample and sustains more than 11 million updates per second on a single core, well past the tens of kilohertz a real sensor loop runs at.
+
+## Feed samples one at a time
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="live_stream.py"
+import math
+import sentil
+
+monitor = sentil.OnlineMonitor("G[0, 10] (x > -0.9)")
+for t in range(60):
+    x = math.sin(t * 0.3)
+    verdict = monitor.update(float(t), {"x": x})
+    if verdict.resolved and not verdict.satisfied:
+        print(f"violated at t={t}, robustness={verdict.value:.3f}")
+        break
+else:
+    print("held over the whole stream")
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="live_stream.rs"
+use sentil::{Monitor, MonitorConfig};
+
+fn main() -> sentil::Result<()> {
+    let mut monitor = Monitor::new("G[0, 10] (x > -0.9)", MonitorConfig::new())?;
+    for t in 0..60 {
+        let x = (f64::from(t) * 0.3).sin();
+        let verdict = monitor.update(f64::from(t), &[("x", x)])?;
+        if verdict.is_resolved() && verdict.value() < 0.0 {
+            println!("violated at t={t}, robustness={:.3}", verdict.value());
+            return Ok(());
+        }
+    }
+    println!("held over the whole stream");
+    Ok(())
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="live_stream.c"
+#include "sentil.h"
+#include <math.h>
+#include <stdio.h>
+
+int main(void) {
+    sentil_monitor_t *monitor = sentil_monitor_parse("G[0, 10] (x > -0.9)", NULL);
+    const char *names[] = {"x"};
+    for (int t = 0; t < 60; ++t) {
+        double x = sin(t * 0.3);
+        sentil_robustness_t out;
+        sentil_monitor_update(monitor, (double)t, names, &x, 1, &out);
+        if (out.resolved && !out.satisfied) {
+            printf("violated at t=%d, robustness=%.3f\n", t, out.value);
+            sentil_monitor_destroy(monitor);
+            return 0;
+        }
+    }
+    printf("held over the whole stream\n");
+    sentil_monitor_destroy(monitor);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="live_stream.cpp"
+#include <sentil/sentil.hpp>
+#include <cmath>
+#include <cstdio>
+
+int main() {
+    sentil::OnlineMonitor monitor("G[0, 10] (x > -0.9)");
+    for (int t = 0; t < 60; ++t) {
+        double x = std::sin(t * 0.3);
+        sentil::Robustness verdict = monitor.update(static_cast<double>(t), {{"x", x}});
+        if (verdict.resolved && !verdict.satisfied) {
+            std::printf("violated at t=%d, robustness=%.3f\n", t, verdict.value);
+            return 0;
+        }
+    }
+    std::printf("held over the whole stream\n");
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="LiveStream.java"
+import io.github.sedislab.sentil.OnlineMonitor;
+import io.github.sedislab.sentil.Robustness;
+import java.util.Collections;
+
+public class LiveStream {
+    public static void main(String[] args) throws Exception {
+        try (OnlineMonitor monitor = OnlineMonitor.create("G[0, 10] (x > -0.9)")) {
+            for (int t = 0; t < 60; t++) {
+                double x = Math.sin(t * 0.3);
+                Robustness verdict = monitor.update(t, Collections.singletonMap("x", x));
+                if (verdict.resolved() && !verdict.satisfied()) {
+                    System.out.printf("violated at t=%d, robustness=%.3f%n", t, verdict.value());
+                    return;
+                }
+            }
+            System.out.println("held over the whole stream");
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="live_stream.jl"
+using Sentil
+
+monitor = OnlineMonitor("G[0, 10] (x > -0.9)")
+for t in 0:59
+    x = sin(t * 0.3)
+    verdict = update!(monitor, Float64(t), Dict("x" => x))
+    if verdict.resolved && !verdict.satisfied
+        println("violated at t=", t, ", robustness=", round(verdict.value; digits = 3))
+        break
+    end
+end
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="live_stream.m"
+monitor = sentil.OnlineMonitor('G[0, 10] (x > -0.9)');
+for t = 0:59
+    x = sin(t * 0.3);
+    verdict = monitor.update(t, struct('x', x));
+    if verdict.resolved && ~verdict.satisfied
+        fprintf('violated at t=%d, robustness=%.3f\n', t, verdict.value);
+        return
+    end
+end
+fprintf('held over the whole stream\n');
+```
+
+</Tab>
+<Tab value="CLI">
+
+The `monitor` verb reads one JSON record per line from standard input and writes one verdict per line, so a live sensor pipes straight into it:
+
+```bash
+sensor | sentil monitor -f 'G[0,10] (x > -0.9)' -o ndjson
+```
+
+Each input line looks like `{"time": 0.0, "x": 0.0}`, and each output line carries the time, the running robustness, and whether the verdict is resolved. The stream ends with a summary record.
+
+</Tab>
+</Tabs>
+
+Every binding stops at the same step. Running the Python version prints:
+
+```text
+violated at t=15, robustness=-0.078
+```
+
+At $t = 15$ the wave reads $\sin(4.5) = -0.978$, which is 0.078 below the -0.9 bound. That sample drives the earliest open window under the bound, so the verdict resolves to a violation with margin `-0.078`.
+
+Each `update` returns the verdict that reflects every sample seen so far. Nothing is buffered beyond the formula's largest window, so the loop runs indefinitely at constant cost.
+
+## Resolved vs. provisional
+
+A future-bounded operator cannot commit to a final answer until its window closes. At time $t$, the formula `G[0, 10] (x > -0.9)` depends on samples out to $t + 10$, which have not arrived. Until then the verdict is provisional; the running robustness is the best value the seen samples support, and a later sample can still push it lower.
+
+The verdict's `resolved` attribute tells us whether the current value is final or provisional. In Python, `verdict.resolved` is true once the value is final for the window that has closed, and `verdict.satisfied` and `verdict.value` carry the boolean interpretation of the robustness and the robustness value respectively. In Rust, that pair is `verdict.is_resolved()` and `verdict.value()`. Checking `resolved` before you act keeps you from alarming on a value that a future sample would have lifted back into satisfaction.
+
+<Callout type="info">
+Past operators resolve immediately, because the past is fixed. A formula such as `Once[0, 10] (abs(x) > 5)`, gives a final verdict on every sample with no provisional window, and this makes it really good for live alarms.
+</Callout>
+
+## Streaming under noise
+
+The monitor above monitors a deterministic STL formula. Uncertainty, either about the signal values or the formula parameters is common in real-world systems, and SENTIL can handle that too. To verify a probabilistic `P~p(phi)` property during runtime, build it with `OnlineMonitor.with_lifting(formula, lifting)`, passing a `LiftingRegistry` so each reading expands into a particle ensemble and the running verdict carries a satisfaction probability. It updates the same way, one sample at a time. See [your first probabilistic property](/docs/start/first-prstl) for the registry and the confidence interval.
+
+## Memory
+
+The bounded temporal operators use a monotonic-deque sliding window that keeps only the candidate extrema for the current window, so memory is proportional to the window rather than the length of the stream. A formula with `G[0, 10]` on a signal at 1 kHz holds at most about ten thousand samples per variable no matter how long the stream runs. That flat per-sample cost, is the reason the streaming path holds its latency on an indefinitely long feed. See [why the deque is O(1) amortized](/docs/monitoring/concepts/monotonic-deque).
+
+## Next
+
+Run SENTIL over a saved file in [run on a recorded trace](/docs/start/recorded-trace), or read [quantitative robustness](/docs/monitoring/concepts/what-is-stl) for what the robustness value means.

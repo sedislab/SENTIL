@@ -1,0 +1,141 @@
+---
+title: "Monitor a recorded trace"
+description: "
+Load a trace from a file and check it against an STL formula."
+---
+
+Most verification runs against data you already have, i.e., a driving log, a glucose record, a flight trace, program logs, etc.. SENTIL reads a table, binds each column to the formula variable of the same name, and reports the verdict. The example below is a glucose record from an insulin-controller study where a missed meal bolus lets blood glucose climb and we want to check whether glucose stayed below 180 mg/dL. You don't really need to understand the case study to follow the example, but if you want to know more, see [closed-loop insulin control](/docs/start/case-studies/insulin-pump).
+
+## Check the trace
+
+The safety property is that glucose stays below 180 mg/dL. The record `glucose.csv` has a `time` column in minutes and a `glucose` column in mg/dL.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="CLI">
+
+```bash
+sentil check -f 'G (glucose < 180)' -t glucose.csv
+```
+
+```text
+check
+  formula     G (glucose < 180)
+  trace       glucose.csv
+  semantics   dense
+  verdict     violated
+  robustness  -105.023699
+```
+
+The `-105.023699` is the robustness and it is `violated`. To locate why, we can ask where the bare predicate fails: `--violations` prints the intervals where the given formula is negative, and for a `G`, read always, that is every start time whose future still contains the breach, so the predicate is the one to check.
+
+```bash
+sentil check -f 'glucose < 180' -t glucose.csv --violations
+```
+
+```text
+violations
+  formula     glucose < 180
+  trace       glucose.csv
+  [809.000, 1424.000]
+```
+
+Also, note that the format is inferred from the content, so no extension is needed, and `-` reads the trace from standard input.
+
+</Tab>
+<Tab value="Python">
+
+```python title="offline_verification.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace.from_path("glucose.csv")
+phi = Formula.parse("G (glucose < 180)")
+
+print(round(phi.robustness(trace), 3))   # -105.024
+for v in Formula.parse("glucose < 180").violations(trace):
+    print(f"breach on [{v.start}, {v.end}]")   # [809.0, 1424.0]
+```
+
+`Trace.from_path` dispatches on the extension, and it can read CSV, TSV, Parquet, Arrow, SQLite, MATLAB `.mat`, HDF5 and MCAP directly. Just make sure to include the extension in the path. For data already in a DataFrame, `sentil.pandas.trace_from_dataframe(df)` takes the timestamps from a `time` column and one signal per remaining column.
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="offline_verification.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let trace = Trace::from_path("glucose.csv")?;
+    let phi = Formula::parse("G (glucose < 180)")?;
+
+    println!("{:.3}", phi.robustness(&trace)?);   // -105.024
+    for (start, end) in Formula::parse("glucose < 180")?.violations(&trace)? {
+        println!("breach on [{start}, {end}]");   // [809, 1424]
+    }
+    Ok(())
+}
+```
+
+</Tab>
+</Tabs>
+
+The robustness is `-105.024`, so glucose peaked past 285 mg/dL, a hundred and five above the limit. The breach opens at minute 809, shortly after the unbolused lunch, and glucose does not fall back inside the band until minute 1424, close to the end of the day. This trace ships in the repository as `benchmarks/cps_traces/glucose_missed_lunch_bolus.json`.
+
+## When the column names differ
+
+SENTIL infers the variable names from the trace headers so a formula written for the `glucose` variable will not work against a trace with a column logged as `cgm_mgdl`. Rather than rewrite the formula, bind the variable to the column.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+
+```python title="bind_column.py"
+import sentil
+from sentil import Formula
+
+log = sentil.Trace.from_path("sensor_log.csv")
+trace = sentil.Trace(log.times, {"glucose": log.get("cgm_mgdl")})
+
+print(round(Formula.parse("G (glucose < 180)").robustness(trace), 3))
+```
+
+`times` and `variables` are properties on a loaded trace and `get(name)` returns one column, so binding a name is a matter of building the trace the formula expects. Every column you do not name is dropped, which is what you want when a log carries fifty channels and the formula reads two.
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="bind_column.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let log = Trace::from_path("sensor_log.csv")?;
+    let mut trace = Trace::new(log.times().to_vec())?;
+    trace.add_signal("glucose", log.signal("cgm_mgdl").unwrap_or(&[]).to_vec())?;
+
+    println!("{:.3}", Formula::parse("G (glucose < 180)")?.robustness(&trace)?);
+    Ok(())
+}
+```
+
+`signal` returns `None` when the column is absent, so the fallback above scores an empty signal rather than panicking; match on it if you would rather report the missing column yourself.
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+sentil check -f 'G (glucose < 180)' -t sensor_log.csv --map glucose=cgm_mgdl
+```
+
+`--map` renames the mapped column to the formula variable and leaves the rest untouched, so a formula reads `glucose` while the file keeps its own header. Without it, a name mismatch is reported with the columns the trace actually has and a `--map` hint, rather than failing mid-evaluation. Pass `--map` once per variable that needs binding.
+
+</Tab>
+</Tabs>
+
+The same shape works in every binding: read the file, then hand the formula a trace whose signals carry the names the formula uses.
+
+## Trace formats
+
+SENTIL reads a variety of trace formats, and for ease of use, infers the format from the file extension. We currently support CSV, TSV, Parquet, Arrow, SQLite, HDF5, MATLAB `.mat`, and MCAP. The one rule that always holds is that the time column strictly increases; if a row goes backward in time, it is rejected by name and value. For how signals and traces are structured, see [signals and traces](/docs/monitoring/concepts/signals-and-traces).
+
+## Next
+
+To watch a property resolve as data arrives instead of after the fact, read [monitor a live stream](/docs/start/live-stream).
