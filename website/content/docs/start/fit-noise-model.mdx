@@ -1,0 +1,170 @@
+---
+title: "Fit your first noise model"
+description: "Turn paired ground-truth and sensor data into residuals, then fit a Gaussian, a bootstrap, or a Gaussian mixture and register the result for lifting."
+---
+
+A noise model turns a single reading into a distribution over what the true value might be. When you know the sensor's error from a datasheet, you can write one down with `NoiseModel.gaussian` and the other constructors. When you have recorded calibration data, you can fit one from the data instead. This tutorial fits from data.
+
+## Residuals
+
+Fitting starts by reducing paired data to residuals. Residuls are the difference between what the sensor reported and what the ground truth was. The residuals are the quantity the noise model describes, and they can be additive or multiplicative and SENTIL forms it two ways, chosen by the interaction mode.
+
+$$
+r_i = y_i - g_i \quad \text{(additive)} \qquad r_i = y_i / g_i \quad \text{(multiplicative)}
+$$
+
+Additive residuals fit error whose size does not depend on the signal, like thermal noise or quantization. Multiplicative residuals fit error that scales with the signal, like gain drift. When you are unsure, plot the residual against ground truth. A constant spread points to additive noise and a spread that grows with the signal points to multiplicative.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+
+```python
+from sentil import NoiseModel, NoiseInteraction
+
+truth = [20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0]
+sensor = [20.3, 20.6, 22.5, 22.7, 24.4, 25.1, 26.6, 26.8]
+
+res = NoiseModel.residuals(truth, sensor, NoiseInteraction.Additive)
+print([round(float(r), 2) for r in res])
+# [0.3, -0.4, 0.5, -0.3, 0.4, 0.1, 0.6, -0.2]
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+use sentil::{NoiseInteraction, NoiseModel};
+
+let truth = [20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0];
+let sensor = [20.3, 20.6, 22.5, 22.7, 24.4, 25.1, 26.6, 26.8];
+let res = NoiseModel::residuals(&truth, &sensor, NoiseInteraction::Additive)?;
+```
+
+</Tab>
+</Tabs>
+
+## Fit a Gaussian by maximum likelihood
+
+When the residual histogram is a symmetric bell curve, a Gaussian is the right error family. `fit_gaussian` takes the sample mean and the unbiased sample standard deviation, the Bessel-corrected form that divides by $n - 1$.
+
+$$
+\hat{\mu} = \frac{1}{n} \sum_i r_i, \qquad \hat{\sigma} = \sqrt{\frac{1}{n - 1} \sum_i (r_i - \hat{\mu})^2}
+$$
+
+`fit_gaussian` takes the residuals and returns the model.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+
+```python
+model = NoiseModel.fit_gaussian(list(res))
+print(model.mean(), model.variance())
+# 0.125 0.14785714285714277
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+let model = NoiseModel::fit_gaussian(&res)?;
+```
+
+</Tab>
+</Tabs>
+
+The eight residuals above fit a Gaussian centered at 0.125 with variance 0.148, a standard deviation near 0.384. The nonzero mean is a bias: this sensor reads about an eighth of a unit high on average, and the fitted model carries that offset into every lift.
+
+## Fit a nonparametric bootstrap
+
+When no named family matches the residual histogram, skew, a hard cutoff, a lumpy shape, `fit_bootstrap` keeps the empirical distribution itself and resamples it with replacement at lift time. It assumes nothing about the shape and reproduces whatever the calibration data showed.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+
+```python
+model = NoiseModel.fit_bootstrap(list(res))
+print(model.mean(), model.variance())
+# 0.125 0.129375
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+let model = NoiseModel::fit_bootstrap(&res)?;
+```
+
+</Tab>
+</Tabs>
+
+On the same eight residuals the bootstrap reports the sample mean 0.125 and the population variance 0.129375, the value divided by $n$ rather than $n - 1$, because it summarizes the data rather than estimating a parameter. For a long calibration history, `fit_bootstrap_reservoir(samples, max_samples)` thins it to a fixed-size representative subset by seeded reservoir sampling, so the model stays bounded no matter how much data you feed it.
+
+## Fit a Gaussian mixture by EM
+
+A single Gaussian cannot describe residuals with two modes or a heavy outlier tail. `fit_gaussian_mixture` fits $k$ components by expectation-maximization; you pass the component count and an iteration cap. The common case is a narrow bulk for normal operation and a wider component for an occasional error regime. The Python example builds a seeded bimodal set so the fit is reproducible.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+
+```python
+import random
+
+random.seed(7)
+# 160 samples of tight noise near zero, 40 in a wider cluster near three
+bimodal = [random.gauss(0.0, 0.25) for _ in range(160)] + [random.gauss(3.0, 0.5) for _ in range(40)]
+model = NoiseModel.fit_gaussian_mixture(bimodal, 2, 100)
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+let model = NoiseModel::fit_gaussian_mixture(&residuals, 2, 100)?;
+```
+
+</Tab>
+</Tabs>
+
+The two-component fit recovers that structure: weights near 0.80 and 0.20, one component tight around zero with standard deviation about 0.24, the other centered near three. Choose the number of components from the residual histogram.
+
+## Register the fit and lift
+
+A fitted model behaves the same as a hand-written one. Register it in a `LiftingRegistry` under the variable it describes, then lift a trace to draw one stochastic realization, or hand the registry to a probabilistic check.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+
+```python
+import sentil
+from sentil import LiftingRegistry, NoiseInteraction
+
+lifting = LiftingRegistry()
+lifting.register("temp", model, NoiseInteraction.Additive)
+
+trace = sentil.Trace(list(range(5)), {"temp": [20.0, 20.5, 21.0, 21.5, 22.0]})
+realization = lifting.lift(trace, seed=42)
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+use sentil::{LiftingRegistry, NoiseInteraction};
+
+let mut lifting = LiftingRegistry::new();
+lifting.register("temp", model, NoiseInteraction::Additive);
+let realization = lifting.lift(&trace, 42)?;
+```
+
+</Tab>
+</Tabs>
+
+A [probabilistic check](/docs/start/first-prstl) calls it internally many times to build its ensemble, so most of the time you fit once and pass the registry straight to `check`.
+
+The Gaussian, the bootstrap, and the mixture are three of seventeen error families. The full set, along with guidance on picking one, is in the [noise models reference](/docs/probabilistic/concepts/noise-models).
+
+<Cards>
+<Card title="Noise models" href="/docs/probabilistic/concepts/noise-models" description="Every distribution family, its constructor, and when it fits a sensor." />
+<Card title="Your first probabilistic property" href="/docs/start/first-prstl" description="Hand the fitted model to a PrSTL check and read the confidence interval." />
+<Card title="Lift a trace" href="/docs/probabilistic/guides/lift-trace" description="Draw stochastic realizations from a registry and inspect the ensemble." />
+</Cards>

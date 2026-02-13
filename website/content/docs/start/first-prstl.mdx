@@ -1,0 +1,234 @@
+---
+title: "Your first probabilistic property"
+description: "Given a noisy signal, check whether the true signal satisfies a property with high enough probability."
+---
+
+The [first monitor](/docs/start/first-monitor) treated its samples as absolute truth and checked the specification against those samples. A real sensor reads with some noise, and PrSTL asks whether the true signal satisfies the property and with what probability? This page attaches a noise model to a speed trace and checks a probabilistic bound.
+
+## What `P>=p` means
+
+A Probabilistic STL (PrSTL) formula wraps an inner STL formula in a probabilistic operator. `P>=0.95 (G (speed < 30))` reads as,"the true speed stays under 30 throughout the trace with probability at least 0.95". The threshold is a probability in $[0, 1]$, and the probabilistic operator needs to sit at the outermost part of the formula. SENTIL accepts the four comparisons `P>=p`, `P>p`, `P<=p`, and `P<p`.
+
+The estimate comes from sampling. SENTIL lifts each reading into a distribution using the noise model, draws an ensemble of candidate traces, evaluates the inner formula on each, and reports the fraction that satisfy it with a confidence interval. The operator returns a verdict rather than a margin: when the estimate meets the threshold the formula holds and its robustness collapses to $+\infty$, and otherwise it fails at $-\infty$. The [PrSTL concept page](/docs/probabilistic/concepts/what-is-prstl) covers the semantics in full.
+
+## Lift a reading and check
+
+Assuming that our speed sensor produces readings that have Gaussian noise with a standard deviation of 0.7, we can register that noise model on the `speed` channel and check the property against the trace.
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="prstl.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel, SmcConfig
+
+trace = sentil.Trace(
+    list(range(8)),
+    {"speed": [24.0, 25.6, 27.1, 28.0, 28.2, 27.8, 26.2, 24.3]},
+)
+
+lifting = LiftingRegistry()
+lifting.register("speed", NoiseModel.gaussian(0.0, 0.7))
+
+phi = Formula.parse("P>=0.95 (G (speed < 30))")
+result = phi.check(trace, lifting, SmcConfig(samples=5000))
+
+print(f"estimate {result.probability:.3f}")
+print(f"95% interval [{result.interval.lower:.3f}, {result.interval.upper:.3f}]")
+print(f"holds {result.holds}")
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="prstl.rs"
+use sentil::{LiftingRegistry, Monitor, MonitorConfig, NoiseInteraction, NoiseModel, SmcConfig};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = sentil::Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])?;
+    trace.add_signal("speed", vec![24.0, 25.6, 27.1, 28.0, 28.2, 27.8, 26.2, 24.3])?;
+
+    let mut lifting = LiftingRegistry::new();
+    lifting.register("speed", NoiseModel::gaussian(0.0, 0.7)?, NoiseInteraction::Additive);
+
+    let config = MonitorConfig::new().smc(SmcConfig { samples: 5000, ..SmcConfig::default() });
+    let monitor = Monitor::new("P>=0.95 (G (speed < 30))", config)?;
+    let result = monitor.check(&trace, &lifting)?;
+
+    println!(
+        "estimate {:.3}, interval [{:.3}, {:.3}], holds {}",
+        result.probability, result.interval.lower, result.interval.upper, result.holds
+    );
+    Ok(())
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="prstl.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    double times[] = {0, 1, 2, 3, 4, 5, 6, 7};
+    double speed[] = {24.0, 25.6, 27.1, 28.0, 28.2, 27.8, 26.2, 24.3};
+    sentil_trace_t *trace = sentil_trace_from_signal(times, 8, "speed", speed, 8);
+
+    sentil_lifting_registry_t *lifting = sentil_lifting_registry_create();
+    sentil_lifting_registry_register(lifting, "speed", sentil_noise_gaussian(0.0, 0.7),
+                                     SENTIL_NOISE_ADDITIVE);
+
+    sentil_formula_t *phi = sentil_formula_parse("P>=0.95 (G (speed < 30))");
+    sentil_smc_config_t config = sentil_smc_config_default();
+    config.samples = 5000;
+    sentil_smc_result_t result;
+    sentil_formula_check(phi, trace, lifting, &config, &result);
+    printf("estimate %.3f\ninterval [%.3f, %.3f]\nholds %s\n", result.probability,
+           result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+
+    sentil_formula_destroy(phi);
+    sentil_lifting_registry_destroy(lifting);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="prstl.cpp"
+#include <sentil/sentil.hpp>
+#include <cstdio>
+
+int main() {
+    sentil::Trace trace({0, 1, 2, 3, 4, 5, 6, 7}, "speed",
+                        {24.0, 25.6, 27.1, 28.0, 28.2, 27.8, 26.2, 24.3});
+
+    sentil::LiftingRegistry lifting;
+    lifting.register_noise("speed", sentil::NoiseModel::gaussian(0.0, 0.7));
+
+    sentil::Formula phi = sentil::Formula::parse("P>=0.95 (G (speed < 30))");
+    sentil::SmcConfig config;
+    config.samples = 5000;
+    sentil::SmcResult result = phi.check(trace, lifting, config);
+    std::printf("estimate %.3f\ninterval [%.3f, %.3f]\nholds %s\n", result.probability,
+                result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="Prstl.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.LiftingRegistry;
+import io.github.sedislab.sentil.NoiseModel;
+import io.github.sedislab.sentil.SmcConfig;
+import io.github.sedislab.sentil.SmcResult;
+import io.github.sedislab.sentil.Trace;
+
+public class Prstl {
+    public static void main(String[] args) throws Exception {
+        try (Trace trace = Trace.create(new double[] {0, 1, 2, 3, 4, 5, 6, 7});
+                LiftingRegistry lifting = new LiftingRegistry();
+                Formula phi = Formula.parse("P>=0.95 (G (speed < 30))")) {
+            trace.addSignal("speed", new double[] {24.0, 25.6, 27.1, 28.0, 28.2, 27.8, 26.2, 24.3});
+            lifting.register("speed", NoiseModel.gaussian(0.0, 0.7));
+
+            SmcResult result = phi.check(trace, lifting, new SmcConfig().samples(5000));
+            System.out.printf("estimate %.3f%n", result.probability());
+            System.out.printf("95%% interval [%.3f, %.3f]%n",
+                    result.interval().lower(), result.interval().upper());
+            System.out.printf("holds %b%n", result.holds());
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="prstl.jl"
+using Sentil
+
+trace = Trace(collect(0.0:1.0:7.0), "speed", [24.0, 25.6, 27.1, 28.0, 28.2, 27.8, 26.2, 24.3])
+
+lifting = LiftingRegistry()
+register_noise!(lifting, "speed", gaussian(0.0, 0.7))
+
+phi = formula("P>=0.95 (G (speed < 30))")
+result = check(phi, trace, lifting; config = SmcConfig(samples = 5000))
+
+println("estimate ", round(result.probability; digits = 3))
+println("95% interval [", round(result.interval.lower; digits = 3), ", ",
+        round(result.interval.upper; digits = 3), "]")
+println("holds ", result.holds)
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="prstl.m"
+trace = sentil.Trace(0:7, 'speed', [24.0 25.6 27.1 28.0 28.2 27.8 26.2 24.3]);
+
+lifting = sentil.LiftingRegistry();
+lifting.register('speed', sentil.NoiseModel.gaussian(0.0, 0.7));
+
+phi = sentil.Formula.parse('P>=0.95 (G (speed < 30))');
+config = sentil.SmcConfig;
+config.samples = 5000;
+
+result = phi.check(trace, lifting, config);
+fprintf('estimate %.3f\n', result.probability);
+fprintf('95%% interval [%.3f, %.3f]\n', result.interval.lower, result.interval.upper);
+fprintf('holds %d\n', result.holds);
+```
+
+</Tab>
+<Tab value="CLI">
+
+Save the trace as `speeds.csv` with a `time` column and a `speed` column, then attach the noise on the command line:
+
+```bash
+sentil smc -f 'P>=0.95 (G (speed < 30))' -t speeds.csv --noise speed=gaussian:0,0.7 --samples 5000
+```
+
+```text
+smc
+  formula     P>=0.95 (G (speed < 30))
+  algorithm   smc
+  samples     5000
+  satisfied   4952
+  probability 0.990400
+  interval    [0.987296, 0.992751] at 95%
+  verdict     holds
+```
+
+The exit code follows the verdict, 0 for holds and 10 otherwise, so this scripts the same way `sentil check` does.
+
+</Tab>
+</Tabs>
+
+Python, Julia, MATLAB and the CLI default the interaction to additive and the Rust, C and C++ calls requires that you name it. Every binding draws the same 5000-sample ensemble from the same default seed, so the estimate should be the same across all bindings.
+
+## Reading the result
+
+| Quantity | Value |
+|---|---|
+| Point estimate | 0.990 |
+| 95% Wilson interval | [0.987, 0.993] |
+| Satisfying samples | 4952 of 5000 |
+| Verdict (`holds`) | true |
+
+The deterministic `G (speed < 30)` has robustness 1.8 on this trace, the gap between the peak of 28.2 and the limit of 30.
+
+## Where to go next
+
+<Cards>
+<Card title="Fit your first noise model" href="/docs/start/fit-noise-model" description="Replace the guessed standard deviation with one fit from paired calibration data." />
+<Card title="Noise models" href="/docs/probabilistic/concepts/noise-models" description="The seventeen distribution families and how to pick one for a sensor." />
+<Card title="Confidence intervals" href="/docs/probabilistic/concepts/confidence-intervals" description="How the Wilson interval is computed and when to reach for Clopper-Pearson." />
+<Card title="What is PrSTL" href="/docs/probabilistic/concepts/what-is-prstl" description="The probabilistic operator and the trajectory distribution it quantifies over." />
+</Cards>
