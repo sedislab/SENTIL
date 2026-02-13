@@ -211,7 +211,12 @@ fn read_trace(path: &str) -> Result<Trace, CliError> {
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
     match extension.as_str() {
-        "" | "csv" | "tsv" | "txt" | "json" | "ndjson" => {
+        "tsv" => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|e| CliError::Input(format!("{path}: {e}"), None))?;
+            trace_from_csv(text.as_bytes(), b'\t')
+        }
+        "" | "csv" | "txt" | "json" | "ndjson" => {
             let text = std::fs::read_to_string(path)
                 .map_err(|e| CliError::Input(format!("{path}: {e}"), None))?;
             trace_from_text(&text)
@@ -269,12 +274,12 @@ fn remap_trace(trace: Trace, map: &[(String, String)]) -> Result<Trace, CliError
 fn trace_from_text(text: &str) -> Result<Trace, CliError> {
     match text.trim_start().chars().next() {
         Some('[') => trace_from_json(text),
-        _ => trace_from_csv(text.as_bytes()),
+        _ => trace_from_csv(text.as_bytes(), b','),
     }
 }
 
-fn trace_from_csv(bytes: &[u8]) -> Result<Trace, CliError> {
-    let mut reader = csv::Reader::from_reader(bytes);
+fn trace_from_csv(bytes: &[u8], delimiter: u8) -> Result<Trace, CliError> {
+    let mut reader = csv::ReaderBuilder::new().delimiter(delimiter).from_reader(bytes);
     let headers = reader
         .headers()
         .map_err(|e| CliError::Input(format!("reading the CSV header: {e}"), None))?

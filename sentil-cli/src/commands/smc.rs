@@ -254,10 +254,15 @@ fn bayes(
         .check_bayesian(trace, lifting, &config)
         .map_err(|e| CliError::Engine(e.to_string()))?;
     let lower_bound = matches!(op, ProbabilityOp::GreaterEqual | ProbabilityOp::Greater);
-    let (decision, samples, met) = match result {
-        BayesResult::Holds { samples, .. } => ("holds", samples, Some(true)),
-        BayesResult::Fails { samples, .. } => ("fails", samples, Some(false)),
-        BayesResult::Inconclusive { samples, .. } => ("inconclusive", samples, None),
+    let (samples, met) = match result {
+        BayesResult::Holds { samples, .. } => (samples, Some(true)),
+        BayesResult::Fails { samples, .. } => (samples, Some(false)),
+        BayesResult::Inconclusive { samples, .. } => (samples, None),
+    };
+    let decision = match met {
+        Some(m) if m == lower_bound => "holds",
+        Some(_) => "fails",
+        None => "inconclusive",
     };
     Ok(Report {
         probability: None,
