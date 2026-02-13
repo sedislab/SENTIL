@@ -37,8 +37,8 @@ In Docker, the whole CPU tier runs offline in one command from the repository ro
 This tier needs a GPU and it covers the GPU rare-event path and the synthesis batching. Check [docker/](../docker/) for the Docker version of the commands. Our results are from running the commands on an NVIDIA A40 GPU.
 
 ```bash
-cargo test -p sentil --features gpu
-cargo run --release -p sentil-benchmarks --features gpu --bin sentil_smc_runner
+cargo test --offline --no-default-features --features synthesis-gpu -- --ignored --test-threads=1
+cargo run --release -p sentil-benchmarks --features gpu --bin sentil_smc_runner -- accuracy
 ```
 
 ## The hardware-bound and the tool-bound tiers

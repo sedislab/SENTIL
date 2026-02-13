@@ -32,7 +32,9 @@ Tier: CPU.
 
 Wilson and Clopper-Pearson reference values. The interval functions return the published values on a known input.
 Command: `cargo test --offline -p sentil --features statistical confidence`.
-Expected: wilson(50, 100, 0.95) = [0.403831, 0.596169], cp(50, 100, 0.95) = [0.39828, 0.60172] (R's binom.test), z(0.95) = 1.95996. Tolerance: 1e-6 for Wilson and z, 1e-3 for Clopper-Pearson. Tier: CPU.
+Expected: wilson(50, 100, 0.95) = [0.403831, 0.596169], cp(50, 100, 0.95) = [0.398321, 0.601679] (R's binom.test), z(0.95) = 1.959964.
+Tolerance: 1e-6 for Wilson and z, 1e-3 for Clopper-Pearson.
+Tier: CPU.
 
 ## Speed: full-signal track, against RTAMT
 
