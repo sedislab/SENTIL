@@ -50,5 +50,5 @@ libdir="$(cd "$DEST/${bundle}/lib" && pwd)"
 echo "Installed $libdir/libsentil.${ext}"
 echo
 echo "Point a binding at it:"
-echo "  export SENTIL_LIB=$libdir/libsentil.${ext}"
-echo "  export SENTIL_LIB_DIR=$libdir"
+echo "  Julia:    export SENTIL_LIB=$libdir/libsentil.${ext}"
+echo "  C++/Java: pass -DSENTIL_LIB_DIR=$libdir to cmake"
