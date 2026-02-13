@@ -157,8 +157,14 @@ Expected: Type I rate at most 0.1, Type II rate at most 0.1. Tolerance: as state
 
 ## Statistical model checking, against UPPAAL-SMC, PRISM, Modest
 
-On the reference model set, `verifyta` segfaults on all five models under the container it was run in, so no UPPAAL-SMC timing is available to compare against; SENTIL completes the same checks. A speedup is quoted only against a model UPPAAL actually finishes. PRISM and Modest have models and scripts but no committed run on this hardware; their expected values are recorded from the reference project rather than measured here.
-Tier: hardware-bound and tool-bound. State the situation plainly rather than a number the runs do not support.
+These are probabilistic model checkers, a different paradigm from SENTIL's trace and system monitoring, so a fair comparison needs one shared model both tools simulate. That model is the Barkai-Leibler circadian CTMC, and the shared property is that the activator reaches 100 within 20 time units, estimated by statistical model checking at 10,000 samples in both.
+
+PRISM runs it cleanly: it estimates the probability at about 0.04 (0.0393 to 0.0438 across runs, half-width about 0.005 at 99 percent) in about 27 seconds. SENTIL simulates the identical CTMC with Gillespie's direct method and estimates the same probability, 0.0378, by direct Monte Carlo in about 1 second, roughly 27 times faster with an agreeing estimate.
+Command: `cargo run --release -p sentil-benchmarks --bin sentil_ctmc_runner` and `PRISM=<prism> bash benchmarks/runners/prism_runner.sh <circadian.nm>`.
+Expected: both near 0.04 within the confidence interval, SENTIL more than an order of magnitude faster. Tolerance: the estimates agree within the intervals; the speedup is machine and load dependent. Tier: CPU and tool-bound. Artifact: `benchmarks/results/sentil_smc_circadian.jsonl`, `prism_smc_circadian.jsonl`.
+
+Modest and UPPAAL do not give a clean run on the provided models. Modest rejects `circadian.modest` at parse time because it declares an action named `tau`, a reserved word. UPPAAL's `verifyta` runs on `circadian.xml` but warns of a general hybrid guard without an urgent channel and returns a degenerate verdict rather than an SMC estimate. Both are reported as they are rather than forced into a number the runs do not support; the model files are the reference project's and are read-only here.
+Tier: tool-bound.
 
 ## GPU acceleration
 
