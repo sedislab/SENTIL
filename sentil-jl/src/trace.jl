@@ -61,9 +61,11 @@ Base.isempty(t::Trace) = ccall((:sentil_trace_is_empty, libsentil[]), Bool, (Ptr
 """The time grid."""
 function times(t::Trace)
     n = Ref{Csize_t}(0)
-    ptr = ccall((:sentil_trace_times, libsentil[]), Ptr{Float64},
-                (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(t), n)
-    return _copy_doubles(ptr, n[])
+    return GC.@preserve t begin
+        ptr = ccall((:sentil_trace_times, libsentil[]), Ptr{Float64},
+                    (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(t), n)
+        _copy_doubles(ptr, n[])
+    end
 end
 
 function variables(t::Trace)
@@ -76,10 +78,12 @@ end
 """The values of a named signal, or `nothing` when the trace carries no such signal."""
 function signal(t::Trace, name::AbstractString)
     n = Ref{Csize_t}(0)
-    ptr = ccall((:sentil_trace_signal, libsentil[]), Ptr{Float64},
-                (Ptr{Cvoid}, Cstring, Ptr{Csize_t}), _ptr(t), name, n)
-    ptr == C_NULL && return nothing
-    return _copy_doubles(ptr, n[])
+    return GC.@preserve t begin
+        ptr = ccall((:sentil_trace_signal, libsentil[]), Ptr{Float64},
+                    (Ptr{Cvoid}, Cstring, Ptr{Csize_t}), _ptr(t), name, n)
+        ptr == C_NULL && return nothing
+        _copy_doubles(ptr, n[])
+    end
 end
 
 function Base.getindex(t::Trace, name::AbstractString)
