@@ -1,0 +1,159 @@
+---
+title: "Interactive: PrSTL and probability"
+description: "Learn the P operator by lifting a noisy reading into an ensemble, estimating the fraction of trajectories that hold, and watching the Wilson interval narrow as N grows."
+---
+
+We look at how to write specifications that ask how probable it is that the true signal holds under some noise.
+
+<Callout type="info">
+The editor below runs SENTIL in Python, in your browser. Change the trace or the formula and press Run, then check the arithmetic against the worked numbers further down. The full playground lives at [/playground](/playground).
+</Callout>
+
+<Playground example="Probabilistic" compact />
+
+## The scenario
+
+A range sensor watches the distance to a leading vehicle, and safety requires that distance stay above three meters. The sensor reads a little above three for the whole run, but it carries Gaussian noise with a standard deviation of 0.2 meters, so any single reading could be off by enough to cross the line either way. The deterministic formula `G (distance > 3)`, read always, looks satisfied on the recorded trace. The question that matters is whether the *true* distance stays safe often enough, given how the sensor behaves.
+
+PrSTL states that requirement directly:
+
+$$
+P_{\geq 0.9}\; G\, (\mathrm{distance} > 3)
+$$
+
+Read it as: with probability at least 0.9, the distance always stays above three. The `P>=0.9` wraps the ordinary STL formula and allows us to request for verdicts in the face of uncertainty.
+
+## What the P operator means
+
+Fix a formula `phi` and an ensemble of traces $\mu$ drawn from the noise. The satisfaction probability is the fraction of that ensemble whose robustness is positive.
+
+$$
+S(\varphi, \mu) = \mu\big(\{\, x : \rho(\varphi, x, 0) > 0 \,\}\big)
+$$
+
+`P>=0.9 (phi)` holds when $S(\varphi, \mu) \geq 0.9$. The four forms `P>=`, `P>`, `P<=`, and `P<` are all allowed. Upper-bound forms with a small threshold read as rarity, for example `P<=0.001` for "a violation happens at most one time in a thousand." At the probabilistic level the robustness collapses to $+\infty$ when the threshold is met and $-\infty$ when it is not, because the distribution either clears the bound or it does not. That is why SENTIL reports the estimated probability and its interval separately from the ordinary robustness.
+
+## From one trace to an ensemble
+
+You never see $\mu$ directly. You have one recorded trace and a noise model, and SENTIL builds the ensemble from them. It draws $N$ samples from the fitted noise, applies each to the observed reading to make one plausible realization of the true signal, evaluates `phi` on every realization, and counts how many hold. The empirical estimate is that fraction:
+
+$$
+\hat{p} = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}\!\left[\rho(\varphi, x_i, 0) > 0\right]
+$$
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="prstl_lesson.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel, SmcConfig
+
+trace = sentil.Trace(list(range(20)), {"distance": [3.4 + 0.02 * i for i in range(20)]})
+
+lifting = LiftingRegistry()
+lifting.register("distance", NoiseModel.gaussian(0.0, 0.2))
+
+phi = Formula.parse("P>=0.9 (G (distance > 3))")
+result = phi.check(trace, lifting, SmcConfig(samples=5000))
+print(f"probability {result.probability:.3f}")
+print(f"interval [{result.interval.lower:.3f}, {result.interval.upper:.3f}]")
+print(f"holds {result.holds}")
+```
+```text
+probability 0.901
+interval [0.893, 0.909]
+holds True
+```
+</Tab>
+<Tab value="Rust">
+```rust title="prstl_lesson.rs"
+use sentil::{Formula, LiftingRegistry, NoiseModel, NoiseInteraction, SmcConfig, Trace};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = Trace::new((0..20).map(f64::from).collect::<Vec<f64>>())?;
+    trace.add_signal("distance", (0..20).map(|i| 3.4 + 0.02 * f64::from(i)).collect::<Vec<f64>>())?;
+
+    let mut lifting = LiftingRegistry::new();
+    lifting.register("distance", NoiseModel::gaussian(0.0, 0.2)?, NoiseInteraction::Additive);
+
+    let phi = Formula::parse("P>=0.9 (G (distance > 3))")?;
+    let result = phi.check(&trace, &lifting, &SmcConfig { samples: 5000, ..Default::default() })?;
+    println!("{:.3} in [{:.3}, {:.3}]", result.probability, result.interval.lower, result.interval.upper);
+    Ok(())
+}
+```
+```text
+0.901 in [0.893, 0.909]
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil smc -f 'P>=0.9 (G (distance > 3))' -t distance.csv \
+  --noise distance=gaussian:0,0.2 --samples 5000
+```
+```text
+smc
+  formula     P>=0.9 (G (distance > 3))
+  algorithm   smc
+  samples     5000
+  satisfied   4507
+  probability 0.901400
+  interval    [0.892826, 0.909358] at 95%
+  verdict     holds
+```
+</Tab>
+</Tabs>
+
+The point estimate `holds` in the result checks whether $\hat{p}$ alone meets the threshold. That is not yet a defensible verdict, because $\hat{p}$ is an estimate with sampling error. The interval is what turns it into one.
+
+## The Wilson interval, and why N matters
+
+SENTIL pairs $\hat{p}$ with a Wilson score interval, its default. For $\hat{p}$ successes in $N$ draws at confidence $1 - \alpha$,
+
+$$
+\frac{1}{1 + z^2/N}\left( \hat{p} + \frac{z^2}{2N} \pm z\sqrt{\frac{\hat{p}(1-\hat{p})}{N} + \frac{z^2}{4N^2}} \right), \qquad z = \Phi^{-1}\!\left(1 - \tfrac{\alpha}{2}\right)
+$$
+
+At 95 percent confidence $z = 1.959964$. The width shrinks like $1/\sqrt{N}$, so the estimate pins down slowly but predictably. Rerun the check above with only the sample count changed; every row is a real run from the default seed:
+
+| $N$ | $\hat{p}$ | interval | width | `holds` | interval vs 0.9 |
+|---|---|---|---|---|---|
+| 100 | 0.8900 | [0.8137, 0.9375] | 0.1238 | False | straddles, undecided |
+| 500 | 0.8820 | [0.8508, 0.9074] | 0.0566 | False | straddles, undecided |
+| 1000 | 0.8900 | [0.8691, 0.9079] | 0.0388 | False | straddles, undecided |
+| 5000 | 0.9014 | [0.8928, 0.9094] | 0.0165 | True | straddles, undecided |
+| 20000 | 0.9082 | [0.9041, 0.9121] | 0.0080 | True | clears, supported |
+
+Watch the `holds` flag: it reads the point estimate alone, and it flips from False to True between one and five thousand samples while the interval straddles the threshold the whole way. Up to $N = 5000$ the evidence cannot separate a true probability of 0.89 from one of 0.91, so the answer is not yes or no, it is not yet. Twenty thousand samples pin the whole interval above 0.9 and the verdict becomes one you can act on. The estimate itself is converging too: as $N$ grows, $\hat{p}$ settles toward the true satisfaction probability, and fifty times the samples cut the interval width by about a factor of seven, the $\sqrt{50} \approx 7$ the rate predicts.
+
+For probabilities close to 0 or 1, where the Wilson interval can undercover a little, [Clopper-Pearson](/docs/probabilistic/concepts/confidence-intervals) trades some width for coverage that never drops below the stated level.
+
+<Exercise
+  wilson={{ successes: 45, trials: 50, level: 0.95, end: 'lo' }}
+  hint="z is 1.959964 at 95 percent confidence. With N = 50 the two correction terms are no longer small next to p-hat, and they pull the interval down."
+  explanation="The interval is [0.786, 0.957] around a point estimate of 0.9. Fifty samples put its lower end almost twelve points under the estimate, so a run this short cannot support a claim of 0.9 however good the point estimate looks."
+>
+
+A run gets 45 of its 50 samples holding. Give the lower end of the 95 percent Wilson interval, to three decimals.
+
+</Exercise>
+
+## Choosing the sample budget up front
+
+The interval characterizes uncertainty after the run. Sometimes you want to fix $N$ beforehand so the interval lands within a tolerance. The Chernoff-Hoeffding bound sizes it without any distributional assumption:
+
+$$
+N \geq \left\lceil \frac{\ln(2/\delta)}{2\,\varepsilon^2} \right\rceil
+$$
+
+samples put $\hat{p}$ within $\varepsilon$ of the truth with confidence $1 - \delta$. For $\varepsilon = 0.1$ and $\delta = 0.05$ that is 185 samples. Tightening to $\varepsilon = 0.01$ at 95 percent confidence, the Wilson-based sizing asks for 9604. SENTIL exposes both as `chernoff_hoeffding_samples(eps, delta)` and `wilson_samples(eps, level)`.
+
+When you only need to know which side of the threshold the probability sits on, fixed-budget sampling is wasteful. The [sequential probability ratio test](/docs/probabilistic/concepts/sprt) draws one sample at a time and stops as soon as the evidence is decisive, often with far fewer draws.
+
+## Where to go next
+
+<Cards>
+<Card title="What is PrSTL" href="/docs/probabilistic/concepts/what-is-prstl" description="The formalism, the P operator, and where probabilistic monitoring fits." />
+<Card title="Confidence intervals" href="/docs/probabilistic/concepts/confidence-intervals" description="Wilson, Clopper-Pearson, Jeffreys, and Agresti-Coull, and when to pick each." />
+<Card title="Noise models" href="/docs/probabilistic/concepts/noise-models" description="How to describe sensor uncertainty so the monitor can build the ensemble." />
+<Card title="Your first probabilistic property" href="/docs/start/first-prstl" description="Run a full PrSTL check end to end on a trace of your own." />
+</Cards>

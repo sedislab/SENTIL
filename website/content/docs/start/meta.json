@@ -1,1 +1,1 @@
-{ "root": true, "title": "Get started", "icon": "Rocket", "pages": ["---[Rocket]Get started---", "index", "install", "first-monitor", "---[GraduationCap]Learn interactively---", "interactive-stl"] }
+{ "root": true, "title": "Get started", "icon": "Rocket", "pages": ["---[Rocket]Get started---", "index", "install", "first-monitor", "---[GraduationCap]Learn interactively---", "interactive-stl", "interactive-prstl"] }
