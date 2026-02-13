@@ -1813,7 +1813,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         need(nrhs, 2);
         sentil_bounds_destroy(get_handle<sentil_bounds_t>(prhs[1]));
     } else if (cmd == "linear_model_create") {
-        need(nrhs, 8);
+        need(nrhs, 9);
         size_t an = 0, bn = 0, xn = 0;
         const double* a = get_doubles(prhs[1], &an);
         size_t n = static_cast<size_t>(get_scalar(prhs[2]));

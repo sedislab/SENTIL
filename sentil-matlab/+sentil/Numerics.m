@@ -15,8 +15,7 @@ classdef Numerics
         end
 
         function e = symmetric_eigen(M)
-            %SYMMETRIC_EIGEN The eigendecomposition of a symmetric matrix, returning a
-            %   struct with the eigenvalues and the eigenvectors as columns.
+            %SYMMETRIC_EIGEN The eigendecomposition of a symmetric matrix.
             n = size(M, 1);
             out = sentil_mex('symmetric_eigen', M.', n);
             e = struct('values', out.values, 'vectors', reshape(out.vectors, n, n).');
