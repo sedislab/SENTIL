@@ -1065,7 +1065,10 @@ pub extern "C" fn sentil_formula_smooth_value_and_gradient(
         match formula.smooth_value_and_gradient(trace, config) {
             Ok((value, gradients)) => {
                 unsafe { *out_value = value };
-                for (v, gradient) in gradients.values().take(n_vars).enumerate() {
+                for (v, name) in formula.variables().iter().take(n_vars).enumerate() {
+                    let Some(gradient) = gradients.get(name) else {
+                        continue;
+                    };
                     let count = gradient.len().min(n_samples);
                     unsafe {
                         std::ptr::copy_nonoverlapping(
