@@ -27,11 +27,12 @@ if [ -n "$gen" ]; then
 fi
 
 if [ "$kind" = "full" ]; then
-  mkdir -p "$dest/lib/pkgconfig" "$dest/include"
+  mkdir -p "$dest/lib/pkgconfig" "$dest/lib/cmake/Sentil" "$dest/include"
   cp "$out/libsentil.so" "$dest/lib/"
   cp "$out/libsentil.a" "$dest/lib/"
   cp sentil-ffi/include/sentil.h "$dest/include/"
   sed 's|@PREFIX@|/usr/local|' sentil-ffi/sentil.pc.in > "$dest/lib/pkgconfig/sentil.pc"
+  cp sentil-ffi/cmake/SentilConfig.cmake.in "$dest/lib/cmake/Sentil/SentilConfig.cmake"
 fi
 
 cp LICENSE-MIT LICENSE-APACHE "$dest/"

@@ -2,7 +2,7 @@ import os
 
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
-from conan.tools.files import copy, get
+from conan.tools.files import copy, download, get
 
 
 class SentilConan(ConanFile):
@@ -36,7 +36,10 @@ class SentilConan(ConanFile):
         get(self, **self.conan_data["sources"][self.version][self._platform()], strip_root=True)
 
     def package(self):
-        copy(self, "LICENSE*", self.build_folder, os.path.join(self.package_folder, "licenses"))
+        licenses = os.path.join(self.package_folder, "licenses")
+        base = f"https://raw.githubusercontent.com/sedislab/SENTIL/v{self.version}"
+        for name in ("LICENSE-MIT", "LICENSE-APACHE"):
+            download(self, f"{base}/{name}", os.path.join(licenses, name))
         copy(self, "*.h", os.path.join(self.build_folder, "include"),
              os.path.join(self.package_folder, "include"))
         copy(self, "*.hpp", os.path.join(self.build_folder, "include"),

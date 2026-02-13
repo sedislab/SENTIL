@@ -45,7 +45,7 @@ jobs:
           fill macos-x86_64   REPLACE_WITH_MACOS_X86_64_SHA256
           fill macos-arm64    REPLACE_WITH_MACOS_ARM64_SHA256
           fill windows-x86_64 REPLACE_WITH_WINDOWS_X86_64_SHA256
-          sed -i "s/1\\.0\\.0/${version}/g" "$data" packaging/conan/sentil/conanfile.py || true
+          sed -i "s/0\\.3\\.0/${VERSION}/g" "$data" packaging/conan/sentil/conanfile.py
           if grep -q REPLACE_WITH "$data"; then
             echo "a checksum token was left unfilled" >&2
             exit 1
