@@ -104,7 +104,8 @@ pub unsafe extern "C" fn sentil_embedded_solve_qp(
     else {
         return Status::NullPointer;
     };
-    match solve_qp(&p, q, &g, h, 200) {
+    const QP_DUAL_ITERS: usize = 200;
+    match solve_qp(&p, q, &g, h, QP_DUAL_ITERS) {
         Ok(x) => {
             write_out(out, &x);
             Status::Ok

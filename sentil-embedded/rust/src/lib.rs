@@ -110,9 +110,9 @@ pub extern "C" fn sentil_embedded_version(major: *mut u32, minor: *mut u32, patc
             unsafe { *p = v };
         }
     };
-    write(major, 1);
-    write(minor, 0);
-    write(patch, 0);
+    write(major, env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0));
+    write(minor, env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0));
+    write(patch, env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0));
 }
 
 use sentil::StreamMonitor;
