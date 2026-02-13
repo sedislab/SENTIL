@@ -6,7 +6,7 @@ classdef SprtConfig
         p1 (1, 1) double
         alpha (1, 1) double = 0.05
         beta (1, 1) double = 0.05
-        max_samples (1, 1) double = 10000
+        max_samples (1, 1) double = 100000
         seed (1, 1) double = 42
     end
 

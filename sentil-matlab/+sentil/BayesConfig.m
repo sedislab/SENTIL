@@ -4,7 +4,7 @@ classdef BayesConfig
     properties
         threshold (1, 1) double
         bayes_factor (1, 1) double = 100
-        max_samples (1, 1) double = 10000
+        max_samples (1, 1) double = 100000
         seed (1, 1) double = 42
     end
 
