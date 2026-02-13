@@ -511,6 +511,10 @@ void batch_trampoline(void* userdata, const double* points, size_t population, s
         for (size_t i = 0; i < population; ++i) {
             out_scores[i] = worst;
         }
+    } else if (scores == nullptr) {  // a callback that returns null rather than throwing
+        for (size_t i = 0; i < population; ++i) {
+            out_scores[i] = worst;
+        }
     } else {
         jsize length = env->GetArrayLength(scores);
         jsize count = length < static_cast<jsize>(population) ? length
@@ -547,6 +551,12 @@ struct SystemBox {
 };
 
 void fill_state(JNIEnv* env, jdoubleArray result, double* out_state, size_t n) {
+    if (result == nullptr) {  // a callback that returns null rather than throwing
+        for (size_t i = 0; i < n; ++i) {
+            out_state[i] = 0.0;
+        }
+        return;
+    }
     jsize length = env->GetArrayLength(result);
     jsize count = length < static_cast<jsize>(n) ? length : static_cast<jsize>(n);
     env->GetDoubleArrayRegion(result, 0, count, out_state);
@@ -715,6 +725,12 @@ struct AmsBox {
 
 void fill_bytes(JNIEnv* env, jbyteArray result, void* out_state, size_t size) {
     jbyte* bytes = static_cast<jbyte*>(out_state);
+    if (result == nullptr) {  // a callback that returns null rather than throwing
+        for (size_t i = 0; i < size; ++i) {
+            bytes[i] = 0;
+        }
+        return;
+    }
     jsize length = env->GetArrayLength(result);
     jsize count = length < static_cast<jsize>(size) ? length : static_cast<jsize>(size);
     env->GetByteArrayRegion(result, 0, count, bytes);
