@@ -3,6 +3,9 @@
 *.mexw64
 *.o
 *.asv
+libsentil.so
+libsentil.dylib
+libsentil.dll
 *.mltbx
 slprj/
 *.slx
