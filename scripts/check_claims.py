@@ -45,7 +45,75 @@ def dense_multiple():
     dense = {r["size"]: r["timing"]["mean_ms"] for r in load(os.path.join(RESULTS, "sentil_dense.jsonl"))}
     disc = length_sweep(os.path.join(RESULTS, "sentil_scalability.jsonl"), "full_signal")
     mults = [dense[s] / disc[s] for s in sorted(set(dense) & set(disc))]
-    check("dense within a single-digit multiple of discrete", max(mults) <= 20, f"max {max(mults):.1f}x (dense-time interpolation cost)")
+    check("dense within about 12x of discrete", max(mults) <= 13, f"max {max(mults):.1f}x (dense-time interpolation cost)")
+
+def ledger_tables_from_doc():
+    tables = {}
+    header = None
+    with open(os.path.join(ROOT, "docs", "CLAIMS.md"), encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith("|"):
+                header = None
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if cells[0] == "samples":
+                header = tuple(cells[1:])
+                tables.setdefault(header, {})
+            elif header and cells[0].replace(",", "").isdigit():
+                tables[header][int(cells[0].replace(",", ""))] = cells[1:]
+    return tables
+
+def printed(cell):
+    text = cell.strip()
+    text = text[:-2].strip() if text.endswith(" ms") else text[:-1] if text.endswith("x") else None
+    if text is None:
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    decimals = len(text.split(".")[1]) if "." in text else 0
+    return value, 0.5 * 10 ** -decimals
+
+def ledger_tables():
+    doc = ledger_tables_from_doc()
+    full = length_sweep(os.path.join(RESULTS, "sentil_scalability.jsonl"), "full_signal")
+    rtamt = length_sweep(os.path.join(RESULTS, "rtamt_scalability.jsonl"), "full_signal")
+    mon = length_sweep(os.path.join(RESULTS, "sentil_scalability.jsonl"), "monitoring")
+    dense = {r["size"]: r["timing"]["mean_ms"] for r in load(os.path.join(RESULTS, "sentil_dense.jsonl"))}
+
+    expected = {
+        ("SENTIL", "RTAMT", "speedup"):
+            lambda n: [full[n], rtamt[n], rtamt[n] / full[n]],
+        ("monitoring", "full signal"):
+            lambda n: [mon[n], full[n]],
+        ("dense full signal", "discrete full signal"):
+            lambda n: [dense[n], full[n]],
+    }
+
+    stale = []
+    checked = 0
+    for header, rows in doc.items():
+        build = expected.get(header)
+        if build is None:
+            continue
+        for size, cells in sorted(rows.items()):
+            try:
+                actuals = build(size)
+            except KeyError:
+                continue
+            parsed = [printed(c) for c in cells]
+            if any(p is None for p in parsed):
+                continue
+            for cell, (value, tolerance), actual in zip(cells, parsed, actuals):
+                checked += 1
+                if abs(value - actual) > tolerance:
+                    stale.append(f"{size}: printed {cell}, artifact {actual:.4g}")
+    check(
+        "the ledger's tables match the artifacts they cite",
+        not stale,
+        f"{checked} printed values agree" if not stale else "; ".join(stale),
+    )
 
 def smc_accuracy():
     records = load(os.path.join(RESULTS, "sentil_smc_cpu.jsonl")) + load(os.path.join(RESULTS, "sentil_smc_gpu.jsonl"))
@@ -68,25 +136,33 @@ def particle_convergence():
     by_event = {}
     for r in records:
         by_event.setdefault(r["event"], {}).setdefault(r["particles"], []).append(r["rel_error"])
-    worst = 0.0
-    for event, by_count in by_event.items():
-        top = max(by_count)
-        errs = by_count[top]
-        mean = sum(errs) / len(errs)
-        worst = max(worst, mean)
-    check("rare-event estimate converges with particles", worst <= 0.2, f"worst mean relative error at the largest particle count is {worst:.3f} (target 0.2)")
+
+    def mean_err(by_count, count):
+        errs = by_count[count]
+        return sum(errs) / len(errs)
+
+    worst_top = 0.0
+    decreases = True
+    for by_count in by_event.values():
+        top, bottom = max(by_count), min(by_count)
+        worst_top = max(worst_top, mean_err(by_count, top))
+        decreases = decreases and mean_err(by_count, top) < mean_err(by_count, bottom)
+    check("rare-event estimate sharpens with particles", worst_top <= 0.15 and decreases,
+          f"error at the largest count is {worst_top:.3f} (target 0.15) and below the smallest-count error")
 
 def glucose():
     report = json.load(open(os.path.join(EXPERIMENTS, "glucose_control", "results", "glucose.json"), encoding="utf-8"))
     missed = report["controllers"]["missed_lunch_bolus"]["specifications"]["euglycemia"]["robustness"]
     tuned = report["controllers"]["tuned"]["specifications"]["euglycemia"]["robustness"]
-    check("glucose euglycemia separates the controllers", missed < 0 < tuned, f"missed-bolus {missed}, tuned {tuned}")
+    # the missed bolus violates euglycemia badly while the tuned controller holds it
+    ok = missed < -50.0 < 0 < tuned and abs(missed - (-105.0)) <= 6.0 and abs(tuned - 8.0) <= 2.5
+    check("glucose euglycemia separates the controllers", ok, f"missed-bolus {missed}, tuned {tuned}")
 
 def main():
     for stage in (rtamt_speedup, monitoring_flat, dense_multiple, smc_accuracy, synthesis, particle_convergence, circadian, glucose):
         try:
             stage()
-        except (FileNotFoundError, KeyError) as err:
+        except (FileNotFoundError, KeyError, ValueError, ZeroDivisionError, TypeError) as err:
             check(stage.__name__, False, f"artifact missing or malformed: {err}")
     if failures:
         print(f"\n{len(failures)} claim(s) out of tolerance: {', '.join(failures)}")
