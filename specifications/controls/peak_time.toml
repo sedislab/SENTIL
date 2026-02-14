@@ -14,7 +14,6 @@ references = [
 [variables]
 output      = { description = "Measured plant output" }
 output_rate = { description = "Time derivative of the output" }
-reference = { description = "Step setpoint" }
 
 [parameters]
 t_p       = { type = "float", default = 3.0, unit = "seconds", description = "Maximum allowable peak time" }

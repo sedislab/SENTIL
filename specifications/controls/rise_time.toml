@@ -12,7 +12,6 @@ references = [
 
 [variables]
 output    = { description = "Measured plant output" }
-reference = { description = "Step setpoint" }
 
 [parameters]
 t_r           = { type = "float", default = 2.0, unit = "seconds", description = "Maximum allowable rise time" }
