@@ -23,7 +23,7 @@ class SafetyPlannerSubscriber : public apollo::cyber::Component<> {
       return;
     }
     for (const FormulaResult& result : status.results()) {
-      if (result.has_prob_result() && result.prob_result().interval().upper() < kProbabilityFloor) {
+      if (result.has_prob_result() && result.prob_result().interval().lower() < kProbabilityFloor) {
         AWARN << "sentil: formula " << result.id() << " probability interval below threshold";
         EngageFallback(status);
         return;
