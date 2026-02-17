@@ -28,7 +28,7 @@ name = "synthesis"
 required-features = ["synthesis"]
 
 [features]
-default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "parquet", "arrow", "sqlite"]
+default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "sqlite"]
 
 # On by default. Drop it (--no-default-features) for a no_std STL monitor that
 # does its f64 math through libm.
@@ -49,9 +49,9 @@ synthesis = []
 # Spread Monte Carlo across cores with Rayon. Same answer as one thread; each
 # sample is seeded independently.
 parallel = ["statistical", "dep:rayon"]
-# Reading traces from files: CSV, TSV, classic MATLAB .mat, and file-path loading.
-# Parquet, Arrow, and SQLite ship in the default build too; HDF5 and MATLAB v7.3
-# (which need a system library) and MCAP stay opt-in.
+
+# Read traces from CSV, TSV, and classic MATLAB .mat files. sqlite is on by
+# default too; parquet, arrow, hdf5, and mcap stay opt-in.
 ingest = ["std", "dep:csv", "dep:matfile"]
 
 # The premade PrSTL specs: parameterized templates in embedded TOML/YAML/JSON.

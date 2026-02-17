@@ -53,8 +53,9 @@ The default build carries the monitor, the statistical layer, synthesis, the spe
 | `specs` | yes | the premade PrSTL specifications library |
 | `ingest` | yes | reading traces from CSV, TSV, and MATLAB files |
 | `parallel` | yes | spreading Monte Carlo across cores with Rayon |
-| `parquet`, `arrow`, `sqlite` | yes | reading traces from those formats |
+| `sqlite` | yes | reading traces from a SQLite table |
 | `gpu` | no | the WebGPU rare-event and synthesis batching path |
+| `parquet`, `arrow` | no | reading Parquet and Arrow/Feather traces |
 | `hdf5`, `mcap` | no | ingest formats that need a system library |
 
 A bare STL monitor, with none of the statistical or synthesis machinery:
