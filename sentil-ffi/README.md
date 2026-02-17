@@ -86,6 +86,11 @@ int main(void) {
     sentil_trace_add_signal(trace, "speed", speed, 4);
 
     sentil_monitor_t *monitor = sentil_monitor_parse("always (speed > 5)", NULL);
+    if (monitor == NULL) {
+        fprintf(stderr, "parse error: %s\n", sentil_get_last_error());
+        sentil_trace_destroy(trace);
+        return 1;
+    }
     double robustness = 0.0;
     if (sentil_monitor_robustness(monitor, trace, &robustness) == SENTIL_OK) {
         printf("robustness %.3f, %s\n", robustness, robustness >= 0 ? "holds" : "fails");
