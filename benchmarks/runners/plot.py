@@ -30,44 +30,70 @@ def length_series(records, tool, lang, question, benchmark="scalability/length")
     pts = sorted((r["size"], r["timing"]["mean_ms"]) for r in rows)
     return [p[0] for p in pts], [p[1] for p in pts]
 
-def discrete_offline(records):
-    sx, sy = length_series(records, "sentil", "full_signal")
-    rx, ry = length_series(records, "rtamt", "full_signal")
-    mx, my = length_series(records, "moonlight", "full_signal")
-    if not sx or not rx:
-        return
-    fig, ax = plt.subplots()
-    ax.plot(rx, ry, color=style.TOOL["rtamt"], marker="s", label="RTAMT")
-    if mx:
-        ax.plot(mx, my, color=style.TOOL["moonlight"], marker="^", label="MoonLight")
-    style.hero_line(ax, sx, sy, "SENTIL")
-    shared = sorted(set(sx) & set(rx))[-1]
-    style.annotate_speedup(ax, shared, dict(zip(sx, sy))[shared], dict(zip(rx, ry))[shared],
-                           f"{dict(zip(rx, ry))[shared] / dict(zip(sx, sy))[shared]:.0f}x")
-    ax.set_xscale("log"); ax.set_yscale("log")
+def _series(records, tool, lang, question, benchmark="scalability/length"):
+    return {r["size"]: r["timing"]["mean_ms"] for r in records
+            if r.get("tool") == tool and r.get("language") == lang
+            and r.get("benchmark") == benchmark and r.get("question") == question}
+
+def _fmt_ms(v):
+    if v >= 100:
+        return f"{v:,.0f}"
+    if v >= 1:
+        return f"{v:.1f}"
+    return f"{v:.3f}".rstrip("0").rstrip(".")
+
+def _human_size(n):
+    if n >= 1_000_000:
+        return f"{n // 1_000_000}M"
+    if n >= 1000:
+        return f"{n // 1000}k"
+    return str(int(n))
+
+def bar_comparison(specs, sizes, ylabel, title, fname):
+    # specs is [(label, {size: ms}, color)]
+    fig, ax = plt.subplots(figsize=(8.6, 5.0))
+    m = len(specs)
+    width = 0.82 / m
+    top = 0.0
+    for i, (label, data, color) in enumerate(specs):
+        xs = [j + i * width for j in range(len(sizes))]
+        vals = [data.get(s, 0.0) for s in sizes]
+        top = max(top, max(vals))
+        rects = ax.bar(xs, vals, width=width, label=label, color=color, zorder=3)
+        for rect, v in zip(rects, vals):
+            if v > 0:
+                ax.text(rect.get_x() + rect.get_width() / 2, v * 1.35, _fmt_ms(v),
+                        ha="center", va="bottom", fontsize=8, rotation=90, color=style.INK)
+    ax.set_yscale("log")
+    ax.set_ylim(top=top * 8)
+    ax.set_xticks([j + width * (m - 1) / 2 for j in range(len(sizes))])
+    ax.set_xticklabels([_human_size(s) for s in sizes])
     ax.set_xlabel("trace length (samples)")
-    ax.set_ylabel("time for the whole robustness signal (ms)")
-    ax.set_title("Offline discrete STL: SENTIL vs RTAMT and MoonLight")
-    ax.legend(loc="upper left")
-    save(fig, "discrete_offline.png")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend(loc="upper left", ncol=m)
+    save(fig, fname)
+
+def discrete_offline(records):
+    s, rt = _series(records, "sentil", "full_signal"), _series(records, "rtamt", "full_signal")
+    ml = _series(records, "moonlight", "full_signal")
+    if not s or not rt:
+        return
+    sizes = sorted(set(s) & set(rt))
+    specs = [("SENTIL", s, style.TOOL["sentil"]), ("RTAMT", rt, style.TOOL["rtamt"])]
+    if ml:
+        specs.append(("MoonLight", ml, style.TOOL["moonlight"]))
+    bar_comparison(specs, sizes, "milliseconds to score the whole signal (lower is faster)",
+                   "Offline discrete STL: SENTIL vs RTAMT and MoonLight", "discrete_offline.png")
 
 def dense_offline(records):
-    sx, sy = length_series(records, "sentil", "monitoring")
-    bx, by = length_series(records, "breach", "monitoring")
-    if not sx or not bx:
+    s, br = _series(records, "sentil", "monitoring"), _series(records, "breach", "monitoring")
+    if not s or not br:
         return
-    fig, ax = plt.subplots()
-    ax.plot(bx, by, color=style.TOOL["breach"], marker="s", label="Breach (dense-time)")
-    style.hero_line(ax, sx, sy, "SENTIL")
-    shared = sorted(set(sx) & set(bx))[-1]
-    style.annotate_speedup(ax, shared, dict(zip(sx, sy))[shared], dict(zip(bx, by))[shared],
-                           f"{dict(zip(bx, by))[shared] / dict(zip(sx, sy))[shared]:.0f}x")
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("trace length (samples)")
-    ax.set_ylabel("time to answer the monitoring query (ms)")
-    ax.set_title("Dense-time monitoring: SENTIL vs Breach")
-    ax.legend(loc="center left")
-    save(fig, "dense_offline.png")
+    sizes = sorted(set(s) & set(br))
+    bar_comparison([("SENTIL", s, style.TOOL["sentil"]), ("Breach", br, style.TOOL["breach"])],
+                   sizes, "milliseconds to answer the monitoring query (lower is faster)",
+                   "Dense-time monitoring: SENTIL vs Breach", "dense_offline.png")
 
 def dense_cost(records):
     dense = sorted((r["size"], r["timing"]["mean_ms"]) for r in records if r.get("benchmark") == "dense/length")
@@ -192,55 +218,18 @@ def smc_circadian(records):
     p = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "prism"), None)
     if not s or not p:
         return
-    fig, ax = plt.subplots(figsize=(5.6, 4.6))
-    tools, times, probs = ["PRISM", "SENTIL"], [p["time_ms"], s["time_ms"]], [p["probability"], s["probability"]]
-    bars = ax.bar(tools, times, color=[style.TOOL["prism"], style.TOOL["sentil"]], width=0.52)
-    ax.set_yscale("log")
-    ax.set_ylabel("time for 10,000 samples (ms)")
-    ax.set_title("SMC on the circadian CTMC, same model and property")
-    for b, t, pr in zip(bars, times, probs):
-        ax.text(b.get_x() + b.get_width() / 2, t * 1.15, f"P = {pr:.3f}\n{t:.0f} ms", ha="center", va="bottom", fontsize=9.5, color=style.INK)
-    ax.set_ylim(top=max(times) * 3)
+    fig, ax = plt.subplots(figsize=(5.8, 4.8))
+    tools = ["SENTIL", "PRISM"]
+    secs = [s["time_ms"] / 1000.0, p["time_ms"] / 1000.0]
+    probs = [s["probability"], p["probability"]]
+    rects = ax.bar(tools, secs, color=[style.TOOL["sentil"], style.TOOL["prism"]], width=0.5, zorder=3)
+    ax.set_ylabel("seconds for 10,000 samples (lower is faster)")
+    ax.set_title("Statistical model checking the circadian CTMC")
+    ax.set_ylim(top=max(secs) * 1.25)
+    for rect, sec, pr in zip(rects, secs, probs):
+        ax.text(rect.get_x() + rect.get_width() / 2, sec + max(secs) * 0.02,
+                f"{sec:.1f} s\nP = {pr:.3f}", ha="center", va="bottom", fontsize=10, color=style.INK)
     save(fig, "smc_circadian.png")
-
-def comparison_summary(records):
-    # One picture of SENTIL against every baseline that runs, each at its largest common
-    # size. The comparisons answer different questions, so each bar names its own.
-    def series(tool, q, bench="scalability/length"):
-        return {r["size"]: r["timing"]["mean_ms"] for r in records
-                if r.get("tool") == tool and r.get("benchmark") == bench and r.get("question") == q}
-    s_full, s_mon = series("sentil", "full_signal"), series("sentil", "monitoring")
-    bars = []
-    for tool, base, label in [
-        ("rtamt", series("rtamt", "full_signal"), "RTAMT\ndiscrete, whole signal"),
-        ("moonlight", series("moonlight", "full_signal"), "MoonLight\ndiscrete, whole signal"),
-        ("breach", series("breach", "monitoring"), "Breach\ndense monitoring"),
-    ]:
-        shared = sorted(set(s_full if "signal" in label else s_mon) & set(base))
-        if not shared:
-            continue
-        n = shared[-1]
-        ref = s_full[n] if "signal" in label else s_mon[n]
-        bars.append((label, base[n] / ref, style.TOOL[tool]))
-    sc = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "sentil"), None)
-    pr = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "prism"), None)
-    if sc and pr:
-        bars.append(("PRISM\nstatistical model checking", pr["time_ms"] / sc["time_ms"], style.TOOL["prism"]))
-    if not bars:
-        return
-    bars.sort(key=lambda b: b[1])
-    fig, ax = plt.subplots(figsize=(7.6, 4.8))
-    ys = range(len(bars))
-    ax.barh(list(ys), [b[1] for b in bars], color=[b[2] for b in bars], height=0.62)
-    ax.set_yticks(list(ys))
-    ax.set_yticklabels([b[0] for b in bars])
-    ax.set_xscale("log")
-    ax.set_xlabel("times faster than the baseline (log scale)")
-    ax.set_title("SENTIL against every baseline that runs")
-    for y, b in zip(ys, bars):
-        ax.text(b[1] * 1.1, y, f"{b[1]:.0f}x", va="center", ha="left", fontsize=10, fontweight="semibold", color=style.INK)
-    ax.set_xlim(right=max(b[1] for b in bars) * 2.2)
-    save(fig, "comparison_summary.png")
 
 def synthesis(records):
     rows = [r for r in records if "mode" in r]
@@ -263,8 +252,7 @@ def main():
         print("no results found under", RESULTS)
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online, scaling,
-                   memory, smc_throughput, smc_accuracy, smc_circadian, comparison_summary,
-                   particles, synthesis):
+                   memory, smc_throughput, smc_accuracy, smc_circadian, particles, synthesis):
         figure(records)
 
 if __name__ == "__main__":
