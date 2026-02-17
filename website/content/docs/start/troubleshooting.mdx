@@ -1,0 +1,85 @@
+---
+title: "Troubleshooting"
+description: "The problems a SENTIL run tends to hit, and what to do about each one."
+---
+
+We look at the various errors that tends to surface when you run SENTIL.
+
+## Identifying error locations
+
+A malformed formula raises a `ParseError` in Python, `Error::Parse` in Rust, and the same message everywhere else, with a 1-based line and column:
+
+```text
+parse error at line 1, column 11: expected a value or `(`, found `>`
+```
+
+The column is where the parser stopped, so read the formula up to that point. The usual causes are a doubled comparison (`>>` for `>`), an unbalanced parenthesis, or a misspelled keyword. Interval mistakes get their own message:
+
+```text
+parse error at line 1, column 2: interval lower bound 2 is greater than upper bound 1
+```
+
+The [grammar reference](/docs/reference/language/grammar) has every token the parser accepts, and [parse errors](/docs/reference/language/parse-errors) catalogs the diagnostics.
+
+## pip tried to compile and failed
+
+A normal `pip install sentil` downloads a prebuilt wheel that already contains the compiled engine, so no toolchain is involved. If pip instead starts compiling and fails, there is no wheel for your exact platform and Python version, and pip fell back to building from source. To solve this, install a Rust toolchain from [rustup.rs](https://rustup.rs) and retry, or install onto a platform and Python version that has a wheel. SENTIL needs Python 3.8 or newer.
+
+## The formula uses a variable the trace does not have
+
+Evaluating a formula against a variable with no signal raises a `SemanticError` in Python and returns `Error::UnknownVariable` in Rust:
+
+```text
+no value available for variable `speed`; add a signal named `speed` to the trace,
+or include it in the streaming update
+```
+
+The formula read a variable name but the data didn't carry that variable. Add a signal by that name to the trace, or, when the column exists under a different header, bind it. On the CLI that binding is `--map speed=velocity_mps`; the [recorded-trace page](/docs/start/recorded-trace) covers it. The name in the formula and the name in the data have to agree.
+
+## Trace times must strictly increase
+
+A trace whose timestamps do not move strictly forward is rejected as it is built:
+
+```text
+trace times must strictly increase, but time 3.0 does not follow 3.0
+```
+
+SENTIL treats time as strictly increasing, so a repeated or backward timestamp is an error rather than something to guess around. Sort the rows by time and drop or merge duplicate timestamps before loading. A record logged at coarse resolution can collapse two samples onto the same instant so rebase or renumber those so each is distinct.
+
+## The formula parses but is not probabilistic
+
+Calling the statistical checker on a formula with no probabilistic operator raises a `SemanticError`, from `Error::NotProbabilistic`:
+
+```text
+statistical checking needs a formula wrapped in the probabilistic operator `P`
+```
+
+The statistical layer decides a probability against a threshold, and a plain STL formula gives it no threshold to decide against. Wrap the property in `P`, for example `P>=0.95 (G[0,10] (gap > 5))`, then run `smc`. A bare `G[0,10] (gap > 5)` is a deterministic formula so, check it with `check` or `robustness` instead.
+
+## SPRT does not terminate
+
+The sequential probability ratio test decides between two hypotheses separated by an indifference region `[p0, p1]`. When the true satisfaction probability sits inside or right at the edge of that region, the test has almost nothing to distinguish and can draw sample after sample without crossing either boundary. Widen the indifference region so the two hypotheses are further apart, or cap the sample count so an undecided run returns inconclusive rather than running on.
+
+## The Wilson interval is wider than you want
+
+A confidence interval narrows as $1/\sqrt{N}$ in the sample count, so halving its width takes four times the samples. If the interval that came back is too wide to act on, raise the sample budget and rerun. Near a probability of 0 or 1, the interval stays wider at a given sample count because the binomial loses symmetry there. The [Clopper-Pearson interval](/docs/reference/methods/statistical-methods) gives conservative coverage in those regimes when you need a guaranteed bound over a tight one.
+
+## The native library does not load
+
+The Python, Java, and Julia packages carry the compiled engine and load it themselves, so this only comes up when you built the C or C++ path from source. The linker finds the library through `-lsentil`, which needs `libsentil` on the library search path. At runtime, point the loader at directory that holds it: `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on macOS, or `PATH` for `sentil.dll` on Windows. The Julia binding also reads `SENTIL_LIB` for an explicit path to the shared library when it is not on the default search path. `pkg-config --libs sentil` prints the link flags, and `find_package(Sentil CONFIG)` supplies them to CMake.
+
+## pkg-config cannot find sentil
+
+```text
+Package sentil was not found in the pkg-config search path.
+```
+
+The `sentil.pc` file is not in a directory pkg-config searches. The registry install puts it there so a from-source build or a hand-installed archive may not place it there. Point `PKG_CONFIG_PATH` at the directory holding `sentil.pc`, or copy it into `/usr/local/lib/pkgconfig` as the [Raspberry Pi steps](/docs/languages/cli#on-a-raspberry-pi) do. Note that you have to create that directory first if the OS lacks it.
+
+## Undefined symbol, or a mixed-version link
+
+An `undefined symbol: sentil_...` error at link or load time means the header and the library disagree, almost always because an older `libsentil` earlier on the search path is shadowing the one you installed. `ldconfig -p | grep sentil` shows which copy the loader resolves. Remove or bypass the stale copy, run `sudo ldconfig`, and keep the header and library from the same release; `pkg-config --modversion sentil` names the version the toolchain is actually seeing.
+
+## Still stuck?
+
+Open an issue at [github.com/sedislab/SENTIL](https://github.com/sedislab/SENTIL/issues) with the SENTIL version, your operating system and architecture, a minimal formula and trace that reproduce it, and the full error text and we'll try to help fix it.
