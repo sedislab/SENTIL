@@ -330,8 +330,6 @@ pub unsafe extern "C" fn sentil_embedded_synthesize(
 }
 
 /// A controller plus the model and spec it owns.
-/// An opaque controller handle. Created by `sentil_embedded_controller_create`
-/// and freed by `sentil_embedded_controller_destroy`.
 pub struct EmbeddedController {
     controller: Controller<'static, LinearModel>,
     model: *mut LinearModel,

@@ -123,7 +123,6 @@ static void online_controller() {
 static void error_paths() {
     double out[1];
     CHECK(sentil_embedded_solve_spd(nullptr, 1, nullptr, out) == SENTIL_EMBEDDED_NULL_POINTER);
-    // a non-square model fails with a config error, not a fault
     double a[2] = {1, 1};
     double b[1] = {1};
     double x0[1] = {0};
