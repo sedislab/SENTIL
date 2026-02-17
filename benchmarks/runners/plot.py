@@ -203,6 +203,45 @@ def smc_circadian(records):
     ax.set_ylim(top=max(times) * 3)
     save(fig, "smc_circadian.png")
 
+def comparison_summary(records):
+    # One picture of SENTIL against every baseline that runs, each at its largest common
+    # size. The comparisons answer different questions, so each bar names its own.
+    def series(tool, q, bench="scalability/length"):
+        return {r["size"]: r["timing"]["mean_ms"] for r in records
+                if r.get("tool") == tool and r.get("benchmark") == bench and r.get("question") == q}
+    s_full, s_mon = series("sentil", "full_signal"), series("sentil", "monitoring")
+    bars = []
+    for tool, base, label in [
+        ("rtamt", series("rtamt", "full_signal"), "RTAMT\ndiscrete, whole signal"),
+        ("moonlight", series("moonlight", "full_signal"), "MoonLight\ndiscrete, whole signal"),
+        ("breach", series("breach", "monitoring"), "Breach\ndense monitoring"),
+    ]:
+        shared = sorted(set(s_full if "signal" in label else s_mon) & set(base))
+        if not shared:
+            continue
+        n = shared[-1]
+        ref = s_full[n] if "signal" in label else s_mon[n]
+        bars.append((label, base[n] / ref, style.TOOL[tool]))
+    sc = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "sentil"), None)
+    pr = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "prism"), None)
+    if sc and pr:
+        bars.append(("PRISM\nstatistical model checking", pr["time_ms"] / sc["time_ms"], style.TOOL["prism"]))
+    if not bars:
+        return
+    bars.sort(key=lambda b: b[1])
+    fig, ax = plt.subplots(figsize=(7.6, 4.8))
+    ys = range(len(bars))
+    ax.barh(list(ys), [b[1] for b in bars], color=[b[2] for b in bars], height=0.62)
+    ax.set_yticks(list(ys))
+    ax.set_yticklabels([b[0] for b in bars])
+    ax.set_xscale("log")
+    ax.set_xlabel("times faster than the baseline (log scale)")
+    ax.set_title("SENTIL against every baseline that runs")
+    for y, b in zip(ys, bars):
+        ax.text(b[1] * 1.1, y, f"{b[1]:.0f}x", va="center", ha="left", fontsize=10, fontweight="semibold", color=style.INK)
+    ax.set_xlim(right=max(b[1] for b in bars) * 2.2)
+    save(fig, "comparison_summary.png")
+
 def synthesis(records):
     rows = [r for r in records if "mode" in r]
     if not rows:
@@ -224,7 +263,8 @@ def main():
         print("no results found under", RESULTS)
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online, scaling,
-                   memory, smc_throughput, smc_accuracy, smc_circadian, particles, synthesis):
+                   memory, smc_throughput, smc_accuracy, smc_circadian, comparison_summary,
+                   particles, synthesis):
         figure(records)
 
 if __name__ == "__main__":
