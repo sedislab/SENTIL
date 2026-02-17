@@ -85,6 +85,18 @@ pub fn run(
 
     let reader = spawn_reader();
     let mut stdout = std::io::stdout();
+    if dashboard.is_none() && !out.is_text() {
+        let labels: serde_json::Map<String, serde_json::Value> = ids
+            .iter()
+            .zip(&formulas)
+            .map(|(id, text)| (id.clone(), json!(*text)))
+            .collect();
+        let _ = writeln!(
+            stdout,
+            "{}",
+            json!({ "schema_version": "1.0", "event": "formulas", "formulas": labels })
+        );
+    }
     let mut samples = 0u64;
     let mut skipped = 0u64;
     loop {
@@ -141,7 +153,7 @@ pub fn run(
         }
     }
 
-    if dashboard.is_none() && out.is_ndjson() {
+    if dashboard.is_none() && !out.is_text() {
         let _ = writeln!(
             stdout,
             "{}",
@@ -348,8 +360,20 @@ fn emit(
     } else {
         let mut map = serde_json::Map::new();
         for (id, robustness, estimate) in rows {
+            let value = robustness.value();
+            // An unbounded robustness serializes as JSON null, which hides the
+            // verdict, so carry the sign as a string and put the branch decision
+            // in `satisfied`.
+            let magnitude = if value.is_finite() {
+                json!(value)
+            } else if value > 0.0 {
+                json!("inf")
+            } else {
+                json!("-inf")
+            };
             let mut record = json!({
-                "robustness": robustness.value(),
+                "robustness": magnitude,
+                "satisfied": value >= 0.0,
                 "resolved": robustness.is_resolved(),
             });
             if let Some(p) = estimate {

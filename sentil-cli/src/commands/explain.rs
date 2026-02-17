@@ -68,7 +68,7 @@ const OPERATORS: &[Operator] = &[
     Operator {
         name: "next",
         grammar: "next phi",
-        semantics: "shifts evaluation one step forward, returning negative infinity at the end of the trace",
+        semantics: "shifts evaluation one step forward, returning negative infinity at the end of the trace; a step is only defined at the sample points, so `check` needs --semantics discrete for it",
     },
     Operator {
         name: "probabilistic",
@@ -114,9 +114,13 @@ const FIELDS: &[Fields] = &[
     Fields {
         verb: "monitor",
         lines: &[
-            "event           \"sample\" per input line, then one \"summary\"",
+            "event           \"formulas\" first, then \"sample\" per line, then \"summary\"",
+            "formulas        {id: formula} naming each result id (formulas record)",
             "time            the sample timestamp (sample records)",
-            "results         {id: {robustness, resolved, probability?}} (sample records)",
+            "results         {id: {robustness, satisfied, resolved, probability?}} (sample records)",
+            "satisfied       true while the formula holds so far, robustness >= 0",
+            "robustness      the signed robustness, or \"inf\"/\"-inf\", or \"nan\" when nothing is determined yet",
+            "resolved        false while the window is still filling; robustness is provisional",
             "probability     the running estimate, present for a P~p formula",
             "samples         the total sample count (summary record)",
         ],
@@ -163,6 +167,20 @@ const FIELDS: &[Fields] = &[
             "parameter       the parameter that was mined",
             "range           [lower, upper] searched",
             "tightest        the tightest value that still holds",
+        ],
+    },
+    Fields {
+        verb: "specs",
+        lines: &[
+            "verb            always \"specs\"",
+            "specs           [{name, domain, short}] when listing (no name given)",
+            "name            the specification's title (when inspecting one)",
+            "domain          the domain it belongs to (when inspecting)",
+            "description     what it captures, if the template gives one",
+            "formula         {deterministic, probabilistic} in SENTIL syntax",
+            "parameters      {name: {value, unit, range, description}}",
+            "variants        the named variants the template defines",
+            "references      the citations backing it",
         ],
     },
 ];
@@ -220,6 +238,11 @@ fn explain_operator(name: &str, out: &Out) -> Run {
 }
 
 fn explain_fields(verb: &str, out: &Out) -> Run {
+    if verb == "lift" {
+        println!("{}", out.paint("lift output", output::heading()));
+        println!("  lift writes CSV, not JSON: a `time` column then one column per signal, with a leading `member` column when --members exceeds one.");
+        return Ok(code::SUCCESS);
+    }
     let entry = FIELDS.iter().find(|f| f.verb == verb).ok_or_else(|| {
         CliError::Input(
             format!("no output fields documented for '{verb}'"),
