@@ -1,0 +1,96 @@
+---
+title: "Synthesize a controller"
+description: "Give SENTIL a linear model, input bounds, and a spec, and run gradient synthesis to get an input sequence that satisfies it."
+---
+
+Many cases require us to synthesize either an input control signal or a controller that satisfies a specification. SENTIL takes as an input a model of the system, the bounds on its control input, and a spec, and synthesis returns an input sequence that makes the spec hold. It maximizes robustness, through a differentiable version of it, so we're confident that the control signal satisfies the specification.
+
+## A model, bounds, and a spec
+
+Take a one-state integrator, $x_{t+1} = x_t + u_t$, starting at $x_0 = 1$, and the specification is that it has to stay positive over the next three timesteps. `SystemModel.linear` takes the state matrix, the input matrix, the initial state, the variable names, the time step, and the horizon. `Bounds` gives a lower and an upper limit for each input in the sequence.
+
+<Tabs groupId="lang" persist items={["Python","CLI"]}>
+<Tab value="Python">
+
+```python title="synthesize.py"
+from sentil import Bounds, Formula, SystemModel, synthesis
+
+model = SystemModel.linear([[1.0]], [[1.0]], [1.0], ["x"], 1.0, 3)
+spec = Formula.parse("G (x > 0)")
+bounds = Bounds([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])
+
+result = synthesis.synthesize(model, spec, bounds)
+print("input:", result.input.tolist())
+print("robustness:", result.robustness)
+print("holds:", result.holds)
+```
+
+```text
+input: [1.0, -1.0, 0.0]
+robustness: 1.0
+holds: True
+```
+
+</Tab>
+<Tab value="CLI">
+
+```json title="integrator.json"
+{
+  "a": [[1.0]],
+  "b": [[1.0]],
+  "x0": [1.0],
+  "variables": ["x"],
+  "dt": 1.0,
+  "horizon": 3,
+  "bounds": { "lower": [-1.0, -1.0, -1.0], "upper": [1.0, 1.0, 1.0] }
+}
+```
+
+```bash
+sentil synth -f 'G (x > 0)' --model integrator.json
+```
+
+```text
+synth
+  spec        G (x > 0)
+  method      gradient
+  result      feasible
+  robustness  1.000000
+  input       [1.0000, 1.0000, 0.4068]
+```
+
+The CLI's sequence differs from Python's because the optimizer is free to return any input that satisfies the spec; both trajectories keep `x` positive with a robustness of 1.
+
+</Tab>
+</Tabs>
+
+## Understanding the result
+
+`SynthesisResult` has three fields. `input` is the control sequence the optimizer found, one value per horizon step. `robustness` is the robustness of the spec on the trajectory that input produces, so a positive value means the spec holds. `holds` is the boolean intepretation of the robustness. The default synthesis backend is projected gradient ascent on the smooth robustness. When a spec is infeasible, the backend returns the input that violates it least rather than nothing.
+
+The gradient backend is quick. On the synthesis benchmark it drives a hold spec to a robustness of 0.50 in 1.72 ms, and CMA-ES reaches the same 0.50 in 5.87 ms. The full result table comparing all the methods are in the [claims ledger](/docs/start/understand/claims-philosophy).
+
+## Stream the result through the monitor
+
+The synthesized input is only trustworthy if the real system running the inputs satisfies the spec, so you can close the loop by monitoring the trajectory it produces. Applying `[1.0, -1.0, 0.0]` to the integrator from $x_0 = 1$ gives states $1, 2, 1, 1$. Watching this through the `OnlineMonitor`, we can see how it evolves, and we see that it resolves satisfied at the final step.
+
+```python title="monitor_synthesized.py"
+from sentil import OnlineMonitor
+
+monitor = OnlineMonitor("G[0,3] (x > 0)")
+for t, x in enumerate([1.0, 2.0, 1.0, 1.0]):
+    verdict = monitor.update(float(t), {"x": x})
+
+print(verdict.resolved, verdict.satisfied, verdict.value)
+# True True 1.0
+```
+
+The verdict resolves at $t = 3$ with a robustness of 1.0, matching what synthesis reported on the model. That is the synthesize-then-monitor loop: plan an input against the model, run the plan, and watch the online monitor confirm the spec on the trajectory the system actually follows.
+
+## Where to go next
+
+<Cards>
+<Card title="Synthesis" href="/docs/synthesis" description="The full subsystem: open-loop synthesis, the receding-horizon controller, chance constraints, and safety filters." />
+<Card title="How synthesis works" href="/docs/reference/methods/synthesis-backends" description="Smooth robustness, the backend choice, and minimally violating solutions." />
+<Card title="Receding-horizon control" href="/docs/synthesis/guides/receding-horizon" description="Plan one step online within a hard deadline and re-plan as state arrives." />
+</Cards>
