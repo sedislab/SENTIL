@@ -96,18 +96,23 @@ pub(crate) fn slice_from<'a, T>(ptr: *const T, len: usize) -> Result<&'a [T], Se
     }
 }
 
-pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError> {
+// The pointee must outlive the returned slice.
+pub(crate) fn c_char_to_str<'a>(ptr: *const c_char) -> Result<&'a str, SentilError> {
     if ptr.is_null() {
         set_error(SentilError::NullPointer, "a required string argument was null");
         return Err(SentilError::NullPointer);
     }
     match unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str() {
-        Ok(s) => Ok(s.to_owned()),
+        Ok(s) => Ok(s),
         Err(_) => {
             set_error(SentilError::Utf8, "a string argument was not valid UTF-8");
             Err(SentilError::Utf8)
         }
     }
+}
+
+pub(crate) fn c_char_to_string(ptr: *const c_char) -> Result<String, SentilError> {
+    c_char_to_str(ptr).map(str::to_owned)
 }
 
 pub(crate) fn to_c_string(s: &str) -> *mut c_char {

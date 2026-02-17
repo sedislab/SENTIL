@@ -1,6 +1,10 @@
 use crate::conversions::{
-    c_char_to_string, clear_error, code_of, ffi_panic_boundary, into_string_array, set_error,
-    slice_from, to_c_string,
+    c_char_to_str, c_char_to_string, clear_error, code_of, ffi_panic_boundary, into_string_array,
+    set_error, slice_from, to_c_string,
+};
+use crate::handles::{
+    drop_handle, free_boxed_array, free_boxed_array_owning, into_boxed_array, into_handle,
+    mutate_handle, take_handle,
 };
 use crate::stats::SentilSmcConfig;
 use crate::{SentilError, SentilTimeMode};
@@ -45,16 +49,16 @@ impl SentilRobustness {
     }
 }
 
-fn collect_named(
+fn collect_named<'a>(
     names: *const *const c_char,
     values: *const c_double,
     n: size_t,
-) -> Result<Vec<(String, f64)>, SentilError> {
+) -> Result<Vec<(&'a str, f64)>, SentilError> {
     let names = slice_from(names, n)?;
     let values = slice_from(values, n)?;
     let mut pairs = Vec::with_capacity(n);
     for (&name, &value) in names.iter().zip(values) {
-        pairs.push((c_char_to_string(name)?, value));
+        pairs.push((c_char_to_str(name)?, value));
     }
     Ok(pairs)
 }
@@ -164,8 +168,7 @@ pub extern "C" fn sentil_monitor_update(
             Ok(p) => p,
             Err(code) => return code,
         };
-        let refs: Vec<(&str, f64)> = pairs.iter().map(|(name, v)| (name.as_str(), *v)).collect();
-        match monitor.update(time, &refs) {
+        match monitor.update(time, &pairs) {
             Ok(robustness) => {
                 unsafe { *out = SentilRobustness::from_core(robustness) };
                 SentilError::Ok
@@ -562,8 +565,7 @@ pub extern "C" fn sentil_stream_monitor_update(
             Ok(p) => p,
             Err(code) => return code,
         };
-        let refs: Vec<(&str, f64)> = pairs.iter().map(|(name, v)| (name.as_str(), *v)).collect();
-        match monitor.update(time, &refs) {
+        match monitor.update(time, &pairs) {
             Ok(robustness) => {
                 unsafe { *out = SentilRobustness::from_core(robustness) };
                 SentilError::Ok
@@ -795,8 +797,7 @@ pub extern "C" fn sentil_multi_monitor_update(
             Ok(p) => p,
             Err(_) => return ptr::null_mut(),
         };
-        let refs: Vec<(&str, f64)> = pairs.iter().map(|(name, v)| (name.as_str(), *v)).collect();
-        match monitor.update(time, &refs) {
+        match monitor.update(time, &pairs) {
             Ok(results) => {
                 let verdicts = results
                     .into_iter()
