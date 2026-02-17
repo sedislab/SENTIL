@@ -34,7 +34,6 @@ Provider::~Provider() {
 void Provider::offer_event(EventId event, EventGroupId group) {
   std::set<vsomeip::eventgroup_t> groups{group};
   app_->offer_event(id_.service, id_.instance, event, groups, vsomeip::event_type_e::ET_FIELD);
-  events_.push_back(event);
 }
 
 void Provider::on_method(MethodId method, std::function<Bytes(const Bytes&)> handler) {

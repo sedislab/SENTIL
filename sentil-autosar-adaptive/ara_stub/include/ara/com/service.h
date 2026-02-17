@@ -42,7 +42,6 @@ class Provider {
  private:
   std::shared_ptr<vsomeip::application> app_;
   ServiceId id_;
-  std::vector<vsomeip::event_t> events_;
   std::map<MethodId, std::function<Bytes(const Bytes&)>> methods_;
 };
 
