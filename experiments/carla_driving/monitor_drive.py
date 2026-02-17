@@ -123,7 +123,7 @@ def probabilistic(sig, dt):
     }
 
 
-def find_critical(sig, deterministic_ok, probs):
+def find_critical(sig, probs):
     """The frame where deterministic clearance holds but the probability does not."""
     best = None
     for i in range(len(probs)):
@@ -196,8 +196,7 @@ def main():
     det = deterministic(trace, sig)
     stream = streaming_latency(sig, dt)
     probs, prob_lat = probabilistic(sig, dt)
-    det_ok = all(v["satisfied"] for v in det.values())
-    critical = find_critical(sig, det_ok, probs)
+    critical = find_critical(sig, probs)
 
     report = {
         "case_study": "carla_autonomous_driving",

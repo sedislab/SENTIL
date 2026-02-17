@@ -15,8 +15,6 @@ import sentil
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results")
 
-# Thresholds sit well inside the peak and trough envelope so they hold as the
-# amplitude decays over the run: peaks stay above 5700, troughs below 760.
 HIGH = 3000.0
 LOW = 2000.0
 PERIOD = 24

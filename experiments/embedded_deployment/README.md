@@ -4,7 +4,7 @@ This experiment measures what it costs to run SENTIL as the safety monitor in an
 
 ## What it runs
 
-The workload is 60 streaming safety specifications over nine signals reduced from the sensor stack: speed, following distance, time to collision, acceleration, jerk, lane offset, sensor-fusion confidence, collision probability, and yaw rate. The specifications cover plain bounds (speed and acceleration limits, a minimum following distance), nested response requirements (a hazard must be answered within a short window), and longer-horizon guarantees, with nesting depth from 1 to 10. They run on the streaming monitor, the flat per-sample engine the latency claim rests on.
+The workload is 60 streaming safety specifications over nine signals reduced from the sensor stack: speed, following distance, time to collision, acceleration, jerk, lane offset, sensor-fusion confidence, collision probability, and yaw rate. The specifications cover plain bounds (speed and acceleration limits, a minimum following distance), nested response requirements (a hazard must be answered within a short window), and longer-horizon guarantees, with nesting depth from 1 to 3. They run on the streaming monitor, the flat per-sample engine the latency claim rests on.
 
 The reference deployment additionally ran ten probabilistic specifications through the statistical layer. Those use the sampling path rather than the streaming one, so they sit outside this harness; their cost is part of the recorded Pi 4 numbers below, not the regenerated figure.
 

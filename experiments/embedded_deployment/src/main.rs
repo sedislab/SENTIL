@@ -111,10 +111,7 @@ fn main() {
     );
 }
 
-/// The 60 streaming safety specifications: bounds on speed, distance, acceleration,
-/// jerk, lane offset, time to collision, and sensor fusion, and the nested response
-/// requirements between them, with nesting depth running from 1 up to 10. These run
-/// on the streaming monitor, the flat per-sample engine the latency claim rests on.
+/// The 60 streaming safety specifications.
 fn workload() -> Vec<(String, String)> {
     let mut specs: Vec<String> = Vec::new();
 
