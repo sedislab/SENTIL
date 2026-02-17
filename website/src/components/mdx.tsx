@@ -5,6 +5,7 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Card, Cards } from '@/components/card';
 import { PlaygroundLazy } from '@/components/playground/PlaygroundLazy';
 import { ExerciseLazy } from '@/components/exercise/ExerciseLazy';
+import { ArchitectureDiagram } from '@/components/ArchitectureDiagram';
 import { PipelineDiagram } from '@/components/PipelineDiagram';
 import { OsTab, OsTabs } from '@/components/os-tabs';
 import { CodeBlockWithNotes } from '@/components/code-block';
@@ -21,6 +22,7 @@ export function getMDXComponents(components?: MDXComponents) {
     Cards,
     Playground: PlaygroundLazy,
     Exercise: ExerciseLazy,
+    ArchitectureDiagram,
     PipelineDiagram,
     OsTabs,
     OsTab,
