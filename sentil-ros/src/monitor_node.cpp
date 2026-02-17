@@ -212,21 +212,25 @@ private:
       auto builder = request->spec_file.empty()
         ? sentil::SpecBuilder(request->spec_name)
         : sentil::SpecBuilder::from_file(request->spec_file);
-      // A spec may carry only the deterministic or only the probabilistic form; leave the
-      // absent one blank rather than failing the whole query.
+      bool built = false;
       try {
         response->deterministic_formula = builder.build_deterministic();
+        built = true;
       } catch (const std::exception &) {
       }
       try {
         response->probabilistic_formula = builder.build_probabilistic();
+        built = true;
       } catch (const std::exception &) {
       }
       response->parameters_json = builder.parameters_json();
       for (const auto & variant : builder.available_variants()) {
         response->available_variants.push_back(variant);
       }
-      response->success = true;
+      response->success = built;
+      if (!built) {
+        response->error_message = "the spec carries neither a deterministic nor a probabilistic formula";
+      }
     } catch (const std::exception & e) {
       response->success = false;
       response->error_message = e.what();
