@@ -1,6 +1,5 @@
 import pytest
 
-import sentil
 from sentil import (
     Bounds,
     Expr,

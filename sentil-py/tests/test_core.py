@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import sentil
-from sentil import Formula, Expr, Monitor, OnlineMonitor, MultiMonitor, FormulaBank, var
+from sentil import Formula, Monitor, OnlineMonitor, MultiMonitor, FormulaBank, var
 
 def trace():
     return sentil.Trace([0, 1, 2, 3], {"x": [1.0, -2.0, 3.0, -4.0]})

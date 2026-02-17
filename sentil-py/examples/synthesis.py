@@ -1,6 +1,5 @@
 """Synthesize a control input that satisfies a spec, then shield it online."""
 
-import sentil
 from sentil import Bounds, Formula, SafetyFilter, SystemModel, synthesis
 
 # x_{t+1} = x_t + u_t
