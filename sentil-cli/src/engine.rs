@@ -192,6 +192,25 @@ pub fn load_trace(path: &str, map: &[String]) -> Result<Trace, CliError> {
     remap_trace(trace, &parsed)
 }
 
+/// Checks the formula's signals against the trace's columns
+pub fn check_variables(formula: &Formula, trace: &Trace) -> Result<(), CliError> {
+    let columns = trace.variables();
+    let missing = formula
+        .variables()
+        .into_iter()
+        .find(|v| !columns.contains(&v.as_str()));
+    if let Some(name) = missing {
+        return Err(CliError::Input(
+            format!("the formula uses '{name}', but the trace has no such signal"),
+            Some(format!(
+                "the trace has: {}; bind it with --map {name}=<column>",
+                columns.join(", ")
+            )),
+        ));
+    }
+    Ok(())
+}
+
 fn read_trace(path: &str) -> Result<Trace, CliError> {
     if path == "-" {
         let mut text = String::new();
@@ -221,12 +240,18 @@ fn read_trace(path: &str) -> Result<Trace, CliError> {
                 .map_err(|e| CliError::Input(format!("{path}: {e}"), None))?;
             trace_from_text(&text)
         }
-        _ => Trace::from_path(path).map_err(|e| {
-            CliError::Input(
-                format!("{path}: {e}"),
-                Some("Parquet, Arrow, and SQLite need a build with --features formats".into()),
-            )
-        }),
+        _ => match std::fs::read_to_string(path) {
+            Ok(text) => trace_from_text(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                Trace::from_path(path).map_err(|e| {
+                    CliError::Input(
+                        format!("{path}: {e}"),
+                        Some("Parquet, Arrow, and SQLite need a build with --features formats".into()),
+                    )
+                })
+            }
+            Err(e) => Err(CliError::Input(format!("{path}: {e}"), None)),
+        },
     }
 }
 

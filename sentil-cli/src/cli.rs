@@ -461,7 +461,9 @@ impl fmt::Display for Interval {
 pub enum Backend {
     /// The CPU engine.
     Cpu,
-    /// The GPU engine, for the simulation-heavy work that supports it.
+    /// The GPU engine, for the simulation-heavy work. Hidden because `check`, its
+    /// only user, is deterministic and CPU-only, so it cannot succeed there.
+    #[value(hide = true)]
     Gpu,
 }
 

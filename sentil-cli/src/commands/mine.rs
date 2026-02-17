@@ -65,6 +65,8 @@ pub fn run(
         builder.with_param(parameter, value)?.build_formula()
     };
 
+    let probe_formula = make(lower).map_err(|e| CliError::Engine(e.to_string()))?;
+    engine::check_variables(&probe_formula, &trace)?;
     let tightest = mine_tightest_parameter(make, std::slice::from_ref(&trace), lower, upper)
         .map_err(|e| CliError::Engine(e.to_string()))?;
 

@@ -56,6 +56,7 @@ pub fn run(
         }
     };
     let trace = engine::load_trace(trace_path, map)?;
+    engine::check_variables(&parsed, &trace)?;
     let lifting = resolve_lifting(noise, builder.as_ref())?;
 
     let spinner = out.spinner("simulating");

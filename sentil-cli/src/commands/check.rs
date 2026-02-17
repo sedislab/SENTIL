@@ -35,6 +35,7 @@ pub fn run(
     let parsed = engine::parse_or_diagnose(&formula)?;
     let spinner = out.spinner("evaluating");
     let trace = engine::load_trace(trace_path, map)?;
+    engine::check_variables(&parsed, &trace)?;
 
     let mode = match semantics {
         Semantics::Dense => TimeMode::Dense,
@@ -44,26 +45,16 @@ pub fn run(
 
     let start = Instant::now();
     if violations {
-        let intervals = monitor
-            .violations(&trace)
-            .map_err(|e| CliError::Engine(e.to_string()))?;
-        if let Some(bar) = spinner {
-            bar.finish_and_clear();
-        }
+        let intervals = monitor.violations(&trace).map_err(eval_error)?;
+        output::clear_spinner(spinner);
         return emit_violations(&formula, trace_path, &intervals, out);
     }
     if signal {
-        let values = monitor
-            .robustness_signal(&trace)
-            .map_err(|e| CliError::Engine(e.to_string()))?;
-        if let Some(bar) = spinner {
-            bar.finish_and_clear();
-        }
+        let values = monitor.robustness_signal(&trace).map_err(eval_error)?;
+        output::clear_spinner(spinner);
         return emit_signal(&formula, trace_path, semantics, &values, out);
     }
-    let robustness = monitor
-        .robustness(&trace)
-        .map_err(|e| CliError::Engine(e.to_string()))?;
+    let robustness = monitor.robustness(&trace).map_err(eval_error)?;
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     output::clear_spinner(spinner);
 
@@ -103,6 +94,17 @@ pub fn run(
     } else {
         code::VIOLATED
     })
+}
+
+fn eval_error(e: sentil::Error) -> CliError {
+    let message = e.to_string();
+    if message.contains("next in dense time") {
+        return CliError::Input(
+            "the `next` operator is not defined in dense time".into(),
+            Some("add --semantics discrete; next advances one sample step, which dense time has no fixed step for".into()),
+        );
+    }
+    CliError::Engine(message)
 }
 
 fn emit_violations(formula: &str, trace_path: &str, intervals: &[(f64, f64)], out: &Out) -> Run {
