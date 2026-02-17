@@ -51,9 +51,6 @@ theorem le_omin {a b c : α} (hca : le c a) (hcb : le c b) : le c (omin a b) := 
   · exact hca
   · exact hcb
 
-theorem omin_eq_left {a b : α} (h : le a b) : omin a b = a := by
-  unfold omin; exact if_pos h
-
 instance (priority := low) decEq : DecidableEq α := fun a b =>
   if hab : le a b then
     if hba : le b a then isTrue (le_antisymm hab hba)
@@ -482,16 +479,6 @@ theorem foldl_min_ge (xs : List (Sample α)) (init v : α)
     apply ih
     · exact le_omin h_init (h_all x (List.Mem.head _))
     · intro s hs; exact h_all s (List.Mem.tail _ hs)
-
-theorem foldl_min_eq_init (xs : List (Sample α)) (init : α)
-    (h : ∀ s ∈ xs, init ≤ᵥ s.value) :
-    xs.foldl (fun acc s => omin acc s.value) init = init := by
-  induction xs generalizing init with
-  | nil => rfl
-  | cons x xs ih =>
-    show List.foldl _ (omin init x.value) xs = init
-    rw [omin_eq_left (h x (List.Mem.head _))]
-    exact ih init (fun s hs => h s (List.Mem.tail _ hs))
 
 theorem front_eq_naiveMin (D S : Deque α) (t w : Nat) (h : DequeInv D S t w) :
     (D.head?.map (·.value)) = naiveWindowMin S t w := by
