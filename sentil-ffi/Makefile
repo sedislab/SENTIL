@@ -70,7 +70,8 @@ bench-cpp: build
 		../benchmarks/runners/sentil_runner.cpp $(LINK) -o $(ROOT)/target/sentil_bench_cpp
 
 bench-py: build
-	cd ../benchmarks && python runners/sentil_runner.py
+	cd ../benchmarks && python runners/sentil_runner.py scalability
+	cd ../benchmarks && python runners/sentil_runner.py streaming
 
 bench-jl: build
 	cd ../benchmarks && SENTIL_LIB=$(LIBDIR)/$(SHARED) julia --project=../sentil-jl runners/sentil_runner.jl scalability
@@ -90,15 +91,18 @@ dist: build
 	cp README.md $(DIST)/$(BUNDLE)/
 	sed 's|@PREFIX@|/usr/local|' sentil.pc.in > $(DIST)/$(BUNDLE)/lib/pkgconfig/sentil.pc
 	cp cmake/SentilConfig.cmake.in $(DIST)/$(BUNDLE)/lib/cmake/Sentil/SentilConfig.cmake
+	cp cmake/SentilConfigVersion.cmake.in $(DIST)/$(BUNDLE)/lib/cmake/Sentil/SentilConfigVersion.cmake
 	tar -C $(DIST) -czf $(DIST)/$(BUNDLE).tar.gz $(BUNDLE)
 	@echo "bundle: $(DIST)/$(BUNDLE).tar.gz"
 
 install: build
 	install -d $(PREFIX)/lib $(PREFIX)/include $(PREFIX)/lib/pkgconfig $(PREFIX)/lib/cmake/Sentil
-	install -m644 $(LIBDIR)/libsentil.so $(PREFIX)/lib/
+	install -m644 $(LIBDIR)/$(SHARED) $(PREFIX)/lib/
+	install -m644 $(LIBDIR)/libsentil.a $(PREFIX)/lib/
 	install -m644 $(INCLUDE)/sentil.h $(PREFIX)/include/
 	sed 's|@PREFIX@|$(PREFIX)|' sentil.pc.in > $(PREFIX)/lib/pkgconfig/sentil.pc
 	install -m644 cmake/SentilConfig.cmake.in $(PREFIX)/lib/cmake/Sentil/SentilConfig.cmake
+	install -m644 cmake/SentilConfigVersion.cmake.in $(PREFIX)/lib/cmake/Sentil/SentilConfigVersion.cmake
 
 clean:
 	$(CARGO) clean -p sentil-ffi
