@@ -1,4 +1,4 @@
-mutable struct NoiseModel
+mutable struct NoiseModel <: SentilHandle
     ptr::Ptr{Cvoid}
     function NoiseModel(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -154,7 +154,7 @@ export weibull, rayleigh, gumbel, cauchy, student_t, truncated_normal, poisson
 export bootstrap, mixture, fit_gaussian, fit_bootstrap, fit_bootstrap_reservoir
 export fit_gaussian_mixture, residuals
 
-mutable struct LiftingRegistry
+mutable struct LiftingRegistry <: SentilHandle
     ptr::Ptr{Cvoid}
     function LiftingRegistry(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()

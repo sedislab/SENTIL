@@ -1,4 +1,4 @@
-mutable struct SpecBuilder
+mutable struct SpecBuilder <: SentilHandle
     ptr::Ptr{Cvoid}
     function SpecBuilder(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()

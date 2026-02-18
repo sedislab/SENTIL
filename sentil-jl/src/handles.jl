@@ -1,5 +1,7 @@
-# Shared by every opaque handle. Each handle is a mutable struct holding a raw pointer;
-# a finalizer frees it, and close! frees it eagerly. The pointer is null once freed.
+abstract type SentilHandle end
+
+Base.show(io::IO, h::SentilHandle) =
+    print(io, nameof(typeof(h)), h.ptr == C_NULL ? "(closed)" : "(open)")
 
 """Release a handle's native resources now instead of waiting for the garbage collector."""
 function close! end
@@ -7,8 +9,10 @@ function close! end
 export close!
 
 function _ptr(h)
-    h.ptr == C_NULL &&
-        throw(EvaluationError(SENTIL_ERR_NULL_POINTER, "this handle was already closed"))
+    h.ptr == C_NULL && throw(EvaluationError(SENTIL_ERR_NULL_POINTER,
+        "this handle is no longer usable; it was closed with close! or consumed by an " *
+        "operation that took ownership of it. A composition operator moves its operands, " *
+        "so pass copy(f) to keep a formula for reuse."))
     return h.ptr
 end
 

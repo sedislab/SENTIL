@@ -1,4 +1,4 @@
-mutable struct Config
+mutable struct Config <: SentilHandle
     ptr::Ptr{Cvoid}
     function Config(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -41,7 +41,7 @@ function _split_samples(samples::AbstractDict)
     return names, vals
 end
 
-mutable struct Monitor
+mutable struct Monitor <: SentilHandle
     ptr::Ptr{Cvoid}
     function Monitor(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -140,7 +140,7 @@ end
 
 export Monitor, formula, config, symbol_index, update!, update_packed!, reset!, last_probability
 
-mutable struct OnlineMonitor
+mutable struct OnlineMonitor <: SentilHandle
     ptr::Ptr{Cvoid}
     function OnlineMonitor(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -230,7 +230,7 @@ struct _BankResult
     code::SentilErrorCode
 end
 
-mutable struct MultiMonitor
+mutable struct MultiMonitor <: SentilHandle
     ptr::Ptr{Cvoid}
     function MultiMonitor(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -316,7 +316,7 @@ probabilities(m::MultiMonitor) =
 
 export MultiMonitor, add!, remove!, ids, probability, probabilities
 
-mutable struct FormulaBank
+mutable struct FormulaBank <: SentilHandle
     ptr::Ptr{Cvoid}
     function FormulaBank(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()

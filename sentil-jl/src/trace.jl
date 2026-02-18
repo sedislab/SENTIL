@@ -1,5 +1,5 @@
 """A time grid paired with one or more named signals."""
-mutable struct Trace
+mutable struct Trace <: SentilHandle
     ptr::Ptr{Cvoid}
     function Trace(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -102,7 +102,7 @@ function resample(t::Trace, times::AbstractVector{<:Real}; interp::Interpolation
                 (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Int32), _ptr(t), tt, length(tt), Int32(interp)))
 end
 
-mutable struct PreparedTrace
+mutable struct PreparedTrace <: SentilHandle
     ptr::Ptr{Cvoid}
     function PreparedTrace(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -150,7 +150,7 @@ end
 export Trace, indexed_trace, add_signal!, times, signal, resample, prepare
 export read_trace, parse_trace
 
-mutable struct RingBuffer
+mutable struct RingBuffer <: SentilHandle
     ptr::Ptr{Cvoid}
     function RingBuffer(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()

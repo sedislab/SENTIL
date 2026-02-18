@@ -1,14 +1,5 @@
-# A parsed PrSTL formula. It owns a handle into the core's formula tree; the finalizer
-# frees it, or call close! to free it eagerly.
-
-"""
-    Formula
-
-A signal temporal logic formula, possibly probabilistic. Build one by parsing text
-with `parse(Formula, text)` or `formula(text)`, by composing predicates and operators,
-or from JSON with `from_json(Formula, json)`.
-"""
-mutable struct Formula
+"""A signal temporal logic formula, possibly probabilistic."""
+mutable struct Formula <: SentilHandle
     ptr::Ptr{Cvoid}
     function Formula(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -41,6 +32,9 @@ to_json(f::Formula) =
 from_json(::Type{Formula}, json::AbstractString) =
     Formula(ccall((:sentil_formula_from_json, libsentil[]), Ptr{Cvoid}, (Cstring,), json))
 
+"""An independent duplicate of `f`."""
+Base.copy(f::Formula) = from_json(Formula, to_json(f))
+
 """The nesting depth, where a predicate is 1."""
 depth(f::Formula) =
     Int(ccall((:sentil_formula_depth, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(f)))
@@ -57,12 +51,22 @@ function variables(f::Formula)
     return _take_string_array(ptr, count[])
 end
 
+function Base.show(io::IO, f::Formula)
+    if f.ptr == C_NULL
+        print(io, "Formula(closed)")
+        return
+    end
+    vars = variables(f)
+    print(io, "Formula(depth ", depth(f))
+    is_temporal(f) && print(io, ", temporal")
+    isempty(vars) || print(io, ", over ", join(vars, ", "))
+    print(io, ")")
+end
+
 export Formula, formula, to_json, from_json, depth, is_temporal, variables
 
-# A real-valued term over the signal variables. Compose terms with arithmetic and the
-# math functions, then compare two terms to get a predicate Formula. The arithmetic and
-# call builders consume their operands, so a term is single use once combined.
-mutable struct Expr
+# A real-valued term over the signal variables.
+mutable struct Expr <: SentilHandle
     ptr::Ptr{Cvoid}
     function Expr(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()

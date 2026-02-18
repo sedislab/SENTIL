@@ -1,4 +1,4 @@
-mutable struct SimExpr
+mutable struct SimExpr <: SentilHandle
     ptr::Ptr{Cvoid}
     function SimExpr(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -60,7 +60,7 @@ Base.max(a::Real, b::SimExpr) = _sim_call("max", sim_const(a), b)
 
 export SimExpr, sim_prev, sim_time, sim_const, sim_noise
 
-mutable struct StochasticSystem
+mutable struct StochasticSystem <: SentilHandle
     ptr::Ptr{Cvoid}
     state::Any
     function StochasticSystem(ptr::Ptr{Cvoid}, state = nothing)
@@ -103,7 +103,7 @@ _rethrow_callback(::Any) = nothing
 
 export StochasticSystem, simulate, variables, dt, horizon
 
-mutable struct SimModel
+mutable struct SimModel <: SentilHandle
     ptr::Ptr{Cvoid}
     function SimModel(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()

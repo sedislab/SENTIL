@@ -94,7 +94,7 @@ end
 
 export soft_min, soft_max, solve_qp, solve_spd, symmetric_eigen
 
-mutable struct Bounds
+mutable struct Bounds <: SentilHandle
     ptr::Ptr{Cvoid}
     function Bounds(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -152,7 +152,7 @@ Base.clamp!(b::Bounds, point::AbstractVector{<:Real}) = clamp!(b, convert(Vector
 
 export Bounds, unbounded_bounds, dimension, lower, upper
 
-mutable struct SystemModel
+mutable struct SystemModel <: SentilHandle
     ptr::Ptr{Cvoid}
     state::Any
     function SystemModel(ptr::Ptr{Cvoid}, state = nothing)
@@ -246,7 +246,7 @@ CmaConfig(; population::Integer = 0, max_generations::Integer = 300, initial_ste
 
 export CmaConfig
 
-mutable struct Controller
+mutable struct Controller <: SentilHandle
     ptr::Ptr{Cvoid}
     state::Any
     input_width::Int
@@ -293,7 +293,7 @@ end
 
 export Controller, control
 
-mutable struct SafetyFilter
+mutable struct SafetyFilter <: SentilHandle
     ptr::Ptr{Cvoid}
     function SafetyFilter(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
@@ -339,7 +339,7 @@ end
 
 export SafetyFilter, safe_input
 
-mutable struct ChanceConstraint
+mutable struct ChanceConstraint <: SentilHandle
     ptr::Ptr{Cvoid}
     function ChanceConstraint(ptr::Ptr{Cvoid})
         ptr == C_NULL && _raise_last()
