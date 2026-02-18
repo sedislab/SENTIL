@@ -24,7 +24,8 @@ typedef enum sentil_embedded_status {
     SENTIL_EMBEDDED_UNSUPPORTED = 5,
     SENTIL_EMBEDDED_DECODE = 6,
     SENTIL_EMBEDDED_INTERNAL = 7,
-    SENTIL_EMBEDDED_INVALID_CONFIG = 8
+    SENTIL_EMBEDDED_INVALID_CONFIG = 8,
+    SENTIL_EMBEDDED_INDEX_OUT_OF_RANGE = 9
 } sentil_embedded_status_t;
 
 /* A streaming monitor. */

@@ -139,8 +139,7 @@ pub unsafe extern "C" fn sentil_embedded_bank_count(bank: *const EmbeddedBank) -
     }
 }
 
-/// The robustness of the formula at `index` from the last call, written to `out`. If
-/// that formula could not be evaluated, returns its error status instead.
+/// The robustness of the formula at `index` from the last call, written to `out`.
 ///
 /// # Safety
 ///
@@ -161,7 +160,7 @@ pub unsafe extern "C" fn sentil_embedded_bank_result(
             Status::Ok
         }
         Some((_, Err(e))) => status_of(e),
-        None => Status::InvalidConfig,
+        None => Status::IndexOutOfRange,
     }
 }
 

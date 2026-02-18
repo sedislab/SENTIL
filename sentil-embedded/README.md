@@ -107,6 +107,8 @@ A board short on flash can leave out the formula parser and load a formula compi
 cargo run --features std --bin sentil-compile-formula -- "historically[0, 8](level < 900)"
 ```
 
+It prints a `SENTIL_FORMULA` byte array and `SENTIL_FORMULA_LEN`; paste both into the sketch and load them with `beginCompiled(SENTIL_FORMULA, SENTIL_FORMULA_LEN)` in place of `begin`.
+
 The same tool reaches the premade specifications library, so a board gets a vetted property without the whole library shipping in flash. List the specs, then compile the one you need straight to a board formula:
 
 ```

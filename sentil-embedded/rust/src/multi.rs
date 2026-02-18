@@ -171,7 +171,7 @@ pub unsafe extern "C" fn sentil_embedded_multi_result(
             *out = EmbeddedRobustness::from_core(*robustness);
             Status::Ok
         }
-        None => Status::InvalidConfig,
+        None => Status::IndexOutOfRange,
     }
 }
 

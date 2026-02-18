@@ -83,6 +83,8 @@ pub enum Status {
     Internal = 7,
     /// A synthesis input was malformed.
     InvalidConfig = 8,
+    /// A result was read at an index past the number the last call produced.
+    IndexOutOfRange = 9,
 }
 
 /// A short static message for a status code. Never free it.
@@ -97,6 +99,7 @@ pub extern "C" fn sentil_embedded_status_message(status: core::ffi::c_int) -> *c
         5 => b"the formula uses an operator the streaming monitor cannot run online\0",
         6 => b"the compiled formula is malformed\0",
         8 => b"a synthesis input was malformed: shape, dimension, or bounds\0",
+        9 => b"the result index is past the number of results\0",
         _ => b"internal engine error\0",
     };
     message.as_ptr().cast()
