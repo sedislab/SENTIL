@@ -1,0 +1,53 @@
+---
+title: "Live on Apollo Cyber RT"
+description: "Running the monitor as a real Apollo Cyber RT component that publishes a verdict per formula over the bus."
+---
+
+In this case study, we run SENTIL as an Apollo Cyber RT component that loads in `mainboard`, subscribes to the perception, localization, and chassis channels, and publishes a verdict per formula on `/apollo/sentil/status` online.
+
+## The scenario
+
+An ego vehicle drives at a steady 15 m/s behind a lead vehicle. The lead is overtaken and closes from 12 m to 3 m at 1.5 m/s. Each cycle the scenario source publishes a `Chassis` with the ego speed, a `LocalizationEstimate`, and a `PerceptionObstacles` frame with the lead at its current range, at 10 Hz on the channels the monitor reads.
+
+The monitor watches two properties.
+
+```text
+G[0,5.0] (ego_speed < 20.0)          # speed limit, reading Chassis.speed_mps
+P>=0.99(G[0,2.0] (front_gap > 5.0))  # follow distance under sensor noise
+```
+
+`front_gap` is the nearest in-lane obstacle ahead, the `FRONT_GAP` builtin, lifted with Gaussian sensor noise and checked by statistical model checking over 1000 sampled trajectories at 0.99 confidence. The component model, the config format, and the other builtins are on the [Apollo language guide](/docs/languages/apollo).
+
+## Results
+
+The run spanned 71 cycles at 10 Hz, from t = 0 to t = 7 s, and the monitor published a verdict for each formula on every cycle. The speed limit is a bounded-future property over a 5-second window, so it stays provisional until 5 seconds of data accumulate, then resolves to robustness 5.0, the ego at 15 m/s holding 5 under the 20 limit, and stays satisfied.
+
+The probabilistic follow distance is where the run gets interesting. Its 2-second look-ahead keeps it provisional at first, then it resolves to probability 1.0 with interval [0.9934, 1.0000] while the lead is far. As the lead closes, the probability falls through the 0.99 threshold: at t = 4.3 s it reads 0.9830 with interval [0.9688, 0.9908], the verdict now violated, then it collapses toward zero as the gap closes inside 5 m. Each estimate carries the Wilson score interval over the 1000 sampled trajectories.
+
+| Quantity | Value |
+| --- | --- |
+| Cycles monitored over Cyber | 71 at 10 Hz |
+| Speed limit, once resolved | robustness 5.0, satisfied |
+| Follow distance while safe | P = 1.0, interval [0.9934, 1.0000] |
+| Follow distance crossing the threshold | P = 0.9830, interval [0.9688, 0.9908], below 0.99 |
+
+A downstream planner subscribing to `/apollo/sentil/status` brakes the moment the probabilistic verdict crosses its threshold. This allows us to see the point of publishing a verdict onto the bus rather than logging it which is so that another component can act on it in the same cycle.
+
+<Callout type="info">
+The probability crosses the threshold before the deterministic gap does. While `front_gap` still reads above 5 m, the 2-second look-ahead under sensor noise already puts a fraction of the sampled trajectories below the bound, so the probability falls under 0.99 while the current gap is still clear. That lead time is what a planner uses to react early.
+</Callout>
+
+## Reproducing
+
+The study runs on a real Apollo Cyber RT runtime. Drop the experiment directory into an Apollo workspace next to `modules/sentil`, build the monitor and the two nodes, and run the three processes against the Cyber runtime:
+
+```bash
+buildtool build -p sentil
+bazel build //modules/sentil/experiments/apollo_cyber_monitoring:all
+BIN=bazel-bin/modules/sentil/experiments/apollo_cyber_monitoring
+./$BIN/verdict_echo &
+mainboard -d modules/sentil/monitor/dag/sentil_monitor.dag &
+./$BIN/scenario_publisher
+```
+
+The per-cycle verdict stream is committed to `experiments/apollo_cyber_monitoring/results/verdicts.csv`, with the time, the formula, whether it is satisfied, and the robustness or the probability with its confidence interval.

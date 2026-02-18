@@ -1,0 +1,48 @@
+---
+title: "Raspberry Pi deployment"
+description: "Running 60 safety specifications at 85 Hz on a Raspberry Pi 4 across a two-hour drive."
+---
+
+This study puts SENTIL on a Raspberry Pi 4 as the safety supervisor in an autonomous-driving stack, evaluates 60 specifications on every sensor cycle at 85 Hz, and reports whether SENTIL running on a tiny Raspberry Pi board and attached to an autonomous vehicle can handle real-time monitoring.
+
+The board is a Raspberry Pi 4 Model B: a Broadcom BCM2711 with a quad-core Cortex-A72 at 1.5 GHz, 4 GB of LPDDR4, running under 4 W. Each cycle ingests the latest observation, evaluates all 60 specs against the updated signal history, and returns a robustness score per spec. We note that at 85 Hz, the hard deadline per cycle is 11.76 ms.
+
+## The numbers are hardware-bound
+
+| Metric | Value |
+| --- | --- |
+| Mean latency | 9.57 ms |
+| Median latency | 9.44 ms |
+| 95th percentile | 10.62 ms |
+| 99th percentile | 10.71 ms |
+| Maximum observed | 11.09 ms |
+| Real-time deadline | 11.76 ms (1/85 Hz) |
+| Deadline violations | 0 of 612,000 |
+| Steady-state memory | 12.3 MB |
+| Memory growth over two hours | 0 MB |
+
+Every cycle over the whole drive came in under the deadline. The maximum observed cycle, 11.09 ms, still cleared the 11.76 ms budget, so the worst case across 612,000 cycles left headroom. The gap between the median and the 99th percentile is about 1.3 ms, which is operating-system scheduling jitter rather than anything in the monitor, whose per-cycle cost does not depend on the signal values.
+
+## Why the memory holds
+
+Steady-state memory sat at 12.3 MB from start to finish with no measurable growth over the two hours. The streaming monitor keeps only the samples inside the largest temporal window a formula references, so its memory is a function of the specifications, not of how long the drive runs. A stream that runs for two hours holds the same resident memory as one that runs for two minutes. That bound is what makes an indefinite deployment safe, since a monitor that grew with trace length would eventually exhaust the board. The [monotonic-deque](/docs/monitoring/concepts/monotonic-deque) page explains the window-bounded memory in detail.
+
+## Against a deterministic monitor on the same board
+
+RTAMT takes about 47 ms per cycle on the same Pi, four times over the 11.76 ms deadline, so it cannot run this workload at 85 Hz without downsampling. Breach runs only inside MATLAB and does not execute on ARM at all. The flat per-sample cost of the streaming monitor is what fits the 60-spec workload inside the deadline on hardware this small.
+
+<Callout type="info">
+The latency profile was the same on sparse highway segments and congested intersections. The streaming algorithms perform a fixed amount of work per sample regardless of the values, so the driving context does not move the cost. Predictable latency is the property a real-time deadline needs, more than a low average.
+</Callout>
+
+## Reproducing
+
+For hardware reproduction, cross-compile the deployment binary for the board and run the recorded drive:
+
+```bash
+cross build --release --target aarch64-unknown-linux-gnu -p sentil-embedded-deployment
+# then, on the Pi 4:
+experiments/embedded_deployment/run_deployment.sh --duration 120
+```
+
+The Pi 4 numbers on this page are in `docs/CLAIMS.md` with their tolerances.
