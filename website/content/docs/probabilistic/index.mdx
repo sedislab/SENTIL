@@ -1,0 +1,79 @@
+---
+title: "Probabilistic monitoring"
+description: "How Probabilistic monitoring works with STL."
+---
+
+A deterministic monitor evaluates the trace you give it, but the trace is a set of observations, and observations carry noise. Most real-world systems are stochastic, and their behavior can vary even under identical inputs. Probabilistic Signal Temporal Logic makes that uncertainty part of the specification with one operator, `P~p(phi)`, which asks whether the inner formula holds with probability at least, or at most, `p` over the distribution of trajectories the readings could have come from. [What PrSTL adds](/docs/probabilistic/concepts/what-is-prstl) develops the operator.
+
+## The three stages
+
+A probabilistic check goes through three stages. First, stochastic signal lifting turns the recorded trace into an ensemble. You attach a noise model to each signal, and the lifter draws realizations of the true trajectory consistent with the reading. Robustness evaluation runs the deterministic engine on every realization, producing one robustness value per sampled trajectory. Statistical aggregation counts how many of those trajectories satisfy the inner formula, estimates the satisfaction probability, and builds a confidence interval around the estimate so the verdict carries its own uncertainty.
+
+## A first probabilistic check
+
+The same five-sample speed trace from the monitoring section, now checked under Gaussian sensor noise with standard deviation 0.3.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="first_prstl.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+
+lifting = LiftingRegistry()
+lifting.register("speed", NoiseModel.gaussian(0.0, 0.3))
+
+phi = Formula.parse("P>=0.9 (G (speed > 5))")
+result = phi.check(trace, lifting)
+
+print(result.probability, result.holds)
+print(result.interval.lower, result.interval.upper)
+```
+</Tab>
+<Tab value="Rust">
+```rust title="first_prstl.rs"
+use sentil::{LiftingRegistry, Monitor, MonitorConfig, NoiseInteraction, NoiseModel, Trace};
+
+let mut trace = Trace::new([0.0, 1.0, 2.0, 3.0, 4.0])?;
+trace.add_signal("speed", [12.0, 9.0, 7.0, 4.0, 6.0])?;
+
+let mut lifting = LiftingRegistry::new();
+lifting.register("speed", NoiseModel::gaussian(0.0, 0.3)?, NoiseInteraction::Additive);
+
+let monitor = Monitor::new("P>=0.9 (G (speed > 5))", MonitorConfig::new())?;
+let result = monitor.check(&trace, &lifting)?;
+
+println!("{} {}", result.probability, result.holds);
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil smc -f 'P>=0.9(G (speed > 5))' -t speeds.csv --noise 'speed=gaussian:0,0.3'
+```
+</Tab>
+</Tabs>
+
+The deterministic robustness at the dip to four was exactly `-1.0`. Under noise of width 0.3 that dip rarely recovers above five, so the estimated probability that `G (speed > 5)` holds comes back low and the verdict fails.
+
+`check` returns an `SmcResult` object which includes the ff fields; the estimated probability, the confidence interval around it, the raw counts, and a `holds` verdict against the operator's threshold. [Lift a trace into an ensemble](/docs/probabilistic/guides/lift-trace) explains what the estimate is and for how valid the estimated probability is, see [confidence intervals](/docs/probabilistic/concepts/confidence-intervals).
+
+## Concepts
+
+<Cards>
+  <Card title="What PrSTL adds" href="/docs/probabilistic/concepts/what-is-prstl" description="The true value against the measurement and the P operator." />
+  <Card title="Choosing a noise model" href="/docs/probabilistic/concepts/noise-models" description="Additive against multiplicative interaction, choosing a family from the residual shape, the bootstrap, and Gaussian mixture models." />
+  <Card title="Confidence intervals" href="/docs/probabilistic/concepts/confidence-intervals" description="Wilson, Clopper-Pearson, Jeffreys, and Agresti-Coull confidence intervals." />
+  <Card title="When SPRT wins" href="/docs/probabilistic/concepts/sprt" description="Fixed-budget estimation against sequential testing against the Bayesian test." />
+  <Card title="Rare-event estimation" href="/docs/probabilistic/concepts/rare-events" description="Why flat Monte Carlo collapses in the tail, the nested-set factorization, and adaptive multilevel splitting." />
+</Cards>
+
+## How to
+
+<Cards>
+  <Card title="Lift a trace into an ensemble" href="/docs/probabilistic/guides/lift-trace" description="Register noise per signal and draw realizations from a recorded trace." />
+  <Card title="Fit a noise model from data" href="/docs/probabilistic/guides/fit-noise-models" description="Turn paired ground-truth and sensor columns into a fitted distribution." />
+  <Card title="Size the sample budget" href="/docs/probabilistic/guides/sample-size" description="Pick a sample count a priori from a target error and confidence." />
+  <Card title="Run a sequential test" href="/docs/probabilistic/guides/run-sprt" description="Decide a threshold with SPRT or the Bayesian test and stop early." />
+  <Card title="Estimate a rare event on the GPU" href="/docs/probabilistic/guides/rare-events-gpu" description="Reach tail probabilities with adaptive splitting and the GPU backend." />
+</Cards>

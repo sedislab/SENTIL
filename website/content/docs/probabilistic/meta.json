@@ -1,1 +1,1 @@
-{ "root": true, "title": "Probabilistic", "icon": "Sigma", "pages": [] }
+{ "root": true, "title": "Probabilistic", "icon": "Sigma", "pages": ["---[Sigma]Probabilistic---", "index", "concepts"] }

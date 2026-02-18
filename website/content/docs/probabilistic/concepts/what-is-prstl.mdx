@@ -1,0 +1,53 @@
+---
+title: "What PrSTL adds"
+description: "PrSTL reasons about the true value behind a noisy reading and reports whether a formula holds with the required probability."
+---
+
+Signal Temporal Logic reasons about a signal. Probabilistic Signal Temporal Logic reasons about a distribution over signals.
+
+## Considering sensor noise
+
+Write an STL property over a distance channel, `G[0,10] (d >= 3)`. The monitor reads `d` from the trace and computes robustness against three. But `d` in the trace is a sensor measurement `y`, and the quantity the requirement cares about is the true distance `x`. The two differ by whatever the sensor's error process contributes. So, if the true value is `x = 3.1` and the sensor noise is `-0.2`, the measured value or reading is `y = 2.9` and the monitor reports a violation but it's not truly one. A deterministic monitor cannot tell the difference and this means that you can't truly runtime monitor a requirement that is written in terms of the true value if you only have access to the reading.
+
+PrSTL allows us to reason about the true value behind a noisy reading. It treats each reading as a draw from a distribution centered on the truth, described by a noise model. It is implemented by the operator `P`.
+
+## The P operator
+
+`P~p(phi)` wraps any STL formula and returns a probabilistic verdict. You read it as "the inner formula `phi` holds over a trajectory drawn from the ensemble with probability related to `p` by the comparison `~`." The operator can be applied to any STL formula, including nested temporal and boolean operators. The inner formula is evaluated on each trajectory in the ensemble, and the monitor counts how many of those trajectories satisfy it and reports the satisfaction probability as the measure of trajectories in the ensemble whose robustness of `phi` is positive.
+
+$$
+S(\varphi) = \Pr\left[\rho(\varphi, x) > 0\right],
+$$
+
+where the probability is taken over the ensemble the noise model induces. The formula `P>=p(phi)` holds exactly when $S(\varphi) \geq p$.
+
+SENTIL accepts four comparison forms.
+
+| Concrete syntax | Meaning |
+|---|---|
+| `P>=p (phi)` | satisfaction probability at least `p` |
+| `P>p (phi)` | satisfaction probability greater than `p` |
+| `P<=p (phi)` | satisfaction probability at most `p` |
+| `P<p (phi)` | satisfaction probability less than `p` |
+
+There is no `P==p` and no `P!=p` because estimating a probability to land on an exact value is not a question statistical sampling answers. The threshold `p` must sit in `[0, 1]`, and the `P` operator is allowed only at the top level of a formula, not nested inside a temporal or boolean operator. The full grammar is on the [operator reference](/docs/reference/language/operators).
+
+An example of a probabilistic requirement is a separation requirement for autonomous driving:
+
+```text
+P>=0.99 (G (d >= dmin))
+```
+
+This reads as,"with probability at least 0.99, the true distance stays at or above the minimum for the whole horizon". This is a lower-bound form. The upper-bound forms are used to express rarity. `P<=0.001 (F (collision > 0))` says the collision indicator fires with probability at most one in a thousand.
+
+## What a probabilistic verdict looks like
+
+A distribution either meets the probability bound or it does not, so the robustness of a `P`-wrapped formula returns $+\infty$ when the threshold is met and $-\infty$ when it is missed.
+
+Because there's nothing like robustness to report, SENTIL reports the estimated probability and its confidence interval alongside the verdict. The `holds` field is the boolean interpretation of the verdict. The `probability` and `interval` fields are the probability estimate and the confidence interval around it. See [confidence intervals](/docs/probabilistic/concepts/confidence-intervals) for how to understand them.
+
+## Where the distribution comes from
+
+At runtime, you have a single trace of sensor readings. The monitor does not have access to the true trajectory, and it does not have access to the distribution of trajectories that could have produced the reading. So, the only way to get a distribution is to lift the trace into an ensemble. SENTIL takes the noise model for the signal and draws realizations of the true trajectory consistent with the reading and the noise model. See [lift a trace into an ensemble](/docs/probabilistic/guides/lift-trace) and [noise models](/docs/probabilistic/concepts/noise-models) for how to do that.
+
+For the underlying quantitative semantics that the sampled robustness values come from, read [quantitative robustness](/docs/monitoring/concepts/what-is-stl).
