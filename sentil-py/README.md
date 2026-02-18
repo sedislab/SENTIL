@@ -57,12 +57,14 @@ list(trace)           # the variable names
 ## Streaming
 
 ```python
-monitor = sentil.OnlineMonitor("always (x > 0)")
+monitor = sentil.OnlineMonitor("always[0, 10] (x > 0)")
 for t, x in enumerate(stream):
     verdict = monitor.update(t, {"x": x})
-    if not verdict.satisfied:
+    if verdict.resolved and not verdict.satisfied:
         alarm()
 ```
+
+`satisfied` only carries a verdict once `resolved` is true; until then the monitor is still filling the window. An unbounded operator like `always (x > 0)` never resolves online, so bound the horizon.
 
 ## Probabilistic monitoring
 
@@ -85,7 +87,7 @@ pytest tests/               # run the test suite
 
 ## Scope
 
-The whole engine is here: STL and PrSTL monitoring offline and online, the statistical layer, synthesis, the specifications library, and the GPU path. A few low-level hooks that pass a Python callable into the Rust engine are not exposed, because the engine runs them across worker threads where holding the GIL is unsafe: optimizing an arbitrary Python objective with CMA-ES, a system model whose dynamics are a Python function, and a sequential test driven by a Python Bernoulli source. The declarative equivalents cover the same ground: build a `SimModel` or a `LinearModel`, synthesize against it, and check or falsify it.
+The whole engine is here: STL and PrSTL monitoring offline and online, the statistical layer, synthesis, the specifications library, and the GPU path. A few low-level hooks that pass a Python callable into the Rust engine are not exposed, because the engine runs them across worker threads where holding the GIL is unsafe: optimizing an arbitrary Python objective with CMA-ES, a system model whose dynamics are a Python function, and a sequential test driven by a Python Bernoulli source. The declarative equivalents cover the same ground: build a `SimModel` or a `SystemModel.linear(...)`, synthesize against it, and check or falsify it.
 
 ## Contributing
 
