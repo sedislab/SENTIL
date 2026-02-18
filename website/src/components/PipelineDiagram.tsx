@@ -50,6 +50,7 @@ function Datum({ x, y, lines }: { x: number; y: number; lines: string[] }) {
 export function PipelineDiagram() {
   return (
     <figure className="not-prose my-8">
+      <div className="figure-scroll">
         <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
@@ -115,6 +116,7 @@ export function PipelineDiagram() {
         <Datum x={mid(STAGES[1].x, STAGE_W) - DATUM_W / 2} y={20} lines={['spec', 'P>=0.9 (...)']} />
         <Datum x={mid(STAGES[0].x, STAGE_W) - DATUM_W / 2} y={214} lines={['live reading']} />
         </svg>
+      </div>
       <figcaption className="mt-3 text-center text-sm text-fd-muted-foreground">
         The probabilistic pipeline. Deterministic monitoring is the middle stage running on its own: a formula and a
         trace go in, a robustness value comes out.

@@ -91,6 +91,17 @@ html > body[data-scroll-locked] {
   --color-fd-error: #f87171;
 }
 
+/* A figure narrower than its labels are legible is worse than one that scrolls,
+   so below the width where the type holds up it keeps its size and the frame
+   scrolls, the same treatment wide tables and long code lines get. */
+.figure-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.figure-scroll > svg {
+  min-width: 34rem;
+}
+
 /* Figure strokes. The border colour is tuned for a box sitting on the page and
    is far too faint for a connector line a reader has to follow, so figures get
    their own two weights. */

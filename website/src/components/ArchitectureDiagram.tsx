@@ -110,6 +110,7 @@ export function ArchitectureDiagram() {
 
   return (
     <figure className="not-prose my-8">
+      <div className="figure-scroll">
         <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
@@ -201,6 +202,7 @@ export function ArchitectureDiagram() {
           the no_std build runs on a microcontroller
         </text>
         </svg>
+      </div>
       <figcaption className="mt-3 text-center text-sm text-fd-muted-foreground">
         The solid edges are a link against compiled code and the dashed edge is the core recompiled as a <code>no_std</code> subset.
       </figcaption>
