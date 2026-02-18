@@ -38,14 +38,14 @@ target_link_libraries(my_app PRIVATE Sentil::cpp)
 With pkg-config the C library resolves as `sentil`, and the C++ headers sit beside it:
 
 ```
-c++ my_app.cpp $(pkg-config --cflags --libs sentil) -o my_app
+c++ -std=c++17 my_app.cpp $(pkg-config --cflags --libs sentil) -o my_app
 ```
 
 The packages ship through vcpkg and Conan as `sentil`, and the C library ships as `.deb` and `.rpm` (`libsentil-dev`) for apt, yum, and pacman. On macOS and Windows the same CMake and vcpkg paths work; the shared library is `libsentil.dylib` and `sentil.dll`.
 
 ## Prebuilt release from GitHub
 
-If you would rather not go through a package manager, download the release archive from the SENTIL releases page. The same `sentil-0.3.0-<os>-<arch>.tar.gz` bundle that carries the C ABI also carries the C++ header, so one archive covers both. Extract it and point `CMAKE_PREFIX_PATH` at the extracted prefix; `find_package(Sentil)` then resolves the C library and the bundled `sentil.hpp` beside it.
+If you would rather not go through a package manager, download the release archive from the SENTIL releases page. The `sentil-0.3.0-<os>-<arch>.tar.gz` bundle carries the C ABI: the shared and static libraries, `sentil.h`, the pkg-config file, and the CMake config that answers `find_package(Sentil)`. The C++ header is not in the archive; it comes from vcpkg, Conan, or a checkout of `sentil-cpp`. Extract the archive and point `CMAKE_PREFIX_PATH` at the extracted prefix so the C library resolves, then bring in `sentil/sentil.hpp` from one of those sources.
 
 On Linux:
 
