@@ -2,7 +2,6 @@
 //
 //   javac -cp ../target/sentil-0.3.0.jar Synthesis.java
 //   java -cp ../target/sentil-0.3.0.jar:. Synthesis
-import io.github.sedislab.sentil.Backend;
 import io.github.sedislab.sentil.Bounds;
 import io.github.sedislab.sentil.Formula;
 import io.github.sedislab.sentil.SafetyFilter;
@@ -18,7 +17,7 @@ public class Synthesis {
                 Formula spec = Formula.parse("always (x > 0)");
                 Bounds bounds = new Bounds(new double[] {-1, -1, -1}, new double[] {1, 1, 1})) {
             SynthesisResult result = io.github.sedislab.sentil.Synthesis.synthesize(model, spec,
-                    bounds, null, Backend.AUTO, 0, 0);
+                    bounds);
             System.out.println("input: " + Arrays.toString(result.input()) + " robustness: "
                     + result.robustness() + " holds: " + result.holds());
         }

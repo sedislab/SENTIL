@@ -24,6 +24,21 @@ public final class Synthesis {
         return synthesize(model, spec, null, null, Backend.AUTO, 0, 0);
     }
 
+    /** Find an input sequence within the given bounds that best satisfies the spec. */
+    public static SynthesisResult synthesize(SystemModel model, Formula spec, Bounds bounds)
+            throws SentilException {
+        return synthesize(model, spec, bounds, null, Backend.AUTO, 0, 0);
+    }
+
+    /**
+     * Find an input sequence within the given bounds that best satisfies the spec on
+     * the chosen backend.
+     */
+    public static SynthesisResult synthesize(SystemModel model, Formula spec, Bounds bounds,
+            Backend backend) throws SentilException {
+        return synthesize(model, spec, bounds, null, backend, 0, 0);
+    }
+
     /**
      * Find an input sequence for the model that best satisfies the spec. bounds and
      * smooth may be null, and maxIters and population of 0 take the defaults.
