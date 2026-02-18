@@ -1,0 +1,49 @@
+---
+title: "Closed-loop insulin control"
+description: "Checking a closed-loop insulin controller on a glucose model, where the hypoglycemia risk is read under sensor noise."
+---
+
+A closed-loop artificial pancreas reads blood glucose from a continuous glucose monitor and doses insulin to keep the patient in range. Two things can go wrong: glucose climbs too high after a meal, or it drops too low. This study checks a controller against both concerns, on the true glucose signal and probabilistically under sensor noise.
+
+The plant is the FDA-accepted UVA/Padova model of a type-1 patient over a simulated 24-hour day of three meals, with insulin absorbed subcutaneously and a continuous glucose monitor reporting readings at a noise standard deviation of 7 mg/dL. It is the Dalla Man 2007 meal-simulation model with the S2013 risk-based utilization and the average-adult parameters. Two controllers run on the same patient. One skips the lunch bolus and the other doses every meal.
+
+## The specifications
+
+We consider 5 specifications and the two that matter for the finding are the euglycemia band, which asks glucose to stay between 70 and 180 mg/dL, and the hypoglycemia-safety check under sensor noise, which asks for at least 95% probability that glucose never drops below 70.
+
+```text
+G (glucose > 70 & glucose < 180)              # euglycemia band
+G (glucose > 54)                              # no severe hypoglycemia
+G (glucose < 250)                             # bounded hyperglycemia
+G ((glucose < 70) -> F[0,30] (glucose > 70))  # recovery within 30 min
+P>=0.95(G (glucose > 70))                     # hypoglycemia safety under CGM noise
+```
+
+The euglycemia robustness is the tightest margin to either edge of the 70-to-180 band, so a positive value means the whole day stayed in range and a negative value is the worst dip, in mg/dL.
+
+## The two controllers
+
+The missed-bolus controller lets glucose run away after the unbolused lunch, and the euglycemia band is violated at robustness -105.02 mg/dL: glucose peaks near 285. The excursion opens at minute 809 and glucose does not re-enter the band until minute 1424, nearly the end of the simulated day. The climb is high enough to break the 250 hyperglycemia ceiling too, at -35.02. The tuned controller doses every meal and holds the band at robustness +7.95, about eight milligrams of margin to the nearer edge across the whole day.
+
+Neither controller goes low. Both clear the severe-hypoglycemia and recovery specs outright, and the probabilistic hypoglycemia-safety check holds for both under the CGM noise at probability 1.0, since neither day ever approaches 70.
+
+## Results
+
+| Specification | Missed-bolus | Tuned |
+| --- | --- | --- |
+| Euglycemia band, robustness | -105.02, violated | +7.95, satisfied |
+| Out-of-band excursion | minutes [809, 1424] | none |
+| No severe hypoglycemia | +66.0, satisfied | +62.25, satisfied |
+| Bounded hyperglycemia | -35.02, violated | +77.95, satisfied |
+| Recovery within 30 min | satisfied | satisfied |
+| Hypoglycemia safety `P>=0.95`, probability | 1.0, holds | 1.0, holds |
+
+## Run it
+
+The study runs on CPU and writes `results/glucose.json`.
+
+```bash
+python experiments/glucose_control/glucose_control.py
+```
+
+The claims document at `docs/CLAIMS.md` expects the euglycemia robustness near -105 for the missed-bolus controller and near +8 for the tuned one, the excursion near [809, 1424] minutes, and both hypoglycemia probabilities near 1.0, with tolerances of 6 and 2.5 mg/dL, identical verdicts, and the probability within 0.01.

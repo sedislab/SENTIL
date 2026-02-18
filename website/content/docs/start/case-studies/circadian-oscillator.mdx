@@ -1,0 +1,44 @@
+---
+title: "Circadian gene network"
+description: "Verifying sustained oscillation in a stochastic Barkai-Leibler circadian model."
+---
+
+A circadian clock is a gene network that oscillates on a roughly daily period. In a single cell, the molecule counts are low enough that the dynamics are stochastic, so the oscillation can in principle break down, and whether it stays regular under that noise is the question we want to answer. A single threshold cannot express "keeps oscillating." A temporal formula can, and we use SENTIL to check it.
+
+The model is a Barkai-Leibler activator-repressor circadian oscillator. The study samples the activator protein hourly over 270 hours across an ensemble of 100 stochastic realizations. The oscillation runs at a measured period of 23.8 hours with amplitude ranging from about 403 to 6218 molecules, so the peaks and troughs are far apart and the rhythm is pronounced.
+
+## The specification
+
+Sustained oscillation is two recurrences that must both hold: within every 24-hour window the activator has to rise above a high threshold at some point, and within every window it has to fall below a low threshold at some point. So, we represent the specification by nesting `F` (eventually) inside `G` (always).
+
+```text
+G[0,240] (F[0,24] (activator > 3000.0))  # a peak recurs every window
+G[0,240] (F[0,24] (activator < 2000.0))  # a trough recurs every window
+```
+
+The peak recurrence reads: over the 240-hour horizon, at every point, within the next 24 hours the activator exceeds 3000. The trough recurrence reads: over the 240-hour horizon, at every point, within the next 24 hours the activator should be less 2000.
+
+## Results
+
+On the ensemble mean, the peak recurrence holds with robustness about +2530 and the trough recurrence with about +1040, both comfortably positive, so the rhythm clears the thresholds with room. All 100 realizations satisfy the joint property, which puts the empirical satisfaction probability at 1.0. Even if each reading has a measurement error of 250 molecules, the probabilistic formula still holds at probability 1.0.
+
+| Quantity | Value |
+| --- | --- |
+| Peak recurrence, robustness | about +2530, satisfied |
+| Trough recurrence, robustness | about +1040, satisfied |
+| Measured period | 23.8 hours |
+| Amplitude range | 403 to 6218 molecules |
+| Realizations satisfying the joint property | 100 of 100 |
+| Satisfaction probability | 1.0 |
+
+## Run it
+
+The study runs on CPU and writes `results/circadian.json`.
+
+```bash
+python experiments/circadian_gene_network/circadian_gene_network.py
+```
+
+The claims document at `docs/CLAIMS.md` expects both recurrences satisfied on the mean, peaks near +2530 and troughs near +1040, the period near 24 hours, and every one of the 100 realizations oscillating, with robustness within a few percent and the ensemble fraction exact on the shipped traces.
+
+You can reuse the same pattern on any stochastic biological model that produces a continuous signal: express the property as a recurrence, run the ensemble, and read the fraction that holds. The [temporal operators](/docs/monitoring/concepts/temporal-operators) page covers that nesting in detail.

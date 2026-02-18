@@ -1,0 +1,31 @@
+---
+title: "Case studies"
+description: "Five deployments that put SENTIL on a real workload, from Autonomous Vehicle runtime monitoring on CARLA to a real drive on a Raspberry Pi to glucose monitoring."
+---
+
+Each of the five studies below takes a real-world system, writes its safety property, runs the monitor, and reports the robustness.
+
+The case studies are in two types. Three run offline on a recorded or simulated trace and reproduce on plain CPU with no special hardware: the CARLA drive, the insulin controller, and the circadian network. Two run the monitor live inside a target platform, watching signals as they arrive: the Raspberry Pi supervisor and the Apollo Cyber RT component. AUTOSAR Adaptive monitoring runs the same kind of live study over SOME/IP; that one is written up on the [AUTOSAR language guide](/docs/languages/autosar).
+
+## The studies
+
+<Cards>
+  <Card title="CARLA and Apollo driving" href="/docs/start/case-studies/carla-apollo" description="A 6000-frame Town10HD drive checked against lane, clearance, and collision-risk specs." />
+  <Card title="Closed-loop insulin control" href="/docs/start/case-studies/insulin-pump" description="Two controllers on the UVA/Padova glucose model over a simulated day." />
+  <Card title="Circadian gene network" href="/docs/start/case-studies/circadian-oscillator" description="Sustained oscillation in a stochastic Barkai-Leibler clock." />
+  <Card title="Raspberry Pi deployment" href="/docs/start/case-studies/raspberry-pi" description="Sixty specifications evaluated at 85 Hz on a Raspberry Pi 4 across a two-hour drive." />
+  <Card title="Live on Apollo Cyber RT" href="/docs/start/case-studies/apollo-cyber" description="The monitor as a real Cyber RT component publishing verdicts over the bus. A monitor feeds a downstream planner brakes on the verdict." />
+</Cards>
+
+## Reproducing them
+
+Every case study has a directory under `experiments/` with the code to rerun the study and produce the numbers.
+
+```bash
+pip install sentil numpy matplotlib
+python experiments/glucose_control/glucose_control.py
+python experiments/circadian_gene_network/circadian_gene_network.py
+python experiments/carla_driving/monitor_drive.py --trace experiments/carla_driving/results/drive.json
+```
+
+The claims document at `docs/CLAIMS.md` records the expected value and tolerance for each artifact, and `python scripts/check_claims.py` fails the build if any reproduced number drifts outside its bound. The Raspberry Pi experiment needs a board, and the Apollo study needs its Cyber RT runtime; each page states what it needs and what to expect where the hardware is absent.

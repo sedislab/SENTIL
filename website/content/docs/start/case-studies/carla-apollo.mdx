@@ -1,0 +1,79 @@
+---
+title: "CARLA and Apollo driving"
+description: "Monitoring lane keeping, clearance, and collision risk on a CARLA drive."
+---
+
+An autonomous vehicle has to hold its lane, keep clear of traffic, and not hit anyone, from a moving platform in a world of other agents whose next move it cannot know. This study runs SENTIL as the monitor on a vehicle driving through the CARLA simulator. It checks a compound safety specification frame by frame, and shows where the probabilistic layer catches a risk the deterministic checks report as fine.
+
+The trace is a 300-second, 6000-frame drive on the Town10HD map under the CARLA Traffic Manager, recorded from a live CARLA 0.9.15 server at 20 Hz. You'll need a GPU to produce the trace but everything downstream runs on plain CPU. We include the trace file in the repo so that you can re-run the experiment and regenerate the results without a GPU.
+
+## The specifications
+
+We monitor 4 requirements: 3 deterministic and 1 probabilistic. The probabilistic one is the most interesting case and it weighs a ten-second collision-free lookahead against the uncertainty in where the pedestrians might go. Deterministic monitoring of the current obstacle distance cannot express uncertainty about a pedestrian's future path, and that uncertainty is what turns a clear-looking frame into a near miss. The probabilistic operator asks that given what the perception stack knows right now, what is the probability that no collision occurs within the next ten seconds.
+
+```text
+G (abs(lateral_error) < 0.3)     # lane keeping, within 0.3 m
+G (obstacle_distance > 5.0)      # clearance, 5 m from the nearest agent
+G (speed < 50)                   # urban speed limit, km/h
+P>=0.99(G[0,10] (no_collision))  # collision-free over the next 10 s
+```
+
+## Latency
+
+The results below are the latency of all the deterministic formulas together.
+
+| Metric | Value |
+| --- | --- |
+| Deterministic streaming, per sample | about 0.54 us |
+| Deterministic streaming, sustained | about 1.85 M samples/s |
+| Probabilistic check, median per frame | about 0.65 ms |
+| Probabilistic check, 99th percentile | about 0.89 ms |
+
+The deterministic path costs well under a microsecond per sample. The probabilistic check, the part that costs milliseconds, holds a sub-millisecond median and tail, comfortably inside the 50 ms budget between frames at the drive's 20 Hz cadence.
+
+## The near miss
+
+At around $t = 146 s$, the clearance is 5.7 m, above the 5 m bound, so an instantaneous clearance check on the current frame reports no problem. But, SENTIL put the collision-free probability over the next ten seconds at essentially zero, because the pedestrian's predicted path under its uncertainty meets the car's recorded path inside the lookahead.
+
+## Against a deterministic monitor
+
+`rtamt_compare.py` runs SENTIL and RTAMT, a widely used STL monitor, on this workload. On the three deterministic formulas driven online, SENTIL folds them into one streaming update where RTAMT runs one monitor per formula, and SENTIL comes out about 21 times faster per frame, 1.843 us against 39.614 us at the median. On the bounded-future specs computed over the whole signal the two agree on the robustness to the bit, and SENTIL is about 90 to 154 times faster depending on the formula. The probabilistic conjunct RTAMT cannot express at all, so for the spec the vehicle actually runs there is no RTAMT verdict to compare against.
+
+## Run it
+
+The offline study reproduces from the committed trace with no GPU.
+
+<Tabs groupId="lang" persist items={["Python","CLI"]}>
+  <Tab value="Python">
+```python title="monitor_drive.py"
+import json
+import sentil
+from sentil import Formula
+
+with open("experiments/carla_driving/results/drive.json") as f:
+    drive = json.load(f)["signals"]
+
+# The nearest obstacle is whichever is closer, a vehicle or a pedestrian.
+obstacle = [min(v, p) for v, p in zip(drive["vehicle_distance"], drive["pedestrian_distance"])]
+trace = sentil.Trace(drive["t"], {
+    "lateral_error": [abs(e) for e in drive["lateral_error"]],
+    "obstacle_distance": obstacle,
+    "speed": drive["speed"],
+})
+
+lane = Formula.parse("G (lateral_error < 0.3)")
+clearance = Formula.parse("G (obstacle_distance > 5.0)")
+print(lane.robustness(trace), clearance.robustness(trace))   # -1.443 -3.113
+```
+  </Tab>
+  <Tab value="CLI">
+```bash
+python experiments/carla_driving/monitor_drive.py \
+  --trace experiments/carla_driving/results/drive.json
+```
+  </Tab>
+</Tabs>
+
+To run the online version, replay the committed ROS 2 bag through the real `sentil_ros` node. That path and its configuration are in the [ROS language guide](/docs/languages/ros).
+
+The full ledger entry, with the command and tolerance, is in `docs/CLAIMS.md` under the CARLA study.
