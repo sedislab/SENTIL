@@ -1,0 +1,82 @@
+---
+title: "How SENTIL is put together"
+description: "The verification semantics are in Rust and each additional language is a thin C ABI over it."
+---
+
+Verification tools are needed in a variety of languages, tools and places but building the same tool for several languages is infeasible and this is why we usually see verification tools cluster around Python and C++. We wanted SENTIL to be both accessible and easily maintainable so we wrote the verification semantics `sentil-core` in Rust and every other language reaches that engine, either by linking the Rust core into a native extension or by calling a small, stable C ABI. Thus, the boundary between a host language and the core engine stays cheap because only primitive values and opaque handles cross it while the heavy work stays batched inside Rust.
+
+## The layers
+
+<ArchitectureDiagram />
+
+`sentil-py` and `sentil-cli` are written in Rust and link the core directly, so they carry no C ABI on their hot path. Everything outside the Rust toolchain, C++, Java, Julia, MATLAB, and the platform integrations, links the shared library `libsentil` and calls the C header `sentil.h`. The microcontroller build is a fourth path: a `no_std` subset of the core compiled for the target, with the sampling layers left out because a microcontroller cannot host them.
+
+## The core crate
+
+`sentil-core` holds the whole engine and its modules are separated by the distinct processes a formula goes through, from text input to a verdict.
+
+The `formula` module turns a specification string into an abstract syntax tree. It is a recursive-descent parser with a precedence-climbing expression grammar. A parse error carries a message with a 1-based line and column, and the parser caps nesting depth at 256.
+
+The `semantics` module evaluates a formula against a trace. It has two evaluators over the same tree. The offline evaluator reports robustness at a given time and the streaming evaluator keeps incremental state and updates as each sample arrives. Discrete and dense time, the interpolation modes, and the multi-formula path each sit in their own submodule.
+
+The `signal` module owns traces, interpolation, and ingestion. A trace stores each channel as timestamped samples; the interpolator serves linear, zero-order-hold, and cubic-spline queries; ingestion reads all the file formats natively.
+
+The `stats` module is the probabilistic layer. It fits noise models, lifts a trace into an ensemble, and runs the three estimation regimes: empirical Monte Carlo with a confidence interval, Wald's SPRT, and the Bayesian sequential test, plus the rare-event splitting for probabilities a monte-carlo run cannot reach.
+
+The `synthesis` carries the smooth-robustness interpreter, the projected-gradient and CMA-ES backends, the receding-horizon `Controller`, the control-barrier safety filter, and chance-constraint handling.
+
+## Features
+
+The core is built so a user pulls in only what they need, and we access the various capabilities via Cargo features. A minimal build carries the deterministic STL monitor and the default build adds the statistical layer and synthesis on the CPU. The GPU path is opt-in.
+
+| Capability | What it adds | How to build it |
+| --- | --- | --- |
+| STL monitor only | parser, robustness, streaming monitor | `--no-default-features --features std` |
+| PrSTL statistical layer | noise models, lifting, SMC, SPRT, Bayesian | the `statistical` feature (on by default) |
+| Synthesis | smooth robustness, gradient and CMA-ES, controller | the `synthesis` feature (on by default) |
+
+The default feature set is `std, statistical, ingest, parallel, synthesis, specs, sqlite`. A monitor-only build drops the sampling machinery entirely and the microcontroller target compiles exactly that. The GPU rare-event and synthesis kernels sit behind the `gpu` and `synthesis-gpu` features.
+
+## The C ABI
+
+`sentil-ffi` wraps the core in a C ABI and builds it as a `cdylib` named `sentil`, producing `libsentil.{so,dylib,dll}` and a `sentil.h`. It exports all the sentil functions and carries no verification logic of its own. Each call validates its arguments, dereferences a handle, and delegates to the core.
+
+A couple of rules guide the FFI boundary. Every core object crosses as an opaque handle which is a raw pointer the caller never dereferences and frees through the matching `sentil_*_destroy`. Every fallible call returns one of the status codes 0 through 17, with the message retrievable through a thread-local `sentil_get_last_error`. And every Rust call is wrapped so a panic converts to an error code at the boundary rather than unwinding into C, which is why the release profile compiles with `panic = "unwind"`.
+
+<Callout type="info">
+The C ABI never copies a trace or a formula tree into the host language. Signal data crosses once, in bulk, into a handle that stays inside the core, and every later operation reads that handle. Only primitive arguments and opaque pointers move per call, so the per-call overhead stays in the tens of nanoseconds.
+</Callout>
+
+## The bindings
+
+Each binding presents the same operations under names that read naturally in its language, and each maps one-to-one onto the core. If you know the Rust surface, the Python, C++, Java, Julia, MATLAB, and CLI surfaces are basically the same under idiomatic spelling.
+
+| Language | How it binds | Package |
+| --- | --- | --- |
+| Rust | native | `sentil` on crates.io |
+| Python | PyO3, links the core directly | `sentil` on PyPI |
+| C++ | header wrapper over `libsentil` | `sentil-cpp` (vcpkg, Conan) |
+| Java | JNI shim over `libsentil` | `io.github.sedislab:sentil` |
+| Julia | `ccall` into `libsentil` | `Sentil` (General registry) |
+| MATLAB | MEX over `libsentil` | `.mltbx` toolbox |
+| CLI | native, links the core | `sentil-cli` |
+
+Python raises a `SentilError` subclass, Java throws a checked `SentilException`, C++ returns a status or throws per the header contract, Julia surfaces a `SentilError`, and C returns a status code. The message names the offending construct and its position is preserved through every one of them.
+
+## What is the cost of the boundary?
+
+The per-call cost of crossing into the core is what a binding adds over native Rust, and it stays small because the call itself is small. On the streaming benchmark, every binding reads the identical robustness of -17.99212 while the per-sample update time is dominated by the language bridge rather than the verification work.
+
+| Binding | Per-sample update |
+| --- | --- |
+| C | 74 ns |
+| Rust core | 112 ns |
+| Julia | 114 ns |
+| C++ | 134 ns |
+| Python | 521 ns |
+| Java | 680 ns |
+| MATLAB | 6.49 us |
+
+The C ABI adds tens of nanoseconds and the interpreted bridges add more. Because the heavy work is batched inside Rust and the boundary carries only handles and primitives, the binding does not affect the time at all and the semantics are correct and will never drift.
+
+For the pipeline these layers implement, read [the three-stage pipeline](/docs/monitoring/concepts/pipeline). For the numbers behind the boundary and how they reproduce, see [how SENTIL compares](/docs/start/understand/comparison) and [the claims ledger](/docs/start/understand/claims-philosophy).

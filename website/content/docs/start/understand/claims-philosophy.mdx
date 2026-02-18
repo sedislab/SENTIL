@@ -1,0 +1,53 @@
+---
+title: "The claims"
+description: "Reproducing the values SENTIL claims for speed, memory and their tolerances."
+---
+
+To make it easy to reproduce the values we quote, we collect every claim SENTIL makes into a single document. So, for each entry, there's a description of the claim, the command that'll run the script to produce the number, the value to expect and the tolerances that are acceptable. The document is `docs/CLAIMS.md` and the reproduction paths are `docs/REPRODUCE.md`, both in the repository.
+
+## What is a claim?
+
+Every entry in the claims docment has five parts.
+
+| Part | What it fixes |
+| --- | --- |
+| Command | the exact command that regenerates the value |
+| Expected value | the number we got when we run the command |
+| Tolerance | how far a rerun may fall or rise and still count as confirmed |
+| Tier | CPU, GPU, tool-bound, or hardware-bound |
+| Guarding test | the check that fails CI when the value drifts |
+
+An example of a claim is the correctness of the Wilson interval. We assert that our implementation of the Wilson interval is correct and so we wrote a couple of tests to confirm that. The command to run the tests is `cargo test -p sentil --features statistical confidence`. The expected value is `wilson(50, 100, 0.95) = [0.403831, 0.596169]`. The tolerance is `1e-6`. It requires no tools (like the UPPAAL-SMC benchmarks) and no special hardware (like the Arduino tests) so, it belongs to the CPU tier. The test that prevents regression in the CI is the named unit test that asserts the endpoints against the published reference.
+
+## Tiers
+
+Every claim runs in a tier and a tier is the set of all claims that have a common dependency to run. 
+
+The CPU tier needs a CPU and a Rust toolchain. It covers the correctness claims, the full-signal and monitoring speed, the streaming cost, and the statistical coverage.
+
+The GPU tier needs a GPU. It covers the rare-event splitting and the empirical acceleration and in our experiments, we validated it on an NVIDIA A40. Its tests are gated behind a feature and a runtime check, so they skip cleanly on a machine with no GPU.
+
+The tool-bound tier needs a baseline tool that may not be redistributable such as PRISM, Modest, UPPAAL, Breach. The runner skips when the tool is absent, and the comparison is recorded from a run where it was present.
+
+The hardware-bound tier is tied to some hardware such as an Arduino or a Raspberry Pi 4. The CLAIMS document records the value, the board it was measured on, and the conditions under which it holds.
+
+## How it is enforced
+
+We store CLAIMS in such a manner because of reproducibility and to prevent regressions. On any push, the CI runs the CPU Tier benchmarks and tests and then `scripts/check_claims.py` reads the benchmark results and the experiment results and fails if any value falls outside its stated tolerance. If you want to run it before pushing, `make verify` does the same job.
+
+```bash
+make verify
+```
+
+That target runs the engine, benchmark and CLI tests, then the C ABI tests, then the regression guard over the committed artifacts.
+
+Continuous integration runs the deterministic, hardware-independent tier on every commit: it builds each package, lints, runs the unit and equivalence and coverage tests, confirms every import and API reference resolves, and smoke-tests the benchmarks. A build will fail if the tolerance bounds are violated.
+
+<Callout type="info">
+The ledger is updated by the maintainers on a version change.
+</Callout>
+
+<Cards>
+  <Card title="How SENTIL compares" href="/docs/start/understand/comparison" description="The reproduced numbers against RTAMT, Breach, and the statistical model checkers." />
+  <Card title="How SENTIL is put together" href="/docs/start/understand/architecture" description="The core, the C ABI, and the bindings the claims run through." />
+</Cards>
