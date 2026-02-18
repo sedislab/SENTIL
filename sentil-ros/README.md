@@ -135,9 +135,11 @@ Beyond monitoring, the package ships a control node that synthesizes control fro
 - `open_loop`: offline trajectory synthesis, an input sequence that satisfies the spec, published as a trajectory and stepped out in real time.
 - `safety_filter`: a control-barrier-function shield that takes a nominal command and returns the closest input that respects the bounds and barriers.
 - `witness`: counterexample search, an input sequence that violates the spec, published as a trajectory for replay and offline study.
-- `chance`: a chance-constraint check that estimates whether the spec holds with at least the target probability under the model perturbed by Gaussian process noise, reported once with the estimate and its lower bound. The `chance.probability`, `chance.confidence`, and `chance.process_std` parameters configure it.
+- `chance`: a chance-constraint check that estimates whether the spec holds with at least the target probability under the model perturbed by Gaussian process noise, reported once with the estimate and its lower bound. The `chance.probability`, `chance.confidence`, and `chance.process_std` parameters configure it; `chance.process_std` is the standard deviation of that noise and must be greater than zero, since at zero every sampled trajectory is identical and the estimate is degenerate.
 
 The system model (a linear state-space model), the spec, the input bounds, and the mode come from configuration; `config/control_params.yaml` is a complete double-integrator example. The current state arrives on a `std_msgs/Float64MultiArray` topic, and the command goes out as a `sentil_ros/Control` message with a plain `Float64MultiArray` alongside for easy consumption. The message carries a real robustness and a `holds` verdict in the `open_loop` and `witness` modes, where the whole sequence is synthesized or falsified against the spec; the online `receding_horizon` and `safety_filter` modes return an input without a verdict, so they report robustness as NaN and `holds` as false, with `feasible` marking that an input was produced.
+
+The spec sits under a `spec` namespace here: give a raw formula under `spec.formula` (as in the double-integrator example), or a premade library specification under `spec.name` with an optional `spec.variant`. This is not the monitor node's shape, which takes a raw formula under `formula` and a library spec under `spec` directly, so a `spec: <name>` carried over from a monitor config belongs under `spec.name` in a control config.
 
 ```
 ros2 launch sentil_ros sentil_control.launch.py

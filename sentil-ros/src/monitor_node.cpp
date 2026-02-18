@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <functional>
 #include <limits>
 #include <map>
@@ -248,12 +249,31 @@ private:
     // A ROS parameter cannot be both a string array and a nested namespace.
     const auto variables = declare_once<std::vector<std::string>>(base + ".signal_names", {});
 
+    const std::string var_prefix = base + ".variables.";
+    for (const auto & entry : get_node_parameters_interface()->get_parameter_overrides()) {
+      const std::string & key = entry.first;
+      if (key.compare(0, var_prefix.size(), var_prefix) != 0) {
+        continue;
+      }
+      const std::string var = key.substr(var_prefix.size(), key.find('.', var_prefix.size()) - var_prefix.size());
+      if (std::find(variables.begin(), variables.end(), var) == variables.end()) {
+        throw std::runtime_error(
+          "variable '" + var + "' of formula '" + id + "' is configured under variables but missing "
+          "from signal_names; add it to formulas." + id + ".signal_names");
+      }
+    }
+
     std::string formula_text = raw;
     sentil::LiftingRegistry lifting;
     if (method == "sprt") {
       throw std::runtime_error(
         "formula '" + id + "': verification.method 'sprt' is not available online; the streaming "
         "monitor estimates the probability continuously, so use 'smc' or leave the method automatic");
+    }
+    if (method != "robustness" && method != "smc" && method != "automatic") {
+      throw std::runtime_error(
+        "formula '" + id + "': verification.method '" + method + "' is not recognized; expected "
+        "robustness, smc, or automatic");
     }
     bool probabilistic = method == "smc";
     if (!spec_name.empty()) {
@@ -271,7 +291,9 @@ private:
         builder = std::move(builder).with_param(names[i], values[i]);
       }
       lifting = builder.build_lifting_registry();
-      probabilistic = probabilistic || !lifting.variables().empty();
+      if (method != "robustness") {
+        probabilistic = probabilistic || !lifting.variables().empty();
+      }
       formula_text = probabilistic ? builder.build_probabilistic() : builder.build_deterministic();
     }
     for (const auto & var : variables) {
@@ -280,7 +302,7 @@ private:
       var_field[var] = declare_once<std::string>(vbase + ".field", "");
       var_type[var] = declare_once<std::string>(vbase + ".type", "");
       const std::string family = declare_once<std::string>(vbase + ".noise.type", "none");
-      if (family != "none") {
+      if (family != "none" && method != "robustness") {
         probabilistic = true;
         lifting.register_noise(var, noise_from_params(this, vbase + ".noise", family));
       }

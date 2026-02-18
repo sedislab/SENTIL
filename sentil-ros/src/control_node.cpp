@@ -245,6 +245,11 @@ private:
       const double probability = get_parameter("chance.probability").as_double();
       const double confidence = get_parameter("chance.confidence").as_double();
       const double process_std = get_parameter("chance.process_std").as_double();
+      if (!(process_std > 0.0)) {
+        throw std::runtime_error(
+          "mode chance needs chance.process_std greater than zero, the standard deviation of the "
+          "Gaussian process noise it samples over, got " + std::to_string(process_std));
+      }
       const std::size_t n = vars.size();
       sentil::StochasticSystem system = sentil::StochasticSystem::custom(
         vars, dt, horizon, [x0](std::uint64_t) { return x0; },
