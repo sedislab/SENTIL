@@ -1,0 +1,92 @@
+---
+title: "Contributing"
+description: "How to contribute to SENTIL."
+---
+
+SENTIL is built by Paapa Kwesi Quansah and Ernest Bonnah in the SEDIS Lab; the [citation page](/docs/reference/methods/citation) has the details for a paper. Contributions are welcome.
+
+## Where a change can land
+
+Roughly in order of how much of the system you have to hold in your head:
+
+| Area | What it involves | Rust needed |
+|---|---|---|
+| Docs and examples | Prose, worked examples, a page that is wrong or missing | No |
+| A language binding | Most bind the C ABI, so it is work in that language | Only for the PyO3 glue in `sentil-py` |
+| The specifications library | A standards-derived PrSTL spec with its citation and a test | No |
+| Benchmarks | A runner or a baseline emitting the shared JSON schema | For the Rust runners |
+| The core engine | `sentil-core`, `sentil-ffi`, `sentil-cli`, `sentil-embedded` | Yes |
+
+`CONTRIBUTING.md` in the repository answers the same question package by package, so be sure to check it.
+
+## Build the workspace
+
+The toolchain is Rust stable. `cargo build` covers the workspace members, which are the core, the C ABI, the Python extension, the CLI and the benchmarks.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+rustup toolchain install stable
+cargo build
+```
+
+A binding that only consumes the compiled core, such as C++, Java, Julia, MATLAB or ROS, needs no Rust at all. Fetch a prebuilt library instead and point the binding at it:
+
+```bash
+scripts/fetch-prebuilt-core.sh
+```
+
+The script prints the two forms the bindings read, `SENTIL_LIB` for Julia and `-DSENTIL_LIB_DIR` for the CMake configs. Some bindings such as Raspberry Pi have no bundle, so the script prints a fallback to `cargo build --release -p sentil-ffi` that puts the same library under `target/release`.
+
+For the light build, the bare STL monitor with no statistical layer, no synthesis and no file readers, drop the default features:
+
+```bash
+cargo build -p sentil --no-default-features
+```
+
+The [feature reference](/docs/reference/methods/features) lists what each flag pulls in.
+
+## Run the tests
+
+After making a change, run the tests and the linter for the package you touched. The workspace has a few tiers of tests, and each binding has its own suite. For a change in `sentil-core`, run the engine tests:
+
+```bash
+cargo test -p sentil
+cargo test -p sentil-benchmarks -p sentil-cli
+make -C sentil-ffi test-ffi
+cargo clippy -p sentil -p sentil-cli --all-targets -- -D warnings
+```
+
+`test-ffi` compiles and links every C test except `gpu_test.c`, which has its own `test-ffi-gpu` target. The clippy line is the one continuous integration runs; a bare `cargo clippy` passes on warnings that will fail the build.
+
+The tier that includes CI guards, the engine, benchmark and CLI tests plus the C tests and the claim check, is one target:
+
+```bash
+make verify
+```
+
+Every cargo call inside it passes `--offline`, so build once before you run it on a fresh clone. It leaves clippy and the binding suites to you. [The claims ledger](/docs/start/understand/claims-philosophy) covers the tiers in full.
+
+## Regressions and tolerances
+
+Every performance and correctness claim maps to a command, an expected value, and its tolerance, all in `docs/CLAIMS.md`. A claim is confirmed when its regenerated value lands inside its tolerance. A value outside tolerance is a regression.
+
+```bash
+python3 scripts/check_claims.py
+```
+
+That reads the benchmark and experiment artifacts, and prints out the values that have drifted outside their tolerances. It runs in the CI. If your change makes SENTIL faster, regenerate the artifact and move the expected value and its tolerance in the same pull request, so that it's clear when reviewing.
+
+## Open a pull request
+
+A bug report needs the smallest formula, trace or command that shows the problem, plus your version, the language you called it through, and your operating system and architecture. A feature request needs the problem you are solving and why the current surface does not cover it. Security reports go through GitHub's private advisory flow rather than a public issue.
+
+Before you open the pull request:
+
+- Keep it to one change, and say what it does and why.
+- Add or update a test, and give any new public surface one of its own.
+- Run the tests and the linter for the package you touched.
+- Give any new public function, type or behavior a doc comment with a runnable example.
+- Keep behavior the same across bindings, or document the difference.
+
+The code rules we encourage are in CONTRIBUTING.md. Contributions carry the [Developer Certificate of Origin](https://developercertificate.org) and land under the same dual MIT or Apache 2.0 terms as the rest of SENTIL.

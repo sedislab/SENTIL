@@ -1,0 +1,34 @@
+---
+title: "Future work"
+description: "Directions the SENTIL project is exploring next."
+---
+
+## Richer noise modelling
+
+The lifting layer fits per-sample noise independently across channels. A natural extension is correlated noise across channels and across time, so a sensor whose error at one step depends on the last can be modelled directly.
+
+## More synthesis backends
+
+The synthesizer ships a projected-gradient default, a CMA-ES search, and a mixed-integer encoding for affine dynamics. Two directions are open: a sums-of-squares relaxation for polynomial dynamics, and a wider set of convex reductions for chance constraints beyond the affine-Gaussian case that already reduces to a quadratic program.
+
+## More premade specifications
+
+SENTIL currently ships with 54 premade specifications, all available to every user and drawn from 10 fields. We want to grow that library to several hundred. Wider coverage means more of the routine setup in a new field is already done, and a beginner can start from a specification rather than write a routine one.
+
+## Distributed statistical checking
+
+The statistical layer scales across cores on one machine. Estimating a satisfaction probability across a cluster, with the same confidence guarantees and a clean failure model, would let the rare-event tiers reach further without a GPU.
+
+## Compositional Verification
+
+We can run SENTIL on each part of a system but if the overall guarantee of a system relies on composing the verdicts of the individual parts, we cannot currently do it natively. Future work will look into making this possible.
+
+## Broader platform reach
+
+The binding set covers the languages and middleware in wide use for real-time and safety-critical work. But there are other languages and middleware that'll benefit from having SENTIL.
+
+## Video walkthroughs
+
+A screencast series walking through installation, runtime monitoring, controller synthesis, and running on embedded devices is a planned companion to the written guides, for people who learn a tool best by watching it used.
+
+If you have a direction you want to see, or a deployment that needs something not here yet, open a discussion on [GitHub](https://github.com/sedislab/SENTIL/discussions).
