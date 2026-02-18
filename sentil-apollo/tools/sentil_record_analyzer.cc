@@ -80,6 +80,18 @@ namespace sentil {
   return trace;
 }
 
+const char* sprt_verdict_name(::sentil::SprtVerdict verdict) {
+  switch (verdict) {
+    case ::sentil::SprtVerdict::AcceptH0:
+      return "accept H0";
+    case ::sentil::SprtVerdict::AcceptH1:
+      return "accept H1";
+    case ::sentil::SprtVerdict::Inconclusive:
+      return "inconclusive";
+  }
+  return "inconclusive";
+}
+
 void Analyze(const SentilConfig& config, const ::sentil::Trace& trace) {
   ::sentil::LiftingRegistry lifting = lifting_from_proto(config);
   ::sentil::SmcConfig smc = smc_from_proto(config);
@@ -109,7 +121,8 @@ void Analyze(const SentilConfig& config, const ::sentil::Trace& trace) {
         sprt.beta = config.has_sprt_config() ? config.sprt_config().beta() : 0.05;
         sprt.max_samples = config.sample_budget();
         const ::sentil::SprtResult result = phi.check_sequential(trace, lifting, sprt);
-        std::cout << "  sprt decided in " << result.samples << " samples\n";
+        std::cout << "  sprt " << sprt_verdict_name(result.verdict) << " in " << result.samples
+                  << " samples\n";
         break;
       }
       case AMS:

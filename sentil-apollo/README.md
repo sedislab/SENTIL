@@ -60,12 +60,12 @@ The online monitor evaluates on the samples as they arrive and reads whether a f
 The control component, `control/`, turns a specification into a command. Set `mode` in `control/conf/sentil_control.pb.txt`:
 
 - `SHIELD` (default, safest): take Apollo's nominal command off `nominal_channel` and project the throttle, brake, and steering into the configured bounds before they reach the vehicle. SENTIL guards Apollo's controller rather than replacing it.
-- `SYNTHESIZE`: SENTIL is the controller. It builds the state from localization and chassis, plans over the horizon within a per-tick deadline, and writes a `ControlCommand`.
+- `SYNTHESIZE`: SENTIL is the controller. It builds the state from localization and chassis, plans over the horizon within a per-tick deadline, and writes a `ControlCommand`. `examples/synthesize_control.pb.txt` is a runnable one, a double integrator held between 1 and 9 metres, that both this mode and the synthesizer below read as is.
 - `ADVISORY`: synthesize as above but publish to `/apollo/sentil/control_advice` with no actuation authority, so a synthesized controller can be evaluated against a live drive before it is trusted.
 
 The control component runs on a timer at `control_period_ms` and emits on its deadline even if an input goes quiet; its launch file sets `exception_handler: respawn`, so a failure degrades rather than dies. Pair it with the monitor running the same spec and you have a synthesize, monitor, and re-plan loop in one dag.
 
-For the design-time work the online controller cannot afford per tick, `tools/sentil_synthesizer` reads the same control config and runs the offline side of the subsystem. `--op=plan` synthesizes the open-loop input sequence that satisfies the spec over the horizon, `--op=witness` searches for a counterexample input that violates it, and `--op=chance` estimates whether the spec holds with at least a target probability under Gaussian process noise. It needs no Cyber RT runtime, only the config bridge and the engine, so it runs on any host.
+For the design-time work the online controller cannot afford per tick, `tools/sentil_synthesizer` reads a control config that carries a `model` and runs the offline side of the subsystem. The default `control/conf/sentil_control.pb.txt` is SHIELD only and has no model to plan against, so point the synthesizer at a SYNTHESIZE config like `examples/synthesize_control.pb.txt`: `sentil_synthesizer --config=examples/synthesize_control.pb.txt --op=plan`. `--op=plan` synthesizes the open-loop input sequence that satisfies the spec over the horizon, `--op=witness` searches for a counterexample input that violates it, and `--op=chance` estimates whether the spec holds with at least a target probability under Gaussian process noise. It needs no Cyber RT runtime, only the config bridge and the engine, so it runs on any host.
 
 ## Building and installing
 

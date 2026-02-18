@@ -1,0 +1,52 @@
+mode: SYNTHESIZE
+input_width: 1
+
+model {
+  # x_{t+1} = A x_t + B u_t, A row-major 2x2, B row-major 2x1.
+  a: 1.0
+  a: 0.1
+  a: 0.0
+  a: 1.0
+  b: 0.005
+  b: 0.1
+  x0: 0.0
+  x0: 0.0
+  variables: "pos"
+  variables: "vel"
+  dt: 0.1
+  horizon: 20
+}
+
+spec {
+  expression: "always[1, 2] (pos > 1.0 and pos < 9.0)"
+}
+
+bounds {
+  lower: -3.0
+  upper: 3.0
+}
+
+state_inputs {
+  channel: "/apollo/localization/pose"
+  message_type: "apollo.localization.LocalizationEstimate"
+  fields {
+    variable: "pos"
+    field_path: "pose.position.x"
+  }
+}
+state_inputs {
+  channel: "/apollo/canbus/chassis"
+  message_type: "apollo.canbus.Chassis"
+  fields {
+    variable: "vel"
+    field_path: "speed_mps"
+  }
+}
+
+control_outputs {
+  index: 0
+  field_path: "acceleration"
+}
+
+control_period_ms: 10.0
+deadline_fraction: 0.8
