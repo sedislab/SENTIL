@@ -8,7 +8,11 @@ The data path is events and fields, and the control plane is methods, because a 
 
 ## Running it without a vendor platform
 
-The package ships an open-source ara::com over vsomeip, so the apps and tests run on a plain Linux box with no Adaptive Platform license. Build against the stub:
+The package ships an open-source ara::com stub that binds to vsomeip, so the apps and tests run on a plain Linux box with no Adaptive Platform license. vsomeip is an external dependency, not bundled here; the stub links it. Install it before configuring: vsomeip needs Boost from the system package manager (`libboost-all-dev` on Debian or Ubuntu, `boost-devel` on Fedora), and vsomeip itself is built from the COVESA source at https://github.com/COVESA/vsomeip and installed, which places the `vsomeip3` CMake package the configure step resolves.
+
+`SENTIL_ROOT` is a core install tree: `lib/libsentil.so` plus the C and C++ headers under `include/`. Build it once from the workspace root with `cargo build --release -p sentil-ffi`, then stage the artifacts into a prefix, copying `target/release/libsentil.so` into `lib/` and both `sentil-ffi/include/sentil.h` and `sentil-cpp/include/sentil` into `include/`. Point `SENTIL_ROOT` at that prefix.
+
+Build against the stub:
 
 ```
 cmake -B build -G Ninja -DSENTIL_AP_VENDOR=stub \
@@ -20,26 +24,18 @@ ctest --test-dir build
 
 `ctest` runs the parity check (the verdict the app serves equals the engine on the cross-language oracle) and the ARXML validation (the model is well-formed and the service-instance ids are unique). The lifecycle check, which exercises the service-discovery handshake over SOME/IP, needs a running routing manager and is built only with `-DSENTIL_BUILD_LIFECYCLE_TEST=ON`.
 
+The shipped `sentil_monitor` starts on the deterministic spec `front_gap > 5.0`. Set `SENTIL_MONITOR_MODE=probabilistic` before launch to register the PrSTL form `P>=0.95 (front_gap > 5.0)`, which lifts `front_gap` under additive Gaussian noise and serves the estimated satisfaction probability, so the statistical path runs without a rebuild.
+
 A vendor Adaptive Platform is a toolchain swap, not a code change: set `-DSENTIL_AP_VENDOR=vector|eb|apex` with the vendor toolchain file and point `ARA_COM_ROOT` at the vendor ara::com. The app source is unchanged; `cmake/FindAraCom.cmake` locates the vendor binding and `codegen/generate.sh` runs the vendor generator on `model/*.arxml`.
 
 ## Installing from a GitHub release
 
-To build without cloning, download the source archive for the tag you want from the GitHub release and build it the same as the from-source path above. Tags are at https://github.com/sedislab/SENTIL/releases.
-
-Linux and macOS:
+To build without cloning, download the source archive for the tag you want from the GitHub release and build it the same as the from-source path above. Tags are at https://github.com/sedislab/SENTIL/releases. The stub build and the examples are Linux only; any other target belongs to a vendor Adaptive Platform, reached through its toolchain.
 
 ```
 curl -L -o sentil-v0.3.0.tar.gz https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz
 tar xzf sentil-v0.3.0.tar.gz
 cd SENTIL-0.3.0/sentil-autosar-adaptive
-```
-
-Windows (PowerShell):
-
-```
-Invoke-WebRequest https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -OutFile sentil-v0.3.0.tar.gz
-tar xzf sentil-v0.3.0.tar.gz
-cd SENTIL-0.3.0\sentil-autosar-adaptive
 ```
 
 From there run the same cmake configure and build as above, against the stub or a vendor Adaptive Platform. For an on-ECU install, the `.deb` and `.rpm` place the apps, manifests, and the compiled SENTIL core under `/opt/sentil`; that layout is documented in `packaging/opt-layout`.

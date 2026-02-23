@@ -2,7 +2,9 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
+#include <string>
 #include <thread>
 
 #include "ara/com/service.h"
@@ -31,21 +33,33 @@ int main() {
   ara::log::Logger log = ara::log::CreateLogger("sentil_monitor");
   ara::exec::ExecutionClient execution;
 
+  const char* mode = std::getenv("SENTIL_MONITOR_MODE");
   sentil_ap::MonitorApp app;
-  app.add("follow_distance", "front_gap > 5.0");
+  if (mode != nullptr && std::string(mode) == "probabilistic") {
+    app.add_probabilistic("follow_distance", "P>=0.95 (front_gap > 5.0)", "front_gap",
+                          sentil::NoiseModel::gaussian(0.0, 0.5),
+                          sentil::NoiseInteraction::Additive, 0.95, 2000);
+  } else {
+    app.add("follow_distance", "front_gap > 5.0");
+  }
 
   ara::com::Provider verdict("sentil_monitor", kVerdictService);
   verdict.offer_event(kVerdictEvent, kGroup);
   verdict.offer_event(kViolationEvent, kGroup);
   verdict.on_method(kSetSpecificationMethod, [&app, &log](const ara::com::Bytes& request) {
     bool accepted = false;
+    std::string reason;
     try {
       sentil_ap::detail::Reader reader(request);
-      accepted = app.set_specification(reader.get_string());
+      accepted = app.set_specification(reader.get_string(), reason);
     } catch (const std::exception& error) {
-      log.LogError() << "SetSpecification failed: " << error.what();
+      reason = error.what();
     }
-    log.LogInfo() << "SetSpecification " << (accepted ? "accepted" : "rejected");
+    if (accepted) {
+      log.LogInfo() << "SetSpecification accepted";
+    } else {
+      log.LogError() << "SetSpecification rejected: " << reason;
+    }
     return ara::com::Bytes{static_cast<std::uint8_t>(accepted ? 1 : 0)};
   });
   verdict.offer();

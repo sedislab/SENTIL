@@ -34,10 +34,11 @@ void MonitorApp::add_probabilistic(const std::string& id, const std::string& for
   samples_[id] = samples;
 }
 
-bool MonitorApp::set_specification(const std::string& formula) {
+bool MonitorApp::set_specification(const std::string& formula, std::string& error) {
   try {
     ::sentil::Formula::parse(formula);
-  } catch (const std::exception&) {
+  } catch (const std::exception& parse_error) {
+    error = parse_error.what();
     return false;
   }
   std::lock_guard<std::mutex> guard(mutex_);
