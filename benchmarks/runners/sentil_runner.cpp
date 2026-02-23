@@ -1,13 +1,3 @@
-// The SENTIL C++ runner. Emits one JSON record per measurement to standard output,
-// matching the Rust runner's schema so the C++ binding is timed against the core on
-// identical work. Run as `sentil_runner_cpp <scalability|streaming>`.
-//
-// It builds the x-only oracle trace the C runner builds, not the Rust runner's
-// three-signal trace, so at the largest sizes it can read faster than the Rust
-// number; that is a trace-composition artifact, not a real speedup. The full-signal
-// path copies the core's result into a std::vector, the one cost the C++ idiom adds
-// over the raw C call; the streaming path crosses the boundary once per sample with
-// no allocation.
 #include <sentil/sentil.hpp>
 
 #include <unistd.h>

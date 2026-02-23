@@ -1,7 +1,3 @@
-/* The SENTIL C runner. Emits one JSON record per measurement to standard output,
-   matching the Rust runner's schema so the C path is timed against the core on
-   identical work. Run as `sentil_runner <scalability|streaming>`. */
-
 #define _POSIX_C_SOURCE 200809L
 
 #include "sentil.h"

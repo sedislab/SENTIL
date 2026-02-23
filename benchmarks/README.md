@@ -4,19 +4,11 @@ One suite, one record shape, run the same way for every tool, against the baseli
 
 ## Two questions, never mixed
 
-The full-signal question asks for the robustness at every sample. This is what RTAMT's offline evaluator computes, so the full-signal track is the like-for-like comparison: `Formula::robustness_signal` against RTAMT's `evaluate`, same formula, same trace.
-
-The monitoring question asks for the robustness at the first sample, the value an online monitor reports each step. SENTIL reads only the trace up to the formula's horizon, so the cost does not grow with the history behind it. This track is reported on its own and is never quoted as the RTAMT speedup.
-
-Every record carries a `question` field, `full_signal` or `monitoring`. The plotter groups strictly by it.
-
-## Layout
-
-`deterministic/` is the oracle, fixed signals and formulas with known robustness. `probabilistic/` holds models with known satisfaction probability. `scalability/` holds the length, depth, and bound sweeps. `runners/` holds one runner per tool, each emitting the shared record. `results/` holds the committed JSON and the plots.
+The signals, formulas and their robustness results are in `deterministic/`. The stochastic models and their probability values are in `src/probabilistic.rs`. `sentil_runner` generates the length, depth, and bound sweeps. The code that implement each baseline tool are in `runners/` and the result json files and plots are in `results/`.
 
 ## Running
 
-The deterministic tier runs anywhere. The large sweeps belong on a quiet compute node, not a shared login node, so the timings are stable.
+Run a track with `cargo run --release -p sentil-benchmarks --bin sentil_runner <evaluation_area>`, where `<evaluation_area>` can be `scalability`, `deterministic`, `dense`, or `streaming`, then draw the figures with `python runners/plot.py`. The `sentil_synth_runner` and `sentil_particle_runner` bins run the synthesis and particle sweeps. A list of all experiments run and their results are described in [docs/REPRODUCE.md](../docs/REPRODUCE.md).
 
 ## Statistical model checking
 

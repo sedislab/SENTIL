@@ -1,7 +1,3 @@
-//! The SENTIL runner. Emits one JSON record per measurement to standard output.
-//! Run as `sentil_runner <deterministic|scalability|streaming>`. Heavy sizes belong
-//! on a quiet compute node.
-
 use std::env;
 use std::hint::black_box;
 use std::process::ExitCode;
