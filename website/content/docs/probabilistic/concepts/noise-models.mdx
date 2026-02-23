@@ -1,0 +1,77 @@
+---
+title: "Choosing a noise model"
+description: "A noise model describes how a sensor reading relates to the true value."
+---
+
+The probability SENTIL reports is only as good as the noise model behind it. A model that understates sensor variance produces overconfident verdicts and another that overstates it produces timid ones. We look at how to choose a model, how to fit one from calibration data, and how to register it with the monitor on this page.
+
+## What a noise model is for
+
+A noise model is a probability distribution over the residual between the true value and the sensor's reading. During a check, the lifter draws residuals from the model and applies them to the recorded trace, producing plausible renderings of the true signal per draw.
+
+You attach a model to a signal through a `LiftingRegistry`. The registry pairs each signal name with a model and an interaction mode.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python
+from sentil import LiftingRegistry, NoiseModel, NoiseInteraction
+
+lifting = LiftingRegistry()
+lifting.register("speed", NoiseModel.gaussian(0.0, 0.5), NoiseInteraction.Additive)
+lifting.register("gain", NoiseModel.gaussian(1.0, 0.02), NoiseInteraction.Multiplicative)
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::{LiftingRegistry, NoiseModel, NoiseInteraction};
+
+let mut lifting = LiftingRegistry::new();
+lifting.register("speed", NoiseModel::gaussian(0.0, 0.5)?, NoiseInteraction::Additive);
+lifting.register("gain", NoiseModel::gaussian(1.0, 0.02)?, NoiseInteraction::Multiplicative);
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil smc -f 'P>=0.9(G (speed > 5))' -t run.csv \
+  --noise 'speed=gaussian:0,0.5'
+```
+</Tab>
+</Tabs>
+
+## Noise interaction modes
+
+The interaction mode decides how a residual combines with the signal. An additive residual is a shift whose size does not depend on the signal level, i.e., thermal fluctuations and quantization steps. A multiplicative residual scales with the signal, the way gain drift and fading do.
+
+## Choosing a noise family
+
+The first advice I'll give you in choosing a noise model is to plot the residuals and look at their shape. A symmetric bell around zero is a Gaussian and this is the right default for most additive sensors. Bounded error with no preferred point, such as quantization, is a uniform distribution. A positive, skewed residual points at a log-normal or a gamma, and a waiting-time residual at an exponential, whose one argument is the `rate`. Heavier tails than a Gaussian call for a Student's t at low degrees of freedom, or a Cauchy when outliers dominate and no mean exists. Integer counts belong to Poisson or binomial, a Gaussian clipped to a physical range is a truncated normal, and a channel you trust exactly gets a Dirac, pinned to its value. We provide all of these distributions and a reference for each in the [noise-models reference](/docs/reference/methods/noise-models).
+
+Every constructor validates its parameters and returns an error rather than a broken model, so an impossible standard deviation is caught at the call, not at the check. The full catalog of all seventeen families, with each constructor's parameters, constraints, and moments, is on the [noise-models reference](/docs/reference/methods/noise-models).
+
+## When no parametric family fits
+
+If a plot of your residuals matches none of the distributions above, then a bootstrap model is appropriate. The bootstrap model stores the observed residuals and resamples them with replacement. The advantage is that it makes no assumptions about the underlying shape and this gives you a good representation of the true noise distribution. The downside is that, it needs enough calibration data to represent the tails, typically several hundred residuals.
+
+```python
+residuals = [-0.12, 0.03, -0.07, 0.15, -0.02, 0.09]
+model = NoiseModel.bootstrap(residuals)
+```
+
+## When the error is multimodal
+
+If your error distribution has multiple peaks or a heavy tail, then a mixture model is the most appropriate. A Gaussian mixture places several weighted Gaussian components over the residual, and the weights are normalized for you.
+
+```python
+components = [NoiseModel.gaussian(0.0, 0.5), NoiseModel.gaussian(0.0, 2.0)]
+model = NoiseModel.mixture([0.7, 0.3], components)
+```
+
+## Fitting from calibration data
+
+When you have paired ground-truth and sensor readings, fitting the model from data instead of guessing its parameters is the best way to get the best noise model. [Fit a noise model](/docs/probabilistic/guides/fit-noise-models) shows you how to get a fitted, registered model from raw pairs.
+
+<Callout type="warn">
+By default SENTIL draws noise per variable independently. If two signals share a physical source, such as two channels off one inertial unit, independent draws understate their correlation. Model the shared source explicitly, or widen the individual models to stay conservative, when the verdict is safety-critical.
+</Callout>
+
+Once a model is registered, the next stage is [lifting the trace into an ensemble](/docs/probabilistic/guides/lift-trace).

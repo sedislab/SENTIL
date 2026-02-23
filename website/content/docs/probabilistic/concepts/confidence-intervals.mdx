@@ -1,0 +1,119 @@
+---
+title: "Confidence intervals"
+description: "Wilson, Clopper-Pearson, Jeffreys, and Agresti-Coull confidence intervals."
+---
+
+If you run a check and get a verdict, you have an estimate of the probability that the property holds. That estimate is based on a finite number of samples, and it is subject to sampling error. The true probability may be higher or lower than the estimate, and the only way to know how far off it might be is to compute a confidence interval. For example if you run ten thousand trajectories and find six thousand satisfying ones, the point estimate is $\hat{p} = 0.6$. A 95 percent confidence interval of $[0.57, 0.63]$ says that if you repeated the experiment many times, 95 percent of the intervals you compute would contain the true probability $p$.
+
+## What coverage means
+
+An interval method has coverage $1 - \alpha$ if, over many independent experiments, the interval it produces contains the true probability a $1 - \alpha$ fraction of the time. Nominal coverage is what you ask for, usually 0.95. Actual coverage is what a method delivers. We call a method that covers less than its nominal coverage overconfident and one that covers more is conservative.
+
+In SENTIL, we validated coverage on synthetic Bernoulli processes with known probability. Across 4000 batches of 100 draws at a true probability of $0.3$, the Wilson interval's coverage stays within $0.03$ of the nominal $0.95$, and the Clopper-Pearson interval stays at or above $0.94$.
+
+## Confidence interval methods in SENTIL
+
+SENTIL offers four interval constructions through `IntervalMethod`. Wilson is the default.
+
+| Method | Coverage character | Width | Use it when |
+|---|---|---|---|
+| `Wilson` | near-nominal | narrow | moderate or large number of samples |
+| `ClopperPearson` | at or above nominal, guaranteed | widest | the verdict shouldn't overstate confidence or the probability is near 0 or 1 |
+| `Jeffreys` | near-nominal | short | small samples |
+| `AgrestiCoull` | close to Wilson | narrow | a fast approximation to the Wilson interval |
+
+## The Wilson score interval
+
+The Wilson interval inverts the normal-approximation test for a binomial proportion. For $k$ satisfactions in $N$ samples it provides a confidence range around the estimated probability while accounting for finite-sample effects.
+
+$$
+\text{CI}_\alpha(\hat{p}) = \frac{1}{1 + z^2/N}\left(\hat{p} + \frac{z^2}{2N} \pm z\sqrt{\frac{\hat{p}(1-\hat{p})}{N} + \frac{z^2}{4N^2}}\right),
+$$
+
+where $\hat{p} = k/N$ and $z = \Phi^{-1}(1 - \alpha/2)$ is the standard normal quantile at the confidence level. For 95 percent confidence, $z = 1.959964$.
+
+Unlike the plain Wald interval $\hat{p} \pm z\sqrt{\hat{p}(1-\hat{p})/N}$, the Wilson interval does not collapse to a point when $\hat{p}$ hits zero or one, and it holds near-nominal coverage down to modest sample sizes.
+
+You can compute it directly on counts,
+
+```python
+from sentil import stats
+
+ci = stats.wilson_interval(50, 100, 0.95)
+print(ci.lower, ci.upper)   # 0.403831 0.596169
+```
+
+## The Clopper-Pearson exact interval
+
+Where Wilson approximates, Clopper-Pearson guarantees. It inverts the exact binomial CDF, so its coverage is at least the nominal level for every true probability and every sample size, with no approximation error. The downside is that the interval is wider than Wilson for the same data, which means more samples to resolve the probability to the same precision.
+
+Because of the cost, we recommend Clopper-Pearson either when you need the guarantee or when you expect the true probability to be near 0 or 1.
+
+The endpoints come from the Beta quantile function,
+
+$$
+\text{lower} = B^{-1}\left(\tfrac{\alpha}{2};\, k,\, N-k+1\right), \qquad
+\text{upper} = B^{-1}\left(1-\tfrac{\alpha}{2};\, k+1,\, N-k\right),
+$$
+
+with the lower bound set to zero when $k = 0$ and the upper bound set to one when $k = N$. On the same counts as above:
+
+```python
+ci = stats.clopper_pearson(50, 100, 0.95)
+print(ci.lower, ci.upper)   # 0.398321 0.601679
+```
+
+The Clopper-Pearson interval brackets Wilson from outside, [0.398, 0.602] against [0.404, 0.596].
+
+## Jeffreys and Agresti-Coull
+
+Jeffreys is the Bayesian credible interval under a Beta(1/2, 1/2) prior. It is shorter than Clopper-Pearson while keeping coverage close to nominal, which makes it a good middle choice for small samples. Agresti-Coull adds a few pseudo-observations before applying a Wald-style formula, landing very close to Wilson at a slightly lower cost.
+
+```python
+ci = stats.jeffreys_interval(50, 100, 0.95)
+print(ci.lower, ci.upper)   # 0.403174 0.596826
+
+ci = stats.agresti_coull(50, 100, 0.95)
+print(ci.lower, ci.upper)   # 0.403832 0.596168
+```
+
+## Reading a verdict off the interval
+
+The `holds` field of an `SmcResult` is the boolean interpretation of the probability estimate against the threshold. For a probabilistic formula `P~p (phi)`, `holds` is true when the estimated probability is above the threshold `p`, false when it is below, and undecided when it is within the interval. When `p0` is undecided, you need to draw [more samples](/docs/probabilistic/guides/sample-size).
+
+## Choosing the method
+
+Select the interval you want on the `SmcConfig`.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python
+from sentil import SmcConfig, IntervalMethod
+
+config = SmcConfig(samples=20000, confidence=0.95, method=IntervalMethod.ClopperPearson)
+result = phi.check(trace, lifting, config)
+print(f"[{result.interval.lower:.4f}, {result.interval.upper:.4f}]")
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::{IntervalMethod, SmcConfig};
+
+let config = SmcConfig {
+    samples: 20_000,
+    interval_method: IntervalMethod::ClopperPearson,
+    ..SmcConfig::default()
+};
+let result = phi.check(&trace, &lifting, &config)?;
+println!("[{:.4}, {:.4}]", result.interval.lower, result.interval.upper);
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil smc -f 'P>=0.95(G[0,10] (x > 0))' -t base.csv \
+  --interval clopper-pearson --confidence 0.95
+```
+</Tab>
+</Tabs>
+
+The [statistical methods reference](/docs/reference/methods/statistical-methods) lists the exact functions, and [size your sample count](/docs/probabilistic/guides/sample-size) tell you how many $N$ you need for a desired precision.
