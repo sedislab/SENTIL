@@ -19,7 +19,7 @@ From the MATLAB File Exchange, install the packaged toolbox by opening `Sentil.m
 
 ## Installing from a GitHub release
 
-Download `Sentil.mltbx` from the assets on the GitHub release and install it by double-clicking it in MATLAB, or with `matlab.addons.toolbox.installToolbox('Sentil.mltbx')`. The steps are the same on Windows, macOS, and Linux.
+Download `Sentil.mltbx` from the assets on the GitHub release and install it by double-clicking it in MATLAB, or with `matlab.addons.toolbox.installToolbox('Sentil.mltbx')`. The published artifact carries the Linux MEX gateway and its library, so it installs and runs as is on Linux; on macOS or Windows the gateway is not in the package, so build it from source with `build_sentil` below.
 
 ## Building from source
 

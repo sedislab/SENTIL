@@ -39,6 +39,9 @@ if exist(sfun, 'file')
     buildOne(include, libdir, lib, ext, sfun, fullfile(base, 'blocks'));
 end
 
+addpath(base);
+addpath(fullfile(base, 'blocks'));
+
 fprintf('sentil-matlab built\n');
 end
 
