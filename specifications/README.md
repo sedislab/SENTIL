@@ -32,7 +32,15 @@ Then check or monitor a trace against it, overriding any parameter whose default
 sentil check --spec automotive/speed_limit -t run.csv --param speed_limit=27.8 --param T=45
 ```
 
-A template that carries both a `deterministic` and a `probabilistic` formula selects between them with `--variant`; the probabilistic form pulls in the template's noise model and the statistical settings under `[verification]`.
+Each template carries a `deterministic` and usually a `probabilistic` formula. `sentil check` evaluates the deterministic form; `sentil smc` estimates the probabilistic form, drawing the ensemble from the template's noise model:
+
+```
+sentil smc --spec automotive/speed_limit -t run.csv --param speed_limit=27.8 --param T=45
+```
+
+The `[verification]` block (sample budget, confidence, SPRT, AMS) records recommended settings, but `sentil smc` does not read it; it follows its own `--samples` and `--confidence` flags. Build the monitor from Rust with `into_monitor()` to apply those settings.
+
+`--variant` is a separate thing: it selects a named formula variant, which only a few templates define, such as `controls/overshoot` with its `step_up`, `step_down`, and `bidirectional`. Run `sentil specs <name>` to see whether a template has any.
 
 From Rust, resolve a template through the registry and fill its parameters:
 
@@ -45,6 +53,8 @@ let formula = SpecRegistry::global()
     .with_param("T", 45.0)?
     .build_formula()?;
 ```
+
+`build_probabilistic_formula()` returns the probabilistic form instead of `build_formula()`, and `into_monitor()` returns a monitor already carrying the template's `[verification]` settings.
 
 The same library is reachable from every binding under its idiomatic name. To point SENTIL at your own directory of templates instead of the embedded set, set `SENTIL_SPECS_DIR`; a name is resolved there first, then against the built-in library.
 
