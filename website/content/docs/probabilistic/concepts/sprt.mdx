@@ -1,0 +1,68 @@
+---
+title: "SPRT"
+description: "A sequential test decides whether a probability clears a threshold and stops as soon as there is enough evidence. SENTIL offers Wald's SPRT and a Bayesian test."
+---
+
+A requirement of the form "$\varphi$ holds with probability at least $p$" is a yes-or-no question. You can answer it by estimating the probability and comparing it to the threshold, but that wastes samples if you know the difference between the true probability and the threshold. For example, if the true probability is 0.95 and the threshold $p$ is 0.8, you need a few samples to determine satisfaction, but with fixed-budget sampling, you need to draw all $N$ samples. A sequential test on the other hand draws the number of samples that are needed to determine satisfaction.
+
+SENTIL runs three statistical methods over the same trace, formula, and noise registry. Empirical SMC estimates the probability with a fixed budget and reports an interval. Wald's sequential probability ratio test and a Bayesian sequential test each decide a threshold and stop early. We'll look at how each works, when to use it, and how to run them. The [statistical methods reference](/docs/reference/methods/statistical-methods) lists the exact configuration fields.
+
+## Differences between the methods
+
+SMC answers the question,"what is the satisfaction probability?" It draws a set number of samples, returns the probabilistic estimate and a [confidence interval](/docs/probabilistic/concepts/confidence-intervals). You should use SMC when you need a probability estimate and not really a yes-or-no answer.
+
+SPRT answers "is the probability at least `p`?" It draws one sample at a time and stops the moment the accumulated evidence favors one hypothesis strongly enough. You should choose it when you need a yes-or-no answer and the budget is tight, such as a runtime check that must finish fast or a regression that confirms a property still holds.
+
+## How SPRT works
+
+SPRT tests two hypotheses separated by an indifference region $[p_0, p_1]$ around the threshold: $H_0$ that the true probability is at most $p_0$, and $H_1$ that it is at least $p_1$. Inside the region, the test is allowed to go either way. After each sample, it updates a log-likelihood ratio of the two hypotheses and compares it to two bounds set by the error rates,
+
+$$
+A = \ln\frac{1 - \beta}{\alpha}, \qquad B = \ln\frac{\beta}{1 - \alpha}.
+$$
+
+The test accepts $H_1$ when the ratio rises to $A$, accepts $H_0$ when it falls to $B$, and keeps sampling while it stays between them. Here $\alpha$ bounds the false-positive rate, accepting $H_1$ when $H_0$ holds, and $\beta$ bounds the false-negative rate. Wald's construction gives these error rates by design; with $p_0 = 0.3$, $p_1 = 0.7$, and $\alpha = \beta = 0.05$, both the Type I and Type II error rates stay at or below 0.1 on the test tier.
+
+The efficiency of SPRT depends on the gap between the true probability and the region. Far from it, the ratio crosses a bound in tens of samples. Close to it, the evidence never commits, and the test runs to its sample cap and returns an inconclusive verdict. A wider indifference region terminates sooner at the cost of decision precision.
+
+```python
+from sentil import SprtConfig
+
+sprt = SprtConfig(p0=0.75, p1=0.85, alpha=0.05, beta=0.05)
+result = phi.check_sequential(trace, lifting, sprt)
+
+print(result.verdict, result.samples)   # SprtVerdict.AcceptH1 148
+```
+
+`check_sequential` returns an `SprtResult` with the following fields: `verdict` (which is either `AcceptH0`, `AcceptH1`, or `Inconclusive`), the `samples` drawn, and the final `log_likelihood`.
+
+The hypotheses are about the probability itself, so `AcceptH1` always means the probability is high. For an upper-bound property like `P<=0.001(phi)`, a high probability means the property fails.
+
+## The Bayesian sequential test
+
+The third method replaces the frequentist hypotheses with a posterior. It starts from a uniform Beta(1, 1) prior over the satisfaction probability, updates the posterior with each sampled trajectory, and computes the Bayes factor for the property holding against it failing. When that factor crosses a cutoff, the test decides; otherwise it keeps sampling to the cap.
+
+```python
+from sentil import BayesConfig
+
+bayes = BayesConfig(threshold=0.9, bayes_factor=100.0)
+result = phi.check_bayesian(trace, lifting, bayes)
+
+print(result.verdict, result.posterior)   # BayesVerdict.Holds 0.994
+```
+
+A `BayesResult` has the following fields: `verdict` (`Holds`, `Fails`, or `Inconclusive`), the `samples` drawn, and the `posterior` probability that the threshold is met. A larger `bayes_factor` demands stronger evidence before committing by using more samples. You should use the Bayesian test when you have a prior and a decision you want expressed as a posterior belief rather than a controlled error rate.
+
+## Running each from the CLI
+
+The `smc` command allows you to select the method through `--algo`. The threshold comes from the formula's `P` operator, and `--indifference` sets the half-width of the SPRT band around it.
+
+```bash
+sentil smc -f 'P>=0.8(G[0,10] (x > 0))' -t base.csv --algo smc
+sentil smc -f 'P>=0.8(G[0,10] (x > 0))' -t base.csv --algo sprt --indifference 0.05
+sentil smc -f 'P>=0.8(G[0,10] (x > 0))' -t base.csv --algo bayes
+```
+
+## Combining the methods
+
+One common pattern when it comes to probabilistic verification is to quickly screen with a sequential test and then characterize borderline cases with SMC. The sequential test quickly accepts or rejects the property when the probability is far from the threshold, and SMC estimates the probability when it is close. The [run a sequential test guide](/docs/probabilistic/guides/run-sprt) takes you through a full example, and the [statistical methods reference](/docs/reference/methods/statistical-methods) lists the exact configuration fields.

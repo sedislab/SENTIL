@@ -1,0 +1,52 @@
+---
+title: "Rare-event estimation"
+description: "Adaptive multilevel splitting allows you to estimate rare events more efficiently than Monte Carlo."
+---
+
+Monte Carlo estimates a probability by drawing a number of samples and counting how many satisfy the event. This works well when the event is common, but it fails when the event is rare. Adaptive multilevel splitting (AMS) factors the rare probability into a product of conditional probabilities, each of which is moderate and can be estimated efficiently. This allows you to estimate probabilities of events that are so far out in the tail, that Monte Carlo would need an infeasible number of samples to see any hits.
+
+Most safety events are rare by design, and many performance events are rare by accident so this method is useful for both.
+
+## Why flat Monte Carlo collapses
+
+Estimating a probability $p$ from $N$ independent draws gives an estimator whose relative error is
+
+$$
+\text{CV} = \sqrt{\frac{1 - p}{N p}} \approx \frac{1}{\sqrt{N p}}
+$$
+
+for small $p$. The relative error grows as $1/\sqrt{p}$, so holding it fixed as $p$ shrinks means growing $N$ in inverse proportion. Resolving $p = 10^{-6}$ to ten percent relative error needs on the order of $10^8$ trajectories, and most of them never represent the event. No faster random number generator changes this, because the estimator itself is the problem.
+
+## Factoring the tail
+
+Adaptive multilevel splitting replaces the single rare estimator with a product of conditional estimators, each handling a probability near where Monte Carlo is efficient. Nest the rare event $A$ inside a chain of sets,
+
+$$
+A = A_L \subset A_{L-1} \subset \cdots \subset A_1 \subset A_0 = \Omega,
+$$
+
+so the probability factors through the conditional probabilities of moving one level inward:
+
+$$
+P(A) = \prod_{k=0}^{L-1} P(A_{k+1} \mid A_k).
+$$
+
+Each factor is moderate, a fraction that ordinary sampling estimates with low variance, and the product reconstitutes the rare probability. The relative error of the product stays bounded by the sum of the per-factor errors, which is manageable where a single flat estimate is not.
+
+## Levels are robustness thresholds
+
+For temporal-logic verification, the level structure comes for free from robustness. We define the rare event as the set of trajectories whose inner-formula robustness drops to a violation, and an intermediate level is the set whose robustness sits above a threshold $\tau_k$. As $\tau_k$ decreases toward the violation margin, the sets nest, and the sequence of thresholds the algorithm walks is the level chain.
+
+The splitting is adaptive because the right thresholds are not known in advance. SENTIL keeps a population of trajectories, repeatedly drops the worst-scoring ones at the current level, and regenerates each by branching a survivor forward from where it first crossed that level. The surviving fraction at each step estimates the conditional probability, and the running product is the estimate. This last-particle form stays consistent far out in the tail where a fixed-fraction scheme would drift. AMS works best when robustness gives a real gradient toward the event.
+
+Estimation runs over a `StochasticSystem`, a model that draws an initial state and steps it forward, rather than over a recorded trace, because the splitter must branch a survivor from the middle of its trajectory. [Estimate a rare event on the GPU](/docs/probabilistic/guides/rare-events-gpu) shows you how to do this.
+
+## Benchmarking the estimator
+
+On a tandem queueing model whose overflow probability is known to be $5.602 \times 10^{-6}$, the splitting estimate lands at $5.603 \times 10^{-6}$ in 11.6 ms at 4000 particles. On a three-stage tandem with truth $1.274 \times 10^{-5}$, the estimate is $1.2845 \times 10^{-5}$ in 46 ms. Runs like these take tens of milliseconds where importance-splitting baselines take tens of seconds.
+
+Splitting is parallel at each level and every surviving trajectory advances on its own. This is a very parallel problem and because of this, we implement AMS for rare event estimation on GPU. This [guide](/docs/probabilistic/guides/rare-events-gpu) covers the feature flag, the declarative model the device needs, and the CPU fallback.
+
+## Further reading
+
+The adaptive multilevel splitting method is due to Cérou and Guyader, "Adaptive multilevel splitting for rare event analysis" (2007). Its adaptation to statistical model checking of temporal properties follows Jegourel, Legay, and Sedwards, "Importance splitting for statistical model checking rare properties" (2013). Note that if your target probability is greater than $10^{-3}$, plain [SMC or a sequential test](/docs/probabilistic/concepts/sprt) is the simpler choice.
