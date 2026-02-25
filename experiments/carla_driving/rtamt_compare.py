@@ -10,6 +10,8 @@ import numpy as np
 import rtamt
 import sentil
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 DET = [
     ("speed_limit", "speed", 12.0, "<", "<="),
     ("following_distance", "front_distance", 6.0, ">", ">="),
@@ -128,9 +130,10 @@ def probabilistic(times, sig, n):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--capture", default="results/drive.json")
-    ap.add_argument("--out", default="results/rtamt.json")
+    ap.add_argument("--capture", default=os.path.join(HERE, "results", "drive.json"))
+    ap.add_argument("--out", default=os.path.join(HERE, "results", "rtamt.json"))
     args = ap.parse_args()
+    out = args.out if os.path.isabs(args.out) else os.path.join(HERE, args.out)
     times, sig = load_signals(args.capture)
     n = len(times)
     report = {
@@ -139,8 +142,8 @@ def main():
         "offline_future_bounded": offline_future(times, sig, n),
         "probabilistic_monte_carlo": probabilistic(times, sig, n),
     }
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    json.dump(report, open(args.out, "w"), indent=2)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    json.dump(report, open(out, "w"), indent=2)
     print(json.dumps(report, indent=2))
 
 

@@ -49,6 +49,12 @@ Offline study, from the committed trace, no GPU:
 python experiments/carla_driving/monitor_drive.py --trace experiments/carla_driving/results/drive.json
 ```
 
+The head-to-head against RTAMT, on the same trace, writing `results/rtamt.json`. It needs the `rtamt` package (`pip install rtamt`):
+
+```
+python experiments/carla_driving/rtamt_compare.py --capture experiments/carla_driving/results/drive.json
+```
+
 Online run, on a machine with ROS 2 and the `sentil_ros` package built, replaying the committed bag through the node:
 
 ```

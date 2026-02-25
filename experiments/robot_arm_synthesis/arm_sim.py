@@ -16,6 +16,7 @@ from std_msgs.msg import Float64MultiArray
 
 from sentil_ros.msg import Control
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 W, H = 800, 600
 TARGET = np.array([0.4, 0.4, 0.7])
 TARGET_HALF = 0.08
@@ -96,11 +97,12 @@ def render(arm, ee, vel, accel, t, reached, safe):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="results")
+    ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--steps", type=int, default=90)
     ap.add_argument("--dt", type=float, default=0.1)
     args = ap.parse_args()
-    os.makedirs(args.out, exist_ok=True)
+    out = args.out if os.path.isabs(args.out) else os.path.join(HERE, args.out)
+    os.makedirs(out, exist_ok=True)
 
     rclpy.init()
     plant = Plant()
@@ -114,7 +116,7 @@ def main():
     reached_at = None
     min_z = float(ee[2])
     import imageio.v2 as imageio
-    writer = imageio.get_writer(os.path.join(args.out, "arm.mp4"), fps=int(1 / args.dt),
+    writer = imageio.get_writer(os.path.join(out, "arm.mp4"), fps=int(1 / args.dt),
                                 quality=8, macro_block_size=8)
     for k in range(args.steps):
         msg = Float64MultiArray()
@@ -152,7 +154,7 @@ def main():
         "stayed_above_table": bool(min_z > FLOOR),
         "final_ee": traj[-1],
     }
-    json.dump(report, open(os.path.join(args.out, "arm.json"), "w"), indent=2)
+    json.dump(report, open(os.path.join(out, "arm.json"), "w"), indent=2)
     print(json.dumps(report, indent=2))
     p.disconnect()
     plant.destroy_node()

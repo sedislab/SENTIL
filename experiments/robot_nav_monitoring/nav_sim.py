@@ -18,6 +18,7 @@ from sensor_msgs.msg import Range
 
 from sentil_ros.msg import Probability, Robustness
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 W, H = 880, 600
 FENCE = 4.0  # m, matches robot_nav.yaml
 OBS_R = 0.3  # m
@@ -160,11 +161,12 @@ def render(x, y, speed, clr, t, rob, prob):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="results")
+    ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--steps", type=int, default=150)
     ap.add_argument("--dt", type=float, default=0.1)
     args = ap.parse_args()
-    os.makedirs(args.out, exist_ok=True)
+    out = args.out if os.path.isabs(args.out) else os.path.join(HERE, args.out)
+    os.makedirs(out, exist_ok=True)
 
     rclpy.init()
     robot_node = Robot()
@@ -176,7 +178,7 @@ def main():
     body, base_z, wheels = scene(obstacles)
 
     import imageio.v2 as imageio
-    writer = imageio.get_writer(os.path.join(args.out, "nav.mp4"), fps=int(1 / args.dt),
+    writer = imageio.get_writer(os.path.join(out, "nav.mp4"), fps=int(1 / args.dt),
                                 quality=8, macro_block_size=8)
     min_clr, viol, rolled = 9.9, 0, 0.0
     breaches = []
@@ -220,7 +222,7 @@ def main():
         "geofence_held": bool(robot_node.rob.get("geofence", -1) >= 0.0),
         "speed_limit_held": bool(robot_node.rob.get("speed_limit", -1) >= 0.0),
     }
-    json.dump(report, open(os.path.join(args.out, "nav.json"), "w"), indent=2)
+    json.dump(report, open(os.path.join(out, "nav.json"), "w"), indent=2)
     print(json.dumps(report, indent=2))
     p.disconnect()
     robot_node.destroy_node()

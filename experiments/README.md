@@ -21,19 +21,27 @@ The case studies and deployments behind the numbers in [../docs/CLAIMS.md](../do
 
 ## Synthesis and robotics
 
-| Directory | What it shows |
-| --- | --- |
-| [robot_arm_synthesis](robot_arm_synthesis) | synthesizing a robot-arm controller from a spec, in ROS |
-| [robot_nav_monitoring](robot_nav_monitoring) | monitoring mobile-robot navigation, in ROS |
-| [uav_geofence](uav_geofence) | UAV geofence and collision avoidance |
+| Directory | What it shows | Tier |
+| --- | --- | --- |
+| [robot_arm_synthesis](robot_arm_synthesis) | synthesizing a robot-arm controller from a spec, in ROS | ROS 2 + PyBullet |
+| [robot_nav_monitoring](robot_nav_monitoring) | monitoring mobile-robot navigation, in ROS | ROS 2 + PyBullet |
+| [uav_geofence](uav_geofence) | UAV geofence and collision avoidance | CPU |
 
 ## Running
 
-The CPU studies run directly and finish in seconds to minutes, for instance:
+The CPU studies (glucose, circadian, uav, and the carla offline study) run directly and finish in seconds to minutes. They need the `sentil` Python package plus NumPy and Matplotlib:
+
+```
+pip install sentil numpy matplotlib
+```
+
+Then run any of them, for instance:
 
 ```
 python experiments/glucose_control/glucose_control.py
 python experiments/circadian_gene_network/circadian_gene_network.py
+python experiments/uav_geofence/uav_geofence.py
+python experiments/carla_driving/monitor_drive.py --trace experiments/carla_driving/results/drive.json
 ```
 
-The Raspberry Pi latency is bound to that board, and the ROS, Apollo, and AUTOSAR studies need their respective platforms; each directory's README states what it needs and what to expect where the hardware is not available.
+The two ROS sims (robot_arm_synthesis, robot_nav_monitoring) add `pybullet`, `pillow`, and `imageio` on top of a built `sentil_ros`. The Raspberry Pi latency is bound to that board, and the ROS, Apollo, and AUTOSAR studies need their respective platforms; each directory's README states what it needs and what to expect where the hardware is not available.

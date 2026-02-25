@@ -14,6 +14,8 @@ import numpy as np
 
 import sentil
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 LANE_TOL = 0.3  # m
 MIN_CLEARANCE = 5.0  # m
 SPEED_LIMIT = 50.0  # km/h
@@ -175,9 +177,10 @@ def plot(sig, probs, critical, out):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--trace", default="results/drive.json")
-    ap.add_argument("--out", default="results/verdicts.json")
+    ap.add_argument("--trace", default=os.path.join(HERE, "results", "drive.json"))
+    ap.add_argument("--out", default=os.path.join(HERE, "results", "verdicts.json"))
     args = ap.parse_args()
+    out = args.out if os.path.isabs(args.out) else os.path.join(HERE, args.out)
 
     data = load(args.trace)
     sig = data["signals"]
@@ -216,10 +219,10 @@ def main():
             "probabilistic_per_frame_ms": prob_lat,
         },
     }
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    with open(args.out, "w") as f:
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w") as f:
         json.dump(report, f, indent=2)
-    plot(sig, probs, critical, args.out)
+    plot(sig, probs, critical, out)
     print(json.dumps(report, indent=2))
 
 
