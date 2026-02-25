@@ -1,0 +1,84 @@
+---
+title: "Fit a noise model"
+description: "Turn paired ground-truth and sensor data into residuals, choose additive or multiplicative interaction, and fit a distribution, a bootstrap, or a Gaussian mixture."
+---
+
+[Lifting](/docs/probabilistic/guides/lift-trace) needs a noise model. You could pick one by hand, but the better way is to fit it from calibration data (paired ground-truth values and sensor readings). Fitting answers two questions, (1) how the noise combines with the signal and (2) what shape the residual distribution has. The following are steps to fit a noise model and register it for lifting.
+
+<Steps>
+<Step>
+## Compute the residuals
+
+A residual is what the sensor added or scaled on top of the truth. For a ground truth $g$ and a sensor reading $y$, the additive residual is $y - g$ and the multiplicative residual is $y / g$. `NoiseModel.residuals` computes the vector of residuals from the two aligned slices.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python
+from sentil import NoiseInteraction, NoiseModel
+
+truth = [1.0, 2.0, 3.0, 4.0]
+sensor = [1.1, 1.9, 3.2, 3.8]
+resid = NoiseModel.residuals(truth, sensor, NoiseInteraction.Additive)
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::{NoiseInteraction, NoiseModel};
+
+let truth = [1.0, 2.0, 3.0, 4.0];
+let sensor = [1.1, 1.9, 3.2, 3.8];
+let resid = NoiseModel::residuals(&truth, &sensor, NoiseInteraction::Additive)?;
+```
+</Tab>
+</Tabs>
+</Step>
+<Step>
+## Pick the interaction mode
+
+If you don't really know whether the sensor behaves additively or multiplicatively, compute both residuals and plot them against the ground-truth values. Then, the interaction whose residuals show no trend against the truth is the one you pick because the fitted distribution describes the same noise at every reading. Which sensors behave additively and which multiplicatively is on the [noise-models concept page](/docs/probabilistic/concepts/noise-models).
+</Step>
+<Step>
+## Choose the distribution family
+
+With the interaction mode fixed, the residual histogram decides the family, and the table maps each shape to its fitter. You can always add new distribution families to the library or you can construct one from the [distribution catalog](/docs/reference/methods/noise-models) rather than fit the ones we have.
+
+| Residual histogram | Fit with | Why |
+|---|---|---|
+| One symmetric bell | `fit_gaussian` | Maximum-likelihood mean and variance, the common case |
+| Two or more separated modes | `fit_gaussian_mixture` | Expectation-maximization recovers each mode and its weight |
+| Irregular or heavy-tailed, no clean parametric shape | `fit_bootstrap` | Resamples observed residuals, no distributional assumption |
+| Irregular, and the calibration history is very long | `fit_bootstrap_reservoir` | Thins the history to a fixed representative subset first |
+</Step>
+<Step>
+## Fit and register
+
+Each fitter is a free function on `NoiseModel` that takes the residual samples and returns a model ready to register.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python
+gaussian = NoiseModel.fit_gaussian(resid)              # symmetric bell
+empirical = NoiseModel.fit_bootstrap(resid)            # resample as-is
+thinned = NoiseModel.fit_bootstrap_reservoir(resid, 2000)
+bimodal = NoiseModel.fit_gaussian_mixture(resid, 2, 100)  # 2 modes, 100 EM iters
+```
+</Tab>
+<Tab value="Rust">
+```rust
+let gaussian = NoiseModel::fit_gaussian(&resid)?;
+let empirical = NoiseModel::fit_bootstrap(&resid)?;
+let thinned = NoiseModel::fit_bootstrap_reservoir(&resid, 2000)?;
+let bimodal = NoiseModel::fit_gaussian_mixture(&resid, 2, 100)?;
+```
+</Tab>
+</Tabs>
+
+`fit_gaussian` fits by maximum likelihood with the Bessel-corrected variance, so it needs at least two samples. `fit_bootstrap` keeps every residual and draws from them with replacement. `fit_bootstrap_reservoir` caps the model at `max_samples` residuals by seeded reservoir sampling. `fit_gaussian_mixture` runs expectation-maximization for up to `max_iters` steps, seeds the component means from equal-size sorted chunks, and returns a mixture of Gaussians.
+
+<Callout type="info">
+The fitters reject input they cannot fit, i.e., fewer than two samples for a Gaussian, an empty residual vector for a bootstrap, more components than samples for a mixture, or a non-finite sample anywhere.
+</Callout>
+</Step>
+</Steps>
+
+Once you have a model, register it and draw the ensemble in [lift a trace into an ensemble](/docs/probabilistic/guides/lift-trace). For choosing a family by residual shape, see the [concept page](/docs/probabilistic/concepts/noise-models) and for every constructor and its constraints, the [noise-models reference](/docs/reference/methods/noise-models).

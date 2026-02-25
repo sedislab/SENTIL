@@ -1,0 +1,93 @@
+---
+title: "Lift a trace into an ensemble"
+description: "Make and register a fitted noise model against a trace."
+---
+
+A PrSTL formula asks whether a property holds once noise is accounted for. This is done by drawing a distribution of traces from a single trace. Lifting is how you get the distribution.
+
+<Steps>
+<Step>
+## Register the noise
+
+A `LiftingRegistry` maps each signal to a [noise model](/docs/probabilistic/concepts/noise-models) and an interaction mode.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python title="lift.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig
+
+trace = sentil.Trace(list(range(20)), {"x": [0.4 + 0.05 * i for i in range(20)]})
+
+lifting = LiftingRegistry()
+lifting.register("x", NoiseModel.gaussian(0.0, 0.3), NoiseInteraction.Additive)
+
+phi = Formula.parse("P>=0.9 (G (x > 0))")
+result = phi.check(trace, lifting, SmcConfig(samples=5000))
+print(f"p = {result.probability:.3f}, holds = {result.holds}")
+```
+</Tab>
+<Tab value="Rust">
+```rust title="lift.rs"
+use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, Trace};
+
+let times: Vec<f64> = (0..20).map(f64::from).collect();
+let x: Vec<f64> = (0..20).map(|i| 0.4 + 0.05 * f64::from(i)).collect();
+let mut trace = Trace::new(times)?;
+trace.add_signal("x", x)?;
+
+let mut lifting = LiftingRegistry::new();
+lifting.register("x", NoiseModel::gaussian(0.0, 0.3)?, NoiseInteraction::Additive);
+
+let phi = Formula::parse("P>=0.9 (G (x > 0))")?;
+let result = phi.check(&trace, &lifting, &SmcConfig { samples: 5000, ..SmcConfig::default() })?;
+println!("p = {:.3}, holds = {}", result.probability, result.holds);
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+Only registered signals are perturbed. A registry with no entry for a signal leaves it exactly as recorded, so a multi-signal trace can mix noisy sensors and known-exact channels in one check. An empty registry makes lifting the identity.
+</Callout>
+</Step>
+<Step>
+## Read the estimate
+
+The check lifts the trace `samples` times and scores the inner formula on each realization. Each of the $N$ realizations is one draw $x_i$ from the lifted ensemble, a realization counts as a satisfaction when its robustness is positive, and the empirical satisfaction probability is the mean of the indicator:
+
+$$
+\hat{p} = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}\!\left[\rho(\varphi, x_i) > 0\right]
+$$
+
+That is the Monte Carlo estimate. `result.probability` is $\hat{p}$, `result.satisfactions` is the numerator, and `result.samples` is $N$. As $N$ grows, $\hat{p}$ converges to the true satisfaction probability, and the interval around it narrows. The verdict `result.holds` compares $\hat{p}$ against the threshold in the `P>=0.9` operator.
+</Step>
+<Step>
+## Look at one realization
+
+Sometimes you want the noisy trace itself, not the aggregate, to see what a single draw looks like or to feed it into a deterministic monitor. `lift` produces one realization.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python
+noisy = lifting.lift(trace, seed=7)
+print(noisy["x"])
+```
+</Tab>
+<Tab value="Rust">
+```rust
+let noisy = lifting.lift(&trace, 7)?;
+println!("{:?}", noisy.signal("x"));
+```
+</Tab>
+</Tabs>
+
+The Monte Carlo driver does the same draw internally, once per sample, from a base seed offset by the sample index. Because of the deterministic nature of the seed, a run reproduces exactly.
+</Step>
+<Step>
+## Set the ensemble size
+
+`SmcConfig.samples` is $N$, the number of realizations drawn. It defaults to `10000`. A larger $N$ narrows the interval at a cost linear in $N$. This means that a smaller $N$ is faster but reports a wider interval. Rather than guess, size the budget from the tolerance you need with the [Chernoff-Hoeffding bound](/docs/probabilistic/guides/sample-size). The remaining fields set the confidence level, the base seed, and which interval to report.
+</Step>
+</Steps>
+
+Before you lift, you need a fitted model. [Fit each noise model](/docs/probabilistic/guides/fit-noise-models) covers building one from paired calibration data. For the theory behind the ensemble and the `P~p` operator, read [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl).
