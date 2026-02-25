@@ -6,6 +6,12 @@ Every number in [CLAIMS.md](CLAIMS.md) comes from one of three tiers. The first 
 
 This tier needs only a CPU and a Rust toolchain, and finishes in minutes. It covers the correctness claims, the full-signal and monitoring speed, the streaming cost, and the statistical coverage.
 
+```bash
+make verify
+```
+
+The individual pieces follow, for running one at a time.
+
 The engine suite, including the deterministic oracle, the deque-equals-naive equivalence, the confidence-interval coverage, and the no-panic fuzz:
 
 ```bash 

@@ -4,6 +4,8 @@ Every performance and correctness claim SENTIL makes, with the command that repr
 
 The tiers are CPU (runs anywhere, including in continuous integration), GPU (needs a device, skipped cleanly without one), and hardware-bound (tied to a specific machine).
 
+The artifact-based claims below are checked automatically by `scripts/check_claims.py`, which reads the committed benchmark and experiment results and fails if a value falls outside its tolerance here. Run `python scripts/check_claims.py` directly, or get it as part of `make verify`. The exact claims (the deque equivalence, the interval coverage, the SPRT error rates, the oracle values) are guarded by the Rust test suite instead.
+
 ## How the speed numbers are read
 
 1. Prefix scoring equals full scoring. `Formula::robustness` reads only the dependency prefix, and its value at the first sample matches scoring the whole trace, to the bit, over random formulas and traces.
