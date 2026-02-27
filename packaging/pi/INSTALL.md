@@ -1,6 +1,6 @@
 # Installing SENTIL on a Raspberry Pi
 
-This archive holds a prebuilt SENTIL for your Pi's architecture. The full archive carries the `sentil` command-line tool and `libsentil` for linking C, C++, and Python on the device. The static archive carries only the command-line tool, one file with no library dependencies, for a sensor loop.
+This archive holds a prebuilt SENTIL for your Pi's architecture. The full archive carries the `sentil` command-line tool and `libsentil` for linking C and C++ on the device. The static archive carries only the command-line tool, one file with no library dependencies, for a sensor loop.
 
 ## The command-line tool
 
@@ -38,13 +38,23 @@ cc my_monitor.c $(pkg-config --cflags --libs sentil) -o my_monitor
 
 CMake projects find it through the same prefix with `find_package(Sentil)` once the package config is on `CMAKE_PREFIX_PATH`.
 
+## Python
+
+The Python package carries its own compiled core, so it does not link `libsentil`. Install it from PyPI instead:
+
+```
+pip install sentil
+```
+
+Prebuilt wheels cover the 64-bit Pi OS; on the 32-bit OS pip builds the core from source and needs a Rust toolchain.
+
 ## A first monitor
 
 ```
 sensor | sentil monitor -f 'always (temperature < 80)'
 ```
 
-The streaming monitor reads one sample per line and prints a verdict per line, holding flat per-sample cost, which is what makes it fit a real-time loop on the Pi.
+The streaming monitor reads one JSON sample per line, each with a numeric `time`, and prints a verdict per line, so `sensor` should emit lines like `{"time": 0, "temperature": 79.5}`. It holds flat per-sample cost, which is what makes it fit a real-time loop on the Pi.
 
 ## Which archive matches your board
 

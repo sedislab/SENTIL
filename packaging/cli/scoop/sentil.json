@@ -16,6 +16,7 @@
       "64bit": {
         "url": "https://github.com/sedislab/SENTIL/releases/download/v$version/sentil-$version-x86_64-pc-windows-msvc.zip"
       }
-    }
+    },
+    "bin": "sentil-$version-x86_64-pc-windows-msvc/bin/sentil.exe"
   }
 }
