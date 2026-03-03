@@ -63,7 +63,7 @@ def bar_comparison(specs, sizes, ylabel, title, fname):
         for rect, v in zip(rects, vals):
             if v > 0:
                 ax.text(rect.get_x() + rect.get_width() / 2, v * 1.35, _fmt_ms(v),
-                        ha="center", va="bottom", fontsize=8, rotation=90, color=style.INK)
+                        ha="center", va="bottom", fontsize=7.5, color=style.INK)
     ax.set_yscale("log")
     ax.set_ylim(top=top * 8)
     ax.set_xticks([j + width * (m - 1) / 2 for j in range(len(sizes))])
@@ -87,13 +87,19 @@ def discrete_offline(records):
                    "Offline discrete STL: SENTIL vs RTAMT and MoonLight", "discrete_offline.png")
 
 def dense_offline(records):
-    s, br = _series(records, "sentil", "monitoring"), _series(records, "breach", "monitoring")
+    s = _series(records, "sentil", "rust", "monitoring")
+    br = _series(records, "breach", "matlab", "monitoring")
+    rt = _series(records, "rtamt", "python", "monitoring")
     if not s or not br:
         return
     sizes = sorted(set(s) & set(br))
-    bar_comparison([("SENTIL", s, style.TOOL["sentil"]), ("Breach", br, style.TOOL["breach"])],
-                   sizes, "milliseconds to answer the monitoring query (lower is faster)",
-                   "Dense-time monitoring: SENTIL vs Breach", "dense_offline.png")
+    specs = [("SENTIL", s, style.TOOL["sentil"]), ("Breach", br, style.TOOL["breach"])]
+    title = "Dense-time monitoring: SENTIL vs Breach"
+    if rt:
+        specs.append(("RTAMT", rt, style.TOOL["rtamt"]))
+        title = "Dense-time monitoring: SENTIL vs Breach and RTAMT"
+    bar_comparison(specs, sizes, "milliseconds to answer the monitoring query (lower is faster)",
+                   title, "dense_offline.png")
 
 def dense_cost(records):
     dense = sorted((r["size"], r["timing"]["mean_ms"]) for r in records if r.get("benchmark") == "dense/length")
