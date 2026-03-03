@@ -1,1 +1,1 @@
-{ "title": "How to", "icon": "Wrench", "pages": ["open-loop-synthesis"] }
+{ "title": "How to", "icon": "Wrench", "pages": ["open-loop-synthesis", "receding-horizon"] }
