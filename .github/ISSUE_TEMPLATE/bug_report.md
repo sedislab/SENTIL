@@ -15,7 +15,7 @@ The smallest formula, trace, or command that shows it. A copyable snippet is bes
 ## Environment
 
 - SENTIL version and how you installed it (crate, wheel, jar, release archive, from source)
-- Which surface (Rust, Python, C, C++, Java, Julia, MATLAB, CLI, ROS, embedded)
+- Which surface (Rust, Python, C, C++, Java, Julia, MATLAB, CLI, ROS, Apollo, AUTOSAR Adaptive, embedded)
 - Operating system and architecture
 
 ## Anything else
