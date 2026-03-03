@@ -1,0 +1,79 @@
+---
+title: "Size your sample count"
+description: "Set the number of samples you need before running with the Chernoff-Hoeffding bound."
+---
+
+`SmcConfig.samples` defaults to 10,000. But what if you want to be within some tolerance of the true probability at 95 percent confidence? How many samples do you need? SENTIL has two functions to size the count and we look at them in detail on this page.
+
+## The Chernoff-Hoeffding budget
+
+The Chernoff-Hoeffding inequality bounds how far the empirical estimate can stray from the truth for a given sample count, with no assumption about the underlying distribution beyond independent bounded draws. Inverted, it says how many samples guarantee the estimate lands within $\varepsilon$ of the true probability with confidence at least $1 - \delta$:
+
+$$
+N \geq \frac{\ln(2/\delta)}{2\,\varepsilon^2}
+$$
+
+`chernoff_hoeffding_samples(epsilon, delta)` returns the ceiling of that. Within 0.1 at 95 percent confidence takes 185 samples:
+
+```rust
+use sentil::stats::chernoff_hoeffding_samples;
+
+assert_eq!(chernoff_hoeffding_samples(0.1, 0.05)?, 185);
+```
+
+The bound is distribution-free and this means that the function above gives a guarantee that holds for any noise distribution. In exchange, it sizes for the worst case, so the true accuracy at the count it returns is usually better than $\varepsilon$.
+
+## The Wilson half-width alternative
+
+If you only need the reported interval to be narrow, and not a distribution-free guarantee on the estimate itself, size for the [Wilson interval](/docs/probabilistic/concepts/confidence-intervals) width directly. `wilson_samples(epsilon, level)` returns the count that holds the half-width to $\varepsilon$ at the worst-case probability of one half, using $N \geq z^2 / (4\varepsilon^2)$ with $z = \Phi^{-1}(1 - \alpha/2)$. Pinning the half-width to 0.01 at 95 percent takes 9,604 samples:
+
+```rust
+use sentil::stats::wilson_samples;
+
+assert_eq!(wilson_samples(0.01, 0.95)?, 9604);
+```
+
+For the same tolerance and confidence, Wilson asks for half the Chernoff-Hoeffding budget.
+
+## A budget table
+
+At 95 percent confidence, halving the tolerance quadruples the count, the signature of the $1/\sqrt{N}$ convergence rate.
+
+| Tolerance $\varepsilon$ | Chernoff-Hoeffding $N$ | Wilson half-width $N$ |
+|---|---|---|
+| 0.10 | 185 | 97 |
+| 0.05 | 738 | 385 |
+| 0.02 | 4,612 | 2,401 |
+| 0.01 | 18,445 | 9,604 |
+| 0.005 | 73,778 | 38,415 |
+
+## Set the budget
+
+Once you have the number of samples needed, feed the count into `SmcConfig.samples`.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Rust">
+```rust
+use sentil::{SmcConfig, stats::chernoff_hoeffding_samples};
+
+let config = SmcConfig {
+    samples: chernoff_hoeffding_samples(0.01, 0.05)?,
+    ..SmcConfig::default()
+};
+```
+</Tab>
+<Tab value="Python">
+```python
+import sentil
+from sentil import SmcConfig
+
+config = SmcConfig(samples=sentil.stats.chernoff_hoeffding_samples(0.01, 0.05))
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+Sizing this way assumes independent Bernoulli draws, which is what the default Monte Carlo path does. The [rare-event splitter](/docs/probabilistic/guides/rare-events-gpu)'s levels combine through a product and thus, have their own error analysis. [Sequential testing](/docs/probabilistic/guides/run-sprt) also stops on evidence rather than a fixed count.
+</Callout>
+
+When the run finishes, the [confidence interval](/docs/probabilistic/concepts/confidence-intervals) reports the accuracy you actually achieved.

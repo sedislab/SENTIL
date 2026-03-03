@@ -1,0 +1,70 @@
+---
+title: "Run a sequential test"
+description: "Configure Wald's sequential test."
+---
+
+Wald's sequential probability ratio test decides whether a satisfaction probability clears a threshold, drawing one realization at a time and stopping the moment the evidence is conclusive. We look at how to run the procedure on this page. For how the test accumulates evidence and when to prefer it over a fixed budget, read [SPRT](/docs/probabilistic/concepts/sprt).
+
+<Steps>
+<Step>
+## Place the indifference region
+
+SPRT decides between $H_0: p \leq p_0$ and $H_1: p \geq p_1$, where $p$ is the true satisfaction probability of the inner formula and $p_0 < p_1$. The open interval $(p_0, p_1)$ is the indifference region. Probabilities inside it are close enough to the threshold that the test does not try to separate them. Put the threshold you care about inside the region. To decide a `P>=0.9` property, center the region on 0.9 with $p_0 = 0.85$ and $p_1 = 0.95$.
+
+A wide region resolves fast because a small gap in evidence already separates the hypotheses, at the cost of leaving a broader band around the threshold undecided. A narrow region draws a sharper line and draws more samples to do it. A width of 0.1 works well for thresholds in the mid-range. For a threshold near 1, such as 0.999, shrink the region in proportion, to something like $[0.995, 0.9995]$.
+</Step>
+<Step>
+## Set the error rates and the cap
+
+Two error rates set the rigor. $\alpha$ bounds accepting $H_1$ when $H_0$ holds, a false positive; $\beta$ bounds accepting $H_0$ when $H_1$ holds, a false negative. Smaller rates demand more samples.
+
+`max_samples` caps the run, because a true probability sitting on a boundary can keep the evidence uncommitted for a long time. When the run hits the cap undecided, it returns an inconclusive verdict rather than looping.
+</Step>
+<Step>
+## Run and branch on the verdict
+
+`SprtConfig` holds the region, the error rates, and the cap. A `Monitor` that has bundled the formula with its config exposes the same `check_sequential` call, so you can drive SPRT from either handle. On the CLI, `--indifference` sets the half-width of the band, centered on the threshold the formula states.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="sprt.py"
+from sentil import SprtConfig, SprtVerdict
+
+sprt = SprtConfig(0.85, 0.95, alpha=0.05, beta=0.05, max_samples=5000)
+result = phi.check_sequential(trace, lifting, sprt)
+
+if result.verdict == SprtVerdict.AcceptH1:
+    print(f"holds, decided in {result.samples} samples")
+elif result.verdict == SprtVerdict.AcceptH0:
+    print(f"fails, decided in {result.samples} samples")
+else:
+    print(f"no verdict within {result.samples} samples")
+```
+</Tab>
+<Tab value="Rust">
+```rust title="sprt.rs"
+use sentil::{SprtConfig, SprtResult};
+
+let sprt = SprtConfig::new(0.85, 0.95, 0.05, 0.05, 5000)?;
+match phi.check_sequential(&trace, &lifting, &sprt)? {
+    SprtResult::AcceptH1 { samples } => println!("holds, decided in {samples} samples"),
+    SprtResult::AcceptH0 { samples } => println!("fails, decided in {samples} samples"),
+    SprtResult::Inconclusive { samples, .. } => println!("no verdict within {samples} samples"),
+}
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil smc -f 'P>=0.9(G[0,10] (x > 0))' -t base.csv --algo sprt --indifference 0.05
+```
+</Tab>
+</Tabs>
+</Step>
+<Step>
+## Read an inconclusive run
+
+`Inconclusive` means the cap arrived before the evidence committed. The result carries the final `log_likelihood` which is a positive value says the walk was leaning toward $H_1$ when the budget ran out. To resolve an inconclusive run, widen the region before raising the cap because a very narrow region paired with stringent error rates is what makes the sample count explode.
+</Step>
+</Steps>
+
+For the derivation, the error-rate validation, and the Bayesian alternative, read the [SPRT concept page](/docs/probabilistic/concepts/sprt).

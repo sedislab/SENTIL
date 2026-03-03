@@ -1,0 +1,94 @@
+---
+title: "Rare events on the GPU"
+description: "Run adaptive multilevel splitting over a StochasticSystem on the GPU."
+---
+
+Once the probability of the event you are after comes very small, a fixed sample budget stops resolving it and you'll need [adaptive multilevel splitting](/docs/probabilistic/concepts/rare-events). We look at how to run it on a CPU first and then on a GPU.
+
+<Steps>
+<Step>
+## Describe the system and estimate on the CPU
+
+The splitter drives a `StochasticSystem` which takes an initial-state draw and a one-step transition, both emitting a packed vector. Here is a mean-reverting walk, $x_{t+1} = 0.9\,x_t + N(0, 1)$, and the question is to find the probability of it climbing past six.
+
+```rust title="rare_cpu.rs"
+use sentil::{Formula, NoiseModel, RareEventConfig, StochasticSystem};
+
+let noise = NoiseModel::gaussian(0.0, 1.0)?;
+let init_noise = noise.clone();
+let system = StochasticSystem::new(
+    ["x"],
+    1.0,
+    400,
+    move |rng| vec![init_noise.sample(rng)],
+    move |prev, _t, rng| vec![0.9 * prev[0] + noise.sample(rng)],
+)?;
+
+let phi = Formula::parse("P>=0.999(G[0, 400](x < 6))")?;
+let config = RareEventConfig { particles: 4096, ..RareEventConfig::default() };
+let result = phi.check_rare_event(&system, &config)?;
+println!(
+    "crossing probability about {:.2e} over {} simulation steps",
+    result.violation_probability, result.simulations
+);
+```
+
+</Step>
+<Step>
+## Read the estimate
+
+`RareEventResult` holds the satisfaction `probability`, the raw `violation_probability` the splitter estimated, whether the operator's threshold `holds`, and the total `simulations` run. Splitting does not yield a confidence interval.
+
+`RareEventConfig` has three fields. `particles` sets the population. `margin` moves the event boundary: a trajectory counts only when the inner robustness drops to `-margin` or below, and the default 0.0 counts any violation. `seed` pins the run for reproducibility.
+</Step>
+<Step>
+## Enable the gpu feature
+
+To run AMS on GPU, you need to install sentil with the `gpu` Cargo feature. It enables a WebGPU backend that runs on NVIDIA, AMD, and Apple GPUs. It adds a dependency on `wgpu`, which is a large crate, and that's why it's not part of the default build. In the rest extensions and bindings, it included by default.
+
+```bash
+cargo add sentil --features gpu
+```
+
+</Step>
+<Step>
+## Put the dynamics onto the device
+
+A `SimModel` describes the system with one expression per variable instead of a closure, which lets the splitter put the whole trajectory onto the GPU. The rare event must be a `G[0, b]` over an atemporal predicate, and every noise model must have a device sampler.
+
+```rust title="rare_gpu.rs"
+use sentil::{Formula, NoiseModel, RareEventConfig, SimExpr, SimModel};
+
+// x_{t+1} = 0.9 x_t + N(0, 1), the declarative twin of the walk above.
+let advance = SimExpr::Add(
+    Box::new(SimExpr::Mul(Box::new(SimExpr::Const(0.9)), Box::new(SimExpr::Prev(0)))),
+    Box::new(SimExpr::Noise(0)),
+);
+let model = SimModel::new(
+    ["x"],
+    1.0,
+    400,
+    vec![SimExpr::Const(0.0)],
+    vec![advance],
+    vec![NoiseModel::gaussian(0.0, 1.0)?],
+)?;
+
+let phi = Formula::parse("P>=0.999(G[0, 400](x < 6))")?;
+let config = RareEventConfig { particles: 4096, ..RareEventConfig::default() };
+
+let violation = match phi.check_rare_event_gpu(&model, &config) {
+    Ok(estimate) => estimate.violation_probability,
+    Err(_) => phi.check_rare_event(&model.to_stochastic_system()?, &config)?.violation_probability,
+};
+println!("crossing probability about {violation:.2e}");
+```
+
+The device path returns a `GpuSplittingEstimate` with the `violation_probability`, the `particles` used, and the number of `levels` resolved. It is a fixed-effort estimator, biased by $O(\text{levels}/\text{particles})$ and consistent as the population grows, a different estimator from the CPU last-particle scheme, so the two agree within a scheme-and-seed tolerance rather than to the digit. When no device is present, or the dynamics cannot be lowered, `check_rare_event_gpu` returns an error and the fallback runs the CPU splitter on the same model.
+</Step>
+</Steps>
+
+## Benchmarking the AMS
+
+On an NVIDIA A40, it resolves a $7.3 \times 10^{-4}$ probability in about 392 ms against about 2.81 s for the CPU splitter.
+
+Splitting pays off below roughly $10^{-4}$, where the trajectory simulator is fast enough that a large population is affordable. Above $10^{-3}$, a [fixed-budget check](/docs/probabilistic/guides/lift-trace) or a [sequential test](/docs/probabilistic/guides/run-sprt) is simpler and does the job.
