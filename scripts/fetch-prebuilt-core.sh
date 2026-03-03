@@ -7,9 +7,11 @@ DEST="${1:-prebuilt-core}"
 os="$(uname -s)"
 arch="$(uname -m)"
 case "$os-$arch" in
-  Linux-x86_64)  target="linux-x86_64";  ext="so" ;;
-  Darwin-x86_64) target="macos-x86_64";  ext="dylib" ;;
-  Darwin-arm64)  target="macos-arm64";   ext="dylib" ;;
+  Linux-x86_64)  target="linux-x86_64";  lib="libsentil.so" ;;
+  Darwin-x86_64) target="macos-x86_64";  lib="libsentil.dylib" ;;
+  Darwin-arm64)  target="macos-arm64";   lib="libsentil.dylib" ;;
+  MINGW*|MSYS*|CYGWIN*)
+    target="windows-x86_64"; lib="sentil.dll" ;;
   Linux-aarch64|Linux-arm64)
     echo "For aarch64 Linux, including the Raspberry Pi, see packaging/pi/INSTALL.md." >&2
     exit 1 ;;
@@ -47,8 +49,8 @@ echo "Checksum verified."
 
 tar -C "$DEST" -xzf "$DEST/${bundle}.tar.gz"
 libdir="$(cd "$DEST/${bundle}/lib" && pwd)"
-echo "Installed $libdir/libsentil.${ext}"
+echo "Installed $libdir/${lib}"
 echo
 echo "Point a binding at it:"
-echo "  Julia:    export SENTIL_LIB=$libdir/libsentil.${ext}"
+echo "  Julia:    export SENTIL_LIB=$libdir/${lib}"
 echo "  C++/Java: pass -DSENTIL_LIB_DIR=$libdir to cmake"
