@@ -1,0 +1,31 @@
+---
+title: "Controller synthesis"
+description: "Turn a PrSTL specification into an input sequence or a controller."
+---
+
+Monitoring looks at a trace and asks whether it satisfies a specification. In synthesis, we're given a specification and the task is to find a behavior that satisfies it. SENTIL does both and we'll look at how it works in this tab.
+
+All methods that are used for synthesis require a smooth operator an optimizer can follow uphill but PrSTL's semantics have nothing like this. So, we introduce a soft minimum and maximum and it's fully spelled out in the [smooth semantics reference](/docs/reference/language/smooth-semantics).
+
+## Types of Synthesis
+
+Open-loop trajectory synthesis runs offline. Given a system model, an input box, and a specification, [`Synthesizer::solve`](/docs/synthesis/guides/open-loop-synthesis) returns the input sequence that best satisfies the spec, and a `SynthesisResult` that carries the input, its robustness, and whether it holds.
+
+The receding-horizon [`Controller`](/docs/synthesis/guides/receding-horizon) runs online. At each step, it plans a short horizon from the live state within a deadline and hands back the first input to apply. The search is anytime, warm-started from the previous step, so a usable plan is in hand well before the deadline. On the integrator benchmark, it plans each input in about 0.1 ms against a 5 ms deadline.
+
+Falsification and mining search the other direction. [Falsification](/docs/synthesis/guides/falsify) looks for an input whose trajectory violates the spec, which generates counterexamples and test cases. [Parameter mining](/docs/synthesis/guides/mine-parameters) finds the tightest value of a spec parameter that still holds on recorded traces.
+
+## Available backends
+
+Open-loop synthesis picks its search from the problem's structure: a complete MILP encoding for affine dynamics with a finite input box. Projected gradient ascent as the default amd CMA-ES when the objective is rugged. The full menu, the `Auto` selection rules, and the two smoothings are on [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+## Where to go next
+
+<Cards>
+  <Card title="Open-loop synthesis" href="/docs/synthesis/guides/open-loop-synthesis" description="Build a model and bounds, solve for an input sequence, read the result." />
+  <Card title="Receding-horizon control" href="/docs/synthesis/guides/receding-horizon" description="Plan online within a deadline and close the loop with the monitor." />
+  <Card title="Chance constraints" href="/docs/synthesis/guides/chance-constraints" description="Require a spec to hold with a target probability and validate it conservatively." />
+  <Card title="Control-barrier shield" href="/docs/synthesis/guides/cbf-shield" description="Wrap any nominal controller in a least-restrictive safety filter." />
+  <Card title="Falsification" href="/docs/synthesis/guides/falsify" description="Search a model's inputs for a trajectory that violates the spec." />
+  <Card title="Parameter mining" href="/docs/synthesis/guides/mine-parameters" description="Find the tightest spec parameter the data supports." />
+</Cards>

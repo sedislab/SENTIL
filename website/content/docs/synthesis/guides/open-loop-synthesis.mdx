@@ -1,0 +1,139 @@
+---
+title: "Open-loop trajectory synthesis"
+description: "Build a system model and an input box, solve for the input sequence that best satisfies a specification offline."
+---
+
+Open-loop synthesis finds an input sequence for a model, computed offline against a fixed horizon. You give it a system, the limits the inputs must stay in, and a specification, and it returns the input that best satisfies the spec along with the robustness of the trajectory that input produces.
+
+## A first solve
+
+Take a single integrator, $x_{t+1} = x_t + u_t$, over five steps, and ask for an input that drives the position past two at some point in the window. The inputs are bounded to the unit box.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="open_loop.py"
+from sentil import Formula, SystemModel, Bounds, synthesis
+
+# x_{t+1} = x_t + u_t over five steps, starting at 0
+model = SystemModel.linear([[1.0]], [[1.0]], [0.0], ["pos"], 1.0, 5)
+spec = Formula.parse("F[0, 5](pos > 2)")
+bounds = Bounds([-1.0] * 5, [1.0] * 5)
+
+result = synthesis.synthesize(model, spec, bounds)
+print(result.input)        # [1.0, 1.0, 1.0, 1.0, 1.0]
+print(result.robustness)   # 3.0: pos reaches 5 and the spec asked for 2
+print(result.holds)        # True when robustness >= 0
+print(result.backend)      # Backend.Milp, what Auto resolved to
+```
+</Tab>
+<Tab value="Rust">
+```rust title="open_loop.rs"
+use sentil::{Bounds, Formula, LinearModel, SynthesisProblem, Synthesizer};
+
+// x_{t+1} = x_t + u_t over five steps, starting at 0
+let model = LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 5)?;
+let spec = Formula::parse("F[0, 5](pos > 2)")?;
+let problem = SynthesisProblem::new(&model, &spec)
+    .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5])?);
+
+let result = Synthesizer::solve(&problem)?;
+println!("{:?}", result.input);       // [1.0, 1.0, 1.0, 1.0, 1.0]
+println!("{}", result.robustness);    // 3.0: pos reaches 5, the spec asked for 2
+assert!(result.holds);
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil synth -f 'F[0, 5](pos > 2)' --model integrator.json
+```
+
+```text
+synth
+  spec        F[0, 5](pos > 2)
+  method      gradient
+  result      feasible
+  robustness  3.000000
+  input       [1.0000, 1.0000, 1.0000, 1.0000, 1.0000]
+```
+
+The model file holds the linear system and, optionally, the input box. Add `-o json` for machine-readable output.
+
+```json title="integrator.json"
+{
+  "a": [[1.0]],
+  "b": [[1.0]],
+  "x0": [0.0],
+  "variables": ["pos"],
+  "dt": 1.0,
+  "horizon": 5,
+  "bounds": { "lower": [-1, -1, -1, -1, -1], "upper": [1, 1, 1, 1, 1] }
+}
+```
+</Tab>
+</Tabs>
+
+`SystemModel.linear(a, b, x0, variables, dt, horizon)` builds a linear time-invariant model with state matrix `a`, input matrix `b`, initial state `x0`, one name per state variable, a step `dt`, and a step count. `Bounds(lower, upper)` sets a per-coordinate box over the packed input, one entry per step here. The result reads back as `input`, `robustness`, `holds`, and `backend`.
+
+A box of the wrong width, for instance produces an error:
+```python
+synthesis.synthesize(model, spec, Bounds([-1.0] * 3, [1.0] * 3))
+# EvaluationError: invalid MILP synthesis configuration: bounds cover 3
+# inputs but the 5-step horizon with 1 inputs per step needs 5
+```
+
+## Reading the result
+
+`SynthesisResult` reports the exact robustness of the rollout, not the smooth surrogate the search climbed. That value is the ground truth and it indicates the satisfaction of the specification: a positive robustness is a guarantee that the specification holds on the model under this input, and its magnitude is how much it held. `holds` is true when the robustness is positive and false otherwise. `backend` is the backend that was used for the search. The default `Auto` backend chooses between MILP and gradient ascent based on the problem's structure. You can also force a specific backend.
+
+## Picking a backend
+
+By default the solver reads the problem and chooses. For the integrator above, `Auto` selects the complete MILP solver. If you drop the bounds, it'll fall back to gradient ascent since the MILP encoding needs a finite box.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python
+from sentil import Backend
+
+# force the gradient climb even where MILP is eligible
+result = synthesis.synthesize(model, spec, bounds, backend=Backend.Gradient)
+
+# a gradient-free search for a rugged objective
+result = synthesis.synthesize(model, spec, bounds, backend=Backend.CmaEs)
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::Backend;
+
+let problem = SynthesisProblem::new(&model, &spec)
+    .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5])?)
+    .with_backend(Backend::Gradient)
+    .with_budget(400);
+let result = Synthesizer::solve(&problem)?;
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil synth -f 'F[0, 5](pos > 2)' --model integrator.json --method cmaes --budget 400
+```
+
+The `--method` flag takes `gradient` (the default), `cmaes`, or `milp`, and `--budget` sets the optimizer's iteration cap, 200 unless raised.
+</Tab>
+</Tabs>
+
+What each backend solves, and the exact conditions `Auto` checks before it commits to MILP, are on [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+On the synthesis benchmark the gradient backend reached a robustness of 0.50 in 1.72 ms on the hold case and 4.00 in 1.26 ms on the reach case, and CMA-ES reached 0.50 in 5.87 ms on the same hold case.
+
+## When the spec cannot hold
+
+If the integrator's inputs cap the position at five, and you give it a spec asking it to pass ten, then the spec cannot be met, and the search returns the input that comes closest.
+
+```python
+spec = Formula.parse("F[0, 5](pos > 10)")
+result = synthesis.synthesize(model, spec, bounds)
+print(result.robustness)   # -5.0: pos tops out at 5, five short of 10
+print(result.holds)        # False
+```
+
+The magnitude says how far the spec fell short and you can use that to feed into a re-plan or a spec relaxation. To search deliberately for a violation instead, see [falsification](/docs/synthesis/guides/falsify). To plan online against a live state rather than a fixed horizon, see [receding-horizon control](/docs/synthesis/guides/receding-horizon).

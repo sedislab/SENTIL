@@ -1,1 +1,1 @@
-{ "root": true, "title": "Synthesis", "icon": "Workflow", "pages": [] }
+{ "root": true, "title": "Synthesis", "icon": "Workflow", "pages": ["---[Workflow]Synthesis---", "index", "guides"] }
