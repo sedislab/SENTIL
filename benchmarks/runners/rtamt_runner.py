@@ -1,9 +1,11 @@
 """RTAMT runner.
 
-Times RTAMT's discrete-time offline monitor on the same oracle SENTIL runs and
-emits the same JSON record, one per line. RTAMT computes the whole signal, so
-this is the full-signal track. Run as
-`python rtamt_runner.py <deterministic|scalability>`.
+Times RTAMT on the same oracle SENTIL runs and emits the same JSON record, one
+per line. The discrete-time offline monitor computes the whole signal, so the
+`deterministic` and `scalability` suites are the full-signal track; the `dense`
+suite times RTAMT's dense-time offline monitor over the interpolated signal and
+reports the monitoring answer, the comparison for the dense chart alongside
+Breach. Run as `python rtamt_runner.py <deterministic|scalability|dense>`.
 """
 
 import json
@@ -45,6 +47,18 @@ def evaluate(formula, dataset):
     spec = build(formula)
     return spec.evaluate(dataset)[0][1]
 
+def build_dense(formula):
+    spec = rtamt.StlDenseTimeOfflineSpecification()
+    spec.declare_var("x", "float")
+    spec.declare_var("out", "float")
+    spec.spec = f"out = {formula}"
+    spec.parse()
+    return spec
+
+def evaluate_dense(formula, xs):
+    spec = build_dense(formula)
+    return spec.evaluate(["x", xs])[0][1]
+
 def hardware():
     cpu = platform.processor() or "unknown"
     try:
@@ -57,10 +71,7 @@ def hardware():
         pass
     return {"cpu": cpu, "cores": os.cpu_count() or 1}
 
-def measure(benchmark, formula, n, runs):
-    t, x, p, q = signals(n)
-    dataset = {"time": t, "x": x, "p": p, "q": q}
-    robustness = evaluate(formula, dataset)
+def timing(run, runs):
     times_ms = []
     for _ in range(runs):
         start = time.perf_counter()
@@ -92,9 +103,19 @@ def record(benchmark, formula, question, n, robustness, times, runs, peak_rss_by
         "hardware": hardware(),
     }
 
-def timing(run, runs):
+def measure(benchmark, formula, n, runs):
+    t, x, p, q = signals(n)
+    dataset = {"time": t, "x": x, "p": p, "q": q}
+    robustness = evaluate(formula, dataset)
     times = timing(lambda: evaluate(formula, dataset), runs)
     return record(benchmark, formula, "full_signal", n, robustness, times, runs)
+
+def measure_dense(formula, n, runs):
+    t, x, _, _ = signals(n)
+    xs = [[float(t[i]), x[i]] for i in range(n)]
+    robustness = evaluate_dense(formula, xs)
+    times = timing(lambda: evaluate_dense(formula, xs), runs)
+    return record("scalability/length", formula, "monitoring", n, robustness, times, runs)
 
 def deterministic():
     return [measure("deterministic", f, 2001, 50) for f in CANONICAL]
@@ -106,14 +127,23 @@ def scalability():
         out.append(measure("scalability/length", SCALABILITY, n, runs))
     return out
 
+def dense():
+    out = []
+    for n in (1_000, 10_000, 100_000, 1_000_000):
+        runs = 20 if n <= 100_000 else 3
+        out.append(measure_dense(SCALABILITY, n, runs))
+    return out
+
 def main():
     suite = sys.argv[1] if len(sys.argv) > 1 else ""
     if suite == "deterministic":
         records = deterministic()
     elif suite == "scalability":
         records = scalability()
+    elif suite == "dense":
+        records = dense()
     else:
-        sys.stderr.write("unknown suite; use `deterministic` or `scalability`\n")
+        sys.stderr.write("unknown suite; use `deterministic`, `scalability`, or `dense`\n")
         return 1
     for rec in records:
         print(json.dumps(rec))
