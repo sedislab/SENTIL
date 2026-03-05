@@ -1,18 +1,10 @@
-"""RTAMT runner.
-
-Times RTAMT on the same oracle SENTIL runs and emits the same JSON record, one
-per line. The discrete-time offline monitor computes the whole signal, so the
-`deterministic` and `scalability` suites are the full-signal track; the `dense`
-suite times RTAMT's dense-time offline monitor over the interpolated signal and
-reports the monitoring answer, the comparison for the dense chart alongside
-Breach. Run as `python rtamt_runner.py <deterministic|scalability|dense>`.
-"""
-
 import json
 import math
 import os
 import platform
+import resource
 import statistics
+import subprocess
 import sys
 import time
 
@@ -134,16 +126,37 @@ def dense():
         out.append(measure_dense(SCALABILITY, n, runs))
     return out
 
+def measure_memory(n):
+    t, x, p, q = signals(n)
+    robustness = evaluate(SCALABILITY, {"time": t, "x": x, "p": p, "q": q})
+    peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return record("memory/length", SCALABILITY, "monitoring", n, robustness, None, 1,
+                  peak_kb * 1024)
+
+def memory():
+    for n in (10_000, 100_000, 1_000_000, 10_000_000):
+        child = subprocess.run([sys.executable, __file__, "_memory_child", str(n)],
+                               capture_output=True, text=True)
+        line = child.stdout.strip()
+        if line:
+            print(line)
+
 def main():
     suite = sys.argv[1] if len(sys.argv) > 1 else ""
+    if suite == "_memory_child":
+        print(json.dumps(measure_memory(int(sys.argv[2]))))
+        return 0
     if suite == "deterministic":
         records = deterministic()
     elif suite == "scalability":
         records = scalability()
+    elif suite == "memory":
+        memory()
+        return 0
     elif suite == "dense":
         records = dense()
     else:
-        sys.stderr.write("unknown suite; use `deterministic`, `scalability`, or `dense`\n")
+        sys.stderr.write("unknown suite\n")
         return 1
     for rec in records:
         print(json.dumps(rec))
