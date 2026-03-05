@@ -1,1 +1,1 @@
-{ "title": "How to", "icon": "Wrench", "pages": ["open-loop-synthesis", "receding-horizon"] }
+{ "title": "How to", "icon": "Wrench", "pages": ["open-loop-synthesis", "receding-horizon", "chance-constraints", "cbf-shield"] }

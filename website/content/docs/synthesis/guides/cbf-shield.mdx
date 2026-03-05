@@ -1,0 +1,73 @@
+---
+title: "Control-barrier-function shield"
+description: "Wrap any nominal controller in a least-restrictive safety filter that passes a safe input through untouched and pulls an unsafe one to the closest input that satisfies the barriers."
+---
+
+A safety filter sits between a nominal controller and the plant. When the nominal input keeps the system safe, the filter passes it through unchanged. When it would breach a barrier, the filter returns the closest input that does not. The controller can be anything; a learned policy, a hand-tuned loop, a synthesized plan, and the filter guarantees safety.
+
+## Filtering an input
+
+`SafetyFilter` is built over a fixed actuator box. Each barrier is a linear inequality $a \cdot u \geq b$ on the input, the control-barrier condition for one step. `filter` returns the input closest to the nominal that satisfies every barrier and stays inside the box.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python title="shield.py"
+from sentil import Bounds, SafetyFilter
+
+# actuator box: input in [-2, 2]
+shield = SafetyFilter(Bounds([-2.0], [2.0]))
+
+# state x = 0.5 with x' = x + u; the barrier x' >= 0 is u >= -0.5
+# nominal u = -1 is unsafe, so the filter returns the closest safe -0.5
+print(shield.filter([-1.0], [([1.0], -0.5)]))   # [-0.5]
+
+# a safe nominal passes straight through
+print(shield.filter([-1.0], [([1.0], -3.0)]))   # [-1.0]
+```
+</Tab>
+<Tab value="Rust">
+```rust title="shield.rs"
+use sentil::{Bounds, SafetyFilter};
+
+// actuator box: input in [-2, 2]
+let shield = SafetyFilter::new(Bounds::new([-2.0], [2.0])?);
+
+// state x = 0.5 with x' = x + u; the barrier x' >= 0 is u >= -0.5
+// nominal u = -1 is unsafe, so the filter returns the closest safe -0.5
+let u = shield.filter(&[-1.0], &[(vec![1.0], -0.5)])?;
+println!("{}", u[0]);   // -0.5
+
+// a safe nominal passes straight through
+let u = shield.filter(&[-1.0], &[(vec![1.0], -3.0)])?;
+println!("{}", u[0]);   // -1.0
+```
+</Tab>
+</Tabs>
+
+`SafetyFilter::new(bounds)` fixes the actuator box. Pass `Bounds::unbounded` to enforce only the barriers. `filter(nominal, barriers)` takes the nominal input and a list of `(coefficients, bound)` pairs, one per barrier. In Python, the barriers default to an empty list, so a filter with only an actuator box clamps the nominal into the box. Under the hood it solves the least-change quadratic program that minimizes the distance to the nominal subject to the barriers and the box.
+
+Each pair is a one-step control-barrier condition written out in coefficients: for a barrier function affine in the state and dynamics affine in the input, keeping the barrier nonnegative at the next step is a linear inequality in $u$. The worked example is that collapse for $h(x) = x$ with $x' = x + u$: keeping $x' \geq 0$ means $u \geq -x$, and at $x = 0.5$ that is the pair `([1.0], -0.5)`.
+
+## When safety is impossible
+
+If the barriers and the actuator box have no common feasible input, there is no safe action to return, and the filter reports the conflict.
+
+```python
+# barrier u >= 1 and barrier -u >= 1 (that is u <= -1) cannot both hold
+shield = SafetyFilter(Bounds.unbounded(1))
+shield.filter([0.0], [([1.0], 1.0), ([-1.0], 1.0)])
+# EvaluationError: invalid safety filter configuration: the barriers and
+# the actuator box have no common feasible input
+```
+
+A wrong-width barrier is caught the same way, with the barrier's index and both widths in the message. The filter never returns an input that violates a barrier it was given.
+
+## Where it fits
+
+The shield composes with anything upstream. Run a [receding-horizon controller](/docs/synthesis/guides/receding-horizon) or any nominal policy and filter its output each step:
+
+```python
+u = shield.filter(controller.control(state), barriers)
+```
+
+The barriers hold no matter what the planner proposes.

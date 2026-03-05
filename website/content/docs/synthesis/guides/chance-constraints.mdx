@@ -1,0 +1,110 @@
+---
+title: "Chance constraints"
+description: "Require a specification to hold with at least a target probability over a stochastic system."
+---
+
+A chance constraint asks that a specification hold with at least some target probability over a stochastic system. SENTIL does this by simulating the system, counting the runs the formula holds on, and calculating the Wilson lower confidence bound to clear the target. The verdict comes from the lower bound because a lucky batch of runs can certufy a guarantee the samples do not support.
+
+## Stating and validating a constraint
+
+`ChanceConstraint` takes in a formula and a probability, and `validate` runs the stochastic system to check the claim. The system can be a `SimModel` or a `StochasticSystem`, and the number of samples and the random seed are optional. The result is a `ChanceReport` with the point estimate, the lower bound, and whether the lower bound clears the target.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python title="chance.py"
+from sentil import Formula, ChanceConstraint, SimModel, SimExpr, NoiseModel
+
+# a Gaussian random walk y_{t+1} = y_t + noise over ten steps
+walk = SimModel(
+    ["y"], 0.1, 10,
+    [SimExpr.constant(0.0)],
+    [SimExpr.prev(0) + SimExpr.noise(0)],
+    [NoiseModel.gaussian(0.0, 1.0)],
+)
+
+# require "G (y < 5)" to hold with probability at least 0.9
+chance = ChanceConstraint(Formula.parse("G (y < 5)"), 0.9)
+report = chance.validate(walk.to_stochastic_system(), samples=4000, seed=7)
+
+print(report.estimate)      # 0.91675
+print(report.lower_bound)   # 0.9078, the Wilson lower bound the verdict is taken from
+print(report.holds)         # True: 0.9078 clears the 0.9 target
+```
+</Tab>
+<Tab value="Rust">
+```rust title="chance.rs"
+use sentil::{ChanceConstraint, Formula, NoiseModel, StochasticSystem};
+
+// a Gaussian random walk y_{t+1} = y_t + noise over ten steps
+let noise = NoiseModel::gaussian(0.0, 1.0)?;
+let walk = StochasticSystem::new(
+    ["y"], 0.1, 10,
+    |_| vec![0.0],
+    move |prev, _, rng| vec![prev[0] + noise.sample(rng)],
+)?;
+
+// require "G (y < 5)" to hold with probability at least 0.9
+let chance = ChanceConstraint::new(Formula::parse("G (y < 5)")?, 0.9)?;
+let report = chance.validate(&walk, 4000, 7)?;
+
+println!("{}", report.estimate);      // 0.91675
+println!("{}", report.lower_bound);   // 0.9078, the Wilson lower bound
+assert!(report.holds);                // 0.9078 clears the 0.9 target
+```
+</Tab>
+</Tabs>
+
+`ChanceReport` has the point `estimate`, `lower_bound`, the number of `samples` drawn, and `holds`, which is true when the lower bound clears the target.
+
+## Confidence
+
+You can tune the strictness of the check with two parameters. The confidence level fixes how far below the estimate the lower bound falls, so raising it imposes a stricter bound. The tightening adds a margin to the target itself because we require the lower bound to clear `probability + tightening` rather than the bare target. That margin gives us headroom against the gap between the system we sampled and the one we deploy.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python
+chance = ChanceConstraint(
+    Formula.parse("G (y < 5)"),
+    0.9,
+    confidence=0.99,     # a 99% lower bound
+    tightening=0.02,     # clear 0.92, not 0.9
+)
+```
+</Tab>
+<Tab value="Rust">
+```rust
+let chance = ChanceConstraint::new(Formula::parse("G (y < 5)")?, 0.9)?
+    .with_confidence(0.99)     // a 99% lower bound
+    .with_tightening(0.02);    // clear 0.92, not 0.9
+```
+</Tab>
+</Tabs>
+
+The defaults are a 0.95 confidence and no tightening. On the walk above, the stricter check fails because the 99% lower bound is 0.9048 against a bar of 0.92.
+
+<Callout type="warn">
+The count is seeded per trajectory, so the same `seed` and `samples` give the same report every run, and a parallel and a single-threaded validation agree sample for sample. Change the seed to draw an independent batch.
+</Callout>
+
+## The quadratic-program reduction
+
+When the predicates are affine in a Gaussian belief, a chance constraint reduces to a small convex program whose solution is the tightened deterministic bound. `solve_qp` is the exported convex primitive for that reduction, and the same solver that the [control-barrier shield](/docs/synthesis/guides/cbf-shield) projects with.
+
+```python
+from sentil import synthesis
+
+# minimize 1/2 u^T P u + q^T u subject to G u <= h
+u = synthesis.solve_qp(
+    p=[[1.0, 0.0], [0.0, 1.0]],
+    q=[0.0, 0.0],
+    g=[[-1.0, -1.0]],
+    h=[-2.0],
+)
+# [1.0, 1.0]: the closest point to the origin with u1 + u2 >= 2
+```
+
+For a general stochastic system, call `validate`. You'll only call the QP path when you've assembled the system as convex subproblems, and the chance constraint is a convex reduction of those subproblems.
+
+## Where it fits
+
+The chance constraint is what carries a controller from synthesis to deployment. We synthesize against the nominal model, then validate the guarantee against the stochastic system the controller will actually face. When the lower bound falls short of the target, we re-plan. The loop itself is shown in code under [receding-horizon control](/docs/synthesis/guides/receding-horizon#closing-the-loop), and the statistical machinery is the same one [statistical model checking](/docs/probabilistic) runs, applied to a controller instead of a passive monitor.
