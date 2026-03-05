@@ -150,16 +150,24 @@ def scaling(records):
     save(fig, "scaling.png")
 
 def memory(records):
-    rows = sorted((r["size"], r["peak_rss_bytes"] / 1e6) for r in records if r.get("benchmark") == "memory/length")
-    if not rows:
+    def rss(tool):
+        return sorted((r["size"], r["peak_rss_bytes"] / 1e6) for r in records
+                      if r.get("benchmark") == "memory/length" and r.get("tool") == tool)
+    s = rss("sentil")
+    rt = rss("rtamt")
+    if not s:
         return
     fig, ax = plt.subplots()
-    style.hero_line(ax, [p[0] for p in rows], [p[1] for p in rows], "resident memory")
+    style.hero_line(ax, [p[0] for p in s], [p[1] for p in s], "SENTIL streaming")
+    if rt:
+        ax.plot([p[0] for p in rt], [p[1] for p in rt], color=style.TOOL["rtamt"],
+                marker="o", label="RTAMT offline", zorder=4)
     ax.set_xscale("log")
-    ax.set_ylim(0, max(p[1] for p in rows) * 2.2)
+    ax.set_yscale("log")
     ax.set_xlabel("samples streamed")
     ax.set_ylabel("peak resident memory (MB)")
-    ax.set_title("Memory is set by the window, not the stream length")
+    ax.set_title("Memory: SENTIL holds the window, an offline monitor holds the stream")
+    ax.legend(loc="upper left")
     save(fig, "memory.png")
 
 THROUGHPUT_MODELS = ("single_step", "always_ten", "eventually_ten")
