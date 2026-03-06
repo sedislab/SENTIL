@@ -19,6 +19,7 @@ TOOL = {
     "uppaal": _OKABE_ITO["purple"],
     "prism": _OKABE_ITO["green"],
     "moonlight": _OKABE_ITO["sky"],
+    "banquo": _OKABE_ITO["purple"],
 }
 
 CYCLE = [_OKABE_ITO[k] for k in ("blue", "vermillion", "green", "orange", "purple", "sky")]

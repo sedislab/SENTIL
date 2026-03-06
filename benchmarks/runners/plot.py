@@ -75,16 +75,20 @@ def bar_comparison(specs, sizes, ylabel, title, fname):
     save(fig, fname)
 
 def discrete_offline(records):
-    s, rt = _series(records, "sentil", "full_signal"), _series(records, "rtamt", "full_signal")
-    ml = _series(records, "moonlight", "full_signal")
+    s, rt = _series(records, "sentil", "rust", "full_signal"), _series(records, "rtamt", "python", "full_signal")
+    ml = _series(records, "moonlight", "java", "full_signal")
+    bq = _series(records, "banquo", "python", "full_signal")
     if not s or not rt:
         return
     sizes = sorted(set(s) & set(rt))
     specs = [("SENTIL", s, style.TOOL["sentil"]), ("RTAMT", rt, style.TOOL["rtamt"])]
     if ml:
         specs.append(("MoonLight", ml, style.TOOL["moonlight"]))
+    if bq:
+        specs.append(("Banquo", bq, style.TOOL["banquo"]))
+    names = ", ".join(label for label, _, _ in specs[1:])
     bar_comparison(specs, sizes, "milliseconds to score the whole signal (lower is faster)",
-                   "Offline discrete STL: SENTIL vs RTAMT and MoonLight", "discrete_offline.png")
+                   f"Offline discrete STL: SENTIL vs {names}", "discrete_offline.png")
 
 def dense_offline(records):
     s = _series(records, "sentil", "rust", "monitoring")
