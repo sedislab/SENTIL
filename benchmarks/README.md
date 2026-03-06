@@ -1,6 +1,6 @@
 # SENTIL benchmarks
 
-One suite, one record shape, run the same way for every tool, against the baselines a runtime verification tool is judged by: RTAMT for STL, and UPPAAL-SMC, PRISM, and Modest for statistical model checking.
+One suite, one record shape, run the same way for every tool, against the baselines a runtime verification tool is judged by: RTAMT, MoonLight, Breach, and Banquo for STL, and UPPAAL-SMC, PRISM, and Modest for statistical model checking.
 
 ## Two questions, never mixed
 
@@ -28,4 +28,4 @@ Two cautions on reading the numbers. The committed sweeps were measured on the s
 
 ## Baselines
 
-RTAMT is the STL baseline and runs through `rtamt_runner.py`. The statistical baselines are harder to pin down honestly. The Modest toolset is bundled with the case-study models, but those models were written against an older Modest grammar and do not parse under the bundled v3.1.301, so no Modest numbers are reproduced here; the UPPAAL-SMC runs in the case studies failed on four of five models. Where a baseline does not reproduce cleanly its status is recorded rather than a number invented.
+The STL baselines all run the same oracle formula and reproduce its robustness exactly, so every comparison is like-for-like and only the speed and memory differ. RTAMT runs through `rtamt_runner.py`: the discrete-time monitor for the full-signal track, a dense-time suite for the dense chart, and a memory suite that records how its resident memory grows as it holds the whole trace, against SENTIL's flat streaming footprint. MoonLight (`moonlight_runner.py`) and Banquo, the offline monitor from the S-TaLiRo group (`banquo_runner.py`, which needs Python 3.11 or newer), score the full signal the same way. Breach (`breach_runner.m`) is the dense-time robustness standard and needs MATLAB. On the same trace SENTIL runs one to two orders of magnitude ahead of each of them and, because it streams, holds constant memory where they grow with the stream. The statistical baselines are harder to pin down honestly. The Modest toolset is bundled with the case-study models, but those models were written against an older Modest grammar and do not parse under the bundled v3.1.301, so no Modest numbers are reproduced here; the UPPAAL-SMC runs in the case studies failed on four of five models. Where a baseline does not reproduce cleanly its status is recorded rather than a number invented.
