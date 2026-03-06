@@ -1,0 +1,65 @@
+---
+title: "Parameter mining"
+description: "Find the tightest value of a specification parameter that still holds on recorded traces."
+---
+
+Often you have logs of traces and know how a requirement looks not just its robustness. The system should not overshoot, but by how much does it actually overshoot? It should settle, but how long does it really take? Parameter mining answers that from the data. Given a family of formulas indexed by one parameter and traces the requirement should hold on, it finds the value where the requirement only barely holds, the tightest bound the traces support.
+
+The search works because the worst-case robustness over the traces is monotone in a threshold or a time bound. Loosen the bound and every trace holds by more; tighten it and eventually the worst trace fails. The tightest holding value is the point where that worst-case robustness crosses zero, and mining brackets it.
+
+## Mining a spec parameter
+
+The CLI mines a parameter of a [premade specification](/docs/reference/specifications/catalog); it takes `--spec` only, so a raw formula is mined through the Rust API below. `controls/overshoot` bounds how far the output may exceed the reference, as a fraction of the step amplitude, and declares its `max_overshoot` parameter over [0, 1]. On a recorded step response whose output peaks 0.124 above the reference, `sentil mine` finds that fraction.
+
+```bash
+sentil mine --spec controls/overshoot --parameter max_overshoot -t run.csv
+```
+
+```text
+mine
+  spec        controls/overshoot
+  parameter   max_overshoot
+  range       [0, 1]
+  tightest    0.124000
+```
+
+`--spec` names the specification, `--parameter` the parameter to mine, and `-t` the trace. The search range defaults to the parameter's declared range; `--range` narrows it. The mined value is the boundary rounded to the side that still holds, i.e., at `max_overshoot = 0.124` the run's peak overshoot is exactly met, and any tighter bound reports a violation. That number is the overshoot the data actually exhibits, and it can be used for writing the requirement.
+
+## Mining a formula family in Rust
+
+For a raw formula rather than a premade spec, `mine_tightest_parameter` takes a closure that builds the formula for a candidate value, the traces, and a bracketing range.
+
+```rust title="mine.rs"
+use sentil::synthesis::mine_tightest_parameter;
+use sentil::{Formula, Trace};
+
+fn run(values: [f64; 3]) -> Trace {
+    let mut trace = Trace::indexed(values.len());
+    trace.add_signal("x", values).unwrap();
+    trace
+}
+
+// two recorded runs; the worst peaks at 7
+let runs = [run([1.0, 5.0, 3.0]), run([2.0, 7.0, 4.0])];
+
+// G(x < c) holds when c clears the largest x; mine the tightest c
+let c = mine_tightest_parameter(
+    |c| Formula::parse(&format!("G(x < {c})")),
+    &runs,
+    0.0,
+    100.0,
+)?;
+assert!((c - 7.0).abs() < 1e-3);   // the tightest bound the data supports
+```
+
+The closure builds the formula for a candidate value, and `0.0` and `100.0` bracket the search. The worst-case robustness must be monotone in the parameter, which it is for a comparison threshold or an interval bound, and the bracket must put a holding value on one side and a failing value on the other.
+
+<Callout type="warn">
+The range must bracket the boundary: one end where the requirement holds on every trace, the other where it fails. A range where every value already holds, or every value fails, has no crossing to find and is rejected with a message rather than returning a guess. Widen the range until it straddles the boundary.
+</Callout>
+
+## Interpreting the mined value
+
+A mined parameter is a fact about the traces you gave it. It is the tightest value consistent with the traces, so it is only as representative as the data.
+
+Mining pairs naturally with [falsification](/docs/synthesis/guides/falsify). You mine the tightest bound the data supports, then falsify against it to see whether an adversarial input can break the bound the traces suggested was safe. If the falsifier finds a violation, the mined value was optimistic, and the counterexample tells you by how much.

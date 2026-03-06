@@ -1,0 +1,96 @@
+---
+title: "Falsification"
+description: "Search a model's input space for a trajectory that violates a specification."
+---
+
+Falsification is the search for an input that makes a model violate its specification. We take the robustness as an objective over the bounded input space and turn the search into an optimization problem. If the optimization finds a configuration that pushes the robustness below zero, the property is refuted for the model at hand. But on the other hand, if the search finds nothing, nothing is refuted because the spec may still be violated outside the box or in a corner the search did not stumble on. In other words, a found violation is strong evidence, while finding nothing is no evidence.
+
+We can also understand falsification as a dual to synthesis. [Synthesis](/docs/synthesis/guides/open-loop-synthesis) climbs toward satisfaction, searching for an input that makes the model satisfy the spec. Falsification descends toward violation, searching for an input that makes the model violate the spec.
+
+## Searching for a violation
+
+`falsify` runs a gradient-free CMA-ES search over the input box, scoring the exact robustness and keeping the most-violating input it finds. It restarts from a fresh seed to escape a local basin and stops early once a trajectory dips below zero. A returned `Witness` with negative robustness is a genuine counterexample.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="falsify.py"
+from sentil import Formula, SystemModel, Bounds
+
+# x_{t+1} = x_t + u_t over five steps
+model = SystemModel.linear([[1.0]], [[1.0]], [0.0], ["pos"], 1.0, 5)
+spec = Formula.parse("G[0, 5](pos < 1)")
+bounds = Bounds([-1.0] * 5, [1.0] * 5)
+
+witness = spec.falsify(model, bounds, restarts=5)
+print(witness.robustness)   # -4.0: pos climbs to 5 and the spec caps it at 1
+print(witness.input)        # the input that broke the spec
+print(witness.trace)        # the trajectory it produced
+```
+</Tab>
+<Tab value="Rust">
+```rust title="falsify.rs"
+use sentil::synthesis::CmaConfig;
+use sentil::{Bounds, Formula, LinearModel};
+
+let model = LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 5)?;
+let spec = Formula::parse("G[0, 5](pos < 1)")?;
+let bounds = Bounds::new(vec![-1.0; 5], vec![1.0; 5])?;
+
+let witness = spec.falsify(&model, &bounds, CmaConfig::default(), 5)?;
+assert!(witness.robustness < 0.0);   // -4.0: a counterexample
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil falsify -f 'G[0, 5](pos < 1)' --model integrator.json --restarts 5
+```
+
+```text
+falsify
+  spec        G[0, 5](pos < 1)
+  method      cmaes
+  result      counterexample found
+  robustness  -4.000000
+  input       [1.0000, 1.0000, 1.0000, 1.0000, 1.0000]
+```
+
+The model file carries the linear system and a `bounds` block to search within. `--method` defaults to `cmaes`, restarted `--restarts` times from fresh seeds; `--method gradient` runs the smooth-robustness descent instead, capped at `--budget` iterations.
+</Tab>
+</Tabs>
+
+The `Witness` holds the `input` that produced the trace, the exact `robustness` of the spec on that trace, and the `trace` itself. Robustness below zero is a violation and at or above zero, the search found no counterexample and the value is the closest it came over the bounded inputs.
+
+## Types of falsification searches
+
+There are two ways to look for a violation, and they trade off coverage against cost.
+
+`falsify` scores the exact robustness with CMA-ES and explores globally, so it finds violations a gradient misses on a rugged or non-differentiable objective, at the cost of more rollouts. Choose this one when the spec is non-smooth or you want to be sure you are not missing a violation in a far corner of the input box. The parameters are in `CmaConfig`: `population` (zero draws it from the input dimension), `max_generations`, `initial_step`, and `seed`.
+
+`find_counterexample` descends the smooth-robustness gradient from the initial state. It is cheaper and follows the slope straight downhill, but it can settle in a local basin and miss a violation elsewhere in the box. Use it when the objective is smooth and you want a fast answer.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python
+# gradient descent on the smooth robustness: cheaper, can miss a far violation
+witness = spec.find_counterexample(model, bounds, max_iters=200)
+print(witness.robustness)   # -4.0 here too: the slope leads straight to it
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::synthesis::SmoothConfig;
+
+// gradient descent on the smooth robustness: cheaper, can miss a far violation
+let witness = spec.find_counterexample(&model, &bounds, 200, SmoothConfig::default())?;
+assert!(witness.robustness < 0.0);   // -4.0 here too
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+Both searches work the bounded input box. A rare-event violation buried in the tail of a stochastic system is the job of the rare-event estimator under [statistical model checking](/docs/probabilistic), which drives the system through nested level thresholds rather than searching inputs.
+</Callout>
+
+## Reading a non-result
+
+A spec that cannot be violated over the input box comes back with a non-negative robustness and no counterexample. If the inputs can never push the integrator past five, a spec demanding the position stay below a hundred cannot be broken, and the witness robustness stays at or above zero. Widen the box, raise the restarts, or raise the budget to search harder before you conclude a spec is safe.
