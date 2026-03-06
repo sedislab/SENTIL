@@ -1,1 +1,1 @@
-{ "root": true, "title": "Reference", "icon": "Book", "pages": [] }
+{ "root": true, "title": "Reference", "icon": "Book", "pages": ["---[Book]Reference---", "[Overview](/docs/reference)", "language"] }

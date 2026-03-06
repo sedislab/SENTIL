@@ -1,0 +1,135 @@
+---
+title: "Formula grammar"
+description: "Every form the SENTIL parser accepts, from keywords and aliases through precedence and intervals to the depth limit."
+---
+
+A SENTIL formula is a string. The parser reads it left to right with a precedence-climbing recursive descent, so you write connectives at their natural strength and add parentheses only where you mean to override precedence. This page describes the syntax. For what each construct computes, see the [robustness semantics](/docs/reference/language/robustness-semantics); for each operator worked on a concrete trace, see the [operators](/docs/reference/language/operators) reference; for the diagnostics you get when a formula is malformed, see [parse errors](/docs/reference/language/parse-errors).
+
+## EBNF summary
+
+The grammar below reflects the parser's actual precedence layering. Looser binders sit higher; each rule falls through to the next tighter one. Each operator terminal is written in its primary notation; the long forms in the alias table lex to the same token.
+
+```text
+formula       = implies ;
+implies       = or , [ "->" , implies ] ;               (* right associative *)
+or            = and , { "|" , and } ;                   (* left associative *)
+and           = until , { "&" , until } ;               (* left associative *)
+until         = since , [ "U" , interval , until ] ;    (* right associative *)
+since         = temporal , [ "S" , interval , since ] ; (* right associative *)
+
+temporal      = "G" , interval , unary
+              | "F" , interval , unary
+              | "H" , interval , unary
+              | "O" , interval , unary
+              | "X" , unary
+              | unary ;
+
+unary         = "!" , unary
+              | probabilistic ;
+
+probabilistic = "P" , prob_op , number , "(" , formula , ")"
+              | primary ;
+
+primary       = "(" , formula , ")"
+              | predicate ;
+
+predicate     = expr , cmp , expr ;
+
+expr          = factor , { ( "+" | "-" ) , factor } ;
+factor        = power  , { ( "*" | "/" | "%" ) , power } ;
+power         = term   , [ "^" , power ] ;                  (* right associative *)
+term          = "(" , expr , ")"
+              | "-" , term
+              | number
+              | identifier
+              | identifier , "(" , [ expr , { "," , expr } ] , ")" ;
+
+interval      = [ "[" , bound , "," , bound , "]" ] ;
+bound         = [ "-" ] , number | "inf" ;
+
+cmp           = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
+prob_op       = ">=" | ">" | "<=" | "<" ;
+
+number        = digit , { digit } , [ "." , { digit } ] , [ ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ]
+              | "." , digit , { digit } ;
+identifier    = letter , { letter | digit | "_" } | "_" , { letter | digit | "_" } ;
+```
+
+## Keywords
+
+These words are reserved and cannot name a signal: `always`, `eventually`, `until`, `next`, `since`, `historically`, `once`, `and`, `or`, `not`, `implies`, `P`, and `inf`.
+
+## Operator notation and long forms
+
+The primary notation is a single capital for each temporal operator, and a symbol for each boolean connective. Each operator also accepts spelled-out long forms.
+
+| Notation | Reading | Long forms |
+|---|---|---|
+| `G` | always | `always`, `globally` |
+| `F` | eventually | `eventually`, `finally` |
+| `U` | until | `until` |
+| `X` | next | `next` |
+| `S` | since | `since` |
+| `H` | historically | `historically` |
+| `O` | once | `once` |
+| `&`, `&&` | and | `and` |
+| `\|`, `\|\|` | or | `or` |
+| `!` | not | `not` |
+| `->` | implies | `implies` |
+
+The single capitals are case sensitive. For example, `G` is always, but `g` is an ordinary variable. Also, `!` which is `not` becomes `not-equal` only when a `=` follows it.
+
+## Precedence and associativity
+
+From loosest to tightest binding: `->`, then `|`, then `&`, then `U` and `S`, then the prefix temporal operators (`G`, `F`, `H`, `O`, `X`), then `!`, and finally predicates and parenthesized groups. So `a > 0 & b > 0 -> c > 0` parses as `((a > 0 & b > 0) -> c > 0)`, and `a > 0 U b > 0 & c > 0` parses as `((a > 0 U[0, inf] b > 0) & c > 0)`.
+
+`->`, `U`, `S`, and the `^` power operator associate to the right; `|`, `&`, and the additive and multiplicative arithmetic operators associate to the left. Inside a predicate the arithmetic precedence is the usual one: `+` and `-` bind loosest, then `*`, `/`, and `%`, then `^` tightest, with a leading `-` as unary negation.
+
+Two temporal operators do not chain without parentheses. A prefix operator takes a single non-temporal body, so `G[0, 5](F[0, 2](x > 0))` needs the inner parentheses; writing `G[0, 5] F[0, 2](x > 0)` is a parse error.
+
+## Intervals
+
+A bounded temporal operator carries an interval in square brackets on both ends, `[a, b]`, with `a` and `b` in the trace's time unit. The lower bound is finite and at least zero. The upper bound is either a finite number no smaller than the lower bound or the keyword `inf` for an interval unbounded above, written `[a, inf]`. Omitting the interval entirely defaults to `[0, inf]`, so `F(x > 0)` is `F[0, inf](x > 0)`. The `inf` keyword is only an interval upper bound and it cannot appear inside a predicate or an expression.
+
+## Predicates, arithmetic, and functions
+
+An atomic predicate compares two arithmetic terms, `expr cmp expr`, for example `speed - 0.5 * wind > 10`. Terms combine signal names and numeric constants with `+`, `-`, `*`, `/`, `%` (modulo), and `^` (power), a leading unary `-`, function calls, and parentheses.
+
+A signal name starts with a letter or an underscore and continues with letters, digits, and underscores. Hyphens are not part of a name.
+
+Twelve functions are available inside a term.
+
+| Function | Arity | Meaning |
+|---|---|---|
+| `abs(x)` | 1 | absolute value |
+| `sqrt(x)` | 1 | square root |
+| `exp(x)` | 1 | natural exponential $e^x$ |
+| `ln(x)` | 1 | natural logarithm |
+| `log(x)` | 1 | base-ten logarithm |
+| `sin(x)` | 1 | sine, radians |
+| `cos(x)` | 1 | cosine, radians |
+| `tan(x)` | 1 | tangent, radians |
+| `floor(x)` | 1 | round toward minus infinity |
+| `ceil(x)` | 1 | round toward plus infinity |
+| `min(a, b)` | 2 | smaller of two arguments |
+| `max(a, b)` | 2 | larger of two arguments |
+
+Note that `ln` is the natural log and `log` is base ten. Calling `min` or `max` with a different argument count, or calling an unlisted name, is an error. See [error codes](/docs/reference/methods/error-codes).
+
+## Numbers, comments, and whitespace
+
+Numeric constants may carry a decimal point and a base-ten exponent, so `1e-6`, `2.5E3`, and `.5` all lex to numbers. Whitespace between tokens is insignificant, and a newline is whitespace, so a formula may span several lines. A `#` starts a comment that runs to the end of the line.
+
+```text
+# highway envelope for the next minute
+G[0, 60](speed < 120) &
+G[0, 60](speed > 40)
+```
+
+## The depth limit
+
+The recursive descent stops at a depth of 256. Depth counts grammar rules rather than characters, so where the limit lands depends on the construct. For example, roughly 250 stacked negations or chained `|` terms, and around 60 nested parentheses result in a depth greater than 256. A written specification stays orders of magnitude below either figure and this is done to prevent the call stack from overflowing. The [parse errors](/docs/reference/language/parse-errors) page shows the possible error messages.
+
+## The probabilistic operator
+
+The PrSTL operator `P` wraps an STL formula and turns it into a statement about satisfaction probability: `P>=0.99(G[0, 10](distance > 5))`. Its relation is one of `>=`, `>`, `<=`, or `<`, and its threshold lies in the closed interval from 0 to 1, checked at parse time. The wrapped formula is evaluated by the statistical layer rather than the deterministic monitor. `P` belongs at the top of the formula, but the grammar itself nests it under `!` in the unary rule, so a nested `P` parses; evaluation then rejects it with a typed error rather than inventing a margin for it. The [operators](/docs/reference/language/operators) reference shows the error text.
