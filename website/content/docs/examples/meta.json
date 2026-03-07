@@ -1,1 +1,1 @@
-{ "root": true, "title": "Examples", "icon": "Compass", "pages": ["---[Compass]Examples---", "[Overview](/docs/examples)"] }
+{ "root": true, "title": "Examples", "icon": "Compass", "pages": ["---[Compass]Examples---", "[Overview](/docs/examples)", "canonical"] }

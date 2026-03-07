@@ -1,0 +1,158 @@
+---
+title: "Offline monitoring, dense time"
+description: "Read a trace as a continuous piecewise-linear signal so that inter-sample crossings are counted during evaluation."
+---
+
+Dense time joins the samples into a continuous piecewise-linear signal and reads the formula over that, so a violation that happens in between two samples is counted as part of formula evaluation.
+
+The example is a three-sample trace of `x`, checked against a property requiring `x` to stay positive through the first 1.5 seconds. Every sample inside the window is positive, so discrete time evaluation will report the property holding. But if it is read as a continuous signal, the line between $t = 1$ and $t = 2$ crosses through zero and reaches `-1` at $t = 1.5$, so dense time evaluation reports a violation.
+
+## The program
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="offline_dense.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2], {"x": [1.0, 1.0, -3.0]})
+phi = Formula.parse("G[0, 1.5] (x > 0)")
+
+print("discrete:", phi.robustness(trace))        # 1.0
+print("dense:   ", phi.robustness_dense(trace))  # -1.0
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="offline_dense.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = Trace::new(vec![0.0, 1.0, 2.0])?;
+    trace.add_signal("x", vec![1.0, 1.0, -3.0])?;
+
+    let phi = Formula::parse("G[0, 1.5] (x > 0)")?;
+    println!("discrete: {}", phi.robustness(&trace)?);        // 1.0
+    println!("dense:    {}", phi.robustness_dense(&trace)?);  // -1.0
+    Ok(())
+}
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="offline_dense.cpp"
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+int main() {
+    sentil::Trace trace({0, 1, 2}, "x", {1.0, 1.0, -3.0});
+    sentil::Formula phi = sentil::Formula::parse("G[0, 1.5] (x > 0)");
+
+    std::cout << "discrete: " << phi.robustness(trace) << "\n";        // 1
+    std::cout << "dense:    " << phi.robustness_dense(trace) << "\n";  // -1
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="offline_dense.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    double times[] = {0.0, 1.0, 2.0};
+    double x[] = {1.0, 1.0, -3.0};
+    sentil_trace_t *trace = sentil_trace_create(times, 3);
+    sentil_trace_add_signal(trace, "x", x, 3);
+
+    sentil_formula_t *phi = sentil_formula_parse("G[0, 1.5] (x > 0)");
+    double discrete = 0.0, dense = 0.0;
+    sentil_formula_robustness(phi, trace, &discrete);
+    sentil_formula_robustness_dense(phi, trace, &dense);
+    printf("discrete %.3f, dense %.3f\n", discrete, dense);
+
+    sentil_formula_destroy(phi);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="OfflineDense.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.Trace;
+
+public class OfflineDense {
+    public static void main(String[] args) throws Exception {
+        try (Trace trace = Trace.create(new double[] {0, 1, 2});
+                Formula phi = Formula.parse("G[0, 1.5] (x > 0)")) {
+            trace.addSignal("x", new double[] {1.0, 1.0, -3.0});
+
+            System.out.println("discrete: " + phi.robustness(trace));       // 1.0
+            System.out.println("dense:    " + phi.robustnessDense(trace));  // -1.0
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="offline_dense.jl"
+using Sentil
+
+phi = formula("G[0, 1.5] (x > 0)")
+trace = Trace([0.0, 1.0, 2.0], "x", [1.0, 1.0, -3.0])
+
+println("discrete: ", robustness(phi, trace))               # 1.0
+println("dense:    ", robustness(phi, trace; dense = true)) # -1.0
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="offline_dense.m"
+trace = sentil.Trace([0 1 2], 'x', [1 1 -3]);
+phi = sentil.Formula.parse('G[0, 1.5] (x > 0)');
+
+fprintf('discrete: %g\n', phi.robustness(trace));        % 1
+fprintf('dense:    %g\n', phi.robustness_dense(trace));  % -1
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash title="offline_dense.sh"
+printf 'time,x\n0,1\n1,1\n2,-3\n' > signal.csv
+sentil check -f 'G[0,1.5](x > 0)' -t signal.csv                       # dense (default): violated
+sentil check -f 'G[0,1.5](x > 0)' -t signal.csv --semantics discrete  # discrete: satisfied
+```
+
+</Tab>
+</Tabs>
+
+## Why the two numbers differ
+
+Running the Python version prints:
+
+```text
+discrete: 1.0
+dense:    -1.0
+```
+
+Discrete time evaluates `x > 0` at the samples inside `[0, 1.5]`, which are $t = 0$ and $t = 1$, both at value 1. The `G`, read always, takes the infimum of those margins, `1`, and the property holds. Dense time interpolates. Between the sample at $t = 1$ with value 1 and the sample at $t = 2$ with value -3, the straight line crosses zero and reaches `-1` at $t = 1.5$. That point sits on the window edge, so the dense infimum is `-1` and the property fails. Here dense is right because the underlying continuous signal really does dip below zero inside the window.
+
+Notice the API. In the library bindings, discrete robustness is the default call and dense is a separate call, `robustness_dense`. The Julia binding takes a `dense = true` keyword on `robustness` instead of a second function. The command-line `check` defaults to dense and drops to discrete with `--semantics discrete`.
+
+## Cost of dense time evaluation
+
+On the benchmark, the dense path costs 7 to 12 times the discrete one.
+
+For the full comparison and the interpolation modes, see [discrete or dense time](/docs/monitoring/guides/discrete-vs-dense). For the recursive definition of dense robustness, see the [robustness semantics reference](/docs/reference/language/robustness-semantics).

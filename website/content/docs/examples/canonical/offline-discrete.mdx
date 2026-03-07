@@ -1,0 +1,194 @@
+---
+title: "Offline monitoring, discrete time"
+description: "Evaluate a trace in discrete time and read the robustness, the per-sample signal, and the intervals where the property fails."
+---
+
+You have a trace and a property, and you want to know whether the trace satisfied the property and by how much. On this page, we'll go through how to do that in every language SENTIL supports.
+
+The trace is five samples of a speed signal at times 0 through 4. The property is that speed always stays above five. Select your language in the tab below.
+
+## The program
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="offline_monitoring.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12.0, 9.0, 7.0, 4.0, 6.0]})
+phi = Formula.parse("G (speed > 5)")
+
+print("robustness:", phi.robustness(trace))
+print("per sample:", phi.robustness_signal(trace))
+print("violations:", [(v.start, v.end) for v in phi.violations(trace)])
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="offline_monitoring.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+    trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+
+    let phi = Formula::parse("G (speed > 5)")?;
+    println!("robustness: {}", phi.robustness(&trace)?);
+    println!("per sample: {:?}", phi.robustness_signal(&trace)?);
+    println!("violations: {:?}", phi.violations(&trace)?);
+    Ok(())
+}
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="offline_monitoring.cpp"
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+int main() {
+    sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12.0, 9.0, 7.0, 4.0, 6.0});
+    sentil::Formula phi = sentil::Formula::parse("G (speed > 5)");
+
+    std::cout << "robustness: " << phi.robustness(trace) << "\n";
+    std::cout << "per sample:";
+    for (double r : phi.robustness_signal(trace)) {
+        std::cout << " " << r;
+    }
+    std::cout << "\nviolations:";
+    for (const sentil::Interval& v : phi.violations(trace)) {
+        std::cout << " [" << v.start << ", " << v.end << "]";
+    }
+    std::cout << "\n";
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="offline_monitoring.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    double times[] = {0.0, 1.0, 2.0, 3.0, 4.0};
+    double speed[] = {12.0, 9.0, 7.0, 4.0, 6.0};
+    sentil_trace_t *trace = sentil_trace_create(times, 5);
+    sentil_trace_add_signal(trace, "speed", speed, 5);
+
+    sentil_formula_t *phi = sentil_formula_parse("G (speed > 5)");
+    if (phi == NULL) {
+        fprintf(stderr, "parse error: %s\n", sentil_get_last_error());
+        sentil_trace_destroy(trace);
+        return 1;
+    }
+
+    double rho = 0.0;
+    sentil_formula_robustness(phi, trace, &rho);
+    printf("robustness: %.3f\n", rho);
+
+    sentil_formula_destroy(phi);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="OfflineMonitoring.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.Interval;
+import io.github.sedislab.sentil.Trace;
+import java.util.Arrays;
+
+public class OfflineMonitoring {
+    public static void main(String[] args) throws Exception {
+        try (Trace trace = Trace.create(new double[] {0, 1, 2, 3, 4});
+                Formula phi = Formula.parse("G (speed > 5)")) {
+            trace.addSignal("speed", new double[] {12.0, 9.0, 7.0, 4.0, 6.0});
+
+            System.out.println("robustness: " + phi.robustness(trace));
+            System.out.println("per sample: " + Arrays.toString(phi.robustnessSignal(trace)));
+            System.out.print("violations:");
+            for (Interval v : phi.violations(trace)) {
+                System.out.print(" [" + v.start() + ", " + v.end() + "]");
+            }
+            System.out.println();
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="offline_discrete.jl"
+using Sentil
+
+phi = formula("G (speed > 5)")
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12.0, 9.0, 7.0, 4.0, 6.0])
+
+println("robustness: ", robustness(phi, trace))
+println("per sample: ", robustness_signal(phi, trace))
+for span in violations(phi, trace)
+    println("violated on [", span.start, ", ", span.stop, "]")
+end
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="offline_monitoring.m"
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('G (speed > 5)');
+
+fprintf('robustness: %g\n', phi.robustness(trace));
+fprintf('per sample: %s\n', mat2str(phi.robustness_signal(trace)));
+
+spans = phi.violations(trace);
+fprintf('violations:');
+for i = 1:size(spans, 1)
+    fprintf(' [%g, %g]', spans(i, 1), spans(i, 2));
+end
+fprintf('\n');
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash title="offline_monitoring.sh"
+printf 'time,speed\n0,12\n1,9\n2,7\n3,4\n4,6\n' > speeds.csv
+sentil check -f 'G (speed > 5)' -t speeds.csv --semantics discrete
+```
+
+The `check` subcommand prints the verdict and the robustness, and exits 0 when the property held and 10 when it was violated.
+
+</Tab>
+</Tabs>
+
+## Reading the output
+
+Every binding returns the same three answers. Running the Python version prints:
+
+```text
+robustness: -1.0
+per sample: [-1. -1. -1. -1.  1.]
+violations: [(0.0, 3.0)]
+```
+
+`robustness` returns the robustness of the entire trace. If the robustness is positive, the trace holds and if negative, it violated the property.
+
+`robustness_signal` returns one value per sample and the robustness of the whole formula evaluated from that sample onward. For `G (speed > 5)`, the robustness at each point is `[-1.0, -1.0, -1.0, -1.0, 1.0]`.
+
+`violations` collapses that signal into the time spans where robustness is negative. In the trace above, at `t=[0.0, 3.0]`, the robustness is negative.
+
+## What discrete time sees
+
+Discrete time reads the trace only at its sample timestamps and treats the gaps between them as unseen. That is the right reading when the signal is sampled fast relative to how quickly it moves. The problem with this is that a violation can occur between samples and this can hide real violations. See [dense time](/docs/examples/canonical/offline-dense) for the dense-time approach which joins the samples into a continuous signal and catches any inter-sample dips.
+
+For the definition of robustness that produced these numbers, see [what STL is](/docs/monitoring/concepts/what-is-stl). For the operators themselves, see [the temporal operators](/docs/monitoring/concepts/temporal-operators).
