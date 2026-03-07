@@ -1,17 +1,13 @@
-"""Banquo runner.
-
-Times Banquo, the cpslab-asu offline signal temporal logic robustness monitor from
-the S-TaLiRo group, on the same oracle SENTIL runs and emits the shared JSON record,
-one per line. Banquo scores the whole signal, so this is the full-signal track, the
-comparison for the discrete chart alongside RTAMT and MoonLight. It needs Python 3.11
-or newer (`pip install pybanquo`). Run as `python3.11 banquo_runner.py scalability`.
-"""
+# code to run Banquo on the benchmarks
+# github.com/cpslab-asu/banquo-python
 
 import json
 import os
 import math
 import platform
+import resource
 import statistics
+import subprocess
 import sys
 import time
 
@@ -84,14 +80,35 @@ def scalability():
         out.append(measure(n, runs))
     return out
 
+def measure_memory(n):
+    phi = build()
+    trace = Trace({float(i): {"x": v} for i, v in enumerate(signals(n))})
+    robustness = float(evaluate(phi, trace))
+    peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return record("memory/length", "monitoring", n, robustness, None, 1, peak_kb * 1024)
+
+def memory():
+    for n in (10_000, 100_000, 1_000_000, 10_000_000):
+        child = subprocess.run([sys.executable, __file__, "_memory_child", str(n)],
+                               capture_output=True, text=True)
+        line = child.stdout.strip()
+        if line:
+            print(line)
+
 def main():
     suite = sys.argv[1] if len(sys.argv) > 1 else ""
-    if suite != "scalability":
-        sys.stderr.write("unknown suite; use `scalability`\n")
-        return 1
-    for record in scalability():
-        print(json.dumps(record))
-    return 0
+    if suite == "_memory_child":
+        print(json.dumps(measure_memory(int(sys.argv[2]))))
+        return 0
+    if suite == "scalability":
+        for rec in scalability():
+            print(json.dumps(rec))
+        return 0
+    if suite == "memory":
+        memory()
+        return 0
+    sys.stderr.write("unknown suite; use `scalability` or `memory`\n")
+    return 1
 
 if __name__ == "__main__":
     sys.exit(main())
