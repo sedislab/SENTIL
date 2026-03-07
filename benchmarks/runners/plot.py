@@ -158,20 +158,23 @@ def memory(records):
         return sorted((r["size"], r["peak_rss_bytes"] / 1e6) for r in records
                       if r.get("benchmark") == "memory/length" and r.get("tool") == tool)
     s = rss("sentil")
-    rt = rss("rtamt")
     if not s:
         return
     fig, ax = plt.subplots()
-    style.hero_line(ax, [p[0] for p in s], [p[1] for p in s], "SENTIL streaming")
-    if rt:
-        ax.plot([p[0] for p in rt], [p[1] for p in rt], color=style.TOOL["rtamt"],
-                marker="o", label="RTAMT offline", zorder=4)
+    style.hero_line(ax, [p[0] for p in s], [p[1] for p in s], "SENTIL (streaming)")
+    for tool, label in (("rtamt", "RTAMT (holds the stream)"), ("banquo", "Banquo (holds the stream)")):
+        pts = rss(tool)
+        if pts:
+            ax.plot([p[0] for p in pts], [p[1] for p in pts], color=style.TOOL[tool],
+                    marker="o", label=label, zorder=4)
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("samples streamed")
+    ax.set_xlabel("samples monitored")
     ax.set_ylabel("peak resident memory (MB)")
-    ax.set_title("Memory: SENTIL holds the window, an offline monitor holds the stream")
+    ax.set_title("Monitoring a stream: SENTIL streams, the offline tools hold it all")
     ax.legend(loc="upper left")
+    style.footnote(fig, "RTAMT's online monitor and Banquo have no bounded-memory mode for this "
+                        "bounded-future formula, so following the stream means keeping all of it.")
     save(fig, "memory.png")
 
 THROUGHPUT_MODELS = ("single_step", "always_ten", "eventually_ten")
