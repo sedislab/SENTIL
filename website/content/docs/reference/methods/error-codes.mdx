@@ -1,0 +1,64 @@
+---
+title: "Error codes"
+description: "The stable C-ABI status codes SENTIL returns, what each one means, the core error it corresponds to, and how every language binding surfaces it as an idiomatic error."
+---
+
+Nothing a caller does aborts the library. Every fallible operation reports a typed error, and across the C ABI that error travels as a stable numeric code paired with a human-readable message. The codes are `sentil_error_t`, defined in `sentil.h`; `SENTIL_OK` is zero and the rest signal failure. The numbers do not change between releases, so a binding can switch on them.
+
+## The codes
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | `SENTIL_OK` | success |
+| 1 | `SENTIL_ERR_NULL_POINTER` | a required handle, string, or array argument was null |
+| 2 | `SENTIL_ERR_UTF8` | a string argument was not valid UTF-8 |
+| 3 | `SENTIL_ERR_PARSE` | the formula failed to parse; the message carries the line and column |
+| 4 | `SENTIL_ERR_UNKNOWN_VARIABLE` | a predicate names a signal the trace does not carry |
+| 5 | `SENTIL_ERR_EVALUATION` | an evaluation fault: division by zero, an unknown or wrong-arity function, or a bare probabilistic operator evaluated deterministically |
+| 6 | `SENTIL_ERR_TRACE` | a malformed trace: non-monotonic time, a non-finite sample, mismatched signal lengths, an empty trace, or a packed-length mismatch |
+| 7 | `SENTIL_ERR_NOT_PROBABILISTIC` | a statistical method received a formula not wrapped in `P` |
+| 8 | `SENTIL_ERR_INVALID_NOISE_MODEL` | a noise-model parameter outside its domain |
+| 9 | `SENTIL_ERR_INVALID_CONFIG` | a run configuration outside its valid range |
+| 10 | `SENTIL_ERR_FIT` | a fitter received too few or malformed samples |
+| 11 | `SENTIL_ERR_INGEST` | a trace file could not be opened or parsed |
+| 12 | `SENTIL_ERR_SPLITTING` | a rare-event splitting run failed |
+| 13 | `SENTIL_ERR_UNSUPPORTED` | an operation a backend cannot take, such as MILP on a non-affine model |
+| 14 | `SENTIL_ERR_TRANSPILATION` | a GPU shader failed to transpile or validate |
+| 15 | `SENTIL_ERR_GPU` | a GPU device or dispatch fault |
+| 16 | `SENTIL_ERR_JSON` | a formula JSON round-trip failed |
+| 17 | `SENTIL_ERR_PANIC` | an internal panic was caught at the boundary and reported rather than aborting the process |
+
+Codes 1 and 2 arise only at the C boundary, from a null or non-UTF-8 argument that never reaches the engine. Codes 14 and 15 appear only in a build with the `gpu` feature. Code 17 is the backstop: a bug that would have unwound past the FFI is caught and turned into a code, so a caller in another language sees an error instead of a crashed process.
+
+A Rust caller never sees these codes; the same failures are the `sentil::Error` variants, which the boundary folds down. `Parse` becomes code 3 and `UnknownVariable` code 4. `DivisionByZero`, `UnknownFunction`, `ArityMismatch`, and `ProbabilisticOperator` all become code 5, and the trace-shape variants `NonMonotonicTime`, `NonFiniteSample`, `SignalLengthMismatch`, `EmptyTrace`, and `PackedLength` all become code 6. Every remaining variant maps to the code of the same name.
+
+## Reading the error in C
+
+The last code and message are thread-local. After a call returns a null handle or a failure sentinel, read them before the next call on that thread overwrites them.
+
+```c
+sentil_formula_t *phi = sentil_formula_parse("G ((x >");
+if (phi == NULL) {
+    sentil_error_t code = sentil_get_last_error_code();
+    const char *message = sentil_get_last_error();
+    fprintf(stderr, "sentil error %d: %s\n", code, message);
+}
+```
+
+The message returned by `sentil_get_last_error` is borrowed and valid only until the next SENTIL call on the thread; never free it. To keep it, copy it with `sentil_get_last_error_message`.
+
+## How each binding surfaces it
+
+Every binding maps the code to its own error type and carries the message through, so a caller never inspects a raw integer.
+
+| Language | Surfaces as |
+|---|---|
+| Rust | the `sentil::Error` enum, matched by variant |
+| Python | `SentilError` and its subclasses `ParseError`, `SemanticError`, `EvaluationError` |
+| C++ | a thrown exception or a returned status, per the header's documented contract |
+| Java | a checked `SentilException` with subclasses and an `ErrorCode` enum |
+| Julia | the `SentilError` abstract type with `ParseError`, `SemanticError`, `EvaluationError`, and a `SentilErrorCode` |
+| MATLAB | an `MException` under the `sentil:` namespace, such as `sentil:parse` |
+| C | the thread-local code and message shown above |
+
+The message follows the same rules everywhere: it names the offending construct, gives the position when a formula or signal has one, and states what a correct input looks like. For the parser's own diagnostics, see [parse errors](/docs/reference/language/parse-errors); for the C surface in full, see the [C page](/docs/languages/c). How each binding folds the codes into its three error subtypes, with a caught example per language, is on [handle errors across bindings](/docs/languages/across/handle-errors).

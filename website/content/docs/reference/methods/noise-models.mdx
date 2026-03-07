@@ -1,0 +1,82 @@
+---
+title: "Noise model catalog"
+description: "Every noise family SENTIL can lift a trace with, its parameters and constructor, the additive and multiplicative interactions, and the fitters that build a model from paired calibration data."
+---
+
+A probabilistic specification asks how a property fares once sensor readings are perturbed by noise. A `NoiseModel` is the distribution that noise is drawn from, and a `NoiseInteraction` says how the draw combines with the reading. Lifting turns each reading into an ensemble of candidate values that the robustness engine evaluates. Every constructor validates its parameters; a bad parameter returns an `InvalidNoiseModel` error naming the family and the reason.
+
+## The families
+
+Seventeen families cover the common shapes of sensor error, from a clean point mass to a data-backed empirical distribution.
+
+| Family | Constructor | Parameters | Notes |
+|---|---|---|---|
+| Dirac | `NoiseModel::dirac(value)` | `value` | a point mass, no noise; a baseline |
+| Gaussian | `NoiseModel::gaussian(mean, std_dev)` | `mean`, `std_dev >= 0` | zero std is a point mass at the mean |
+| Uniform | `NoiseModel::uniform(low, high)` | `low <= high` | flat over `[low, high]` |
+| LogNormal | `NoiseModel::log_normal(mu, sigma)` | `mu`, `sigma >= 0` | log-mean and log-std; own mean `exp(mu + sigma^2/2)` |
+| Exponential | `NoiseModel::exponential(lambda)` | `lambda > 0` | rate `lambda`, mean `1/lambda` |
+| Gamma | `NoiseModel::gamma(shape, scale)` | `shape > 0`, `scale > 0` | mean `shape * scale` |
+| Beta | `NoiseModel::beta(alpha, beta)` | `alpha > 0`, `beta > 0` | on `[0, 1]`, mean `alpha/(alpha+beta)` |
+| Weibull | `NoiseModel::weibull(shape, scale)` | `shape > 0`, `scale > 0` | reliability and time-to-failure |
+| Rayleigh | `NoiseModel::rayleigh(scale)` | `scale > 0` | magnitude of a centered 2D Gaussian |
+| Gumbel | `NoiseModel::gumbel(location, scale)` | `location`, `scale > 0` | extreme-value modeling |
+| Cauchy | `NoiseModel::cauchy(location, scale)` | `location`, `scale > 0` | heavy-tailed; mean and variance undefined |
+| StudentT | `NoiseModel::student_t(df, location, scale)` | `df > 0`, `location`, `scale > 0` | approaches Gaussian as `df` grows |
+| TruncatedNormal | `NoiseModel::truncated_normal(mean, std_dev, lower, upper)` | `std_dev > 0`, `lower < upper` | a Gaussian confined to `[lower, upper]` |
+| Poisson | `NoiseModel::poisson(lambda)` | `lambda > 0` | counts, mean `lambda` |
+| Binomial | `NoiseModel::binomial(n, p)` | `n > 0`, `p` in `[0, 1]` | successes in `n` trials, mean `n * p` |
+| Bootstrap | `NoiseModel::bootstrap(residuals)` | non-empty finite `residuals` | resamples observed residuals with replacement |
+| Mixture | `NoiseModel::mixture(weights, components)` | at least one component; one finite weight `>= 0` per component, summing above zero | draws a component by weight, then draws from it; weights need not sum to one |
+
+Each model reports its analytic `mean()` and `variance()`, returning `None` for the families that have none: the Cauchy family throughout, Student-t with one degree of freedom for the mean and two or fewer for the variance.
+
+## Interaction
+
+`NoiseInteraction` says how a noise draw combines with a deterministic reading.
+
+| Interaction | Combination | Residual it recovers |
+|---|---|---|
+| `Additive` | `reading + noise` | `sensor - truth` |
+| `Multiplicative` | `reading * noise` | `sensor / truth` |
+
+The multiplicative residual guards against a near-zero ground truth, which reads as no deviation, so a truth close to zero does not blow up into a divide.
+
+## Fitting a model from data
+
+When you have paired ground-truth and sensor observations, fit the model rather than guessing its parameters. `NoiseModel::residuals(ground_truth, sensor, interaction)` computes the residual series under the chosen interaction, and a fitter turns that series into a model.
+
+| Fitter | Builds | Method |
+|---|---|---|
+| `fit_gaussian(samples)` | a Gaussian | maximum likelihood, Bessel-corrected variance |
+| `fit_bootstrap(samples)` | a bootstrap model | resamples the residuals directly |
+| `fit_bootstrap_reservoir(samples, max_samples)` | a thinned bootstrap | reservoir sampling to a fixed size, seeded and reproducible |
+| `fit_gaussian_mixture(samples, components, max_iters)` | a Gaussian mixture | expectation-maximization with log-sum-exp responsibilities |
+
+```rust
+use sentil::{NoiseInteraction, NoiseModel};
+
+let truth = [1.0, 2.0, 3.0, 4.0];
+let sensor = [1.1, 1.9, 3.2, 3.8];
+let residuals = NoiseModel::residuals(&truth, &sensor, NoiseInteraction::Additive)?;
+let model = NoiseModel::fit_gaussian(&residuals)?;
+```
+
+Once you have a model, register it against a signal name and lift the trace. `LiftingRegistry::register(name, model, interaction)` attaches the model, and `lift(trace, seed)` draws one realization of the ensemble. During a statistical check the ensemble size is `SmcConfig.samples`, 10,000 by default; that one knob and its neighbors are on the [configuration page](/docs/reference/methods/configuration).
+
+```rust
+use sentil::{Formula, NoiseInteraction, NoiseModel, Trace};
+use sentil::stats::{LiftingRegistry, SmcConfig};
+
+let mut lifting = LiftingRegistry::new();
+lifting.register(
+    "speed",
+    NoiseModel::gaussian(0.0, 0.3)?,
+    NoiseInteraction::Additive,
+);
+let phi = Formula::parse("P>=0.95(G (speed > 5))")?;
+let trace = Trace::from_signal([0.0], "speed", [6.0])?;
+let result = phi.check(&trace, &lifting, &SmcConfig::default())?;
+```
+
+For the ideas behind choosing and fitting a model, read [noise models](/docs/probabilistic/concepts/noise-models), [fitting noise models](/docs/probabilistic/guides/fit-noise-models), and [lifting a trace](/docs/probabilistic/guides/lift-trace).

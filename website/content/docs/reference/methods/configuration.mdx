@@ -1,0 +1,94 @@
+---
+title: "Configuration"
+description: "The configuration structs that steer a monitor and its statistical methods, their fields and defaults, and how the command-line tool layers settings from files, environment, and flags."
+---
+
+A monitor runs with sensible defaults out of the box, so most checks need no configuration at all. When a run needs tuning, the settings live in a small set of structs, each with a default that suits a first run. The tables below are the field-by-field reference; the concept pages explain when to change a value.
+
+## MonitorConfig
+
+`MonitorConfig` holds how a [`Monitor`](/docs/languages/rust) checks its formula: the time mode for offline robustness, and, with the `statistical` feature, the Monte Carlo and rare-event settings. It is built with `new()` and refined with chained builders.
+
+| Builder | Sets | Default |
+|---|---|---|
+| `time(mode)` | the [`TimeMode`](/docs/monitoring/guides/discrete-vs-dense): `Discrete` or `Dense` | `Discrete` |
+| `smc(config)` | the `SmcConfig` used by `Monitor::check` | `SmcConfig::default()` |
+| `rare(config)` | the `RareEventConfig` used by `Monitor::check_rare` | `RareEventConfig::default()` |
+
+```rust
+use sentil::{Monitor, MonitorConfig, TimeMode};
+use sentil::stats::SmcConfig;
+
+let config = MonitorConfig::new()
+    .time(TimeMode::Dense)
+    .smc(SmcConfig { samples: 50_000, ..SmcConfig::default() });
+let monitor = Monitor::new("P>=0.95(G (speed > 5))", config)?;
+```
+
+SPRT and Bayesian testing take their config per call rather than through `MonitorConfig`, since their hypotheses have no sensible default.
+
+## SmcConfig
+
+The fixed-sample Monte Carlo settings, a plain struct with public fields.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `samples` | how many noisy realizations to draw | `10_000` |
+| `confidence` | the confidence level for the reported interval | `0.95` |
+| `seed` | the base seed, so a run reproduces exactly | `42` |
+| `interval_method` | which [interval](/docs/reference/methods/statistical-methods) to report | `IntervalMethod::Wilson` |
+
+## SprtConfig
+
+Wald's sequential test, built with `SprtConfig::new(p0, p1, alpha, beta, max_samples)` and an optional `with_seed`.
+
+| Parameter | Meaning | Constraint |
+|---|---|---|
+| `p0`, `p1` | the indifference region bounds | `0 < p0 < p1 < 1` |
+| `alpha` | the false-positive rate bound | in `(0, 1)` |
+| `beta` | the false-negative rate bound | in `(0, 1)` |
+| `max_samples` | the budget at which an undecided run is `Inconclusive` | positive |
+| `seed` | the base seed | defaults to `42` |
+
+## BayesConfig
+
+The Bayesian sequential test, built with `BayesConfig::new(threshold, bayes_factor, max_samples)` and an optional `with_seed`.
+
+| Parameter | Meaning | Constraint |
+|---|---|---|
+| `threshold` | the probability the test decides against | in `(0, 1)` |
+| `bayes_factor` | the evidence cutoff before deciding | greater than `1` |
+| `max_samples` | the budget at which an undecided run is `Inconclusive` | positive |
+| `seed` | the base seed | defaults to `42` |
+
+The prior is the uniform Beta$(1, 1)$; a larger `bayes_factor` demands stronger evidence and spends more samples.
+
+## RareEventConfig
+
+The adaptive multilevel splitting settings, a plain struct with public fields.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `particles` | the particle population; more tightens the estimate at linear cost | `4096` |
+| `margin` | the violation margin; the rare event is robustness dropping to `-margin` or below | `0.0` |
+| `seed` | the seed, for a reproducible run | `42` |
+
+## SmoothConfig
+
+The smooth-robustness settings synthesis differentiates through: a `SoftKind`, log-sum-exp or arithmetic-geometric mean, and its temperature. The fields and the semantics they select are on [smooth semantics](/docs/reference/language/smooth-semantics).
+
+## Command-line layered config
+
+The CLI reads defaults a team can set once and share. The precedence, highest to lowest, is a command-line flag, then a `SENTIL_*` environment variable, then `./sentil.toml`, then the per-user config under the XDG directory, then `/etc/sentil/config.toml`, then the built-in default. A file value stands in only where neither a flag nor an environment variable was given, and a later file merges over an earlier one. An explicit `--config PATH` replaces the whole file chain.
+
+```toml title="sentil.toml"
+output = "ndjson"
+color = "never"
+
+[alias]
+overshoot = "check --spec controls/overshoot"
+```
+
+A config file may set the default output format, the color policy, and named command aliases, which expand when their name is not a built-in verb. Run `sentil config` to see which files are consulted, which exist, and the values in effect.
+
+For what these settings drive, see [statistical methods](/docs/reference/methods/statistical-methods) and the [CLI page](/docs/languages/cli).

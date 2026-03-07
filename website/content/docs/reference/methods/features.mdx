@@ -1,0 +1,54 @@
+---
+title: "Cargo features"
+description: "The feature flags on the sentil crate, what each one turns on and what it costs, the default set, and how to build a minimal STL monitor with nothing else linked in."
+---
+
+The core is layered so a build carries only what it uses. The three capabilities, deterministic STL monitoring, PrSTL statistical checking, and synthesis, are separable, and the heavier readers and the GPU path are opt-in. The streaming monitor is always present; everything above it is a feature.
+
+The default build carries the monitor, the statistical layer, synthesis on the CPU, the premade specifications, and the common trace readers:
+
+```toml
+[dependencies]
+sentil = "0.3"
+```
+
+That resolves to `default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "sqlite"]`.
+
+## The features
+
+| Feature | Turns on | Pulls in | Default |
+|---|---|---|---|
+| `std` | the standard library; `no_std` drops it and does f64 math through `libm` | none | yes |
+| `serde` | serialize a formula, noise model, or run config | `serde` | no |
+| `statistical` | the probabilistic operator: confidence intervals, Monte Carlo, sequential testing | `rand`, `rand_distr`, `rand_chacha`, `libm` | yes |
+| `synthesis` | synthesis from a spec, dependency-free on the CPU and `no_std`-friendly | none | yes |
+| `parallel` | spreads Monte Carlo across cores with Rayon, same answer as one thread | `rayon` | yes |
+| `ingest` | read traces from CSV, TSV, and classic MATLAB `.mat` files | `csv`, `matfile` | yes |
+| `specs` | the premade PrSTL specifications, embedded as templates | `serde`, `serde_json`, `toml`, `serde_yaml`, `rust-embed` | yes |
+| `sqlite` | traces from a SQLite table, with SQLite bundled so no system library is needed | `rusqlite` | yes |
+| `parquet` | Apache Parquet traces | `parquet`, `arrow` | no |
+| `arrow` | Arrow IPC and Feather traces | `arrow` | no |
+| `hdf5` | HDF5 and MATLAB v7.3 traces; needs a system or bundled HDF5 library | `hdf5` | no |
+| `mcap` | MCAP robotics recordings | `mcap`, `serde_json` | no |
+| `gpu` | WebGPU for large statistical runs and rare events, falling back to the CPU when no device is present | `wgpu`, `pollster`, `bytemuck`, `futures`, `naga` | no |
+| `synthesis-gpu` | GPU batching for synthesis: one dispatch scores a whole candidate population | needs `synthesis` and `gpu` | no |
+
+Several features imply others. `statistical` and `serde` both pull in `std`; `parallel`, `specs`, and `gpu` all build on `statistical`; every trace reader builds on `ingest`; and `synthesis-gpu` needs both `synthesis` and `gpu`.
+
+The gates are compile-time, not runtime. Without `statistical` the `stats` module and the statistical checking methods, `Monitor::check`, `check_sequential`, `check_rare`, and `Formula::check_bayesian`, do not exist, so code that calls them fails to build rather than erroring later. `gpu` accelerates the statistical runs and the rare-event splitting but does nothing for synthesis on its own; GPU-batched candidate scoring is `synthesis-gpu`, which needs both.
+
+## Other builds of the engine
+
+The flags above belong to the `sentil` crate, and two shipped consumers pin their own sets. The CLI builds with an empty default feature set over a trimmed core, so the stock `sentil` binary reads the text trace formats and classic `.mat` but not Parquet, Arrow, or SQLite; `cargo install sentil-cli --features formats` adds those three, its `gpu` flag is likewise opt-in, and no build of the CLI reaches the `hdf5` or `mcap` readers. The shared C library the other bindings sit on builds the full default set with `gpu` on, which the ARM and microcontroller packages drop because those targets have no WebGPU device.
+
+## A minimal monitor
+
+For a deterministic STL monitor with no statistics, no synthesis, and no readers, turn off the defaults and keep only `std`:
+
+```bash
+cargo add sentil --no-default-features --features std
+```
+
+Dropping `std` as well gives a `no_std` monitor that does its floating-point math through `libm`, which is what the microcontroller target builds against. The bounded temporal operators, the parser, and the robustness engine are all present in that build; only the layers above the monitor are gone.
+
+For which readers each trace format needs, see [trace formats](/docs/reference/methods/trace-formats). For what the statistical and synthesis layers add, see [statistical methods](/docs/reference/methods/statistical-methods) and [synthesis backends](/docs/reference/methods/synthesis-backends).

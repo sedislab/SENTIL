@@ -1,1 +1,1 @@
-{ "title": "Methods and catalogs", "icon": "SlidersHorizontal", "pages": ["statistical-methods", "synthesis-backends"] }
+{ "title": "Methods and catalogs", "icon": "SlidersHorizontal", "pages": ["statistical-methods", "synthesis-backends", "noise-models", "trace-formats", "features", "error-codes", "configuration", "citation"] }
