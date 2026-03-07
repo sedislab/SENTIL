@@ -1,0 +1,136 @@
+---
+title: "Robustness semantics"
+description: "The definition of quantitative robustness for every SENTIL operator."
+---
+
+Robustness maps a formula and a trace to a signed real number. The sign is the positive for satisfied and negative for violated, and the magnitude is how far the signal can move before the verdict flips. The definition is recursive meaning that predicates give a signed distance, boolean connectives combine robustnessmargins, and temporal operators quantify a margin over a window of time. Write $\rho(\varphi, t)$ for the robustness of $\varphi$ at time $t$ over the trace. The [grammar](/docs/reference/language/grammar) page covers how to write each form and the [operators](/docs/reference/language/operators) page works through every temporal operator on a concrete trace.
+
+## Predicates
+
+A predicate compares two arithmetic terms. Its robustness is the signed distance to the comparison boundary, with $f$ and $c$ the values of the left and right terms at time $t$.
+
+$$
+\rho(f \sim c,\ t) =
+\begin{cases}
+f - c & \sim\ \in\ \{>,\ \ge\} \\[2pt]
+c - f & \sim\ \in\ \{<,\ \le\} \\[2pt]
+-\lvert f - c \rvert & \sim\ \text{is}\ = \\[2pt]
+\lvert f - c \rvert & \sim\ \text{is}\ \ne
+\end{cases}
+$$
+
+Both sides are arithmetic terms, so `speed > 0.5 * wind` is one predicate whose margin is `speed - 0.5 * wind`. A strict comparison and its non-strict partner share the same margin. They differ only on the boundary, where the margin is zero and the predicate counts as satisfied.
+
+Terms may call the twelve built-in functions listed on the [grammar](/docs/reference/language/grammar) page, and functions nest:
+
+```python
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0.0], {"x": [1.5], "target": [2.0], "y": [2.4]})
+phi = Formula.parse("max(abs(x - target), abs(y - target)) < 1")
+phi.robustness(trace)   # 0.5
+```
+
+The inner distances are `abs(1.5 - 2.0) = 0.5` and `abs(2.4 - 2.0) = 0.4`; their maximum is `0.5`; the predicate `< 1` scores `1 - 0.5 = 0.5`, a positive margin with half a unit to spare.
+
+### Arithmetic edge cases
+
+Division and modulo by zero stop evaluation with an error, for instance `` division by zero while evaluating `y / x` ``. Other functions follow IEEE arithmetic, like `ln(0)` is $-\infty$, and `sqrt` or `ln` of a negative value is NaN. A NaN margin propagates as the robustness value when it stands alone, but `min` and `max`, including the folds behind `&` and `|`, drop a NaN operand and return the other, so one NaN predicate does not poison a conjunction: with `x = -1` and `y = 1`, `(sqrt(x) > 0) & (y > 0)` scores `1.0`.
+
+## Boolean connectives
+
+The connectives combine margins with negation, minimum, and maximum.
+
+$$
+\rho(\lnot\,\varphi,\ t) = -\,\rho(\varphi,\ t)
+$$
+
+$$
+\rho(\varphi \land \psi,\ t) = \min\!\big(\rho(\varphi, t),\ \rho(\psi, t)\big)
+$$
+
+$$
+\rho(\varphi \lor \psi,\ t) = \max\!\big(\rho(\varphi, t),\ \rho(\psi, t)\big)
+$$
+
+$$
+\rho(\varphi \rightarrow \psi,\ t) = \max\!\big(-\rho(\varphi, t),\ \rho(\psi, t)\big)
+$$
+
+The spelled-out forms `not`, `and`, `or`, and `implies` lex to the same four connectives as `!`, `&` or `&&`, `|` or `||`, and `->`. A property that holds unconditionally has robustness $+\infty$, and one that fails unconditionally has $-\infty$.
+
+`! (speed > 5)` with `speed = 12` scores `-7`, the predicate margin negated. `(speed > 5) & (speed < 30)` scores `min(7, 18) = 7`: the weaker side, the lower limit, decides. `(mode == 1) | (mode == 3)` with `mode = 1` scores `max(0, -2) = 0`, the satisfied disjunct on its boundary. And implication:
+
+```python
+trace = sentil.Trace([0.0], {"temp": [90.0], "fan": [1.0]})
+Formula.parse("(temp > 80) -> (fan == 1)").robustness(trace)   # 0.0
+```
+
+The antecedent scores `10` and the consequent `0`, so the implication scores `max(-10, 0) = 0`.
+
+## Future temporal operators
+
+The `G` and `F` operators, read always and eventually, take the infimum and supremum of the inner robustness over a forward-shifted window $[t + a,\ t + b]$; when the interval is unbounded above, $b = \infty$.
+
+$$
+\rho(\mathbf{G}_{[a,b]}\,\varphi,\ t) = \inf_{s\, \in\, [t+a,\ t+b]} \rho(\varphi,\ s)
+$$
+
+$$
+\rho(\mathbf{F}_{[a,b]}\,\varphi,\ t) = \sup_{s\, \in\, [t+a,\ t+b]} \rho(\varphi,\ s)
+$$
+
+The `U` operator, read until, asks $\varphi$ to hold until $\psi$ becomes true somewhere in the window, and its robustness is a supremum over witness times of the smaller of the $\psi$ margin there and the running infimum of $\varphi$ up to it.
+
+$$
+\rho(\varphi \mathbin{\mathbf{U}_{[a,b]}} \psi,\ t) = \sup_{s\, \in\, [t+a,\ t+b]} \min\!\left(\rho(\psi, s),\ \inf_{r\, \in\, [t,\ s)} \rho(\varphi, r)\right)
+$$
+
+The guard infimum stops short of $s$ itself: the interval $[t,\ s)$ is half-open, so the guard need not hold at the instant the release fires.
+
+The `X` operator, read next, shifts evaluation one sample forward. At the final sample it has no successor, so it returns $-\infty$.
+
+$$
+\rho(\mathbf{X}\ \varphi,\ t_i) = \rho(\varphi,\ t_{i+1}), \qquad \rho(\mathbf{X}\ \varphi,\ t_{n-1}) = -\infty
+$$
+
+## Past temporal operators
+
+The past operators mirror the future ones over a backward window $[t - b,\ t - a]$. `H`, read historically, is the past dual of `G`, `O`, read once, the dual of `F`, and `S`, read since, the dual of `U`.
+
+$$
+\rho(\mathbf{H}_{[a,b]}\,\varphi,\ t) = \inf_{s\, \in\, [t-b,\ t-a]} \rho(\varphi,\ s)
+$$
+
+$$
+\rho(\mathbf{O}_{[a,b]}\,\varphi,\ t) = \sup_{s\, \in\, [t-b,\ t-a]} \rho(\varphi,\ s)
+$$
+
+$$
+\rho(\varphi \mathbin{\mathbf{S}_{[a,b]}} \psi,\ t) = \sup_{s\, \in\, [t-b,\ t-a]} \min\!\left(\rho(\psi, s),\ \inf_{r\, \in\, (s,\ t]} \rho(\varphi, r)\right)
+$$
+
+The guard interval is again half-open, this time at $s$: the guard applies strictly after the trigger fires, never at the instant itself.
+
+## The probabilistic operator
+
+The PrSTL operator does not report a margin of its own. It compares the estimated satisfaction probability $\hat{p}$, produced by the statistical layer over an ensemble of sampled trajectories, against its threshold $p$, and collapses to a hard bound. For the at-least form:
+
+$$
+\rho(\text{P}_{\ge p}\,\varphi,\ t) =
+\begin{cases}
++\infty & \hat{p} \ge p \\
+-\infty & \text{otherwise}
+\end{cases}
+$$
+
+The `>`, `<=`, and `<` forms compare $\hat{p}$ against $p$ with the corresponding relation. `P` is a top-level operator in practice: a nested `P` parses, but every evaluation path rejects it with a typed error rather than treating the $\pm\infty$ verdict as a margin. The [operators](/docs/reference/language/operators) page shows the error text.
+
+## Discrete and dense time
+
+In discrete time the window infima and suprema range over the trace's sample points that fall inside the interval, and an empty window reduces to the operator's identity, $+\infty$ for an infimum and $-\infty$ for a supremum. The outermost reduction of `U` and `S` is a supremum, so their empty windows likewise yield $-\infty$. In dense time the trace is treated as a continuous signal between samples under one of three interpolation modes: linear, zero-order hold, or cubic spline. The window extrema then range over the interpolated signal, which can place the decisive value strictly between two samples. The one exception is `X`, which is tied to the sample index and has no dense reading; dense evaluation rejects it with a typed error. Both modes otherwise share this recursive definition and differ only in what set of times the window quantifies over.
+
+<Callout type="info">
+The bounded `G`, `F`, `H`, and `O` windows are evaluated with a monotonic-deque sliding extremum: O(1) amortized work per sample and memory proportional to the window rather than the trace, with the equivalence to the naive window scan proven in Lean under `proofs/`. [Why the deque is O(1) amortized](/docs/monitoring/concepts/monotonic-deque) shows it to you.
+</Callout>

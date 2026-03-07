@@ -1,0 +1,49 @@
+---
+title: "Smooth robustness semantics"
+description: "The differentiable robustness synthesis uses: a log-sum-exp soft minimum and maximum with a temperature, a parameter-free alternative, and the exact semantics."
+---
+
+Monitoring uses exact minimum and maximum. Those are correct for a verdict, but they are not differentiable at a tie, so a gradient method cannot follow them. Synthesis needs a robustness that varies smoothly with the decision variables, so it evaluates the same formula tree with a soft minimum and maximum in place of the exact ones. There is one tree and one set of operators; only the reduction changes. The exact semantics on the [robustness reference](/docs/reference/language/robustness-semantics) stay in force for monitoring, and the smooth surrogate is used only where a synthesizer climbs it.
+
+## Log-sum-exp soft minimum and maximum
+
+The default smoothing is the log-sum-exp soft minimum and maximum, controlled by a temperature $\beta > 0$.
+
+$$
+\widetilde{\min}_\beta(x_1, \dots, x_n) = -\frac{1}{\beta}\, \ln \sum_{i=1}^{n} e^{-\beta x_i}
+\qquad
+\widetilde{\max}_\beta(x_1, \dots, x_n) = \frac{1}{\beta}\, \ln \sum_{i=1}^{n} e^{\beta x_i}
+$$
+
+Both are differentiable everywhere. As $\beta$ grows they approach the exact operators, with the soft minimum staying at or below the true minimum and the soft maximum at or above the true maximum, so a conjunction never overshoots and a disjunction never undershoots. A lower temperature is smoother and easier for an optimizer to climb; a higher one tracks the exact value more closely. The implementation subtracts the running extremum before exponentiating, which keeps the exponentials from overflowing for large margins, and because log-sum-exp is associative it can fold a window one sample at a time and reach the same value as reducing the whole window at once.
+
+The gap is largest at a tie, and you can check it by hand. `soft_min([1.0, 1.0], 10.0)` is 0.930685, which is $1 - \ln 2 / 10$, where the exact minimum is 1; at temperature 100 it is 0.993069. At an $n$-way tie the soft minimum sits exactly $\ln n / \beta$ below the true value. Away from a tie the gap vanishes: `soft_min([1.0, 3.0], 10.0)` is 1.0 to nine decimal places, because the larger margin contributes almost nothing to the sum.
+
+## Arithmetic-geometric-mean robustness
+
+The alternative smoothing is parameter-free. When every margin in a reduction is positive, the soft minimum is the geometric mean of the margins, which recovers the exact value when the margins are equal and goes to zero as any margin does, so it stays continuous at the satisfaction boundary. When some margin is not positive, it averages the violated ones instead, so it keeps the sign of the true minimum. The soft maximum is the dual. This mean is continuous and shares its sign with the exact value, but it is not differentiable at a tie, so it suits the gradient-free search, CMA-ES, rather than a gradient method. It ignores the temperature.
+
+## Configuration
+
+`SmoothConfig` carries the temperature and the smoothing kind, `SoftKind::LogSumExp` or `SoftKind::ArithmeticGeometricMean`. `SmoothConfig::new(temperature)` builds a log-sum-exp configuration and rejects a temperature that is not finite and positive; the default configuration uses a temperature of `10.0`. Switch the kind with `.with_kind(...)`.
+
+```rust
+use sentil::synthesis::{SmoothConfig, SoftKind};
+use sentil::Formula;
+
+let phi = Formula::parse("G[0, 2](x > 0)")?;
+
+// differentiable log-sum-exp at a high temperature, close to the exact value
+let lse = SmoothConfig::new(200.0)?;
+let r = phi.smooth_robustness(&trace, lse)?;
+
+// parameter-free, sign-preserving, for the gradient-free search
+let agm = SmoothConfig::default().with_kind(SoftKind::ArithmeticGeometricMean);
+let r_agm = phi.smooth_robustness(&trace, agm)?;
+```
+
+The free functions `soft_min(values, temperature)` and `soft_max(values, temperature)` expose the reduction directly; both fall back to the exact extremum when the temperature is not finite and positive.
+
+## Differentiability with respect to the decision variables
+
+A synthesis problem holds the system model and the decision variables, usually the control inputs, and treats the smooth robustness of the specification as an objective. Under the log-sum-exp smoothing that objective is differentiable with respect to those variables, so projected gradient ascent can follow its gradient to an input sequence that raises robustness, warm-started from the previous step in the receding-horizon controller. The arithmetic-geometric mean gives a continuous, sign-faithful objective for the gradient-free backend where a gradient is unavailable or unwanted. See the [synthesis backends](/docs/reference/methods/synthesis-backends) for how each smoothing pairs with a solver.

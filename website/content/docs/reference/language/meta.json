@@ -1,1 +1,1 @@
-{ "title": "Specification language", "icon": "Braces", "pages": ["grammar"] }
+{ "title": "Specification language", "icon": "Braces", "pages": ["grammar", "robustness-semantics", "operators", "smooth-semantics", "parse-errors"] }

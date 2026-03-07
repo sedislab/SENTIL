@@ -1,0 +1,154 @@
+---
+title: "Parse errors"
+description: "The parser diagnostics you are most likely to meet, with the exact message and the one-based line and column SENTIL reports, the input that triggers each, and the fix."
+---
+
+When a formula is malformed the parser stops at the offending token and returns a typed error carrying a message and a one-based line and column. Formatted, it reads `parse error at line L, column C: message`. The message names what went wrong and, where it helps, what a correct input looks like. The cases below are the ones you are most likely to meet. For the syntax itself, see the [grammar](/docs/reference/language/grammar).
+
+## A stray single equals
+
+Equality is `==`. A single `=` is caught in the lexer with a fix in the message.
+
+```text
+x = 5
+```
+
+```text
+parse error at line 1, column 3: stray `=`; write `==` to compare for equality
+```
+
+Write `x == 5`.
+
+## An unexpected character
+
+A character that starts no token is reported at its column.
+
+```text
+x @ 5
+```
+
+```text
+parse error at line 1, column 3: unexpected character `@`
+```
+
+Remove the stray character or replace it with the operator you meant.
+
+## Interval bounds in the wrong order
+
+A bounded interval needs its lower bound no greater than its upper bound.
+
+```text
+G[10, 5](x > 0)
+```
+
+```text
+parse error at line 1, column 2: interval lower bound 10 is greater than upper bound 5
+```
+
+Swap the bounds to `G[5, 10](x > 0)`.
+
+## An infinite lower bound
+
+The keyword `inf` is only an interval upper bound. A lower `inf` is rejected.
+
+```text
+G[inf, 10](x > 0)
+```
+
+```text
+parse error at line 1, column 2: an interval's lower bound cannot be `inf`
+```
+
+Give a finite, non-negative lower bound, for example `G[0, 10](x > 0)`.
+
+## A probability threshold out of range
+
+The threshold on the probabilistic operator lies in the closed interval from 0 to 1.
+
+```text
+P>=1.5(x > 0)
+```
+
+```text
+parse error at line 1, column 1: probability threshold 1.5 must lie between 0 and 1; `P` is reserved for the probabilistic operator, so rename the signal if you meant a variable P
+```
+
+Use a threshold within range, such as `P>=0.95(x > 0)`. The tail of the message covers the other way to hit this: `P` names the operator, so a signal called `P` needs renaming.
+
+## A reserved operator name used as a value
+
+The single-letter operator aliases are reserved, so one cannot stand in for a signal. Where the parser expects a value, it names the operator behind the token.
+
+```text
+x > U
+```
+
+```text
+parse error at line 1, column 5: expected a value or `(`, found `until`; `U` and `until` are reserved for the until operator
+```
+
+Rename the trace column, for instance from `U` to `u_signal`, and refer to it by the new name.
+
+## A missing comma in an interval
+
+The two interval bounds are separated by exactly one comma.
+
+```text
+G[0 10](x > 0)
+```
+
+```text
+parse error at line 1, column 5: expected `,` between the interval bounds, found number 10
+```
+
+Add the comma: `G[0, 10](x > 0)`.
+
+## An incomplete formula
+
+A binary operator with nothing on its right stops the parser at the end of the input.
+
+```text
+x > 0 &
+```
+
+```text
+parse error at line 1, column 8: expected a value or `(`, found end of input
+```
+
+Complete the right operand, for example `x > 0 & y > 0`. The same expected-token message appears mid-formula when a token that cannot start a value sits where one is required.
+
+## A number too large for a double
+
+Numeric constants are IEEE doubles, so anything past about `1.8e308` overflows their range.
+
+```text
+x > 1e400
+```
+
+```text
+parse error at line 1, column 5: number `1e400` is out of range; use `inf` for an unbounded interval
+```
+
+The `inf` tail covers the usual cause, an oversized interval bound: write `[0, inf]` instead. Inside a predicate, pick a constant a double can represent.
+
+## A formula nested past the depth limit
+
+The parser stops descending at a depth of 256. This input stacks three hundred negations:
+
+```python
+Formula.parse("! " * 300 + "x > 0")
+```
+
+```text
+parse error at line 1, column 507: formula nests deeper than the limit of 256
+```
+
+Split the specification into several formulas and monitor each on its own.
+
+## What parses cleanly
+
+Two shapes trip up readers who expect them to fail. Neither does. Scientific notation is part of the number grammar, so `P<=1e-6(collision > 0)` parses; you do not need to expand `1e-6` to a decimal. Boolean connectives carry precedence, so `a > 0 & b < 10 | c == 1` parses without extra parentheses; the grouping rules are on the [grammar](/docs/reference/language/grammar) page.
+
+## Reading the diagnostic
+
+The column points at the token where parsing stopped, counting from one, and the line counts newlines from one, so a multi-line formula reports the line the error sits on. When a message lists a set of expected tokens, compare the token it found against the [grammar](/docs/reference/language/grammar) at that position. Some mistakes pass the parser and surface later, at evaluation, such as naming a signal the trace lacks or calling `min` with the wrong number of arguments; those are covered by the [error codes](/docs/reference/methods/error-codes).

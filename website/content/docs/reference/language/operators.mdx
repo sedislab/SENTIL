@@ -1,0 +1,208 @@
+---
+title: "Operators"
+description: "The per-operator reference: syntax, robustness, and a worked value you can check by hand for each temporal operator and the probabilistic operator P."
+---
+
+Eight operators build formulas over time and probability. This page gives each one its syntax, its robustness, and a worked value small enough to check by hand. The full recursive definition, with predicates and the boolean connectives, is on the [robustness semantics](/docs/reference/language/robustness-semantics) page.
+
+Every worked example runs on the same trace:
+
+```python
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+```
+
+Two predicate score rows cover all of them. `speed > 5` scores `speed - 5` at each sample: `7, 4, 2, -1, 1`. `speed < 5` scores `5 - speed`: `-7, -4, -2, 1, -1`.
+
+Four rules apply across the table. An omitted interval defaults to `[0, inf]`, so `G (phi)` means `G[0, inf] (phi)`. An empty window, one that holds no samples, yields the reduction's identity: $+\infty$ for the infimum operators `G` and `H`, $-\infty$ for the supremum operators `F`, `O`, `U`, and `S`. Bounded windows are evaluated with a monotonic-deque sliding extremum at O(1) amortized cost per sample; [why the deque is O(1) amortized](/docs/monitoring/concepts/monotonic-deque) walks the mechanism. The past operators accumulate over samples already seen, so their examples read the whole robustness signal with `robustness_signal` rather than the single value at $t = 0$.
+
+| Operator | Aliases | Window direction | Robustness reduction | Empty-window value |
+|---|---|---|---|---|
+| `G` | `always`, `globally` | forward $[t+a,\ t+b]$ | infimum | $+\infty$ |
+| `F` | `eventually`, `finally` | forward $[t+a,\ t+b]$ | supremum | $-\infty$ |
+| `U` | `until` | forward $[t+a,\ t+b]$ | sup over switch points of min(release, running guard infimum) | $-\infty$ |
+| `X` | `next` | one sample forward | inner value one step ahead | $-\infty$ at the last sample |
+| `H` | `historically` | backward $[t-b,\ t-a]$ | infimum | $+\infty$ |
+| `O` | `once` | backward $[t-b,\ t-a]$ | supremum | $-\infty$ |
+| `S` | `since` | backward $[t-b,\ t-a]$ | sup over trigger points of min(trigger, running guard infimum) | $-\infty$ |
+| `P` | none | the trace ensemble | $\pm\infty$ verdict against the threshold | n/a |
+
+## G, always
+
+`G`, read always, is the safety operator. It holds at time $t$ when its subformula holds at every instant of the window, so its robustness is the worst inner robustness anywhere in that window.
+
+```text
+G[a, b] (phi)
+```
+
+$$
+\rho(\mathbf{G}_{[a,b]}\,\varphi,\ t) = \inf_{s \in [t+a,\ t+b]} \rho(\varphi,\ s)
+$$
+
+The infimum is the closest-to-failing instant in the window. A positive result means every sample cleared the property and the value is the tightest margin; a negative result is the depth of the worst dip.
+
+```python
+Formula.parse("G (speed > 5)").robustness(trace)   # -1.0
+```
+
+The scores are `7, 4, 2, -1, 1`; the infimum is `-1`, set at $t = 3$ by the dip to four. A violation, by a margin of exactly one unit.
+
+## F, eventually
+
+`F`, read eventually, is the reachability operator. It holds at time $t$ when its subformula holds at some instant of the window, so its robustness is the best inner robustness anywhere in that window.
+
+```text
+F[a, b] (phi)
+```
+
+$$
+\rho(\mathbf{F}_{[a,b]}\,\varphi,\ t) = \sup_{s \in [t+a,\ t+b]} \rho(\varphi,\ s)
+$$
+
+The supremum is the most-satisfied instant in the window. A positive result means at least one sample cleared the property; a negative result is how far the best attempt still fell short. The two operators are De Morgan duals: `F phi` equals `! G ! phi`.
+
+```python
+Formula.parse("F (speed < 5)").robustness(trace)   # 1.0
+```
+
+The scores are `-7, -4, -2, 1, -1`; the supremum is `1` at $t = 3$. The signal cleared the threshold by one unit at its best moment.
+
+## U, until
+
+`U`, read until, couples two subformulas. It holds at time $t$ when the second becomes satisfied at some instant of the window and the first stays satisfied at every instant before that switch. It is right-associative, so `a U b U c` reads as `a U (b U c)`.
+
+```text
+(phi1) U[a, b] (phi2)
+```
+
+$$
+\rho(\varphi_1 \mathbin{\mathbf{U}_{[a,b]}} \varphi_2,\ t) = \sup_{s \in [t+a,\ t+b]} \min\!\left( \rho(\varphi_2,\ s),\ \inf_{r \in [t,\ s)} \rho(\varphi_1,\ r) \right)
+$$
+
+Read it as a search over candidate switch points `s`. At each `s`, the release must fire, worth $\rho(\varphi_2, s)$, and the guard must have held from `t` up to `s`, worth the running infimum of $\rho(\varphi_1)$. The `min` binds those two so the weaker one decides the witness, and the `sup` keeps the best switch point. The guard infimum runs over the half-open interval $[t, s)$: the guard must hold strictly before the release fires, not at the release instant itself.
+
+```python
+Formula.parse("(speed > 5) U[0, 4] (speed < 5)").robustness(trace)   # 1.0
+```
+
+The guard scores `7, 4, 2, -1, 1` and the release scores `-7, -4, -2, 1, -1`. The winning switch point is $s = 3$: the release fires there with margin `1`, and the guard held over $[0, 3)$ with samples `7, 4, 2`, whose infimum is `2`. The min of `1` and `2` is `1`, and no later switch beats it. Speed stayed above five until it dropped below, with one unit of room.
+
+## X, next
+
+`X`, read next, looks one sample forward. It carries no interval, because it names a single step rather than a window.
+
+```text
+X (phi)
+```
+
+$$
+\rho(\mathbf{X}\,\varphi,\ t_i) = \begin{cases} \rho(\varphi,\ t_{i+1}) & i < n - 1 \\ -\infty & i = n - 1 \end{cases}
+$$
+
+At the final sample of a trace of length $n$ there is no successor, so the result is $-\infty$: the property cannot be satisfied when there is nothing ahead to satisfy it.
+
+<Callout type="warn">
+`X` is tied to the sample index, so its result depends on the trace's sampling rate: two traces of the same signal sampled at different rates give different `X` values. It also has no dense-time reading; asking for dense robustness of an `X` formula returns the typed error `unsupported: next in dense time; use discrete robustness for it`. Prefer a bounded `F` or `G` when the property should be rate-independent.
+</Callout>
+
+```python
+Formula.parse("X (speed > 5)").robustness(trace)   # 4.0
+```
+
+The robustness at $t = 0$ is the `speed > 5` score one step ahead, `4` at $t = 1$. Evaluated at the final sample, the same formula returns $-\infty$.
+
+## H, historically
+
+`H`, read historically, is the past-time mirror of `G`. It holds at time $t$ when its subformula held at every instant of a window reaching backward from the present, covering $[t-b,\ t-a]$.
+
+```text
+H[a, b] (phi)
+```
+
+$$
+\rho(\mathbf{H}_{[a,b]}\,\varphi,\ t) = \inf_{s \in [t-b,\ t-a]} \rho(\varphi,\ s)
+$$
+
+The window looks only at samples already seen, which makes `H` natural for streaming: at every step it reports whether the property has held throughout the recent past, and by how much margin.
+
+```python
+Formula.parse("H[0, 2] (speed > 5)").robustness_signal(trace)   # [7.0, 4.0, 2.0, -1.0, -1.0]
+```
+
+At each time the infimum runs over the last two units. By $t = 3$ the window covers `4, 2, -1`, whose infimum is `-1`, and the value stays `-1` at $t = 4$ because the dip at $t = 3$ is still inside the two-unit window.
+
+## O, once
+
+`O`, read once, is the past-time mirror of `F`. It holds at time $t$ when its subformula held at some instant of the backward window, so its robustness is the best inner robustness there. It is the dual of `H`.
+
+```text
+O[a, b] (phi)
+```
+
+$$
+\rho(\mathbf{O}_{[a,b]}\,\varphi,\ t) = \sup_{s \in [t-b,\ t-a]} \rho(\varphi,\ s)
+$$
+
+```python
+Formula.parse("O[0, 2] (speed < 5)").robustness_signal(trace)   # [-7.0, -4.0, -2.0, 1.0, 1.0]
+```
+
+The supremum picks the most-satisfied instant in the recent past. By $t = 3$ the window covers `-4, -2, 1`, whose supremum is `1`, and the value persists at $t = 4$ because the crossing at $t = 3$ is still in view.
+
+## S, since
+
+`S`, read since, is the past-time mirror of `U`. It holds at time $t$ when the second subformula was satisfied at some instant of the backward window and the first has stayed satisfied from that point up to now. Like `U` it is right-associative.
+
+```text
+(phi1) S[a, b] (phi2)
+```
+
+$$
+\rho(\varphi_1 \mathbin{\mathbf{S}_{[a,b]}} \varphi_2,\ t) = \sup_{s \in [t-b,\ t-a]} \min\!\left( \rho(\varphi_2,\ s),\ \inf_{r \in (s,\ t]} \rho(\varphi_1,\ r) \right)
+$$
+
+Read it as a backward search over trigger times `s`. At each `s`, the trigger must have fired, worth $\rho(\varphi_2, s)$, and the guard must have held over $(s,\ t]$, from immediately after the trigger up to the present. The guard interval is half-open at `s`, so the guard holds strictly after the trigger, not at the trigger instant.
+
+```python
+Formula.parse("(speed > 5) S[0, 4] (speed < 5)").robustness_signal(trace)   # [-7.0, -4.0, -2.0, 1.0, 1.0]
+```
+
+At $t = 4$ the winning trigger is $s = 3$, where the trigger fired with margin `1`, and the guard held over $(3, 4]$ with the single sample `1`; the min is `1`. Speed has stayed above five since it was last below it, with one unit of room. The signal matches the `O` example number for number, a coincidence of this trace: the trigger row is identical and the guard stays positive after the crossing, so the guard infimum never bites. The two operators diverge the moment the guard dips after the trigger fires.
+
+## P
+
+`P` lifts a formula from a single trace to a distribution of trajectories: `P~p (phi)` asks whether the inner property holds with probability at least, or at most, `p` across the ensemble drawn from a fitted noise model. [What PrSTL is](/docs/probabilistic/concepts/what-is-prstl) covers the bridge from deterministic STL.
+
+```text
+P>=p (phi)
+P>p  (phi)
+P<=p (phi)
+P<p  (phi)
+```
+
+The threshold `p` follows the comparison and must lie in $[0, 1]$, checked at parse time. The equality forms `==` and `!=` that predicates allow are rejected here: a probability bound is an inequality against a threshold, so `P==0.9(...)` is not a valid formula.
+
+`P` belongs at the top of the formula. A nested `P` parses, but no evaluation accepts it: deterministic robustness reports ``the probabilistic operator `P` needs statistical evaluation; deterministic robustness is undefined for it``, and a statistical check of a formula whose outermost operator is not `P` reports `` statistical checking needs a formula wrapped in the probabilistic operator `P` ``. Build one probabilistic bound over a deterministic inner formula.
+
+The inner formula is scored on each sampled trajectory, and the statistical layer estimates the satisfaction probability $\hat{p} = \Pr[\rho(\varphi) \ge 0]$ over that ensemble, counting a trajectory whose robustness is exactly zero as satisfied, the same sign convention the deterministic layer uses. The operator then collapses to a hard verdict: $+\infty$ when $\hat{p}$ meets the threshold, $-\infty$ when it misses. The case form is on the [robustness semantics](/docs/reference/language/robustness-semantics) page. The estimate carries a confidence interval, Wilson by default, so the verdict comes with stated coverage rather than a bare point estimate. Which regime produces $\hat{p}$ is a choice on the call, not part of the formula: `check` runs empirical Monte Carlo, `check_sequential` runs the [sequential probability ratio test](/docs/probabilistic/concepts/sprt), and `check_bayesian` runs the Bayesian test; [confidence intervals](/docs/probabilistic/concepts/confidence-intervals) covers the decision rule.
+
+```python
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel, SmcConfig
+
+trace = sentil.Trace(list(range(20)), {"x": [0.4 + 0.05 * i for i in range(20)]})
+lifting = LiftingRegistry()
+lifting.register("x", NoiseModel.gaussian(0.0, 0.3))
+
+phi = Formula.parse("P>=0.9 (G (x > 0))")
+result = phi.check(trace, lifting, SmcConfig(samples=5000))
+result.probability   # estimated satisfaction probability
+result.interval      # .lower, .upper confidence bounds
+result.holds         # True when the estimate meets the >= 0.9 threshold
+```
+
+The noise model expands each reading of `x` into an ensemble, `G (x > 0)` is scored on every sampled trajectory, and `check` returns the estimated probability with its interval. `result.holds` carries the same verdict the operator collapses to: the threshold met means $+\infty$, missed means $-\infty$.
+
+For the full recursive definition across every operator, see the [robustness semantics reference](/docs/reference/language/robustness-semantics). For the intuition behind the temporal operators, read [the temporal operators](/docs/monitoring/concepts/temporal-operators).
