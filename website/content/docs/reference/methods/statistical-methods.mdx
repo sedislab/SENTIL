@@ -1,0 +1,105 @@
+---
+title: "Statistical methods"
+description: "The formulas SENTIL uses to turn sampled robustness into a decision: the confidence intervals, the sample-sizing bounds, and the four checking regimes."
+---
+
+Statistical model checking estimates how often a property holds by drawing noisy realizations and scoring each one. A point estimate alone cannot carry a safety argument, so every estimate comes with an interval, and a run can stop early once a sequential test has enough evidence. The formulas below are the ones the engine computes, taken from the core `stats` module. Where a value is worth pinning down, the reference number is the one the tests assert.
+
+The `IntervalMethod` default is Wilson. The three checking regimes are the fixed-sample Monte Carlo estimate, Wald's sequential probability ratio test, and the Bayesian sequential test. Each has one entry point: `Monitor::check(&trace, &lifting)` returns the fixed-sample `SmcResult`, `Monitor::check_sequential(&trace, &lifting, &sprt)` runs the SPRT, and `Formula::check_bayesian(&trace, &lifting, &bayes)` runs the Bayesian test. On the command line the same three are `sentil smc` with `--algo smc`, the default, `--algo sprt`, or `--algo bayes`; `--algo chernoff` sizes the run with the bound below before estimating.
+
+## Confidence intervals
+
+For `successes` out of `trials` at confidence level `level`, each method returns a `[lower, upper]` pair clamped to $[0, 1]$. Write $\hat p$ for the point estimate `successes / trials`, $N$ for the trial count, $\alpha = 1 - \text{level}$, and $z = z(\text{level})$ for the two-sided normal critical value.
+
+| Method | Interval | When to reach for it |
+|---|---|---|
+| `Wilson` (default) | score interval below | the right choice for most checks |
+| `ClopperPearson` | exact binomial-tail inversion | coverage must never drop below nominal |
+| `Jeffreys` | Beta credible interval | a shorter small-sample interval |
+| `AgrestiCoull` | adjusted normal interval | a cheap close approximation to Wilson |
+
+### Wilson score
+
+$$
+\frac{1}{1 + z^2/N}\left(\hat p + \frac{z^2}{2N} \pm z\sqrt{\frac{\hat p(1 - \hat p)}{N} + \frac{z^2}{4N^2}}\right)
+$$
+
+The center is pulled toward $1/2$ and the half-width shrinks with $N$, so the interval stays inside $[0, 1]$ even at an extreme estimate. With no trials it returns the whole $[0, 1]$ range.
+
+### Clopper-Pearson
+
+The exact interval inverts the binomial tail through the Beta quantile function $B_p(a, b)$, the $p$-quantile of a Beta$(a, b)$:
+
+$$
+\text{lower} = B_{\alpha/2}(k,\, N - k + 1), \qquad \text{upper} = B_{1 - \alpha/2}(k + 1,\, N - k)
+$$
+
+with $k$ the success count. The lower bound is $0$ when $k = 0$ and the upper bound is $1$ when $k = N$. Coverage never drops below the stated level, at the cost of a wider interval than Wilson.
+
+### Jeffreys
+
+The Bayesian interval under a Beta$(1/2, 1/2)$ prior. The posterior is Beta$(k + 1/2,\, N - k + 1/2)$, and the bounds are its $\alpha/2$ and $1 - \alpha/2$ quantiles. It holds coverage near nominal while running shorter than Clopper-Pearson, which matters most at small $N$.
+
+### Agresti-Coull
+
+Add $z^2/2$ pseudo-successes and $z^2/2$ pseudo-failures, then apply the plain normal interval to the adjusted counts:
+
+$$
+\tilde N = N + z^2, \qquad \tilde p = \frac{k + z^2/2}{\tilde N}, \qquad \tilde p \pm z\sqrt{\frac{\tilde p(1 - \tilde p)}{\tilde N}}
+$$
+
+It tracks Wilson closely and is cheaper to compute. At $\hat p = 1/2$ the adjusted estimate is symmetric, so it coincides with Wilson.
+
+### The critical value
+
+$z(\text{level}) = \Phi^{-1}\!\left(\tfrac{1}{2}(1 + \text{level})\right)$, the two-sided normal quantile. The inverse normal CDF is Acklam's rational approximation refined by one Halley step, accurate to about $10^{-12}$.
+
+<Callout type="info">
+Reference values, asserted on every commit: `wilson(50, 100, 0.95) = [0.403831, 0.596169]`, `clopper_pearson(50, 100, 0.95) = [0.398321, 0.601679]`, and `z(0.95) = 1.959964`. Over 4000 batches of 100 draws at $p = 0.3$, Wilson coverage stays within $0.03$ of $0.95$ and Clopper-Pearson coverage stays at or above $0.94$.
+</Callout>
+
+## Sizing a fixed-sample run
+
+Two bounds answer how many samples a run needs before it starts.
+
+The Chernoff-Hoeffding bound is distribution-free. To land within $\epsilon$ of the true probability with confidence $1 - \delta$:
+
+$$
+N = \left\lceil \frac{\ln(2/\delta)}{2\epsilon^2} \right\rceil
+$$
+
+`chernoff_hoeffding_samples(0.1, 0.05)` returns `185`. The parameters are $\epsilon > 0$ and $\delta \in (0, 1)$; anything else is an `InvalidConfig` error.
+
+The Wilson sizing works from the interval the run will report, bounding its worst-case half-width at $\hat p = 1/2$:
+
+$$
+N = \left\lceil \frac{z^2}{4\epsilon^2} \right\rceil
+$$
+
+`wilson_samples(0.01, 0.95)` returns `9604`, roughly half the distribution-free count of `18445` for the same target.
+
+## Sequential probability ratio test
+
+Wald's SPRT decides $H_0: p \le p_0$ against $H_1: p \ge p_1$, stopping as early as the evidence allows, often well before a fixed budget runs out. It carries a running log-likelihood ratio that starts at zero. Each satisfied draw adds $\ln p_1 - \ln p_0$; each unsatisfied draw adds $\ln(1 - p_1) - \ln(1 - p_0)$. The two decision bounds are
+
+$$
+A = \ln\frac{1 - \beta}{\alpha}, \qquad B = \ln\frac{\beta}{1 - \alpha}
+$$
+
+The test accepts $H_1$ when the ratio reaches $A$, accepts $H_0$ when it falls to $B$, and reports `Inconclusive` if neither happens within `max_samples`. Parameters (`SprtConfig`): the indifference region $0 < p_0 < p_1 < 1$, the error bounds $\alpha, \beta \in (0, 1)$, the sample cap, and a seed. At $p_0 = 0.3$, $p_1 = 0.7$, $\alpha = \beta = 0.05$, the measured Type I and Type II rates each stay at or below $0.1$.
+
+## Bayesian sequential test
+
+The Bayesian test decides whether $p$ meets a threshold $\theta$ under a uniform Beta$(1, 1)$ prior. After $s$ successes in $n$ draws the posterior over $p$ is Beta$(1 + s,\, 1 + n - s)$. Let the posterior mass above the threshold be $\pi = P(p \ge \theta \mid \text{data}) = 1 - I_\theta(1 + s,\, 1 + n - s)$, where $I$ is the regularized incomplete beta function. The Bayes factor for $H_0: p \ge \theta$ against $H_1: p < \theta$ divides the posterior odds by the prior odds, which under the uniform prior is $(1 - \theta)/\theta$:
+
+$$
+\mathcal{B} = \frac{\pi / (1 - \pi)}{(1 - \theta)/\theta}
+$$
+
+The test reports `Holds` when $\mathcal{B}$ reaches the configured cutoff, `Fails` when $1/\mathcal{B}$ does, and `Inconclusive` otherwise. The comparison is cross-multiplied internally, so a posterior mass of zero is handled without dividing by it. Parameters (`BayesConfig`): the threshold $\theta \in (0, 1)$, a Bayes-factor cutoff greater than one, the sample cap, and a seed. A larger cutoff demands stronger evidence and spends more samples.
+
+## Adaptive multilevel splitting
+
+For a violation probability too small for direct Monte Carlo, below roughly $10^{-6}$, the empirical estimator would need billions of samples to see a single event. Adaptive multilevel splitting advances a population of trajectory particles through nested robustness levels: at each stage the least-robust particles are discarded and the survivors are cloned, so the population stays concentrated on the paths heading toward violation. The estimate is the product of the per-level survival fractions. It runs over a `StochasticSystem` through `Monitor::check_rare`, tuned by `RareEventConfig` (particle count, violation margin, seed), and returns a `RareEventResult` with a point estimate rather than a confidence interval, since splitting produces no success-over-trials count to invert. The GPU splitting path sits behind the `gpu` feature.
+
+The intuition and worked runs live in the concept pages: [confidence intervals](/docs/probabilistic/concepts/confidence-intervals), [sequential testing](/docs/probabilistic/concepts/sprt), and [rare events](/docs/probabilistic/concepts/rare-events). For the configuration structs, see [configuration](/docs/reference/methods/configuration).

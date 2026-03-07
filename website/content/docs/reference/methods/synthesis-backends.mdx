@@ -1,0 +1,47 @@
+---
+title: "Synthesis backends"
+description: "The four search backends behind SENTIL's synthesizer, what each one solves, how the Auto selector picks between them, and the two smooth-robustness kinds that make the objective differentiable."
+---
+
+Synthesis finds an input sequence that makes a specification hold. The offline and online problems sit behind one API, and the backend chooses the solver that fits the problem's structure. Every backend scores its winning input with the exact robustness, so the value a caller reads is the true robustness of the rollout, never the smoothed proxy the search climbed.
+
+## The backends
+
+`Backend` selects the search. It defaults to `Auto`.
+
+| Backend | Method | Solves | Availability |
+|---|---|---|---|
+| `Auto` | selector | picks `Milp` or `Gradient` from the problem | always |
+| `Gradient` | projected gradient ascent on smooth robustness | differentiable models a gradient can climb | dependency-free, `no_std`-friendly |
+| `CmaEs` | evolution strategy, gradient-free | rugged or non-differentiable objectives | dependency-free |
+| `Milp` | big-M mixed-integer encoding | affine dynamics with an STL spec, to global optimality | any `std` build |
+
+### How Auto chooses
+
+`Auto` picks `Milp` when three conditions hold together: the model exposes an affine form, the input bounds form a finite box, and the spec is one the mixed-integer encoding can take. Otherwise it falls back to `Gradient`. On a `no_std` build, where the MILP path does not compile, `Auto` always resolves to `Gradient`. The `SynthesisResult` reports the backend that actually ran, with `Auto` resolved to its choice.
+
+### Gradient
+
+The search `Auto` falls back to. It climbs the smooth robustness of the rolled-out trace with projected gradient ascent, staying inside the input box at every step, and reports the best input it found scored by the exact robustness. The gradient comes from finite differences, since a general `SystemModel` exposes no Jacobian. It carries no external dependency and compiles on `no_std`, so a microcontroller can plan online. When both `synthesis` and `gpu` are enabled through the `synthesis-gpu` feature, a population of candidate trajectories can be scored in one GPU dispatch; the winner is always re-scored on the CPU with the exact robustness, so the device only changes where the smooth score is computed.
+
+### CMA-ES
+
+Covariance matrix adaptation is a gradient-free search for an objective a finite-difference gradient cannot follow, a rugged surface or one with flat plateaus. The population per generation defaults to a size drawn from the input dimension and can be set explicitly. It pairs naturally with the arithmetic-geometric-mean smoothing described below.
+
+### MILP
+
+For a linear system $x_{t+1} = A x_t + B u_t$ and an STL specification, the discrete-horizon robustness is a piecewise-linear function of the inputs. The big-M encoding of Raman and colleagues turns that into a mixed-integer linear program whose optimum is the input of greatest robustness, which makes the synthesizer complete rather than a local search: a feasible spec yields a satisfying input, and an infeasible one falls out as a negative optimum, the minimally violating input. The program is solved without any external solver, by an internal two-phase primal simplex with Bland's rule under branch and bound. The search is bounded twice, by a node cap and by a wall-clock budget, since the encoding is exponential in the horizon in the worst case; on either cap it returns the best integer-feasible input found so far. `Backend::Milp` needs a model that exposes an affine form and a spec free of the probabilistic operator and of non-affine predicate terms, or it returns `Unsupported`.
+
+<Callout type="info">
+When a specification is infeasible, no backend returns nothing. Each reports the least-violating input it could reach, with `holds` false and `robustness` giving the depth of the violation. A caller always gets an actionable answer.
+</Callout>
+
+## Smooth robustness
+
+Monitoring uses exact min and max, which are not differentiable where two operands tie. Synthesis reuses the same formula tree but evaluates it with a smooth robustness so the objective varies smoothly with the decision variables. `SmoothConfig` carries a temperature and a `SoftKind`.
+
+`LogSumExp` is the differentiable default. Its soft minimum and maximum are controlled by the temperature and are differentiable everywhere, so a gradient method can follow them. As the temperature rises they approach the exact operators; the soft minimum stays at or below the true minimum, so the search never scores a conjunction as more satisfied than it is, and the soft maximum stays at or above the true maximum. A higher temperature tracks the exact value more closely; a lower one is smoother and easier for an optimizer to climb.
+
+`ArithmeticGeometricMean` is parameter-free. It takes the geometric mean of the satisfied margins, or the arithmetic mean of the violated ones, and shares its sign with the exact robustness. It ignores the temperature and is continuous, but it is not differentiable at a tie, so it is the choice for the gradient-free search rather than a gradient one.
+
+The full smooth semantics, operator by operator, are on the [smooth semantics reference](/docs/reference/language/smooth-semantics). For worked synthesis runs, see [open-loop synthesis](/docs/synthesis/guides/open-loop-synthesis) and [the receding-horizon controller](/docs/synthesis/guides/receding-horizon).
