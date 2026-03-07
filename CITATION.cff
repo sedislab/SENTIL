@@ -33,3 +33,9 @@ preferred-citation:
       given-names: "Ernest"
   notes: "Submitted to the International Conference on Computer-Aided Verification (CAV), 2026."
   year: 2026
+  month: 5
+  url: "https://arxiv.org/abs/2605.21676"
+  identifiers:
+    - type: other
+      value: "arXiv:2605.21676"
+      description: "arXiv preprint identifier"
