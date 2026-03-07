@@ -1,0 +1,158 @@
+---
+title: "Template catalog"
+description: "The catalog of the premade PrSTL specification templates."
+---
+
+The specifications library ships requirements that are used often by various fields. Instead of transcribing a standard's clause into temporal logic and hoping you got the bound and the window right, the idea is you use the template and modify the parameters to your system. Each template is a small TOML file that carries the formula and its parameters with defaults and units. There are currently 54 templates across ten domains.
+
+Every template is addressed by a `domain/name` slug, such as `automotive/speed_limit` or `controls/overshoot`. This page describes the various specifications. The instructions and directions on how to load, customize, and run a template is in the [spec library](/docs/examples/recipes/use-spec-library) recipe.
+
+## What a template has
+
+Take `controls/overshoot`. Its deterministic form is
+
+```text
+always[0, {T}](output - reference < {max_overshoot} * {step_amplitude})
+```
+
+and its probabilistic form wraps the same property in `P >= {p}(...)`. Four parameters fill the braces: `max_overshoot`, default 0.05, the allowed fraction of the step; `step_amplitude`, default 1.0; `T`, default 30 seconds, the observation horizon; and `p`, default 0.95, the probability threshold. With the defaults, an output that peaks 0.08 above the reference scores a margin of `0.05 - 0.08 = -0.03` at the peak, and `always` takes the infimum, so the trace's robustness is `-0.03`, a violation by three hundredths of the step.
+
+Beyond the formulas and parameters, a template names its variables with units, attaches a default noise model and a fitting recipe per sensor variable for the probabilistic form, records recommended verification budgets, and lists its references. The defaults are placeholders wherever the real value is airframe, route, patient, or venue specific, so pin the parameters that matter before you rely on a verdict.
+
+## The templates
+
+Every template also carries `p`, the probabilistic form's threshold, so the parameter columns below list the rest.
+
+### Aerospace
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `aerospace/airspeed_envelope` | `T`, `V_stall`, `V_ne` | Calibrated airspeed stays above the stall speed and below the never-exceed speed. |
+| `aerospace/altitude_hold` | `T`, `tolerance` | Altitude stays within a tolerance band of the assigned target. |
+| `aerospace/bank_angle_protection` | `T`, `bank_max` | Bank angle magnitude stays within a hard envelope-protection limit. |
+| `aerospace/climb_rate_limit` | `T`, `climb_max` | Rate of climb or descent stays within a magnitude bound. |
+| `aerospace/load_factor_limit` | `T`, `n_max_positive`, `n_min_negative` | Normal load factor stays between the positive and negative maneuvering limits. |
+
+### Automotive
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `automotive/jerk_comfort_bound` | `T`, `jerk_max` | Longitudinal jerk magnitude stays within a ride-comfort bound during normal driving. |
+| `automotive/lane_keeping` | `T`, `lateral_margin` | Lateral offset from the lane centerline stays within a margin. |
+| `automotive/safe_following_distance` | `T`, `rho`, `a_max_accel`, `a_min_brake`, `a_max_brake` | The gap to the lead vehicle stays at or above the RSS safe longitudinal distance. |
+| `automotive/speed_limit` | `T`, `speed_limit` | Speed stays at or below the applicable limit. |
+| `automotive/time_to_collision` | `T`, `ttc_min` | Time to collision stays above a minimum while closing on the lead vehicle. |
+
+### Controls
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `controls/delay_margin_proxy` | `T`, `bound`, `delay` | The output stays bounded under injected time delay, a time-domain proxy for delay margin. |
+| `controls/disturbance_rejection` | `T`, `y_max`, `nominal` | Output deviation from nominal stays below a threshold under bounded disturbance. |
+| `controls/gain_margin_proxy` | `T`, `bound` | The output stays bounded under multiplicative gain perturbation. |
+| `controls/input_saturation_safety` | `T`, `u_min`, `u_max` | The control input stays within actuator limits. |
+| `controls/maintain_until` | `T`, `epsilon`, `setpoint` | A condition holds until a termination event fires within the deadline. |
+| `controls/monotonic_convergence` | `T` | The tracking error magnitude decreases monotonically. |
+| `controls/overshoot` | `max_overshoot`, `step_amplitude`, `T` | The output does not exceed the reference by more than a set fraction of the step. |
+| `controls/peak_time` | `t_p`, `reference` | The output reaches its first peak within a bounded time. |
+| `controls/persistence` | `t_reach`, `T_hold`, `target`, `epsilon` | The system reaches a desired condition and then holds it (eventually-always). |
+| `controls/recurrence` | `T`, `t_visit`, `target`, `epsilon` | The output periodically revisits a target region (always-eventually). |
+| `controls/rise_time` | `t_r`, `rise_fraction`, `reference` | The output reaches a target fraction of its final value within a bounded time. |
+| `controls/settling_time` | `t_s`, `T_hold`, `epsilon` | The output enters and stays within a tolerance band within a bounded time. |
+| `controls/steady_state_error` | `T_transient`, `T_obs`, `epsilon` | The persistent error stays below a tolerance after transients decay. |
+| `controls/tracking_error` | `T`, `epsilon` | The output follows a time-varying reference within a bounded error at every instant. |
+
+### Financial
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `financial/circuit_breaker_response` | `T`, `halt_threshold`, `halt_window` | The trading halt asserts within the confirmation window once the decline crosses the threshold. |
+| `financial/drawdown_duration_limit` | `T`, `recovery_time` | While in drawdown the portfolio returns to a new peak within the recovery bound. |
+| `financial/max_drawdown_limit` | `T`, `dd_max` | The drawdown stays below the cap for the whole horizon. |
+| `financial/volatility_bound` | `T`, `vol_max` | The realized volatility of returns stays below a cap. |
+
+### Industrial
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `industrial/flow_rate_band` | `T`, `flow_min`, `flow_max` | The process flow rate stays within its control band for the whole run. |
+| `industrial/pressure_relief_response` | `T`, `p_trip`, `t_react` | The relief valve opens within the reaction time whenever pressure exceeds the trip point. |
+| `industrial/tank_level_band` | `T`, `level_min`, `level_max` | The tank level stays between its low and high marks for the whole run. |
+| `industrial/temperature_limit` | `T`, `t_max` | The process temperature stays below its safe limit for the whole run. |
+
+### Medical
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `medical/euglycemia_band` | `T`, `glucose_low`, `glucose_high` | Glucose stays within the 70 to 180 mg/dL target range. |
+| `medical/hypoglycemia_recovery` | `T`, `hypo`, `reaction_time` | Glucose returns to at least 70 mg/dL within the reaction time after a low. |
+| `medical/insulin_rate_limit` | `T`, `max_rate` | The commanded insulin infusion rate stays at or below a hard maximum. |
+| `medical/no_severe_hypoglycemia` | `T`, `severe_hypo` | Glucose stays at or above 54 mg/dL, the level-2 hypoglycemia threshold. |
+| `medical/sustained_euglycemia` | `glucose_low`, `glucose_high`, `settling_time`, `hold_window` | Glucose reaches and holds the 70 to 180 mg/dL band within the settling time. |
+
+### Networking
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `networking/availability` | `T` | The link stays up for the whole window, with no outage. |
+| `networking/jitter_bound` | `T`, `max_jitter` | The packet delay variation stays below the agreed bound. |
+| `networking/latency_bound` | `T`, `max_delay` | The one-way packet delay stays below the agreed bound. |
+| `networking/loss_bound` | `T`, `max_loss` | The packet loss rate stays below the agreed bound. |
+
+### Power
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `power/frequency_band` | `T`, `f_min`, `f_max` | Grid frequency stays inside the IEEE 1547 continuous-operation ride-through region. |
+| `power/frequency_recovery` | `t_settle`, `T_hold`, `f_nominal`, `tolerance` | After a disturbance the frequency returns to a tight band within the settle time and holds it. |
+| `power/low_voltage_ride_through` | `T`, `v_floor` | Voltage stays above the ride-through floor through a fault window. |
+| `power/voltage_band` | `T`, `v_min`, `v_max` | The per-unit bus voltage stays inside the IEEE 1547 continuous-operation ride-through region. |
+
+### Robotics
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `robotics/goal_reaching` | `t_goal`, `tolerance` | The robot comes within a tolerance of its goal before a deadline. |
+| `robotics/joint_limits` | `T`, `joint_min`, `joint_max` | A joint angle stays within its lower and upper mechanical limits. |
+| `robotics/obstacle_avoidance` | `T`, `safe_distance` | The clearance to the nearest obstacle stays above a safe distance. |
+| `robotics/velocity_limit` | `T`, `v_max` | The signed velocity stays within a magnitude limit. |
+| `robotics/workspace_containment` | `T`, `x_min`, `x_max`, `y_min`, `y_max` | The end-effector position stays inside a task-space box. |
+
+### UAV
+
+| Spec | Parameters | What it captures |
+| --- | --- | --- |
+| `uav/altitude_band` | `T`, `floor`, `ceiling` | Altitude stays between a floor and a ceiling for the whole flight. |
+| `uav/battery_reserve` | `T`, `reserve` | The battery state of charge stays above the return-and-land reserve. |
+| `uav/geofence` | `T`, `x_min`, `x_max`, `y_min`, `y_max` | The horizontal position stays inside the authorized operating box. |
+| `uav/waypoint_arrival` | `deadline`, `tolerance` | The aircraft comes within a tolerance of the next waypoint before the deadline. |
+
+## Variants
+
+A variant is a named alternative formula on the same template, for the cases where one requirement has a few standard forms. Ten templates define them; the rest have none. Select one with `--variant` on the CLI or `with_variant` in a binding, and inspect a template's variants with `sentil specs <slug>` before you choose.
+
+| Template | Variants |
+| --- | --- |
+| `controls/overshoot` | `step_up`, `step_down`, `bidirectional` |
+| `controls/rise_time` | `overdamped`, `underdamped` |
+| `controls/settling_time` | `two_percent`, `five_percent`, `one_percent` |
+| `controls/steady_state_error` | `step_input`, `ramp_input` |
+| `financial/circuit_breaker_response` | `level_2`, `level_3` |
+| `power/frequency_band` | `normal_band` |
+| `power/voltage_band` | `normal_band` |
+| `power/low_voltage_ride_through` | `category_II` |
+| `aerospace/bank_angle_protection` | `nominal` |
+| `aerospace/load_factor_limit` | `symmetric` |
+
+## Provenance
+
+Each template's `references` field tells you the source of the requirement. The sources span functional-safety and grid-interconnection standards, control-theory textbooks, driving-safety models, and clinical guidance. The automotive speed limit depends on ISO 26262-4, the power-quality bands on IEEE 1547, and the glucose bands follow the ADA time-in-range thresholds.
+
+## Related
+
+<Cards>
+<Card title="Use the spec library" href="/docs/examples/recipes/use-spec-library" description="Load, customize, and run a template." />
+<Card title="CLI page" href="/docs/languages/cli" description="The --spec, --param, and --variant flags across the seven verbs that accept a template." />
+<Card title="Noise models" href="/docs/reference/methods/noise-models" description="The families a template's probabilistic form draws its ensemble from." />
+<Card title="Robustness semantics" href="/docs/reference/language/robustness-semantics" description="How the deterministic form of every spec evaluates to a signed margin." />
+</Cards>
