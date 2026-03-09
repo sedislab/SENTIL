@@ -36,7 +36,14 @@ The C ABI packages read the library from `SENTIL_LIB` (Julia) or `SENTIL_LIB_DIR
 
 ## Development setup
 
-Clone the repository, then set up the piece you are working on. Install instructions differ per operating system; where they do, each package README spells out the Windows, macOS, and Linux path.
+First clone the repository:
+
+```
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+```
+
+Then set up the piece you are working on. Install instructions differ per operating system; where they do, each package README spells out the Windows, macOS, and Linux path.
 
 Rust, for the core, the C ABI, and the CLI:
 
@@ -71,20 +78,17 @@ Each binding's README carries its own build and test commands. The full list of 
 
 ## House style
 
-SENTIL holds one bar: correctness, then no possible crash, then speed, then a good developer experience, with readability throughout. A few concrete rules the reviewer will check:
+SENTIL is a formal methods tool, so correctness comes before everything else here. After correctness come speed, a good developer experience, and code that stays readable and maintainable. Because of these ideals, keep the following in mind as you contribute:
 
+- If you are modifying the public surface, document it with a short runnable example.
 - No `unwrap`, `expect`, or `panic!` on any path a user's input can reach. Return a typed error that names the offending construct and where it went wrong.
 - `unsafe` is confined to the FFI surface and each block documents the invariant it upholds.
-- Comments explain why, not what, and cluster on the genuinely hard parts. The public surface is documented thoroughly with a short runnable example.
-- One blank line at most, and every file ends at its last character with no trailing newline.
-- Match the surrounding code's naming and idiom. The same concept carries the same word across the core, the C ABI, and every binding.
-- Prose, in docs and messages, is plain and direct. No em dashes.
 
 Run the tests and the linter for the package you touched before opening a pull request. For Rust that is `cargo test` and `cargo clippy --all-targets` with no warnings.
 
 ## Commits and pull requests
 
-Write commit messages as a person would: mostly a single line in the imperative, explaining the why in a body only when the diff does not already show it. Keep a pull request focused on one change, describe what it does and why, and link the issue it closes. A new public function, type, or behavior needs a test and a doc comment.
+Your commit messages should be clear and non-verbose. It makes it easier on us to review and quickly get back to you. Keep a pull request focused on one change, describe what it does and why, and link the issue it closes. A new public function, type, or behavior needs a test and a doc comment.
 
 ## Developer Certificate of Origin
 
