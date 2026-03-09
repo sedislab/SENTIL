@@ -1,0 +1,83 @@
+---
+title: "Coming from UPPAAL-SMC"
+description: "A migration guide for UPPAAL-SMC users."
+---
+
+UPPAAL-SMC estimates the probability that a property holds over the runs of a stochastic timed automaton. SENTIL does statistical model checking too, and on the shared benchmarks the two agree on the probability. The difference is the input. UPPAAL reads a model written in its own formalism and samples its runs. SENTIL works from either side: it can lift a recorded trace into a noisy ensemble through a fitted noise model, and it can also simulate a stochastic system.
+
+You rewrite the UPPAAL-SMC automaton as a SENTIL stochastic system or as a lifted trace, and you rewrite each `Pr[...]` query as a PrSTL formula. The query mapping is small, and the two probabilistic operators you use most, reachability and invariance, work straight out of the box.
+
+## Query and model mapping
+
+| UPPAAL-SMC construct | SENTIL construct | Notes |
+| --- | --- | --- |
+| Stochastic timed automaton (`.xml`) | A simulated stochastic system, or a recorded trace lifted through a noise model | - |
+| `Pr[<=T] (<> P)` | `P>=p(F[0,T] (P))` | Reachability within a time bound. The estimate is what UPPAAL's `Pr` returns. |
+| `Pr[<=T] ([] P)` | `P>=p(G[0,T] (P))` | Invariance within a time bound. |
+| `<>` | `F` | - |
+| `[]` | `G` | - |
+| `simulate N [<=T] { e }` | Simulate the system or lift the trace, then run the statistical model checking | - |
+| `verifyta`, the verifier GUI | `sentil smc` | Estimate from the command line. See the [CLI guide](/docs/languages/cli). |
+| Half-width drives the run count | `--samples`, or `--algo chernoff --epsilon` | You set the sample budget, or size it a priori. See [sample size](/docs/probabilistic/guides/sample-size). |
+| Confidence parameter | Wilson interval (default), Clopper-Pearson, Jeffreys, Agresti-Coull | See [confidence intervals](/docs/probabilistic/concepts/confidence-intervals). |
+
+The `E[...]` expectation queries have no probability-estimate counterpart because they ask a different question and are out of scope for this mapping. For sequential decisions, UPPAAL's hypothesis-testing mode corresponds to SENTIL's SPRT and Bayesian regimes, covered in [running SPRT](/docs/probabilistic/guides/run-sprt).
+
+## Translating a query
+
+The UPPAAL reachability query asks whether the activator protein reaches 100 within 20 time units.
+
+```text title="query.q"
+Pr[<=20] (<> activator >= 100)
+```
+
+In SENTIL you estimate the same probability over a trace ensemble. The base trace is lifted into candidate trajectories by the registered noise model, the inner formula scores each, and the statistical layer reports the fraction that satisfy it with a confidence interval.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="CLI">
+```bash
+sentil smc -f 'P>=0.5(F[0,20] (activator >= 100))' \
+  -t activator.csv --noise 'activator=gaussian:0,5' --samples 1e4
+```
+</Tab>
+<Tab value="Python">
+```python title="smc.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace.from_path("activator.csv")
+lifting = sentil.LiftingRegistry()
+lifting.register("activator", sentil.NoiseModel.gaussian(0.0, 5.0))
+phi = Formula.parse("P>=0.5(F[0,20] (activator >= 100))")
+result = phi.check(trace, lifting)   # result.probability, result.interval, result.holds
+```
+</Tab>
+<Tab value="Rust">
+```rust title="smc.rs"
+use sentil::{Formula, Trace, LiftingRegistry, NoiseModel, NoiseInteraction, SmcConfig};
+
+let trace = Trace::from_path("activator.csv")?;
+let mut lifting = LiftingRegistry::new();
+lifting.register("activator", NoiseModel::gaussian(0.0, 5.0)?, NoiseInteraction::Additive);
+let phi = Formula::parse("P>=0.5(F[0,20] (activator >= 100))")?;
+let result = phi.check(&trace, &lifting, &SmcConfig::default())?;   // result.probability, result.interval, result.holds
+```
+</Tab>
+</Tabs>
+
+The threshold in `P>=0.5(...)` sets the pass or fail verdict. The estimated probability is UPPAAL's `Pr[...]` analogue. To simulate a model directly rather than lift a recorded trace, the same benchmark uses a stochastic system stepped by Gillespie's direct method, which is how the circadian comparison below is run.
+
+## Comparisons
+
+In the Barkai-Leibler circadian CTMC, the property asks the activator to reach 100 within 20 time units, an event near probability 0.04. SENTIL simulates the same CTMC and estimates the same probability by direct Monte Carlo.
+
+| Model | SENTIL | UPPAAL-SMC |
+| --- | --- | --- |
+| Circadian | 0.0378 (1.01 s) | 0.038084 (19.38 s) |
+| Tandem queue | 0.7151 (0.30 s) | 0.720 (20.42 s) |
+
+On the circadian model SENTIL is roughly 19 times faster with an agreeing estimate and on the same model, it is about 27 times ahead of PRISM and about 72 times ahead of Modest. On the tandem queue, the margin is wider, about 67 times.
+
+Two further models in the suite, the biodiesel reactor and the powertrain controller, are continuous-state recurrences. UPPAAL runs them as stochastic hybrid automata, holding the reactor state in rate-zero clocks and stepping the Euler recurrence one interval at a time, and estimates 0.194 and 0.497, agreeing with SENTIL and Modest. PRISM cannot express either.
+
+The numbers come from `benchmarks/results/sentil_smc.jsonl` and `uppaal_smc.jsonl`, with the reproduction commands, the rebuilt models under `benchmarks/baselines/uppaal`, and the tolerances in the [claims document](/docs/start/understand/claims-philosophy). For the full cross-tool picture see [how SENTIL compares](/docs/start/understand/comparison) and [smc comparisons](docs/start/understand/comparison#against-the-statistical-model-checkers), and for rare events below what a flat Monte Carlo run reaches, [rare-event splitting](/docs/probabilistic/concepts/rare-events).

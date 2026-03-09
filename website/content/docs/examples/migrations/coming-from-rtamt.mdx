@@ -1,0 +1,135 @@
+---
+title: "Coming from RTAMT"
+description: "A migration guide for RTAMT users."
+---
+
+RTAMT and SENTIL answer the same question on deterministic STL which is given a trace and a formula, what is the robustness? The operator names are the same, the semantics are the standard quantitative ones, and on every formula tested, the two tools return the same robustness to the bit. So the move is mostly mechanical. You drop the variable-declaration and specification-object boilerplate, keep your formula text, and get the online and offline monitor from one API.
+
+Two things change in your favor. The offline and online checks run faster, by measured factors below. And SENTIL carries a probabilistic operator, `P>=p(phi)`, that RTAMT has no counterpart for, so a formula that reasons about satisfaction probability under sensor noise has somewhere to go. If you have never written a PrSTL formula, start with [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl).
+
+## The formula text
+
+SENTIL writes its operators in the compact classic notation, `G`, `F`, `U`, `X`, `H`, `O`, `S` with the connectives `&`, `|`, `!`, and `->`, but its parser equally accepts the spelled-out names RTAMT uses: `always`, `eventually`, `until`, `next`, `historically`, `once`, `since`, and `and`, `or`, `not`. Bounded intervals are written the same way in both dialects, so RTAMT's `always[0, 10](x > 5)` is SENTIL's `G[0, 10](x > 5)` and both parse. In most cases, the string you passed to `spec.spec` works in SENTIL unchanged. The full grammar is on the [language reference](/docs/reference/language/grammar).
+
+## API mapping
+
+| RTAMT construct | SENTIL construct | Notes |
+| --- | --- | --- |
+| `StlDiscreteTimeSpecification()` | `Formula.parse(text)` | Discrete time is the default and there is no separate specification object. |
+| `StlDenseTimeSpecification()` | `phi.robustness_dense(trace)` | Dense interpolation is a call option, not a separate class. See [discrete vs dense](/docs/monitoring/guides/discrete-vs-dense). |
+| `spec.declare_var('x', 'float')` | none | Variables are read from the trace signals and there is no declaration step. |
+| `spec.spec = 'always (x >= 5)'; spec.parse()` | `Formula.parse("G (x >= 5)")` | - |
+| `spec.evaluate({'x': data})` | `phi.robustness_signal(trace)` | Robustness at every time point. |
+| first value of `evaluate` | `phi.robustness(trace)` | The single monitoring value at the first sample. |
+| `spec.update(t, [('x', v)])` | `monitor.update(t, {"x": v})` | Streaming, one sample at a time, through `OnlineMonitor`. |
+| `->` (implies) | `->` | `&`, `\|`, `!` for the other connectives but the words `and`, `or`, `not` parse too. |
+| `historically`, `once`, `since` | `H`, `O`, `S` | Past operators. The word forms carry over unchanged. |
+| no equivalent | `P>=0.95(G[0,10] (x > 0))` | - |
+
+## Offline evaluation, side by side
+
+The RTAMT version declares each variable, assigns the formula to `spec.spec`, parses, then evaluates over a dictionary of signals.
+
+```python title="rtamt_offline.py"
+import rtamt
+
+spec = rtamt.StlDiscreteTimeSpecification()
+spec.declare_var('speed', 'float')
+spec.spec = 'always (speed > 5)'
+spec.parse()
+rob = spec.evaluate({'time': [0, 1, 2, 3, 4], 'speed': [12, 9, 7, 4, 6]})
+```
+
+The SENTIL version builds a trace, parses the formula, and reads the robustness.
+
+```python title="sentil_offline.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+phi.robustness(trace)          # -1.0, the monitoring value
+phi.robustness_signal(trace)   # the value at every step, RTAMT's evaluate
+```
+
+## Online evaluation, side by side
+
+RTAMT's online monitor takes one timestamped update at a time and returns the robustness known so far.
+
+```python title="rtamt_stream.py"
+import rtamt
+
+spec = rtamt.StlDiscreteTimeOnlineSpecification()
+spec.declare_var("speed", "float")
+spec.spec = "always[0,10](speed > 5)"
+spec.parse()
+spec.pastify()          # convert future -> past so that the verdict at t covers [t-10, t]
+
+for t, v in stream:
+    r = spec.update(t, [("speed", v)])
+    if t >= 10 and r < 0:   # no `resolved` flag so we gate on the horizon
+        raise SpeedViolation(t)
+```
+
+SENTIL's streaming monitor does the same, and it also reports whether the formula is resolved at that point.
+
+<Tabs groupId="lang" persist items={["Python","Rust","CLI"]}>
+<Tab value="Python">
+```python title="sentil_stream.py"
+from sentil import OnlineMonitor
+
+monitor = OnlineMonitor("G[0, 10](speed > 5)")
+for t, v in stream:
+    r = monitor.update(t, {"speed": v})
+    if r.resolved and r.value < 0:
+        raise SpeedViolation(t)
+```
+</Tab>
+<Tab value="Rust">
+```rust title="sentil_stream.rs"
+use sentil::{Monitor, MonitorConfig};
+
+let mut monitor = Monitor::new("G[0, 10](speed > 5)", MonitorConfig::new())?;
+for (t, v) in stream {
+    let r = monitor.update(t, &[("speed", v)])?;
+    if r.is_resolved() && r.value() < 0.0 {
+        return Err(speed_violation(t));
+    }
+}
+```
+</Tab>
+<Tab value="CLI">
+```bash
+tail -f drive.ndjson | sentil monitor -f 'G[0, 10](speed > 5)' -o ndjson
+```
+</Tab>
+</Tabs>
+
+The full streaming example, in every binding, is on the [online streaming page](/docs/examples/canonical/online-streaming).
+
+## Comparisons
+
+The full cross-baseline tables live on [how SENTIL compares](/docs/start/understand/comparison).
+
+On offline evaluation, the benchmarks put SENTIL about two orders of magnitude ahead across trace lengths. On the nested formula `G[0,100](F[0,10](x>5))`, the speedup runs from 163x at one thousand samples through 129x at ten thousand to 145x at one million, and per formula at 2001 samples from about 80x to about 158x. On the three CARLA specifications over a 6000-sample drive:
+
+| Offline check | RTAMT | SENTIL | Speedup |
+| --- | --- | --- | --- |
+| Speed limit | 18.09 ms | 0.20 ms | 90.3x |
+| Following distance | 27.33 ms | 0.18 ms | 152.0x |
+| Pedestrian clearance | 27.20 ms | 0.177 ms | 154.1x |
+
+Online, driven one sample at a time on a three-formula CARLA workload, SENTIL's median update is at 1.843 us compared to RTAMT's 39.614 us, about 21.5x apart.
+
+| Online, 3-formula workload | RTAMT | SENTIL |
+| --- | --- | --- |
+| Median per update | 39.614 us | 1.843 us |
+| 99th percentile | 51.586 us | 2.265 us |
+
+On dense-time, RTAMT's dense-time monitor takes about 10 ms at a thousand samples and grows superlinearly to about 337 seconds at a million, while SENTIL computes the whole dense robustness signal in 0.25 ms and 0.45 s respectively. The dense side-by-side against the dense-time standard is on [coming from Breach](/docs/examples/migrations/coming-from-breach).
+
+<Callout type="info">
+RTAMT has no probabilistic operator, so a PrSTL formula with a `P` quantifier has no RTAMT counterpart.
+</Callout>
+
+The numbers here come from `experiments/carla_driving/results/rtamt.json` and the `rtamt_*.jsonl` artifacts under `benchmarks/results/`, and the reproduction commands are recorded in the [claims document](/docs/start/understand/claims-philosophy). To install and run your first monitor, see [install](/docs/start/install) and [your first monitor](/docs/start/first-monitor).

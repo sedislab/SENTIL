@@ -1,0 +1,89 @@
+---
+title: "Coming from Breach"
+description: "A migration guide for Breach users."
+---
+
+Breach is a dense-time STL toolbox that runs inside MATLAB. SENTIL computes dense-time robustness with the same semantics, and on the formulas tested, the two agree to the bit. The difference a Breach user feels first is that you're not confined to MATLAB anymore.
+
+The formula language is close enough that most specs port by hand in a minute. Breach writes signals as `x[t]` and abbreviates the temporal operators as `alw` and `ev`; SENTIL writes the classic `G` and `F` and drops the time index. The full names of the operators are also supported. The mapping below covers the most important cases.
+
+## Operator and API mapping
+
+| Breach construct | SENTIL construct | Notes |
+| --- | --- | --- |
+| `alw` | `G` | `alw_[0,10] (...)` becomes `G[0,10] (...)` or `always[0,10] (...)`. |
+| `ev` | `F` | `ev_[0,5] (...)` becomes `F[0,5] (...)` or `eventually[0,5] (...)`. |
+| `until` | `U` | Bounded `until_[a,b]` becomes `U[a,b]` or `until[0,5] (...)`. |
+| `x[t] > 5` | `x > 5` | No time index on the signal and the predicate references the channel by name. |
+| `and`, `or`, `not` | `&`, `\|`, `!` | The spelled-out words parse in SENTIL too. |
+| `=>` | `->` | - |
+| `STL_Formula('phi', text)` | `Formula.parse(text)` | - |
+| `BreachTraceSystem({'x'}, data)` | `sentil.Trace(times, {"x": vals})` | Build the trace directly from arrays. |
+| `B.CheckSpec(phi)`, `STL_Eval` | `phi.robustness_dense(trace)` | Dense robustness at the first sample. |
+| `B.CheckSpec` over the signal | `phi.robustness_dense_signal(trace)` | The whole dense robustness signal. |
+| Breach falsification | `sentil falsify`, [falsification](/docs/synthesis/guides/falsify) | Counterexample search over a model. |
+
+Dense interpolation in SENTIL is a call option and it's easy to use. You just pick the interpolation mode when you evaluate. The options for the interpolation modes are linear, zero-order hold, and cubic spline. See [discrete vs dense](/docs/monitoring/guides/discrete-vs-dense) for how to use them.
+
+## Side by side
+
+The Breach version constructs a trace system, names a formula handle, and checks it.
+
+```matlab title="breach_check.m"
+trace = [0 1 2 3 4; 12 9 7 4 6];   % time row, speed row
+B = BreachTraceSystem({'speed'}, trace);
+phi = STL_Formula('phi', 'alw (speed[t] > 5)');
+rob = B.CheckSpec(phi);            % dense robustness
+```
+
+The SENTIL version builds the trace and reads the dense robustness.
+
+<Tabs groupId="lang" persist items={["MATLAB","Python","Rust","CLI"]}>
+<Tab value="MATLAB">
+```matlab title="dense_check.m"
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('always (speed > 5)');
+rob = phi.robustness_dense(trace);      % dense robustness
+```
+</Tab>
+<Tab value="Python">
+```python title="dense_check.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+phi.robustness_dense(trace)   # dense robustness
+```
+</Tab>
+<Tab value="Rust">
+```rust title="dense_check.rs"
+use sentil::{Formula, Trace};
+
+let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+let phi = Formula::parse("G (speed > 5)")?;
+let r = phi.robustness_dense(&trace)?;
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil check -f 'G (speed > 5)' -t drive.csv --semantics dense
+```
+</Tab>
+</Tabs>
+
+## Comparisons
+
+On the five oracle formulas SENTIL and Breach read the same value. On the length-sweep formula they're different, SENTIL at $-18.1566$ and Breach at $-18.0736$. A nested window turns between the child's breakpoints, where the window's two moving edges cross, and a grid built from the breakpoints alone runs a straight line across that turn and misses the dip under it. SENTIL carries those turning points. We determined the correct value by sampling the piecewise-linear signal directly, refining the grid to 200 points per unit, and the value reached $-18.1558$, confirming SENTIL's evaluation.
+
+On online monitoring, SENTIL evaluates in microseconds where Breach evaluates in milliseconds.
+
+| Samples | Breach | SENTIL | Speedup |
+| --- | --- | --- | --- |
+| 1,000 | 4.86 ms | 4.5 us | 1083x |
+| 10,000 | 2.11 ms | 4.5 us | 473x |
+| 100,000 | 2.49 ms | 4.5 us | 549x |
+| 1,000,000 | 6.97 ms | 4.6 us | 1514x |
+
+The numbers here come from `benchmarks/results/sentil_scalability.jsonl`, `breach_scalability.jsonl`, and `breach_deterministic.jsonl`, with the reproduction commands in the [claims document](/docs/start/understand/claims-philosophy).
