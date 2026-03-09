@@ -1,0 +1,226 @@
+---
+title: "Synthesis"
+description: "Solve a specification for a control-input sequence, then shield a nominal controller with a control-barrier filter."
+---
+
+Synthesis solves the reverse of the monitoring problem. Given a system model, input bounds, and a specification, return an input sequence that satisfies the specification, or, when the specification is infeasible, the input that violates it least.
+
+The model in our examples below is a discrete-time integrator, $x_{t+1} = x_t + u_t$, starting at $x_0 = 1$ over three steps. The specification is `G (x > 0)`, and the requirement is to keep the state positive. The input is bounded to `[-1, 1]` at each step. After solving for an input, the example wraps a safety filter around the bounds, which clamps any nominal command back into the safe set before it reaches the plant.
+
+## The program
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="synthesis.py"
+from sentil import Bounds, Formula, SafetyFilter, SystemModel, synthesis
+
+# x_{t+1} = x_t + u_t; keep x above zero over three steps
+model = SystemModel.linear([[1.0]], [[1.0]], [1.0], ["x"], 1.0, 3)
+spec = Formula.parse("G (x > 0)")
+bounds = Bounds([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])
+
+result = synthesis.synthesize(model, spec, bounds)
+print("input:", result.input, "robustness:", result.robustness, "holds:", result.holds)
+
+# a safety shield clamps any nominal input back into the bounds
+shield = SafetyFilter(bounds)
+print("shielded:", shield.filter([2.0, 0.5, -3.0]))  # [1.0, 0.5, -1.0]
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="synthesis.rs"
+use sentil::synthesis::{Backend, Bounds, LinearModel, SynthesisProblem, Synthesizer};
+use sentil::Formula;
+
+fn main() -> sentil::Result<()> {
+    // x_{t+1} = x_t + u_t over three steps; keep x above zero.
+    let model = LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], vec![1.0], ["x"], 1.0, 3)?;
+    let spec = Formula::parse("G (x > 0)")?;
+    let bounds = Bounds::new(vec![-1.0, -1.0, -1.0], vec![1.0, 1.0, 1.0])?;
+
+    let problem = SynthesisProblem::new(&model, &spec)
+        .with_bounds(bounds)
+        .with_backend(Backend::Gradient)
+        .with_budget(200);
+    let result = Synthesizer::solve(&problem)?;
+    println!("input {:?}, robustness {:.4}, holds {}", result.input, result.robustness, result.holds);
+    Ok(())
+}
+```
+
+```text
+input [1.0, 1.0, 0.4067615483506584], robustness 1.0000, holds true
+```
+
+The Rust run names `Backend::Gradient` and a budget of 200 while the Python call takes the default backend, so the two land on different input sequences. Both reach a robustness of 1.0 and both satisfy the spec: with `G (x > 0)` over three steps a whole family of inputs keeps `x` positive, and a synthesizer returns the one its search reaches rather than a canonical answer.
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="synthesis.cpp"
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+int main() {
+    // x_{t+1} = x_t + u_t; keep x above zero over three steps.
+    sentil::SystemModel model = sentil::SystemModel::linear({{1.0}}, {{1.0}}, {1.0}, {"x"}, 1.0, 3);
+    sentil::Formula spec = sentil::Formula::parse("G (x > 0)");
+    sentil::Bounds bounds({-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0});
+
+    sentil::SynthesisResult result = sentil::synthesis::synthesize(model, spec, &bounds);
+    std::cout << "robustness: " << result.robustness << " holds: " << result.holds << "\n";
+
+    // A safety shield clamps any nominal input back into the bounds.
+    sentil::SafetyFilter shield(sentil::Bounds({-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0}));
+    std::cout << "shielded:";
+    for (double u : shield.filter({2.0, 0.5, -3.0})) {
+        std::cout << " " << u;
+    }
+    std::cout << "\n";
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="synthesis.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    /* x_{t+1} = x_t + u_t over three steps; keep x above zero. */
+    double a[] = {1.0}, b[] = {1.0}, x0[] = {1.0};
+    const char *variables[] = {"x"};
+    sentil_system_model_t *model =
+        sentil_linear_model_create(a, 1, b, 1, x0, variables, 1, 1.0, 3);
+    sentil_formula_t *spec = sentil_formula_parse("G (x > 0)");
+    double lower[] = {-1.0, -1.0, -1.0};
+    double upper[] = {1.0, 1.0, 1.0};
+    sentil_bounds_t *bounds = sentil_bounds_create(lower, upper, 3);
+
+    sentil_synthesis_result_t result;
+    sentil_synthesize(model, spec, bounds, NULL, 0, SENTIL_BACKEND_GRADIENT, 0, &result);
+    printf("robustness %.4f, holds %s\n", result.robustness, result.holds ? "true" : "false");
+
+    sentil_free_doubles(result.input, result.input_len);
+    sentil_formula_destroy(spec);
+    sentil_system_model_destroy(model);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="Synthesis.java"
+import io.github.sedislab.sentil.Bounds;
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.SafetyFilter;
+import io.github.sedislab.sentil.SynthesisResult;
+import io.github.sedislab.sentil.SystemModel;
+import java.util.Arrays;
+
+public class Synthesis {
+    public static void main(String[] args) throws Exception {
+        // x_{t+1} = x_t + u_t; keep x above zero over three steps.
+        try (SystemModel model = SystemModel.linear(new double[][] {{1.0}}, new double[][] {{1.0}},
+                new double[] {1.0}, new String[] {"x"}, 1.0, 3);
+                Formula spec = Formula.parse("G (x > 0)");
+                Bounds bounds = new Bounds(new double[] {-1, -1, -1}, new double[] {1, 1, 1})) {
+            SynthesisResult result =
+                    io.github.sedislab.sentil.Synthesis.synthesize(model, spec, bounds);
+            System.out.println("input: " + Arrays.toString(result.input())
+                    + " robustness: " + result.robustness() + " holds: " + result.holds());
+        }
+
+        try (Bounds bounds = new Bounds(new double[] {-1, -1, -1}, new double[] {1, 1, 1});
+                SafetyFilter shield = new SafetyFilter(bounds)) {
+            System.out.println("shielded: "
+                    + Arrays.toString(shield.filter(new double[] {2.0, 0.5, -3.0})));
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="synthesis.jl"
+using Sentil
+
+# x_{t+1} = x_t + u_t; keep x above zero over three steps
+model = linear_model(reshape([1.0], 1, 1), reshape([1.0], 1, 1), [1.0], ["x"], 1.0, 3)
+spec = formula("G (x > 0)")
+
+result = synthesize(model, spec; bounds = Bounds([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]),
+                    backend = Backend.Gradient)
+println("input: ", round.(result.input; digits = 2), "  robustness: ", result.robustness,
+        "  holds: ", result.holds)
+
+# a safety shield clamps any nominal input back into the bounds
+shield = SafetyFilter(Bounds([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]))
+println("shielded: ", safe_input(shield, [2.0, 0.5, -3.0]))  # [1.0, 0.5, -1.0]
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="synthesis.m"
+% x_{t+1} = x_t + u_t; keep x above zero over three steps.
+model = sentil.SystemModel.linear(1, 1, 1, {'x'}, 1.0, 3);
+spec = sentil.Formula.parse('G (x > 0)');
+bounds = sentil.Bounds([-1 -1 -1], [1 1 1]);
+
+result = sentil.Synthesis.synthesize(model, spec, bounds);
+fprintf('robustness: %g holds: %d\n', result.robustness, result.holds);
+
+% A safety shield clamps any nominal input back into the bounds.
+shield = sentil.SafetyFilter(sentil.Bounds([-1 -1 -1], [1 1 1]));
+fprintf('shielded: %s\n', mat2str(shield.filter([2.0 0.5 -3.0])));
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash title="synthesis.sh"
+printf '%s' '{"a":[[1.0]],"b":[[1.0]],"x0":[1.0],"variables":["x"],"dt":1.0,"horizon":3,"bounds":{"lower":[-1.0,-1.0,-1.0],"upper":[1.0,1.0,1.0]}}' > model.json
+
+sentil synth -f 'G (x > 0)' --model model.json --method gradient
+```
+
+</Tab>
+</Tabs>
+
+## What the solver returns
+
+Running the Python version prints:
+
+```text
+input: [ 1. -1.  0.] robustness: 1.0 holds: True
+shielded: [ 1.   0.5 -1. ]
+```
+
+`synthesize` returns the input sequence in `result.input`, the robustness that sequence achieves in `result.robustness`, and whether the specification is met in `result.holds`. The input `[1, -1, 0]` drives the state from 1 through 2, 1, and 1, so the trajectory never drops below 1 and the robustness is `1.0`, the best any input can do since $x_0 = 1$ is fixed. The maximizer is not unique and any input that holds every state at or above 1 scores the same margin.
+
+The default backend is projected gradient ascent on the smooth robustness. Other options including the MILP and CMA-ES backends and when to pick each are in [synthesis backends](/docs/reference/methods/synthesis-backends). When a specification cannot be satisfied, the synthesizer returns the minimally violating input, so you always get an answer to steer from.
+
+## The safety filter
+
+The shield is a separate idea from the open-loop solve. A `SafetyFilter` built from the bounds acts as a least-restrictive projection and it works by taking as input any nominal command and returning the closest command that still satisfies the safe set. The nominal `[2.0, 0.5, -3.0]` violates the box on its first and third entries, so the filter clamps them to `[1.0, 0.5, -1.0]` and passes the middle entry through untouched. Wrapped around a nominal controller, it corrects only when a command would leave the safe set and stays out of the way otherwise.
+
+Note the one naming difference across the bindings. Most bindings call the projection `filter` but the Julia binding names it `safe_input` to avoid shadowing `Base.filter`. The behavior is identical.
+
+## Where to go deeper
+
+This example is the smallest end-to-end synthesis. The synthesis subsystem also has receding-horizon `Controllers` which solves a short-horizon problem each step within a hard deadline.
+
+<Cards>
+  <Card title="Synthesis overview" href="/docs/synthesis" description="Smooth robustness, backends, controllers, and the safety filter." />
+  <Card title="Open-loop synthesis" href="/docs/synthesis/guides/open-loop-synthesis" description="Solve for an input sequence offline, choosing a backend by the problem's structure." />
+  <Card title="Receding-horizon control" href="/docs/synthesis/guides/receding-horizon" description="The online controller that plans within a deadline every step." />
+  <Card title="Control-barrier shield" href="/docs/synthesis/guides/cbf-shield" description="The safety filter as a least-restrictive shield over any nominal controller." />
+</Cards>

@@ -1,0 +1,229 @@
+---
+title: "Checking a PrSTL property"
+description: "Register a sensor noise model, lift each reading into an ensemble, and estimate the probability that a PrSTL property holds."
+---
+
+A real sensor is noisy, so PrSTL attaches a noise model to a channel, expands each reading into an ensemble of candidate trajectories, evaluates the formula on every one, and estimates the probability that the property holds with a confidence interval around the estimate. The probabilistic operator is covered in [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl).
+
+The property is `P>=0.9 (G (x > 0))`, which asserts that `x` stays positive with probability at least 0.9. The channel `x` carries additive Gaussian noise with standard deviation 0.3.
+
+## The program
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB","CLI"]}>
+<Tab value="Python">
+
+```python title="probabilistic.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel, SmcConfig
+
+trace = sentil.Trace(list(range(20)), {"x": [0.4 + 0.05 * i for i in range(20)]})
+
+lifting = LiftingRegistry()
+lifting.register("x", NoiseModel.gaussian(0.0, 0.3))
+
+phi = Formula.parse("P>=0.9 (G (x > 0))")
+result = phi.check(trace, lifting, SmcConfig(samples=5000))
+print(
+    f"probability {result.probability:.3f}, "
+    f"interval [{result.interval.lower:.3f}, {result.interval.upper:.3f}], "
+    f"holds {result.holds}"
+)
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust title="probabilistic.rs"
+use sentil::{LiftingRegistry, Monitor, MonitorConfig, NoiseInteraction, NoiseModel, SmcConfig};
+
+fn main() -> sentil::Result<()> {
+    let times: Vec<f64> = (0..20).map(f64::from).collect();
+    let mut trace = sentil::Trace::new(times)?;
+    trace.add_signal("x", (0..20).map(|i| 0.4 + 0.05 * f64::from(i)).collect::<Vec<_>>())?;
+
+    let mut lifting = LiftingRegistry::new();
+    lifting.register("x", NoiseModel::gaussian(0.0, 0.3)?, NoiseInteraction::Additive);
+
+    let config = MonitorConfig::new().smc(SmcConfig { samples: 5000, ..SmcConfig::default() });
+    let monitor = Monitor::new("P>=0.9 (G (x > 0))", config)?;
+    let result = monitor.check(&trace, &lifting)?;
+    println!(
+        "probability {:.3}, interval [{:.3}, {:.3}], holds {}",
+        result.probability, result.interval.lower, result.interval.upper, result.holds
+    );
+    Ok(())
+}
+```
+
+</Tab>
+<Tab value="C++">
+
+```cpp title="probabilistic.cpp"
+#include <sentil/sentil.hpp>
+#include <cstdio>
+#include <vector>
+
+int main() {
+    std::vector<double> times, values;
+    for (int i = 0; i < 20; ++i) {
+        times.push_back(i);
+        values.push_back(0.4 + 0.05 * i);
+    }
+    sentil::Trace trace(times, "x", values);
+
+    sentil::LiftingRegistry lifting;
+    lifting.register_noise("x", sentil::NoiseModel::gaussian(0.0, 0.3));
+
+    sentil::Formula phi = sentil::Formula::parse("P>=0.9 (G (x > 0))");
+    sentil::SmcConfig config;
+    config.samples = 5000;
+    sentil::SmcResult result = phi.check(trace, lifting, config);
+    std::printf("probability %.3f, interval [%.3f, %.3f], holds %s\n", result.probability,
+                result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="C">
+
+```c title="probabilistic.c"
+#include "sentil.h"
+#include <stdio.h>
+
+int main(void) {
+    double times[20], xs[20];
+    for (int i = 0; i < 20; ++i) {
+        times[i] = i;
+        xs[i] = 0.4 + 0.05 * i;
+    }
+    sentil_trace_t *trace = sentil_trace_create(times, 20);
+    sentil_trace_add_signal(trace, "x", xs, 20);
+
+    /* register consumes the noise model, so it is not freed here */
+    sentil_lifting_registry_t *lifting = sentil_lifting_registry_create();
+    sentil_lifting_registry_register(lifting, "x", sentil_noise_gaussian(0.0, 0.3),
+                                     SENTIL_NOISE_ADDITIVE);
+
+    sentil_formula_t *phi = sentil_formula_parse("P>=0.9 (G (x > 0))");
+    sentil_smc_config_t config = sentil_smc_config_default();
+    config.samples = 5000;
+    sentil_smc_result_t result;
+    sentil_formula_check(phi, trace, lifting, &config, &result);
+    printf("probability %.3f, interval [%.3f, %.3f], holds %s\n", result.probability,
+           result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+
+    sentil_formula_destroy(phi);
+    sentil_lifting_registry_destroy(lifting);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+</Tab>
+<Tab value="Java">
+
+```java title="Probabilistic.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.LiftingRegistry;
+import io.github.sedislab.sentil.NoiseModel;
+import io.github.sedislab.sentil.SmcConfig;
+import io.github.sedislab.sentil.SmcResult;
+import io.github.sedislab.sentil.Trace;
+
+public class Probabilistic {
+    public static void main(String[] args) throws Exception {
+        double[] times = new double[20];
+        double[] values = new double[20];
+        for (int i = 0; i < 20; i++) {
+            times[i] = i;
+            values[i] = 0.4 + 0.05 * i;
+        }
+        try (Trace trace = Trace.create(times);
+                LiftingRegistry lifting = new LiftingRegistry();
+                Formula phi = Formula.parse("P>=0.9 (G (x > 0))")) {
+            trace.addSignal("x", values);
+            lifting.register("x", NoiseModel.gaussian(0.0, 0.3));
+
+            SmcResult result = phi.check(trace, lifting, new SmcConfig().samples(5000));
+            System.out.printf("probability %.3f, interval [%.3f, %.3f], holds %b%n",
+                    result.probability(), result.interval().lower(), result.interval().upper(),
+                    result.holds());
+        }
+    }
+}
+```
+
+</Tab>
+<Tab value="Julia">
+
+```julia title="prstl.jl"
+using Sentil
+
+lifting = LiftingRegistry()
+register_noise!(lifting, "x", gaussian(0.0, 0.3))
+
+trace = Trace(collect(0.0:1.0:19.0), "x", [0.4 + 0.05 * i for i in 0:19])
+phi = formula("P>=0.9 (G (x > 0))")
+
+result = check(phi, trace, lifting; config = SmcConfig(samples = 5000))
+println("probability: ", round(result.probability; digits = 3))
+println("interval: [", round(result.interval.lower; digits = 3), ", ",
+        round(result.interval.upper; digits = 3), "]")
+println("holds: ", result.holds)
+```
+
+</Tab>
+<Tab value="MATLAB">
+
+```matlab title="probabilistic.m"
+times = 0:19;
+values = 0.4 + 0.05 * times;
+trace = sentil.Trace(times, 'x', values);
+
+lifting = sentil.LiftingRegistry();
+lifting.register('x', sentil.NoiseModel.gaussian(0.0, 0.3));
+
+phi = sentil.Formula.parse('P>=0.9 (G (x > 0))');
+config = sentil.SmcConfig;
+config.samples = 5000;
+
+result = phi.check(trace, lifting, config);
+fprintf('probability %.3f, interval [%.3f, %.3f], holds %d\n', ...
+    result.probability, result.interval.lower, result.interval.upper, result.holds);
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash title="probabilistic.sh"
+printf 'time,x\n' > trace.csv
+for i in $(seq 0 19); do
+  printf '%d,%s\n' "$i" "$(awk "BEGIN{print 0.4 + 0.05*$i}")" >> trace.csv
+done
+
+sentil smc -f 'P>=0.9(G (x > 0))' -t trace.csv --noise 'x=gaussian:0,0.3' --samples 5000
+```
+
+</Tab>
+</Tabs>
+
+## Reading the result
+
+Running the Python version prints:
+
+```text
+probability 0.733, interval [0.721, 0.745], holds False
+```
+
+The `check` returns three fields. `probability` is the empirical satisfaction probability which is defined as the fraction of the 5000 sampled ensembles on which `G (x > 0)` came back positive. `interval` is a 95% Wilson score interval around that estimate. `holds` is the boolean decision and it's determined by comparing the interval against the threshold 0.9 in the `P>=0.9` operator.
+
+The `probability` says that the early readings sit close to the boundary relative to the noise, 0.4 against a standard deviation of 0.3, so about a quarter of the sampled ensembles dip below zero somewhere, the estimate lands at 0.733, and so the property requiring at least 0.9 fails. The default configuration is seeded, so the run reproduces exactly and if you need a different draw, pass `SmcConfig(seed=...)`.
+
+The number of samples trades width for time. More samples narrow the interval and sharpen the decision near the threshold, at linear cost. The empirical estimator here is the default of three statistical model checking methods. See [when SPRT wins](/docs/probabilistic/concepts/sprt) for the sequential tests that stop early.
+
+## Configuration
+
+The noise model is what turns a deterministic reading into an ensemble and SENTIL ships seventeen distributions you can call as the noise. Additive interaction adds a noise draw to each reading where a multiplicative one scales it. The noise families and interactions are covered in [noise models](/docs/probabilistic/concepts/noise-models), and fitting a model from paired calibration data instead of picking parameters by hand in [fit a noise model](/docs/probabilistic/guides/fit-noise-models).
+
+For what the probabilistic operator means, see [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl). For choosing the interval and reading its guarantees, see [confidence intervals](/docs/probabilistic/concepts/confidence-intervals).

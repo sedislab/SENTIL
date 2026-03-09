@@ -1,1 +1,1 @@
-{ "title": "Canonical examples", "icon": "Boxes", "pages": ["offline-discrete", "offline-dense"] }
+{ "title": "Canonical examples", "icon": "Boxes", "pages": ["offline-discrete", "offline-dense", "online-streaming", "prstl", "synthesis"] }
