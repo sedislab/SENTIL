@@ -1,0 +1,84 @@
+---
+title: "The Simulink block"
+description: "Run the SENTIL streaming monitor inside a Simulink model through the SENTIL Monitor S-Function block, so a controller is checked against an STL or PrSTL specification while the simulation steps."
+---
+
+The MATLAB toolbox carries a Simulink block that runs the streaming monitor inside a model. Wire your monitored signals into it, give it a formula, and it emits the running robustness at each solver step. The block is a level-2 S-Function backed by the same compiled core as every other binding, so it monitors at the engine's speed with no MATLAB in the inner loop.
+
+## Build the block library
+
+The block ships as a script that builds a small library file. Run it and it writes `sentil_lib.slx` holding a masked `SENTIL Monitor` block.
+
+```matlab
+create_sentil_library("sentil_lib");   % writes sentil_lib.slx
+```
+
+Pass a name to write a differently named library, and pass `true` as the second argument to overwrite an existing one. With the toolbox installed you have the block already and you build the library only to drop the block into a model.
+
+## Add it to a model
+
+The block has one input port and one output port, and wiring it up is three steps.
+
+<Steps>
+<Step>
+Drag `SENTIL Monitor` from `sentil_lib` into your model, or add it from a script.
+
+```matlab
+add_block('sentil_lib/SENTIL Monitor', 'my_model/Monitor');
+set_param('my_model/Monitor', ...
+    'formula_str', 'G (speed < 30)', ...
+    'var_names_str', 'speed', ...       % the input port carries these, in this order
+    'mode_sel', 'Deterministic');
+```
+</Step>
+<Step>
+Wire a Mux of your monitored signals into the input port, in exactly the order `var_names_str` names them; the input is one vector with one element per variable.
+</Step>
+<Step>
+Run the simulation and read the output port. In deterministic mode it carries the running robustness at each step, so a Scope on it shows the margin shrinking before a violation.
+</Step>
+</Steps>
+
+Bound any future-time operator, since a streaming monitor cannot report a verdict for a window it has not seen yet.
+
+## The mask fields
+
+The block's mask exposes six settings.
+
+| Field | Meaning |
+| --- | --- |
+| Formula | the STL or PrSTL formula to monitor |
+| Input variables | the signal names, comma-separated, matched to the input vector in order |
+| Mode | `Deterministic` for robustness, or `Probabilistic/SMC` for a lifted estimate |
+| Monte Carlo samples | the ensemble size, in probabilistic mode |
+| Lifting noise variance | the sensor noise variance used to lift each reading |
+| Noise model file | an optional fitted-model file, in probabilistic mode |
+
+The last three fields appear only in probabilistic mode; the mask hides them under a deterministic formula. In probabilistic mode the output port widens to `[value, lower, upper]`, the estimated probability bracketed by its interval, rather than a single robustness value.
+
+<Callout type="info">
+The block is the streaming monitor, so it holds O(1) amortized cost per step and memory bounded by the largest temporal window, not by the length of the simulation. A model can run for hours of simulated time and the monitor's footprint stays flat. See [why the deque is O(1) amortized](/docs/monitoring/concepts/monotonic-deque).
+</Callout>
+
+## The worked example: closed-loop insulin control
+
+The toolbox ships the artificial-pancreas study as its Simulink example. `build_insulin_model` assembles a closed-loop model of a UVA/Padova glucose patient, with a meal input, subcutaneous insulin, and a continuous glucose monitor, then places two `SENTIL Monitor` blocks on the true blood-glucose signal: one checks the euglycemia band, and one checks that severe hypoglycemia stays rare under sensor noise.
+
+```matlab
+addpath(pwd, fullfile(pwd, 'examples'))
+run_fda_insulin_benchmark   % builds the closed-loop model and drives the monitors over the cohort
+```
+
+The example builds the model, sweeps a patient cohort through it, and writes the per-patient results the case study reports. The physiological parameters, the controller gain, and the meal schedule are set per run as workspace variables, so one model serves the whole cohort. The full finding, the deterministic euglycemia bound telling a missed-bolus controller from a tuned one, is walked through in the case study.
+
+<Callout type="warn">
+The block runs on MATLAB R2021b and newer. The insulin cohort figures were produced on R2023a.
+</Callout>
+
+## Related
+
+<Cards>
+  <Card title="Closed-loop insulin control" href="/docs/start/case-studies/insulin-pump" description="The full artificial-pancreas study the Simulink block drives." />
+  <Card title="MATLAB guide" href="/docs/languages/matlab" description="Installing the toolbox and using the programmatic API." />
+  <Card title="Online streaming" href="/docs/examples/canonical/online-streaming" description="The streaming monitor the block wraps, across every binding." />
+</Cards>

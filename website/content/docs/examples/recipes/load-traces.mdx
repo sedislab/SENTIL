@@ -1,0 +1,149 @@
+---
+title: "Load traces"
+description: "Read a trace into SENTIL from CSV, TSV, Parquet, Arrow, SQLite, HDF5, MATLAB, and MCAP or JSON on the command line, from a pandas DataFrame in Python."
+---
+
+Every monitor needs a trace and how you get that trace into SENTIL depends on where the data lives. The command line reads text formats with no configuration and binary formats. Python builds a trace from arrays or straight from a DataFrame.
+
+## From the command line
+
+`sentil check`, `monitor`, `smc`, and the other trace-reading verbs take `-t`/`--trace`. Point it at a file and the format is inferred from the content.
+
+```bash
+sentil check -f 'G (speed > 5)' -t run.csv
+```
+
+The file has a header row. The first column is time, and each remaining column is one signal named by its header.
+
+```csv title="run.csv"
+time,speed,wind
+0,12,3.1
+1,9,3.4
+2,7,2.8
+3,4,3.0
+4,6,2.9
+```
+
+A `.tsv` file is read tab-delimited. A `.csv`, `.txt`, or extensionless file is sniffed and content that starts with `[` is read as JSON, and anything else as comma-separated. So a `.dat` or `.log` file that holds CSV loads.
+
+JSON is an array of per-timestamp records, each carrying `time` and one field per signal. Every record must name the same signals as the first.
+
+```json title="run.json"
+[
+  {"time": 0, "speed": 12, "wind": 3.1},
+  {"time": 1, "speed": 9,  "wind": 3.4},
+  {"time": 2, "speed": 7,  "wind": 2.8}
+]
+```
+
+The `.json` and `.ndjson` extensions are recognized alongside the text formats.
+
+## Reading from a pipe
+
+Pass `-` as the trace to read standard input, which lets a trace come from another process without a temporary file.
+
+```bash
+cat run.csv | sentil check -f 'F (x > 2)' -t -
+```
+
+```bash
+curl -s https://example.org/runs/latest.csv | sentil check -f 'G[0,10] (speed < 30)' -t -
+```
+
+## When the column names differ
+
+A formula names its variables, and those names have to match the trace columns. When they differ, bind them with `--map variable=column`. Each flag renames one column to the variable the formula uses.
+
+```bash
+sentil check -f 'G (speed <= 30)' -t run.csv --map speed=velocity_mps
+```
+
+A formula variable with no matching column errors out.
+
+## Binary and columnar formats
+
+Parquet, Arrow (also `.feather`/`.ipc`), SQLite, HDF5, MATLAB `.mat`, and MCAP are read by extension through the engine's loader. The stock CLI carries CSV, TSV, JSON, and SQLite and the rest come in when you build with `--features formats`.
+
+```bash
+cargo install sentil-cli --features formats
+sentil check -f 'G (speed > 5)' -t run.parquet
+```
+
+A file whose extension the loader does not recognize, and whose bytes are not UTF-8 text, is reported with a hint to build with the format features.
+
+| Format | Extension | Availability |
+| --- | --- | --- |
+| CSV | `.csv`, `.txt`, none | always |
+| TSV | `.tsv` | always |
+| JSON | `.json`, `.ndjson` | always |
+| SQLite | `.sqlite`, `.db` | always (`sqlite` feature, on by default) |
+| Parquet | `.parquet` | `--features formats` |
+| Arrow | `.arrow`, `.feather`, `.ipc` | `--features formats` |
+| HDF5 | `.h5`, `.hdf5` | `--features formats` |
+| MATLAB | `.mat` | `--features formats` |
+| MCAP | `.mcap` | `--features formats` |
+
+## From code
+
+In Python, a trace is timestamps and a dict from signal name to values. The lists become float arrays, and the timestamps must strictly increase. The C, C++, Java, Julia, and MATLAB constructors are the same. See the [language guide](/docs/languages) for tutorials.
+
+<Tabs groupId="lang" persist items={["Python","Rust"]}>
+<Tab value="Python">
+```python
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+print(phi.robustness(trace))   # -1.0
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::{Formula, Trace};
+
+let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+let phi = Formula::parse("G (speed > 5)")?;
+println!("{}", phi.robustness(&trace)?);
+```
+
+```text
+-1
+```
+</Tab>
+</Tabs>
+
+## From a pandas DataFrame
+
+When the data is already a DataFrame, `sentil.pandas.trace_from_dataframe` reads it directly. It is the `pandas` extra, so install it and import the helper explicitly.
+
+```bash
+pip install 'sentil[pandas]'
+```
+
+```python title="from_dataframe.py"
+import sentil
+import pandas as pd
+from sentil.pandas import trace_from_dataframe
+
+df = pd.DataFrame({"time": [0, 1, 2, 3, 4], "speed": [12, 9, 7, 4, 6]})
+trace = trace_from_dataframe(df)
+
+phi = sentil.Formula.parse("G (speed > 5)")
+print(phi.robustness(trace))   # -1.0
+```
+
+By default the time column is `time` and every other column becomes a signal. Point it at a differently named column with `time_column`, or restrict which columns become signals with `value_columns`.
+
+```python
+trace = trace_from_dataframe(df, time_column="t", value_columns=["speed"])
+```
+
+## Related
+
+<Cards>
+  <Card title="Signals and traces" href="/docs/monitoring/concepts/signals-and-traces" description="What a trace is, why timestamps must increase, and how signals align in time." />
+  <Card title="Trace formats reference" href="/docs/reference/methods/trace-formats" description="The full list of readable formats and the features that enable them." />
+  <Card title="Recorded traces" href="/docs/start/recorded-trace" description="A start-to-finish walk through checking a recorded run." />
+</Cards>

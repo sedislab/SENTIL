@@ -1,0 +1,142 @@
+---
+title: "Use the spec library"
+description: "Use a premade PrSTL specification."
+---
+
+SENTIL ships specification templates across domains, each drawn from a standard, textbook, or paper, each carrying a description, a citation, named parameters with defaults and units, and a deterministic and usually a probabilistic form. Instead of transcribing a clause into temporal logic yourself, you name the template and fill in the numbers your system uses.
+
+Currently, the domains are aerospace, automotive, controls, financial, industrial, medical, networking, power, robotics, and uav. A template is named `domain/short`, for example `automotive/speed_limit` or `controls/overshoot`.
+
+## List and inspect
+
+`sentil specs` prints every template name grouped by domain, ending with the count and a reminder that `sentil specs <name>` inspects one.
+
+```bash
+sentil specs
+```
+
+Name one to see its formula, its parameters with defaults and units, any variants, and its citations.
+
+```bash
+sentil specs automotive/speed_limit
+```
+
+```text
+Speed Limit
+  domain: automotive
+  The speed stays at or below the applicable limit. The 33.3 m/s (120 km/h) default is a highway placeholder; set it per segment, or compare against a posted-limit signal rather than a constant where the limit varies along the route.
+
+formula
+  deterministic: always[0, {T}](speed <= {speed_limit})
+  probabilistic: P >= {p}(always[0, {T}](speed <= {speed_limit}))
+
+parameters
+  T = 30 seconds
+  p = 0.95  range [0, 1]
+  speed_limit = 33.3 m/s
+
+variants
+  none
+
+references
+  ISO 26262-4:2018, Road vehicles - Functional safety - Part 4, Clause 6.4.1 (technical safety requirements specify the stimulus-response behavior; other applicable rules may apply)
+```
+
+The 33.3 m/s here is a highway default, not a fact about your road.
+
+## Apply it
+
+Anywhere you would pass `-f`, pass `--spec NAME` instead, and override any parameter with `--param key=value` (repeatable). The same three flags, `--spec`, `--param`, and `--variant`, work across `check`, `monitor`, `smc`, `synth`, `mine`, `falsify`, and `lift`.
+
+`check` evaluates the deterministic form:
+
+```bash
+sentil check --spec automotive/speed_limit -t run.csv --param speed_limit=27.8 --param T=45
+```
+
+`smc` estimates the probabilistic form, drawing the ensemble from the template's own noise model, so you do not have to name a `--noise` flag unless you want to override it:
+
+```bash
+sentil smc --spec automotive/speed_limit -t run.csv --param speed_limit=27.8
+```
+
+`monitor` runs the template as a streaming online monitor. `synth` and `falsify` treat it as the objective to satisfy or to break on a model. `lift` applies the template's noise models to a trace and writes the lifted result.
+
+<Callout type="info">
+The `[verification]` block in a template (sample budget, confidence, SPRT settings) records recommended values.
+</Callout>
+
+## Variants
+
+A few templates define named variants that swap the formula shape. `controls/overshoot`, for instance, has `step_up`, `step_down`, and `bidirectional`. Select one with `--variant`.
+
+```bash
+sentil check --spec controls/overshoot --variant step_up -t step.csv --param max_overshoot=0.1
+```
+
+`sentil specs <name>` lists a template's variants, or says there are none.
+
+## Mining a bound
+
+`sentil mine` searches for the tightest value of one parameter for which a spec still holds on a trace.
+
+```bash
+sentil mine --spec controls/overshoot --parameter max_overshoot -t run.csv
+```
+
+## From the bindings
+
+The same library is reachable from every binding under an idiomatic name. Resolve a template, fill its parameters, and build a formula or a monitor from it.
+
+<Tabs groupId="lang" persist items={["Python","Rust","MATLAB","CLI"]}>
+<Tab value="Python">
+```python
+from sentil import SpecBuilder
+
+print(SpecBuilder.available())          # every template name
+
+phi = (
+    SpecBuilder("automotive/speed_limit")
+    .with_param("speed_limit", 27.8)
+    .with_param("T", 45.0)
+    .build_formula()
+)
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::SpecRegistry;
+
+let phi = SpecRegistry::global()
+    .builder("automotive/speed_limit")?
+    .with_param("speed_limit", 27.8)?
+    .with_param("T", 45.0)?
+    .build_formula()?;
+```
+</Tab>
+<Tab value="MATLAB">
+```matlab
+spec = sentil.SpecBuilder('automotive/speed_limit');
+phi = spec.with_param('speed_limit', 27.8).with_param('T', 45.0).build_formula();
+```
+</Tab>
+<Tab value="CLI">
+```bash
+sentil check --spec automotive/speed_limit -t run.csv --param speed_limit=27.8 --param T=45
+```
+</Tab>
+</Tabs>
+
+`build_probabilistic_formula` returns the probabilistic form instead of the deterministic one, and the monitor builder carries the template's recommended verification settings.
+
+## Your own templates
+
+To point SENTIL at your own directory of templates, set `SENTIL_SPECS_DIR`. A name is resolved there first, then against the built-in library, so you can extend or shadow the shipped set without touching it. A template is a small TOML file: a `[metadata]` block with a real citation, at least one `[formulas]` entry, and a default for every parameter the formula names.
+
+## Related
+
+<Cards>
+  <Card title="Specifications reference" href="/docs/reference/specifications/catalog" description="The full catalog of templates with formulas, parameters, and citations." />
+  <Card title="The grammar" href="/docs/reference/language/grammar" description="The syntax a template's formula is written in." />
+  <Card title="Mining parameters" href="/docs/synthesis/guides/mine-parameters" description="Finding the tightest bound a trace or model satisfies." />
+</Cards>
