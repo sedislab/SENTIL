@@ -10,4 +10,4 @@ Please report a suspected vulnerability privately rather than opening a public i
 
 You can expect an acknowledgement within a few days. Once a fix is ready we coordinate a release and credit you in the advisory, unless you would rather stay anonymous.
 
-SENTIL runs inside safety-critical real-time systems, so a report about a wrong robustness value, a miscomputed confidence interval, or any input that crashes the library is treated with the same seriousness as a memory-safety bug.
+SENTIL runs inside safety-critical real-time systems, so any report about a wrong robustness value, a miscomputed confidence interval, or any input that crashes the library is of the utmost importance to us.
