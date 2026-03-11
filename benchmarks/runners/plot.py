@@ -153,6 +153,49 @@ def scaling(records):
     ax.legend(loc="center left")
     save(fig, "scaling.png")
 
+_BINDING_NAMES = {"rust": "Rust core", "c": "C", "cpp": "C++", "java": "Java",
+                  "julia": "Julia", "matlab": "MATLAB", "python": "Python"}
+
+def scaling_compare(records, lang, label, fname):
+    rx, ry = length_series(records, "sentil", "rust", "full_signal")
+    bx, by = length_series(records, "sentil", lang, "full_signal")
+    if not rx or not bx:
+        return
+    fig, ax = plt.subplots()
+    ax.plot(rx, ry, color=style.TOOL["sentil"], marker="o", label="SENTIL (Rust core)", zorder=6)
+    ax.plot(bx, by, color=style.TOOL["sentil"], marker="s", linestyle=(0, (4, 2)),
+            label=f"SENTIL ({label})", zorder=5)
+    for tool, tlabel, lg in (("rtamt", "RTAMT", "python"), ("moonlight", "MoonLight", "java"),
+                             ("banquo", "Banquo", "python")):
+        tx, ty = length_series(records, tool, lg, "full_signal")
+        if tx:
+            ax.plot(tx, ty, color=style.TOOL[tool], marker="o", label=tlabel, zorder=4)
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("trace length (samples)")
+    ax.set_ylabel("time to score the whole signal (ms)")
+    ax.set_title(f"Offline cost over length: SENTIL ({label}) and the core vs the baselines")
+    ax.legend(loc="upper left")
+    save(fig, fname)
+
+def streaming_compare(records, lang, label, fname):
+    us = {r["language"]: r["timing"]["mean_ms"] * 1000.0
+          for r in records if r.get("benchmark") == "streaming"}
+    if "rust" not in us or lang not in us:
+        return
+    order = sorted(us, key=us.get)
+    colors = [style.TOOL["sentil"] if l in ("rust", lang) else style.FAINT for l in order]
+    fig, ax = plt.subplots()
+    bars = ax.bar([_BINDING_NAMES.get(l, l) for l in order], [us[l] for l in order], color=colors, width=0.66)
+    ax.axhline(100.0, color=style.TOOL["rtamt"], linestyle=(0, (4, 3)), linewidth=1.1)
+    ax.text(len(order) - 0.5, 108, "10 kHz real-time budget (100 us)", ha="right", va="bottom",
+            fontsize=9, color=style.INK)
+    ax.set_yscale("log")
+    ax.set_ylabel("per-sample update (us)")
+    ax.set_title(f"Online streaming cost per sample")
+    for b, l in zip(bars, order):
+        ax.text(b.get_x() + b.get_width() / 2, us[l] * 1.12, f"{us[l]:.2f}", ha="center", va="bottom", fontsize=8, color=style.INK)
+    save(fig, fname)
+
 def memory(records):
     def rss(tool):
         return sorted((r["size"], r["peak_rss_bytes"] / 1e6) for r in records
@@ -272,9 +315,14 @@ def main():
     if not records:
         print("no results found under", RESULTS)
         return
-    for figure in (discrete_offline, dense_offline, dense_cost, streaming_online, scaling,
-                   memory, smc_throughput, smc_accuracy, smc_circadian, particles, synthesis):
+    for figure in (discrete_offline, dense_offline, dense_cost, streaming_online,
+                   scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
+                   particles, synthesis):
         figure(records)
+    for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python")):
+        scaling_compare(records, lang, label, f"scaling_{lang}.png")
+        streaming_compare(records, lang, label, f"streaming_{lang}.png")
+        memory_compare(records, label, f"memory_{lang}.png")
 
 if __name__ == "__main__":
     main()
