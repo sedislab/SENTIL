@@ -35,6 +35,12 @@ export const metadata: Metadata = {
     title: 'SENTIL: runtime verification for signal temporal logic',
     description:
       'Monitor a signal in real time, verify a property under noise, and synthesize a controller from a specification.',
+    images: [
+      {
+        url: '/og/docs/image.png',
+        alt: 'SENTIL, runtime verification for signal temporal logic',
+      },
+    ],
   },
   twitter: { card: 'summary_large_image' },
   alternates: { canonical: '/' },

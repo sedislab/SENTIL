@@ -1,4 +1,4 @@
-import { getPageMarkdownUrl, source } from '@/lib/source';
+import { getPageImage, getPageMarkdownUrl, source } from '@/lib/source';
 import {
   DocsBody,
   DocsDescription,
