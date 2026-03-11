@@ -319,7 +319,8 @@ def main():
                    scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
                    particles, synthesis):
         figure(records)
-    for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python")):
+    for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
+                        ("julia", "Julia"), ("java", "Java")):
         scaling_compare(records, lang, label, f"scaling_{lang}.png")
         streaming_compare(records, lang, label, f"streaming_{lang}.png")
         memory_compare(records, label, f"memory_{lang}.png")
