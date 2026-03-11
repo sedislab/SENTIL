@@ -1,0 +1,24 @@
+name: ci-cpp
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: c++ wrapper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build the C core
+        run: cargo build --release -p sentil-ffi
+      - name: configure, build, and test the C++ wrapper
+        run: |
+          cmake -S sentil-cpp -B build \
+            -DSENTIL_ROOT="$GITHUB_WORKSPACE" \
+            -DSENTIL_CPP_BUILD_CORE=OFF \
+            -DSENTIL_CPP_BUILD_TESTS=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
