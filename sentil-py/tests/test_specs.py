@@ -17,7 +17,6 @@ def test_unknown_spec_raises():
     with pytest.raises(sentil.SentilError):
         SpecBuilder("no/such/spec")
 
-
 def test_customization_is_atomic():
     builder = SpecBuilder(SpecBuilder.available()[0])
     with pytest.raises(sentil.SentilError):

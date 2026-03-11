@@ -18,7 +18,6 @@ from sentil import (
     Trace,
 )
 
-
 def test_expr_math():
     assert (Expr.var("x").sqrt() > 2).to_json() == Formula.parse("sqrt(x) > 2").to_json()
     assert (Expr.var("x").min(0) < 1).to_json() == Formula.parse("min(x, 0) < 1").to_json()
@@ -28,10 +27,8 @@ def test_expr_math():
     assert (Expr.var("x") ** 2 > 4).to_json() == Formula.parse("x ^ 2 > 4").to_json()
     assert (Expr.var("x") % 3 == 0).to_json() == Formula.parse("x % 3 == 0").to_json()
 
-
 def test_bounds_clamp():
     assert list(Bounds([-1, -1], [1, 1]).clamp([2.0, -3.0])) == [1.0, -1.0]
-
 
 def test_spec_settings():
     for name in SpecBuilder.available():
@@ -45,7 +42,6 @@ def test_spec_settings():
         ams = builder.ams_settings()
         if ams is not None:
             assert len(ams) == 2
-
 
 def test_noise_from_file(tmp_path):
     model = NoiseModel.gaussian(1.5, 0.5)
@@ -67,7 +63,6 @@ def test_last_probability():
     online.update(0, {"x": 1.0})
     # P(1 + N(0, 1) > 0) is the standard normal CDF at 1
     assert online.last_probability() == pytest.approx(0.8413, abs=0.02)
-
 
 def test_online_probabilistic():
     lifting = LiftingRegistry()
@@ -94,7 +89,6 @@ def test_online_probabilistic():
     assert verdict.resolved is True
     assert bounded.last_probability() == 1.0
 
-
 def test_smooth_gradients():
     trace = Trace.indexed(3)
     trace.add_signal("x", [3, 1, 2])
@@ -105,7 +99,6 @@ def test_smooth_gradients():
         model, [0.0], [0.5, 0.5, 0.5, 0.5]
     )
     assert len(per_input) == 4
-
 
 def test_simexpr_math():
     init = SimExpr.constant(0.5)
