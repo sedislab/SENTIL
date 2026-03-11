@@ -29,67 +29,26 @@ required-features = ["synthesis"]
 
 [features]
 default = ["std", "statistical", "ingest", "parallel", "synthesis", "specs", "sqlite"]
-
-# On by default. Drop it (--no-default-features) for a no_std STL monitor that
-# does its f64 math through libm.
 std = []
-
-# Serialize a formula, noise model, or run config through serde.
 serde = ["std", "dep:serde"]
-
-# The probabilistic operator: confidence intervals, Monte Carlo, sequential
-# testing. Off for a bare STL monitor.
 statistical = ["std", "dep:rand", "dep:rand_distr", "dep:rand_chacha", "dep:libm"]
-
-# Synthesis from a spec, dependency-free on the CPU and no_std-friendly, so a
-# microcontroller can plan online. The MILP backend and GPU batching, which can't,
-# sit behind the std-only milp path and synthesis-gpu.
 synthesis = []
-
-# Spread Monte Carlo across cores with Rayon. Same answer as one thread; each
-# sample is seeded independently.
 parallel = ["statistical", "dep:rayon"]
-
-# Read traces from CSV, TSV, and classic MATLAB .mat files. sqlite is on by
-# default too; parquet, arrow, hdf5, and mcap stay opt-in.
 ingest = ["std", "dep:csv", "dep:matfile"]
-
-# The premade PrSTL specs: parameterized templates in embedded TOML/YAML/JSON.
-# Needs the statistical layer to build their lifting registries.
 specs = ["statistical", "dep:serde", "dep:serde_json", "dep:toml", "dep:serde_yaml", "dep:rust-embed"]
-
-# Apache Parquet traces (pulls in the Arrow columnar stack).
 parquet = ["ingest", "dep:parquet", "dep:arrow"]
-
-# Arrow IPC / Feather traces.
 arrow = ["ingest", "dep:arrow"]
-
-# Traces from a SQLite table. SQLite is bundled, so no system library.
 sqlite = ["ingest", "dep:rusqlite"]
-
-# HDF5 / MATLAB v7.3 traces. Needs a system or bundled HDF5 library.
 hdf5 = ["ingest", "dep:hdf5"]
-
-# MCAP recordings, the robotics log format.
 mcap = ["ingest", "dep:mcap", "dep:serde_json"]
-
-# WebGPU for large statistical runs and rare events. Falls back to the CPU when
-# no device is present.
 gpu = ["statistical", "dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:futures", "dep:naga"]
-
-# GPU batching for synthesis: one dispatch scores a whole population of candidate
-# trajectories. Needs both synthesis and gpu.
 synthesis-gpu = ["synthesis", "gpu"]
 
 [dependencies]
 thiserror = { version = "2.0", default-features = false }
-
-# f64 math for no_std builds. Under std the inherent methods win, so this only
-# carries the embedded path.
 num-traits = { version = "0.2.19", default-features = false, features = ["libm"] }
-
-# erfc for the Halley step in the normal quantile. Already in the tree via num-traits.
 libm = { version = "0.2", optional = true }
+
 rand = { workspace = true, optional = true }
 rand_distr = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
@@ -110,9 +69,6 @@ wgpu = { version = "27.0", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1.24", optional = true, features = ["derive"] }
 futures = { version = "0.3.31", optional = true }
-
-# Validates transpiled WGSL on the CPU, so a malformed shader is a typed error
-# before it reaches the GPU. naga rides along in the wgpu tree.
 naga = { version = "27.0", optional = true, features = ["wgsl-in"] }
 
 [dev-dependencies]
