@@ -1,1 +1,1 @@
-{ "title": "Recipes", "icon": "Wrench", "pages": ["load-traces", "use-spec-library", "simulink-block"] }
+{ "title": "Recipes", "icon": "Wrench", "pages": ["load-traces", "use-spec-library", "simulink-block", "reproduce-claim", "benchmark"] }

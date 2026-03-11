@@ -1,0 +1,106 @@
+---
+title: "Run the benchmarks"
+description: "Run every benchmark runner, and then draw the comparisons."
+---
+
+The benchmark suite is a set of runners that test out each capability of SENTIL and its bindings against STL and statistical model checking baselines.
+
+Every command below runs from `benchmarks/`.
+
+## The end-to-end sequence
+
+<Steps>
+<Step>
+Run the SENTIL side of a track.
+
+```bash
+cargo run --release -p sentil-benchmarks --bin sentil_runner scalability > results/sentil_scalability.jsonl
+```
+</Step>
+<Step>
+Run a baseline on the same work.
+
+```bash
+python runners/rtamt_runner.py scalability > results/rtamt_scalability.jsonl
+```
+</Step>
+<Step>
+Draw the figures.
+
+```bash
+python runners/plot.py
+```
+
+The plotter writes the PNGs beside the records in `results/`.
+</Step>
+</Steps>
+
+## The Rust core runners
+
+`sentil_runner` takes `deterministic`, `scalability`, `dense`, `streaming`, or `memory <n>`. `deterministic` runs the fixed oracle, `dense` the dense-time robustness, `streaming` the per-sample online cost, and `scalability` the length, depth, and bound sweeps.
+
+```bash
+cargo run --release -p sentil-benchmarks --bin sentil_runner deterministic > results/sentil_deterministic.jsonl
+cargo run --release -p sentil-benchmarks --bin sentil_runner dense > results/sentil_dense.jsonl
+cargo run --release -p sentil-benchmarks --bin sentil_runner streaming > results/sentil_streaming.jsonl
+```
+
+Four more binaries cover the statistical, synthesis, and particle tracks. `sentil_smc_runner accuracy` scores every known-probability model in `probabilistic/` against its truth, so the run checks correctness, not speed alone, and `sentil_ctmc_runner` runs the shared stochastic models the model checkers below are compared on, one model name per invocation.
+
+```bash
+cargo run --release -p sentil-benchmarks --bin sentil_smc_runner accuracy > results/sentil_smc_cpu.jsonl
+cargo run --release -p sentil-benchmarks --bin sentil_ctmc_runner circadian >> results/sentil_smc.jsonl
+cargo run --release -p sentil-benchmarks --bin sentil_synth_runner > results/sentil_synth.jsonl
+cargo run --release -p sentil-benchmarks --bin sentil_particle_runner > results/sentil_particles.jsonl
+```
+
+For the GPU path, build with `--features gpu` on a machine with a device and run the same commands into `results/sentil_smc_gpu.jsonl`. The runner labels each record `cpu` or `gpu` by what actually ran. The rare-event tracks have their own binaries, `sentil_rare_tandem_runner`, `sentil_rare_3tandem_runner`, and `sentil_rare_walk_runner`, invoked the same way.
+
+## The seven binding runners
+
+The same work runs through each binding, so the cost a binding adds over the core is what you read off the plot. Each runner takes `scalability` or `streaming`; the commands below show `scalability`, and the streaming records go to `results/sentil_streaming_<language>.jsonl` the same way.
+
+```bash
+cargo run --release -p sentil-benchmarks --bin sentil_runner scalability > results/sentil_scalability.jsonl
+make -C ../sentil-ffi bench-c && ../target/sentil_bench_c scalability > results/sentil_scalability_c.jsonl
+make -C ../sentil-ffi bench-cpp && ../target/sentil_bench_cpp scalability > results/sentil_scalability_cpp.jsonl
+python runners/sentil_runner.py scalability > results/sentil_scalability_python.jsonl
+SENTIL_LIB=../target/release/libsentil.so julia --project=../sentil-jl runners/sentil_runner.jl scalability > results/sentil_scalability_julia.jsonl
+java -cp ../sentil-java/target/sentil-0.3.0.jar runners/sentil_runner.java scalability > results/sentil_scalability_java.jsonl
+matlab -batch "addpath('runners'); sentil_runner('scalability')" > results/sentil_scalability_matlab.jsonl
+```
+
+The prerequisites are the bindings themselves: `pip install sentil` for the Python runner, a built `libsentil` for Julia (the `make` targets in `sentil-ffi` build it), the jar from `mvn -o -DskipTests package` in `sentil-java` for the Java runner (the jar bundles the native library), and the toolbox from `build_sentil` in `sentil-matlab` on the MATLAB path.
+
+The engine is the same compiled core in every case, so the full-signal sweep tracks the core closely and the per-sample streaming cost is where a binding's boundary shows. The measured per-language numbers are on [how SENTIL compares](/docs/start/understand/comparison).
+
+## The seven baseline runners
+
+The STL baselines run the same oracle formula and reproduce its robustness exactly, so only the speed and memory differ.
+
+```bash
+python runners/rtamt_runner.py scalability > results/rtamt_scalability.jsonl
+python runners/moonlight_runner.py scalability > results/moonlight_scalability.jsonl
+python runners/banquo_runner.py scalability > results/banquo_scalability.jsonl
+BREACH_DIR=~/Breach matlab -batch "breach_runner('scalability')" > results/breach_scalability.jsonl
+```
+
+`rtamt_runner.py` also takes `deterministic`, `dense`, and `memory`; `banquo_runner.py` takes `memory`; `breach_runner` takes `deterministic`. Banquo needs Python 3.11 or newer, and Breach needs MATLAB with `BREACH_DIR` pointing at a checkout.
+
+The statistical model checkers take a model path and emit one record per run, so append records model by model. The toolsets are not redistributable; point each variable at a local install, and a runner skips cleanly when its tool is absent.
+
+```bash
+PRISM=/opt/prism/bin/prism bash runners/prism_runner.sh baselines/prism/circadian.nm >> results/prism_smc.jsonl
+MODEST=~/modest/modest bash runners/modest_runner.sh baselines/modest/circadian.modest >> results/modest_smc.jsonl
+VERIFYTA=~/uppaal/bin/verifyta bash runners/uppaal_runner.sh baselines/uppaal/circadian.xml >> results/uppaal_smc.jsonl
+```
+
+PRISM carries `circadian.nm` and `tandem.nm`; Modest and UPPAAL carry `circadian`, `tandem_queue`, `biodiesel`, and `powertrain`. UPPAAL picks its own run count from the requested half-width, which the runner sets per model near the 10,000 samples the other tools use. The SENTIL side of these comparisons is the `sentil_ctmc_runner` command above.
+
+## Related
+
+<Cards>
+  <Card title="Reproduce a claim" href="/docs/examples/recipes/reproduce-claim" description="Take one ledger entry from its command to its artifact and tolerance." />
+  <Card title="The claims ledger" href="/docs/start/understand/claims-philosophy" description="How every benchmark number maps to a command, a tolerance, and a guarding test." />
+  <Card title="How SENTIL compares" href="/docs/start/understand/comparison" description="The reproduced numbers against the STL and statistical baselines." />
+</Cards>

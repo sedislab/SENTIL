@@ -1,0 +1,91 @@
+---
+title: "Reproduce a claim"
+description: "Reproduce the claims we make in the paper."
+---
+
+Every performance and correctness claim SENTIL makes lives in `docs/CLAIMS.md` with a command, an expected value, a tolerance, and a tier. Reproducing a claim is finding its entry, running that command, and checking the result against the tolerance. On this page, we take one claim from the document and reproduce it.
+
+## Read the ledger entry
+
+Each entry has the same parts. Take the discrete full-signal speed claim against RTAMT. Under the heading "Discrete-time STL evaluation speed claims", `docs/CLAIMS.md` reads:
+
+```text title="docs/CLAIMS.md"
+6. SENTIL matches RTAMT's robustness value on `always[0, 100](eventually[0, 10](x > 5))` when evaluated on the same trace at a >100x speedup.
+Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- scalability` and `python benchmarks/runners/rtamt_runner.py scalability`, then `python benchmarks/runners/plot.py`.
+
+| samples | SENTIL | RTAMT | speedup |
+| --- | --- | --- | --- |
+| 1,000 | 0.037 ms | 6.10 ms | 163x |
+| 10,000 | 0.399 ms | 51.4 ms | 129x |
+| 100,000 | 3.64 ms | 514 ms | 141x |
+| 1,000,000 | 37.06 ms | 5381 ms | 145x |
+
+Expected: SENTIL faster by roughly two orders of magnitude across the range.
+Tolerance: At least 100x speedup.
+Tier: CPU.
+Artifact: `benchmarks/results/`.
+```
+
+## Run the command
+
+Each runner prints one JSON record per sample size to standard output.
+
+```bash
+cargo run --release -p sentil-benchmarks --bin sentil_runner -- scalability > benchmarks/results/sentil_scalability.jsonl
+```
+
+The baseline side, when RTAMT is installed, emits its records the same way, and the plotter reads both and draws the figure.
+
+```bash
+python benchmarks/runners/rtamt_runner.py scalability > benchmarks/results/rtamt_scalability.jsonl
+python benchmarks/runners/plot.py
+```
+
+## Check it against the tolerance
+
+The artifact-based claims are checked by a script that reads the committed results and fails if a value falls outside its stated tolerance. Run the whole CPU tier, the engine suite, the C ABI tests, and this regression guard, with one command.
+
+```bash
+make verify
+```
+
+To check only the ledger tolerances against the committed artifacts, run the guard on its own.
+
+```bash
+python scripts/check_claims.py
+```
+
+```text
+[ok  ] rtamt full-signal speedup: at least 129x across 4 sizes (target 100x)
+[ok  ] monitoring cost flat in length: spread 1.08x over 5 sizes (does not grow with length)
+[ok  ] dense within about 12x of discrete: max 12.1x (dense-time interpolation cost)
+[ok  ] streaming per-sample cost sub-microsecond with a bounded tail: median 110 ns, p99 1.36x the median, robustness -17.99211575372234
+[ok  ] smc estimate tracks the known probability: max error 0.0024 over 55 models (target 0.01)
+[ok  ] synthesis reaches its spec and holds its deadline: open-loop cases hold, 0 online deadline misses
+[ok  ] rare-event estimate sharpens with particles: error at the largest count is 0.069 (target 0.15) and below the smallest-count error
+[ok  ] circadian network oscillates: period 23.8 h, 100/100 realizations
+[ok  ] glucose euglycemia separates the controllers: missed-bolus -105.0237, tuned 7.9514
+
+all artifact claims within tolerance
+```
+
+## Pick the tier your hardware supports
+
+Each claim belongs to a tier, set by the hardware and dependencies it needs. Reproduce what your machine supports.
+
+| Tier | Needs | Covers |
+| --- | --- | --- |
+| CPU | a CPU and a Rust toolchain | correctness, full-signal and monitoring speed, streaming cost, statistical coverage |
+| GPU | an NVIDIA GPU | rare-event splitting and the empirical acceleration, validated on an NVIDIA A40 |
+| tool-bound | a baseline tool | comparisons against PRISM, Modest, UPPAAL, Breach |
+| hardware-bound | one specific machine | the Raspberry Pi 4 embedded latency |
+
+The full set of reproduction paths, including the Docker route that runs the CPU tier offline, is in `docs/REPRODUCE.md`.
+
+## Related
+
+<Cards>
+  <Card title="The claims document" href="/docs/start/understand/claims-philosophy" description="Why every claim maps to a command, a value, a tolerance, a tier, and a guarding test." />
+  <Card title="How SENTIL compares" href="/docs/start/understand/comparison" description="The reproduced numbers against RTAMT, Breach, and the statistical model checkers." />
+  <Card title="Run the benchmarks" href="/docs/examples/recipes/benchmark" description="The benchmark suite, its runners, and the shared record schema." />
+</Cards>
