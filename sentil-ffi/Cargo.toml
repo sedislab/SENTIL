@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Stable C ABI for SENTIL, the runtime verification engine for STL and PrSTL"
+description = "C ABI for SENTIL, the runtime verification engine for STL and PrSTL"
 
 [lib]
 name = "sentil"

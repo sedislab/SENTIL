@@ -9,9 +9,9 @@ The canonical set, the same programs the other bindings ship, written against th
 
 ## Build and run
 
-The quickest path builds the library and runs every example at once, from `sentil-ffi/`:
+We use `make` for a quick build and running of every example:
 
-```
+```bash
 make examples
 ```
 
@@ -19,14 +19,14 @@ To build one by hand, first build the library (`make build`), then compile again
 
 Linux:
 
-```
+```bash
 cc -Iinclude examples/offline_monitoring.c -L../target/release -lsentil -Wl,-rpath,../target/release -lm -o offline
 ./offline
 ```
 
 macOS is the same with `-Wl,-rpath,../target/release` resolving `libsentil.dylib`. On Windows, build with the MSVC toolchain, link against `sentil.dll.lib`, and put `sentil.dll` on the `PATH` or beside the executable:
 
-```
+```bash
 cl /I include examples\offline_monitoring.c /link /LIBPATH:..\target\release sentil.dll.lib
 ```
 
