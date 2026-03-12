@@ -44,6 +44,24 @@ jobs:
         run: npm run build
       - name: typecheck
         run: npm run types:check
+      - name: guard the output
+        working-directory: website/out
+        run: |
+          if grep -rIil --exclude-dir=pyodide \
+              -e chatgpt -e openai -e anthropic -e claude -e copilot \
+              -e 'Open in Cursor' -e 'Open in Scira' .; then
+            echo "an assistant reference reached the build output"; exit 1
+          fi
+          if grep -rIl -e pquansah -e /projects/beph .; then
+            echo "a build path reached the output"; exit 1
+          fi
+          if strings engine/sentil_engine_bg.wasm | grep -q pquansah; then
+            echo "a build path reached the wasm"; exit 1
+          fi
+          if find . -name '*.map' | grep -q .; then
+            echo "a source map shipped"; exit 1
+          fi
+          echo "output guard passed"
       - uses: actions/upload-artifact@v4
         with:
           name: site
