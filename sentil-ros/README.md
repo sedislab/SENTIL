@@ -144,7 +144,7 @@ The streaming and online numbers, measured against other tools, are in [`benchma
 
 ## Install
 
-### From your distribution
+### Package manager
 
 Install the released package through apt (or your distribution's package manager):
 
@@ -153,23 +153,33 @@ curl -sLf 'https://dl.cloudsmith.io/public/sedislab/sentil/cfg/setup/bash.deb.sh
 sudo apt install ros-$ROS_DISTRO-sentil-ros
 ```
 
-Substitute `<distro_name>` for your distribution (`jazzy`, `rolling`, `humble`).
+Built for `humble` on Ubuntu 22.04 and for `jazzy` and `rolling` on Ubuntu 24.04, on amd64 and arm64. The SENTIL core arrives as `libsentil-dev` from the same repository, so apt resolves it for you, and upgrades and removal work the way they do for any package.
 
-### From source
+The repository is hosted on Cloudsmith rather than in the official ROS distribution. The ROS build farm builds offline with no Rust toolchain and needs every dependency to be a rosdep key in the Ubuntu or ROS archives, which a Rust library is not. Distributing the packages ourselves is what makes a real `apt install` possible.
 
-The node links the SENTIL C++ package (`SentilCpp`), which sits on top of the compiled core (`libsentil`). Install both onto a prefix through the [C++ package](../sentil-cpp); a distribution package, the prebuilt bundle, or a source build each leave a prefix with the CMake config and the library. Point colcon at that prefix, and keep `libsentil` on the loader path:
+### From source, into your workspace
+
+If you would rather not add an archive, the source build needs nothing but a ROS 2 workspace. It resolves the core itself: an installed `libsentil` if you have one, an in-tree cargo build if you are working inside the SENTIL repository, and otherwise the prebuilt library for your platform from the release page. No Rust toolchain is required.
 
 ```bash
-cd ~/ros2_ws
-export SENTIL_PREFIX=/path/to/sentil-prefix
-colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
-export LD_LIBRARY_PATH="$SENTIL_PREFIX/lib:$LD_LIBRARY_PATH"
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws
+vcs import src < <(curl -fsSL https://raw.githubusercontent.com/sedislab/SENTIL/main/sentil-ros/sentil_ros.repos)
+colcon build --packages-select sentil_ros
 source install/setup.bash
 ```
 
-### From a release archive
+To build against a specific copy of the library, pass its directory with `--cmake-args -DSENTIL_LIB_DIR=/path/to/lib`. Add `-DSENTIL_NO_DOWNLOAD=ON` to fail rather than fetch anything, which is what you want on an air-gapped or reproducible build.
 
-The same build without the clone, on any machine with ROS 2. Download the source archive for the tag, extract it into your workspace `src/`, and build against the same `SENTIL_PREFIX`.
+### Prebuilt release
+
+The source builds run in a colcon workspace, conventionally `~/ros2_ws`, and link the SENTIL C++ package (`SentilCpp`) on top of the compiled core (`libsentil`). Install both onto a prefix through the [C++ package](../sentil-cpp); a distribution package, the prebuilt bundle, or a source build each leave a prefix with the CMake config and the library. Point colcon at that prefix with `SENTIL_PREFIX`, and keep `libsentil` on the loader path:
+
+```bash
+export SENTIL_PREFIX=/path/to/sentil-prefix
+export LD_LIBRARY_PATH="$SENTIL_PREFIX/lib:$LD_LIBRARY_PATH"
+```
+
+Then download the source archive for a tagged release, extract it into the workspace `src/`, and build it.
 
 On Linux or macOS:
 
@@ -190,6 +200,18 @@ tar xf sentil.zip
 cd %USERPROFILE%\ros2_ws
 colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH=%SENTIL_PREFIX%
 call install\setup.bat
+```
+
+### Build from source
+
+To track the repository tip instead of a tagged release, clone it into the workspace `src/` and build against the same prefix:
+
+```bash
+cd ~/ros2_ws/src
+git clone https://github.com/sedislab/SENTIL
+cd ~/ros2_ws
+colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
+source install/setup.bash
 ```
 
 ## Contributing

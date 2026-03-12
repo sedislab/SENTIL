@@ -320,7 +320,7 @@ def main():
                    particles, synthesis):
         figure(records)
     for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
-                        ("julia", "Julia"), ("java", "Java")):
+                        ("julia", "Julia"), ("java", "Java"), ("matlab", "MATLAB")):
         scaling_compare(records, lang, label, f"scaling_{lang}.png")
         streaming_compare(records, lang, label, f"streaming_{lang}.png")
         memory_compare(records, label, f"memory_{lang}.png")

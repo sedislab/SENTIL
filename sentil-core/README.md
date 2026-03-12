@@ -123,18 +123,21 @@ The full set, including the dense-time, statistical model checking, rare-event, 
 
 ## Install
 
+### Package manager
 From crates.io, the same on Windows, macOS, and Linux:
 
 ```bash
 cargo add sentil
 ```
 
+### Prebuilt release
 For a pre-release or the repository tip, add a git dependency:
 
 ```toml
 sentil = { git = "https://github.com/sedislab/SENTIL" }
 ```
 
+### Build from source
 From a source checkout:
 
 ```bash

@@ -2,7 +2,7 @@
 
 # SENTIL
 
-#### The Julia package for probabilistic Signal Temporal Logic
+#### The Julia package for Probabilistic Signal Temporal Logic
 
 [![Julia](https://img.shields.io/badge/Julia-%E2%89%A51.6-blue.svg)](https://julialang.org)
 [![Website](https://img.shields.io/badge/docs-sentil.pages.dev-blue.svg)](https://sentil.pages.dev)
@@ -147,7 +147,7 @@ From PowerShell:
 $env:SENTIL_LIB = "C:\path\to\sentil.dll"
 ```
 
-## Build from source
+### Build from source
 
 Building the core needs a Rust toolchain. Clone the repository, build `libsentil`, and develop the package against it:
 
