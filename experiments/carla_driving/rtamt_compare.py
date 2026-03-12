@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 DET = [
     ("speed_limit", "speed", 12.0, "<", "<="),
-    ("following_distance", "front_distance", 6.0, ">", ">="),
+    ("following_distance", "vehicle_distance", 6.0, ">", ">="),
     ("pedestrian_clearance", "pedestrian_distance", 5.0, ">", ">="),
 ]
 
@@ -23,7 +23,7 @@ def load_signals(path):
     f = path if path.endswith(".json") else os.path.join(path, "capture.json")
     data = json.load(open(f))
     recs = data["records"] if "records" in data else None
-    keys = ("speed", "front_distance", "pedestrian_distance")
+    keys = ("speed", "vehicle_distance", "pedestrian_distance")
     if recs is not None:
         return [r["t"] for r in recs], {k: [r[k] for r in recs] for k in keys}
     sig = data["signals"]

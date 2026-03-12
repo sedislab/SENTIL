@@ -1,49 +1,49 @@
 {
-  "samples": 2000,
+  "samples": 6000,
   "online_multiformula": {
     "formulas": 3,
     "sentil": {
-      "median_us": 1.863,
-      "p99_us": 2.214,
-      "mean_us": 1.95
+      "median_us": 1.843,
+      "p99_us": 2.265,
+      "mean_us": 1.911
     },
     "rtamt": {
-      "median_us": 40.025,
-      "p99_us": 51.839,
-      "mean_us": 40.747
+      "median_us": 39.614,
+      "p99_us": 51.586,
+      "mean_us": 40.237
     },
     "speedup_median": 21.5
   },
   "offline_future_bounded": {
     "speed_limit": {
-      "samples": 2000,
+      "samples": 6000,
       "agree": true,
       "robustness_max_abs_diff": 0.0,
-      "sentil_ms": 0.071,
-      "rtamt_ms": 5.901,
-      "speedup": 82.8
+      "sentil_ms": 0.2,
+      "rtamt_ms": 18.092,
+      "speedup": 90.3
     },
     "following_distance": {
-      "samples": 2000,
+      "samples": 6000,
       "agree": true,
       "robustness_max_abs_diff": 0.0,
-      "sentil_ms": 0.06,
-      "rtamt_ms": 8.893,
-      "speedup": 148.4
+      "sentil_ms": 0.18,
+      "rtamt_ms": 27.328,
+      "speedup": 152.0
     },
     "pedestrian_clearance": {
-      "samples": 2000,
+      "samples": 6000,
       "agree": true,
       "robustness_max_abs_diff": 0.0,
-      "sentil_ms": 0.062,
-      "rtamt_ms": 8.873,
-      "speedup": 142.4
+      "sentil_ms": 0.177,
+      "rtamt_ms": 27.201,
+      "speedup": 154.1
     }
   },
   "probabilistic_monte_carlo": {
-    "median_us": 96.2,
-    "p99_us": 120.792,
-    "mean_us": 98.889,
+    "median_us": 95.463,
+    "p99_us": 125.405,
+    "mean_us": 96.42,
     "particles": 1000,
     "rtamt": "not supported (RTAMT has no probabilistic / Monte Carlo monitoring)"
   }
