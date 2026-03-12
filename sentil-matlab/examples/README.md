@@ -1,8 +1,6 @@
 # Examples
 
-The same programs the other SENTIL bindings ship, written in MATLAB. Each prints the same results its C++, Python, Julia, and Java counterparts do.
-
-Build the binding once, then run an example from the `sentil-matlab` directory:
+A small set of exmaples to show how to use the tool. Build the binding once, then run an example from the `sentil-matlab` directory:
 
 ```matlab
 build_sentil
