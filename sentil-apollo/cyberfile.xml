@@ -7,7 +7,7 @@
     component watches the perception, localization, and chassis channels against
     Signal Temporal Logic and probabilistic STL specifications and publishes a
     verdict; a control component synthesizes or shields a command against the same
-    specification. Built on the SENTIL engine, which ships inside the module.
+    specification.
   </description>
   <maintainer email="paapa_quansah1@baylor.edu">Paapa Kwesi Quansah</maintainer>
   <license>Apache-2.0 OR MIT</license>
