@@ -1,8 +1,6 @@
 """Monitor a CARLA ego vehicle against the safety specifications in
 config/carla_verification.yaml.
 
-The monitor only consumes the standard carla_ros_bridge topics, so it works the same
-whether CARLA runs natively, in Docker, or in an Apptainer image, local or remote.
 Run CARLA and the bridge however you like and leave launch_bridge at its default; or
 set launch_bridge:=true to start the bridge here, pointing it at host:port.
 """
@@ -14,7 +12,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-
 
 def generate_launch_description():
     share = FindPackageShare("sentil_ros")

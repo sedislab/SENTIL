@@ -1,163 +1,228 @@
-# sentil_ros
+<div align="center">
 
-Monitor ROS 2 topic streams against Signal Temporal Logic and probabilistic STL specifications, online and in real time. You write a small YAML configuration that names each formula and binds its variables to topics and message fields; the node subscribes to those topics, evaluates the formulas as messages arrive, and publishes a verdict per formula along with a standard diagnostic. It is built on the SENTIL engine and works with messages of any type, resolved at runtime, so you monitor your existing topics without changing them.
+# SENTIL
 
-It builds against the current ROS 2 distributions, Humble, Jazzy, and Rolling, with the same features on each; Humble is the reference LTS. It uses only cross-distribution ROS 2 interfaces, so there is nothing distro-specific to port.
+#### The ROS 2 nodes for Probabilistic Signal Temporal Logic
 
-## Why it is built the way it is
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Rolling-blue.svg)](https://docs.ros.org)
+[![Website](https://img.shields.io/badge/docs-sentil.pages.dev-blue.svg)](https://sentil.pages.dev)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-The monitor is a managed lifecycle node, so it can be configured, paused, resumed, and torn down under supervision, and it only publishes while active. It is a composable component, so you can load it into the same process as the nodes it watches for zero-copy, in-process delivery. It subscribes generically and matches each subscription's QoS to the publisher, so a best-effort sensor stream or a latched topic is never silently dropped, the most common way a topic monitor goes quietly blind.
+</div>
+
+ROS 2 nodes for the [`sentil`](../sentil-core) engine. You write a small YAML file that names each formula and binds its variables to topics and message fields; the node subscribes to those topics, evaluates the formulas as messages arrive, and publishes a verdict per formula. Messages of any type resolve at runtime, so you watch topics you already have without touching them.
+
+Two managed lifecycle nodes ship in the package. `sentil_monitor` watches topics against a specification and reports how close the system is to breaking it. `sentil_control` runs the synthesis subsystem the other way around, turning a specification into a control input and actuating it on a topic. Both are composable components, so you can load them into the same process as the nodes they watch. The package builds against Humble, Jazzy, and Rolling.
+
+## Your first monitor
+
+A monitor is a YAML file and a launch command. Name the formulas, bind each variable to a topic and a field, and pick deterministic or probabilistic checking.
+
+```yaml
+# speed.yaml
+sentil_monitor:
+  ros__parameters:
+    formulas: ["speed_limit"]
+    formulas.speed_limit:
+      formula: "always[0,10] (speed < 30.0)"
+      verification:
+        method: "robustness"
+      signal_names: ["speed"]
+      variables:
+        speed:
+          topic: "/vehicle/odom"
+          field: "twist.twist.linear.x"
+```
+
+```bash
+ros2 launch sentil_ros sentil_monitor.launch.py params_file:=speed.yaml
+```
+
+The node subscribes to `/vehicle/odom`, pulls `twist.twist.linear.x` out of each message, and publishes a `sentil_ros/msg/Robustness` on `~/speed_limit/robustness`.
+
+```bash
+ros2 topic echo /sentil_monitor/speed_limit/robustness
+```
+
+The `robustness` field is the signed margin. It stays positive while every reading in the trailing ten-second window sits under 30 m/s, and a reading of 32 makes that sample's margin `-2.0` and pulls the window negative by the size of the overshoot. `is_concrete` says whether the value is final or still an interval bounded by `robustness_min` and `robustness_max` while the window fills.
+
+## Running it as a lifecycle node
+
+`sentil_monitor` is a managed lifecycle node, so it configures, activates, deactivates, and cleans up under supervision, and it publishes only while active. The launch file configures and activates it for you. Pass `autostart:=false` to drive the transitions yourself:
+
+```bash
+ros2 launch sentil_ros sentil_monitor.launch.py params_file:=speed.yaml autostart:=false
+ros2 lifecycle set /sentil_monitor configure
+ros2 lifecycle set /sentil_monitor activate
+```
+
+Each subscription matches its publisher's QoS, so a best-effort sensor stream or a latched topic is not silently dropped. The node also publishes a `diagnostic_msgs/DiagnosticStatus` per formula on `/diagnostics`, so a monitor shows up in `rqt_robot_monitor` and the diagnostic aggregator. Satisfied is `OK`, violated is `ERROR`, an undecided probabilistic verdict is `WARN`, and a formula still waiting on data is `STALE`.
+
+To replay a recorded bag against the same config, launch with the clock wired up and play the bag:
+
+```bash
+ros2 launch sentil_ros replay.launch.py params_file:=speed.yaml
+ros2 bag play --clock your_bag
+```
+
+## Probabilistic monitoring
+
+A `P~p` operator asks whether a formula holds with at least (or at most) probability `p`. Give the variable a noise model and set the method to `smc`; the node lifts each reading into an ensemble, evaluates the formula across it, and publishes the running probability with a Wilson interval.
+
+```yaml
+# gap.yaml
+sentil_monitor:
+  ros__parameters:
+    formulas: ["following_distance"]
+    formulas.following_distance:
+      formula: "P>=0.95(always[0,10] (gap > 5.0))"
+      verification:
+        method: "smc"
+      signal_names: ["gap"]
+      variables:
+        gap:
+          topic: "/perception/lead_vehicle"
+          field: "range"
+          noise:
+            type: "gaussian"
+            mean: 0.0
+            std_dev: 0.2
+      config:
+        particles: 1000
+        confidence: 0.95
+```
+
+This publishes a `sentil_ros/msg/Probability` on `~/following_distance/probability` next to the robustness topic: the `estimate`, how many of the `samples` trajectories currently satisfy the formula, and `ci_lower` and `ci_upper` at `ci_confidence`.
+
+The noise family is set by `noise.type`, one of `gaussian` (`mean`, `std_dev`), `uniform` (`low`, `high`), `log_normal` (`mu`, `sigma`), `exponential` (`rate`), `gamma` (`shape`, `scale`), `beta` (`alpha`, `beta`), or `none`, each reading its own parameters under `noise`.
+
+## The specification library
+
+The premade specifications are part of the engine, so you can name one in a config instead of writing a formula: set `spec:` to a library name, with an optional `variant:` and `spec_params`, in place of `formula:`. To inspect one at runtime, call the `~/get_spec_info` service (`sentil_ros/srv/GetSpecInfo`), which returns a spec's resolved deterministic and probabilistic formulas, its parameters as JSON, and its variants:
+
+```bash
+ros2 service call /sentil_monitor/get_spec_info sentil_ros/srv/GetSpecInfo "{spec_name: 'controls/overshoot'}"
+```
+
+Browse the library under [`specifications/`](../specifications).
+
+## CARLA example
+
+`examples/carla_monitor.launch.py` checks a CARLA ego vehicle against `config/carla_verification.yaml`, which binds four formulas to the standard `carla_ros_bridge` topics: a speed limit, a following distance, pedestrian clearance, and a probabilistic collision-risk bound. Start CARLA and the bridge however you run them, then:
+
+```bash
+ros2 launch sentil_ros carla_monitor.launch.py
+```
+
+Or have the launch file start the bridge for you, aimed at the server:
+
+```bash
+ros2 launch sentil_ros carla_monitor.launch.py launch_bridge:=true carla_host:=192.168.1.50 carla_port:=2000
+```
+
+## Synthesizing control
+
+`sentil_control` runs the synthesis subsystem as a node, turning a specification into a control input on a topic. It is the same lifecycle component shape as the monitor, and the `mode` parameter picks what it does:
+
+- `receding_horizon`: an online controller that plans over a short horizon each step and emits the first input within a hard deadline.
+- `open_loop`: offline trajectory synthesis, an input sequence that satisfies the spec, stepped out in real time.
+- `safety_filter`: a control-barrier shield that takes a nominal command and returns the closest input that keeps the bounds and barriers.
+- `witness`: counterexample search, an input sequence that violates the spec, published for replay.
+- `chance`: a chance-constraint check that estimates whether the spec holds with at least the target probability under Gaussian process noise, reported once with the estimate and its lower bound.
+
+The linear state-space model, the spec, the input bounds, and the mode all come from the config; `config/control_params.yaml` is a double-integrator example and `config/arm_control.yaml` drives a robot-arm end effector. The spec sits under a `spec` namespace here: a raw formula under `spec.formula`, or a library spec under `spec.name` with an optional `spec.variant`. The state arrives on a `std_msgs/Float64MultiArray` and the command goes out as a `sentil_ros/msg/Control`, with a plain `Float64MultiArray` alongside. `open_loop` and `witness` synthesize a whole sequence and carry a real `robustness` and `holds`; the online `receding_horizon` and `safety_filter` modes return an input without a verdict, reporting `robustness` as NaN and `feasible` true.
+
+```bash
+ros2 launch sentil_ros sentil_control.launch.py
+```
+
+`examples/control_loop.py` closes the loop on a double integrator: it publishes the state, applies each command, and drives the position into the band the spec asks for.
+
+## Performance
+
+The streaming and online numbers, measured against other tools, are in [`benchmarks/`](../benchmarks), and every reproduced figure is in [`docs/CLAIMS.md`](../docs/CLAIMS.md).
 
 ## Install
 
-From a release, through rosdep and your distribution's package manager:
+### From your distribution
 
-```
-sudo apt install ros-humble-sentil-ros
+Install the released package through apt (or your distribution's package manager):
+
+```bash
+curl -sLf 'https://dl.cloudsmith.io/public/sedislab/sentil/cfg/setup/bash.deb.sh' | sudo bash
+sudo apt install ros-$ROS_DISTRO-sentil-ros
 ```
 
-From source, in a colcon workspace with the SENTIL C++ package (`SentilCpp`) available:
+Substitute `<distro_name>` for your distribution (`jazzy`, `rolling`, `humble`).
 
-```
+### From source
+
+The node links the SENTIL C++ package (`SentilCpp`), which sits on top of the compiled core (`libsentil`). Install both onto a prefix through the [C++ package](../sentil-cpp); a distribution package, the prebuilt bundle, or a source build each leave a prefix with the CMake config and the library. Point colcon at that prefix, and keep `libsentil` on the loader path:
+
+```bash
 cd ~/ros2_ws
-colcon build --packages-select sentil_ros
+export SENTIL_PREFIX=/path/to/sentil-prefix
+colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
+export LD_LIBRARY_PATH="$SENTIL_PREFIX/lib:$LD_LIBRARY_PATH"
 source install/setup.bash
 ```
 
-From a GitHub release archive, the same build as from source without the clone, on any machine with a ROS 2 install. Download the source archive for the tag from the release, extract it into your workspace `src/`, then build as above.
+### From a release archive
+
+The same build without the clone, on any machine with ROS 2. Download the source archive for the tag, extract it into your workspace `src/`, and build against the same `SENTIL_PREFIX`.
 
 On Linux or macOS:
 
-```
+```bash
 cd ~/ros2_ws/src
 curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz | tar xz
 cd ~/ros2_ws
-colcon build --packages-select sentil_ros
+colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
 source install/setup.bash
 ```
 
 On Windows, from a command prompt with ROS 2 sourced:
 
-```
+```bash
 cd %USERPROFILE%\ros2_ws\src
 curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.zip
 tar xf sentil.zip
 cd %USERPROFILE%\ros2_ws
-colcon build --packages-select sentil_ros
+colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH=%SENTIL_PREFIX%
 call install\setup.bat
 ```
 
-## Run it
-
-```
-ros2 launch sentil_ros sentil_monitor.launch.py params_file:=/path/to/your.yaml
-```
-
-That configures and activates the node on launch. Pass `autostart:=false` to drive the lifecycle yourself with `ros2 lifecycle set /sentil_monitor configure` then `activate`. To monitor a recorded bag, use `replay.launch.py` and play the bag with `--clock`:
-
-```
-ros2 launch sentil_ros replay.launch.py params_file:=/path/to/your.yaml
-ros2 bag play --clock your_bag
-```
-
-## Configuration
-
-A formula is configured under `formulas.<id>`. `config/example_params.yaml` is a complete, commented starting point. The fields:
-
-| Parameter | Meaning |
-| --- | --- |
-| `formulas` | the list of formula ids to monitor |
-| `formulas.<id>.formula` | the STL or PrSTL formula, e.g. `always[0,10] (speed < 30)` or `P>=0.95(always[0,10] (gap > 5))` |
-| `formulas.<id>.spec` | a premade specification name from the library, used instead of a raw formula |
-| `formulas.<id>.variant` | a variant of the named spec |
-| `formulas.<id>.spec_params.names` / `.values` | parallel arrays overriding the spec's parameters |
-| `formulas.<id>.verification.method` | `robustness` (deterministic), `smc` (online probability estimate), or `automatic` (probabilistic when any variable carries noise) |
-| `formulas.<id>.signal_names` | the variable names the formula reads |
-| `formulas.<id>.variables.<v>.topic` | the topic carrying variable `v` |
-| `formulas.<id>.variables.<v>.field` | a dotted, optionally indexed path to the scalar, e.g. `twist.twist.linear.x` or `ranges[0]` |
-| `formulas.<id>.variables.<v>.type` | the message type `pkg/msg/Name`, if it cannot be inferred from the topic |
-| `formulas.<id>.variables.<v>.noise.type` | a noise family (`gaussian`, `uniform`, ...) for a probabilistic formula |
-| `formulas.<id>.config.particles` | the ensemble size for a probabilistic estimate |
-| `formulas.<id>.config.confidence` | the confidence level |
-
-### Noise families
-
-A variable's `noise.type` selects the sensor noise lifted into a probabilistic estimate, and each family reads its own parameters under `noise`:
-
-| Family | Parameters |
-| --- | --- |
-| `gaussian` | `mean`, `std_dev` |
-| `uniform` | `low`, `high` |
-| `log_normal` | `mu`, `sigma` |
-| `exponential` | `rate` |
-| `gamma` | `shape`, `scale` |
-| `beta` | `alpha`, `beta` |
-| `none` | no noise (the default) |
-
-## Topics and diagnostics
-
-Per formula `<id>`, the node publishes:
-
-- `~/<id>/robustness` (`sentil_ros/msg/Robustness`): the signed robustness, whether the verdict is concrete, and the interval bounds.
-- `~/<id>/probability` (`sentil_ros/msg/Probability`), for a probabilistic formula only: the running satisfaction probability the streaming monitor estimates over its lifted ensemble, the ensemble size, how many member trajectories currently satisfy the formula, and a Wilson confidence interval at the configured level, the same band the offline statistical checker reports. Show a live probability and its interval next to the verdict.
-
-It also publishes a `diagnostic_msgs/DiagnosticStatus` per formula on `/diagnostics`, so the monitor shows up in `rqt_robot_monitor` and the diagnostic aggregator: satisfied is OK, violated is ERROR, an undecided probabilistic verdict is WARN, and no data yet is STALE.
-
-No formula publishes a verdict until every variable across all configured formulas has been received at least once, so one dead topic holds back every formula; the STALE diagnostic names the variables it is still waiting on. After that each variable holds its last reading between updates, so a silent topic keeps contributing its last value rather than going stale on its own.
-
-## Inspecting the specification library
-
-The premade specifications are part of the engine, so you can reach them from a config (`spec:` above) or query one at runtime through the `~/get_spec_info` service (`sentil_ros/srv/GetSpecInfo`), which returns a spec's resolved deterministic and probabilistic formulas, its parameters as JSON, and its variants:
-
-```
-ros2 service call /sentil_monitor/get_spec_info sentil_ros/srv/GetSpecInfo "{spec_name: 'controls/overshoot'}"
-```
-
-## CARLA example
-
-`examples/carla_monitor.launch.py` monitors a CARLA ego vehicle against `config/carla_verification.yaml`, which binds to the standard `carla_ros_bridge` topics. Because the monitor consumes only those ROS topics, it works the same whether CARLA runs natively, in Docker, or in an Apptainer image, on the same machine or a remote one. Run CARLA and the bridge however you like, then:
-
-```
-ros2 launch sentil_ros carla_monitor.launch.py
-```
-
-Or have the launch start the bridge for you, aimed at the server:
-
-```
-ros2 launch sentil_ros carla_monitor.launch.py launch_bridge:=true carla_host:=192.168.1.50 carla_port:=2000
-```
-
-## Synthesizing and actuating control
-
-Beyond monitoring, the package ships a control node that synthesizes control from a specification and actuates it on ROS 2 topics. It is the same managed lifecycle component shape as the monitor, and it exposes the whole synthesis subsystem, chosen by the `mode` parameter:
-
-- `receding_horizon`: an online controller that, each step, plans over a short horizon and emits the first input within a hard deadline.
-- `open_loop`: offline trajectory synthesis, an input sequence that satisfies the spec, published as a trajectory and stepped out in real time.
-- `safety_filter`: a control-barrier-function shield that takes a nominal command and returns the closest input that respects the bounds and barriers.
-- `witness`: counterexample search, an input sequence that violates the spec, published as a trajectory for replay and offline study.
-- `chance`: a chance-constraint check that estimates whether the spec holds with at least the target probability under the model perturbed by Gaussian process noise, reported once with the estimate and its lower bound. The `chance.probability`, `chance.confidence`, and `chance.process_std` parameters configure it; `chance.process_std` is the standard deviation of that noise and must be greater than zero, since at zero every sampled trajectory is identical and the estimate is degenerate.
-
-The system model (a linear state-space model), the spec, the input bounds, and the mode come from configuration; `config/control_params.yaml` is a complete double-integrator example. The current state arrives on a `std_msgs/Float64MultiArray` topic, and the command goes out as a `sentil_ros/Control` message with a plain `Float64MultiArray` alongside for easy consumption. The message carries a real robustness and a `holds` verdict in the `open_loop` and `witness` modes, where the whole sequence is synthesized or falsified against the spec; the online `receding_horizon` and `safety_filter` modes return an input without a verdict, so they report robustness as NaN and `holds` as false, with `feasible` marking that an input was produced.
-
-The spec sits under a `spec` namespace here: give a raw formula under `spec.formula` (as in the double-integrator example), or a premade library specification under `spec.name` with an optional `spec.variant`. This is not the monitor node's shape, which takes a raw formula under `formula` and a library spec under `spec` directly, so a `spec: <name>` carried over from a monitor config belongs under `spec.name` in a control config.
-
-```
-ros2 launch sentil_ros sentil_control.launch.py
-```
-
-`examples/control_loop.py` closes the loop around it on a double integrator: it publishes the state, applies the synthesized command, and you watch the controller drive the position into the band the spec asks for. Pair this with the monitor node and you have a synthesize, monitor, and re-plan loop in ROS.
-
 ## Contributing
 
-With `SentilCpp` installed (see the build above), build and test just this package:
+With `SentilCpp` on `SENTIL_PREFIX` (see the build above), build and test this package on its own:
 
-```
-colcon build --packages-select sentil_ros
+```bash
+colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
 colcon test --packages-select sentil_ros --return-code-on-test-failure
 ```
 
 The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-## Credits and license
+## Documentation
 
-SENTIL is the work of Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab. Dual licensed under MIT or Apache-2.0.
+The [documentation site](https://sentil.pages.dev) carries the ROS guide, the formula syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The `config/` and `examples/` directories ship the configs and launch files shown here, plus the mobile-robot monitor in `config/robot_nav.yaml` and the robot-arm controller in `config/arm_control.yaml`.
+
+## Citation
+
+If SENTIL is useful in your work, please cite the paper:
+
+```bibtex
+@misc{quansah2026sentilruntimeverificationtool,
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    author={Paapa Kwesi Quansah and Ernest Bonnah},
+    year={2026},
+    eprint={2605.21676},
+    archivePrefix={arXiv},
+    primaryClass={cs.LO},
+    url={https://arxiv.org/abs/2605.21676}
+}
+```
+
+## License
+
+SENTIL is by Paapa Kwesi Quansah and Ernest Bonnah at the SEDIS lab, Baylor University. It is dual licensed under either [MIT](../LICENSE-MIT) or [Apache-2.0](../LICENSE-APACHE), at your option.

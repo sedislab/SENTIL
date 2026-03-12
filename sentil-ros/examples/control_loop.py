@@ -16,7 +16,6 @@ from std_msgs.msg import Float64MultiArray
 
 from sentil_ros.msg import Control
 
-
 class Plant(Node):
     def __init__(self):
         super().__init__("double_integrator_plant")
@@ -40,7 +39,6 @@ class Plant(Node):
             vel += u * dt
             print("pos {:6.3f}  vel {:6.3f}  u {:6.3f}".format(pos, vel, u))
 
-
 def main():
     rclpy.init()
     plant = Plant()
@@ -50,7 +48,6 @@ def main():
         plant.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

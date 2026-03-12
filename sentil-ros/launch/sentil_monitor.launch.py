@@ -1,8 +1,4 @@
-"""Bring up the SENTIL monitor as a managed lifecycle node.
-
-By default it configures and activates on launch, so a single command starts
-monitoring; set autostart:=false to drive the lifecycle transitions yourself.
-"""
+"""Bring up the SENTIL monitor as a managed lifecycle node."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
@@ -14,7 +10,6 @@ from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 from launch_ros.substitutions import FindPackageShare
 from lifecycle_msgs.msg import Transition
-
 
 def generate_launch_description():
     params_file = LaunchConfiguration("params_file")

@@ -1,6 +1,4 @@
-# The running satisfaction probability of a P~p formula, estimated online over the
-# lifted particle ensemble, with a Wilson interval at ci_confidence over satisfactions
-# out of samples.
+# The running satisfaction probability of a P~p formula.
 std_msgs/Header header
 string formula_id
 float64 estimate
