@@ -1,4 +1,14 @@
-# sentil-cli
+<div align="center">
+
+# SENTIL
+
+#### The command-line tool for Probabilistic Signal Temporal Logic
+
+[![CLI](https://img.shields.io/badge/CLI-Homebrew%20%7C%20Scoop%20%7C%20Winget-blue.svg)](#install)
+[![Website](https://img.shields.io/badge/docs-sentil.pages.dev-blue.svg)](https://sentil.pages.dev)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#credits-and-license)
+
+</div>
 
 The `sentil` command-line tool. It runs the SENTIL engine directly, with no library boundary, so it is as fast as the Rust core, and it is built for a pipe: data on stdout, logs on stderr, a verdict you can branch on, and a stable JSON contract.
 
@@ -6,15 +16,21 @@ SENTIL is a runtime verification engine for Signal Temporal Logic and its probab
 
 ## Install
 
-The released binary is self-contained; you do not need the Rust toolchain to run it.
+The released binary is self-contained, so you do not need the Rust toolchain to run it.
+
+### Package managers
 
 - Homebrew: `brew install sedislab/sentil/sentil`
 - Scoop: `scoop bucket add sedislab https://github.com/sedislab/scoop-sentil; scoop install sentil`
 - Winget: `winget install SEDIS.SENTIL`
-- GitHub Releases: download the archive for your platform from the releases page, unpack it, and put `sentil` on your `PATH`. Each archive also carries the shell completions and the man page.
-- Raspberry Pi and other ARM Linux: see the `release-pi` artifacts and `docs/REPRODUCE.md`.
 
-From source, with the Rust toolchain:
+### Prebuilt release
+
+Download the archive for your platform from the [GitHub release](https://github.com/sedislab/SENTIL/releases), unpack it, and put `sentil` on your `PATH`. Each archive also carries the shell completions and the man page. On a Raspberry Pi or other ARM Linux, use the `release-pi` artifacts; `docs/REPRODUCE.md` has the detail.
+
+### Build from source
+
+With the Rust toolchain:
 
 ```
 cargo install --path sentil-cli
