@@ -1,0 +1,28 @@
+// Barkai-Leibler circadian gene-regulatory network as a CTMC
+
+const int N = 1000;
+const real TIME_BOUND = 20.0;
+const int TARGET = 100;
+
+int(0..N) a = 10;
+int(0..N) r = 10;
+int(0..N) ma = 5;
+int(0..N) mr = 5;
+
+property P_Activator = Pmax(<>[T<=TIME_BOUND] (a >= TARGET));
+
+process Circadian()
+{
+   alt {
+   :: when(a < N)          rate(1.0 * (1 + a)) {= ma = min(ma + 1, N) =}   // transcription A
+   :: when(ma > 0)         rate(0.5 * ma)      {= a = min(a + 1, N) =}     // translation A
+   :: when(a > 0)          rate(0.2 * a)       {= a = a - 1 =}             // degradation A
+   :: when(r < N)          rate(1.0 * (1 + a)) {= mr = min(mr + 1, N) =}   // transcription R
+   :: when(mr > 0)         rate(0.5 * mr)      {= r = min(r + 1, N) =}     // translation R
+   :: when(r > 0)          rate(0.2 * r)       {= r = r - 1 =}             // degradation R
+   :: when(a > 0 && r > 0) rate(10.0 * a * r)  {= a = a - 1, r = r - 1 =}  // complex formation
+   };
+   Circadian()
+}
+
+Circadian()

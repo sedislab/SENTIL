@@ -1,0 +1,46 @@
+// Biodiesel reactor: Arrhenius transesterification on a fixed Euler step, with a small per-step chance that the heater fails.
+
+const real DT = 0.01;
+const int MAX_STEPS = 10000;
+const real TARGET_CONVERSION = 0.99;
+
+real x_e = 0.0;      // ester fraction
+real x_tg = 1.0;     // triglyceride fraction
+real temp = 300.0;   // K
+real heater = 1.0;   // 1.0 on, 0.0 off
+int step = 0;
+bool reached = false;
+
+function real k1(real t) = 40000.0 * exp(-5000.0 / t);
+function real k2(real t) = 2000.0 * exp(-5500.0 / t);
+function real r1(real t, real tg, real e) = k1(t) * tg * (1.0 - e);
+function real r2(real t, real tg) = k2(t) * tg * tg;
+function real heat_input(real h, real t) = h > 0.5 ? 500.0 * (350.0 - t) : 10.0 * (298.0 - t);
+function real d_temp(real h, real t, real tg, real e) = 0.05 * heat_input(h, t) + 10.0 * r1(t, tg, e);
+
+property PrSuccess = Pmax(<> reached);
+
+process Step()
+{
+   {=
+      x_e = max(0.0, x_e + 3.0 * r1(temp, x_tg, x_e) * DT),
+      x_tg = max(0.0, x_tg + (-r1(temp, x_tg, x_e) - r2(temp, x_tg)) * DT),
+      temp = temp + d_temp(heater, temp, x_tg, x_e) * DT,
+      step = step + 1
+   =}
+}
+
+process Simulate()
+{
+   do {
+   :: when(x_e >= TARGET_CONVERSION) {= reached = true =}; break
+   :: when(step >= MAX_STEPS) break
+   :: when(step < MAX_STEPS && x_e < TARGET_CONVERSION)
+      tau palt {
+      :2:    {= heater = 0.0 =}; Step()   // heater fails on 0.02 percent of steps
+      :9998: Step()
+      }
+   }
+}
+
+Simulate()

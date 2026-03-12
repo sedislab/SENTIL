@@ -1,0 +1,60 @@
+// Powertrain air-fuel-ratio control on a fixed step, under sinusoidal demand, throttle-driven disturbances, measurement noise, and rare spikes.
+
+const real DT = 0.05;
+const real TIME_BOUND = 50.0;
+const real AFR_LOW = 14.3;
+const real AFR_HIGH = 15.1;
+const real AFR_TARGET = 14.7;
+
+real afr = 14.7;
+real throttle = 10.0;
+real time = 0.0;
+real min_robustness = 1000.0;
+real controller_eff = 0.8;
+bool failed = false;
+
+real dist_mag = 0.0;
+real dist_sign = 1.0;
+real spike = 0.0;
+real noise = 0.0;
+
+function real demand(real t) = 40.0 + 25.0 * sin(t * 0.6) + 10.0 * sin(t * 1.5);
+function real rob(real v) = min(v - AFR_LOW, AFR_HIGH - v);
+
+property PrSuccess = Pmax(<> (time >= TIME_BOUND && !failed));
+
+process Step()
+{
+   urgent tau {=
+      dist_mag = abs((demand(time) - throttle) * DT * 12.0) * 0.4,
+      dist_sign = Uniform(0.0, 1.0) < 0.5 ? -1.0 : 1.0,
+      noise = (Uniform(0.0, 1.0) - 0.5) * 0.15,
+      spike = Uniform(0.0, 1.0) < 0.01 ? (Uniform(0.0, 1.0) - 0.5) * 0.8 : 0.0,
+      throttle = throttle + (demand(time) - throttle) * DT * 12.0
+   =};
+   urgent tau {=
+      afr = afr + (controller_eff * 2.5 * (AFR_TARGET - afr) + dist_mag * dist_sign + spike) * DT
+            + noise * sqrt(DT)
+   =};
+   urgent tau {=
+      min_robustness = min(min_robustness, rob(afr)),
+      failed = min(min_robustness, rob(afr)) < 0.0,
+      time = time + DT
+   =}
+}
+
+process Simulate()
+{
+   do {
+   :: when(time >= TIME_BOUND || failed) break
+   :: when(time < TIME_BOUND && !failed) Step()
+   }
+}
+
+process Main()
+{
+   urgent tau {= controller_eff = Uniform(0.6, 1.0) =};
+   Simulate()
+}
+
+Main()
