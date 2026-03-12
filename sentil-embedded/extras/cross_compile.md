@@ -1,31 +1,24 @@
-# Building the static library for a board
+# Building SENTIL for a board
 
-The Arduino library ships a precompiled static archive per architecture under
-`src/<mcu>/libsentil_embedded.a`, plus `src/Sentil.h` and `src/Sentil.cpp`. The
-release workflow builds these archives; this file is the recipe to reproduce them
-or to add a board.
+The Arduino library ships a precompiled static archive per architecture under `src/<mcu>/libsentil_embedded.a`, plus `src/Sentil.h` and `src/Sentil.cpp`. Check GitHub Releases for these. This file is so that you can reproduce them or build SENTIL for a new board.
 
 ## Toolchain
 
-The archive is a `no_std` Rust static library. Install the Rust toolchain and the
-targets you need:
+The archive is a `no_std` Rust static library. Install the Rust toolchain and the targets you need:
 
-```
+```bash
 rustup target add thumbv7em-none-eabihf      # Cortex-M4F / M7 (SAMD51, STM32F4, Teensy)
 rustup target add thumbv6m-none-eabi          # Cortex-M0+ (RP2040, SAMD21)
 rustup target add riscv32imac-unknown-none-elf # RV32 with atomics (ESP32-C6, some RP2350 builds)
 ```
 
-ESP32 Xtensa needs the Espressif fork rather than a stock target. Install it with
-`espup` and build with `+esp` against `xtensa-esp32-none-elf`; the recipe is
-otherwise the same.
+ESP32 Xtensa needs the Espressif fork rather than a stock target. Install it with `espup` and build with `+esp` against `xtensa-esp32-none-elf`; the recipe is otherwise the same.
 
 ## Build
 
-From `sentil-embedded/rust`, build the archive for the board's core, with the
-allocator and the parser on:
+From `sentil-embedded/rust`, build the archive for the board's core, with the allocator and the parser on:
 
-```
+```bash
 cargo build --release --features mcu --target thumbv7em-none-eabihf
 ```
 
@@ -33,7 +26,7 @@ The archive lands at `rust/target/<triple>/release/libsentil_embedded.a`. Drop t
 parser on the smallest boards to save flash and load a host-compiled formula
 instead (see below):
 
-```
+```bash
 cargo build --release --no-default-features --features mcu --target thumbv6m-none-eabi
 ```
 
@@ -50,37 +43,27 @@ for the board's `build.mcu`. Copy the built archive there:
 | riscv32imac-unknown-none-elf | `src/esp32c6/` | ESP32-C6 |
 | xtensa-esp32-none-elf | `src/esp32/` | ESP32 |
 
-```
+```bash
 cp rust/target/thumbv7em-none-eabihf/release/libsentil_embedded.a src/cortex-m4/
 ```
 
 ## Link-time dependencies
 
 The archive bundles a single-core `critical-section` implementation for the heap
-allocator, from the `cortex-m` crate on ARM and the `riscv` crate on RISC-V, so
-firmware that provides no other one still links. This assumes the monitor runs on
-a single core; on a dual-core part such as the RP2040, keep all SENTIL calls on
-one core, or link a multicore critical-section from the board HAL instead, in
-which case build the archive without the bundled one.
+allocator, from the `cortex-m` crate on ARM and the `riscv` crate on RISC-V, so no other firmware can still link. This assumes the monitor runs on a single core; on a dual-core part such as the RP2040, keep all SENTIL calls on one core, or link a multicore critical-section from the board HAL instead, in which case build the archive without the bundled one.
 
-Beyond that the archive needs only the standard `memcpy`, `memset`, and the
-`libm` math symbols, which every Arduino, ESP-IDF, and Zephyr core links.
+Beyond that the archive needs only the standard `memcpy`, `memset`, and the `libm` math symbols, which every Arduino, ESP-IDF, and Zephyr core links.
 
 ## Heap budget
 
-The monitor allocates from the fixed region passed to `sentil_embedded_init`. A
-formula's state is proportional to its temporal windows, not the trace, so a few
-kilobytes hold a typical monitor; the examples reserve 4 KB. A bounded operator is
-predictable; an unbounded `eventually` keeps growing its history, so prefer
-bounded or past operators on a device. Exhausting the heap halts the board, so
-size the region for the worst-case window and leave headroom.
+The monitor allocates from the fixed region passed to `sentil_embedded_init`. A few kilobytes hold a typical monitor; the examples reserve 4 KB. Exhausting the heap halts the board, so size the region for the worst-case window and leave headroom.
 
 ## The smallest boards: a host-compiled formula
 
 A board with little flash can drop the parser. Compile the formula on a
 workstation and paste the bytes into the sketch:
 
-```
+```bash
 cargo run --features std --bin sentil-compile-formula -- "historically[0, 8](level < 900)"
 ```
 

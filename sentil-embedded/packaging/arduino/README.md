@@ -14,23 +14,37 @@ The SENTIL embedded engine packaged as an Arduino library. It carries `Sentil.h`
 
 ## Install
 
-The three paths are the same on Windows, macOS, and Linux; only the menu location moves.
+The install paths are the same on Windows, macOS, and Linux; only the IDE menu location moves.
 
-### Package Manager
+### Package manager
 
-Open the Arduino IDE, go to Tools, Manage Libraries (the Library Manager icon in the side bar on IDE 2.x), search for Sentil, and click Install. This keeps the library updated alongside the IDE.
-
-### Prebuilt release
-
-Download [`sentil-arduino.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-arduino.zip) from the Releases tab, then choose Sketch, Include Library, Add .ZIP Library, and pick the file. The bundled sketches then appear under File, Examples, Sentil.
-
-Arduino CLI, on any OS:
+Open the Arduino IDE, go to Tools, Manage Libraries (the Library Manager icon in the side bar on IDE 2.x), search for Sentil, and click Install. This keeps the library updated alongside the IDE. From a terminal the same install is:
 
 ```bash
 arduino-cli lib install Sentil
-# or, from the downloaded zip:
+```
+
+### Prebuilt release
+
+Download [`sentil-arduino.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-arduino.zip) from the Releases tab, then choose Sketch, Include Library, Add .ZIP Library, and pick the file. The bundled sketches then appear under File, Examples, Sentil. 
+
+From a terminal, point `arduino-cli` at the downloaded archive:
+
+```bash
 arduino-cli lib install --zip-path sentil-arduino.zip
 ```
+
+### Build from source
+
+To rebuild the shipped archives, or to add a core the package does not cover, build the static library from `sentil-embedded/rust`:
+
+```bash
+cargo build --release --features mcu --target thumbv7em-none-eabihf
+# smallest-flash boards, dropping the text parser and synthesis:
+cargo build --release --no-default-features --features mcu --target thumbv6m-none-eabi
+```
+
+The archive lands at `rust/target/<triple>/release/libsentil_embedded.a`; copy it to `src/<mcu>/libsentil_embedded.a`, where the Arduino build looks for it. `extras/cross_compile.md` lists the target triple and `src/<mcu>` folder for every core. To confirm a rebuilt archive still reproduces the cross-language robustness oracle, run `make -C sentil-embedded test`.
 
 ## A first sketch
 
@@ -80,7 +94,7 @@ The pieces, in order. Include `Sentil.h`. Keep the `SentilMonitor` and the byte 
 
 Open the Serial Monitor at 115200 baud. The reading dips to `-0.5` on the fourth step, and because `historically` keeps the worst value seen so far, the margin drops there and stays down:
 
-```
+```bash
 x=3.00  robustness=3.00  (holds)
 x=1.50  robustness=1.50  (holds)
 x=2.00  robustness=1.50  (holds)
@@ -102,18 +116,6 @@ Four sketches ship under File, Examples, Sentil, each a complete program:
 - `StreamingThreshold` checks `historically[0, 8](level < 900)` against the A0 input and lights the built-in LED when the recent window crosses the limit, so one stray spike does not trip the alarm.
 - `Controller` builds a single-integrator plant and the spec `always (x > 0)`, then plans and applies an input each step with the receding-horizon controller. It reserves 8 KB, since the synthesis layer needs more heap than the bare monitor.
 - `Benchmark` times `historically[0, 16](x > 0)` with `micros()` over 2000 updates and reports the mean, minimum, and maximum per-update cost on your board.
-
-## Build the archive from source
-
-To rebuild the shipped archives, or to add a core the package does not cover, install the Rust toolchain and build the static library from `sentil-embedded/rust`:
-
-```
-cargo build --release --features mcu --target thumbv7em-none-eabihf
-# smallest-flash boards, dropping the text parser and synthesis:
-cargo build --release --no-default-features --features mcu --target thumbv6m-none-eabi
-```
-
-The archive lands at `rust/target/<triple>/release/libsentil_embedded.a`; copy it to `src/<mcu>/libsentil_embedded.a`, where the Arduino build looks for it. `extras/cross_compile.md` lists the target triple and `src/<mcu>` folder for every core. To confirm a rebuilt archive still reproduces the cross-language robustness oracle, run `make -C sentil-embedded test`.
 
 ## Docs and license
 

@@ -1,13 +1,4 @@
 // Controller: plan and run a receding-horizon controller on the board.
-//
-// The plant is a single integrator x_{t+1} = x_t + u_t, and the spec asks x to
-// stay above zero. Each loop the controller plans an input from the live state
-// within a fixed step budget, the plant advances under the input and a steady
-// disturbance pulling it down, and both are printed over serial. This is the same
-// engine the desktop tools use, planning in real time on the chip.
-//
-// Synthesis needs more heap than the bare monitor, so this reserves 8 KB. Build
-// the archive with the synthesis feature, which is on by default.
 #include <Sentil.h>
 
 static sentil_embedded_controller_t* controller = nullptr;

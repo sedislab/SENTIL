@@ -1,9 +1,4 @@
-// Benchmark: measure the per-update cost of the streaming monitor on this board.
-//
-// It feeds a bounded-window formula a batch of samples, times each update with
-// micros(), and prints the mean, minimum, and maximum over serial. The result is
-// hardware-bound, so record it against the board it ran on; the claims ledger
-// holds the reference figure.
+// Benchmark: the per-update cost of the streaming monitor on this board.
 #include <Sentil.h>
 
 static SentilMonitor monitor;

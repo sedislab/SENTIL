@@ -1,11 +1,5 @@
 # Maintainer: Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>
 
-# Binary package for the prebuilt SENTIL C library and the sentil CLI. The core
-# is Rust, built once and attached to the GitHub release, so this package unpacks
-# the release archives rather than compiling. The two sha256 entries are filled by
-# the release-pacman workflow from the published assets; a checked-in PKGBUILD
-# carries the named placeholder tokens so it is never published with a stale hash.
-
 pkgname=sentil
 pkgver=0.3.0
 pkgrel=1
@@ -28,9 +22,6 @@ sha256sums=('REPLACE_WITH_X86_64_LINUX_CABI_SHA256'
 package() {
   cd "${srcdir}"
 
-  # The C library, header, and the pkg-config and CMake discovery files. The
-  # bundled sentil.pc points at /usr/local from the build host, so retarget it to
-  # the package prefix here.
   install -Dm755 "${_cabi}/lib/libsentil.so" "${pkgdir}/usr/lib/libsentil.so"
   install -Dm644 "${_cabi}/lib/libsentil.a" "${pkgdir}/usr/lib/libsentil.a"
   install -Dm644 "${_cabi}/include/sentil.h" "${pkgdir}/usr/include/sentil.h"
@@ -58,7 +49,6 @@ package() {
       "${pkgdir}/usr/share/fish/vendor_completions.d/sentil.fish"
   fi
 
-  # Dual license, as the AUR expects for a non-standard combination.
   install -Dm644 "${_cli}/LICENSE-MIT" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
   install -Dm644 "${_cli}/LICENSE-APACHE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-APACHE"
 }

@@ -1,20 +1,9 @@
-// BasicMonitor: the simplest SENTIL monitor on a board.
-//
-// It watches whether a value has stayed positive since power-on, using the
-// past-time "historically" operator, which settles to a verdict at every step.
-// Feed a reading each loop and read the robustness back: positive is the margin
-// by which the property still holds, negative is how far it has been violated.
-// Open the Serial Monitor at 115200 baud to follow along.
-//
-// Past operators suit a real-time loop because they decide from the samples
-// already seen. A future operator such as "always" needs samples that have not
-// arrived yet, so it would stay provisional until its window closes.
+// BasicMonitor: has the reading stayed positive since power-on?
 #include <Sentil.h>
 
 static SentilMonitor monitor;
 static uint8_t sentil_heap[4096];
 
-// A short script of readings, cycled so the dip below zero is easy to see.
 static const double readings[] = {3.0, 1.5, 2.0, -0.5, 4.0};
 static const size_t reading_count = sizeof(readings) / sizeof(readings[0]);
 static unsigned long step = 0;
