@@ -1,0 +1,102 @@
+name: release-autosar
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deliverable:
+    name: ap deliverable tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: pack the service model, manifests, and app source
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version="0.3.0"
+          out="sentil-autosar-adaptive-${version}-ap-deliverable"
+          mkdir -p "$out"
+          cd sentil-autosar-adaptive
+          cp -r model manifest src include cmake codegen CMakeLists.txt README.md "../$out/" 2>/dev/null || true
+          cd ..
+          tar czf "${out}.tar.gz" "$out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ap-deliverable
+          path: sentil-autosar-adaptive-*-ap-deliverable.tar.gz
+
+  packages:
+    name: deb and rpm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake libboost-all-dev rpm
+      - name: build the SENTIL core and stage the install tree
+        run: |
+          cargo build --release -p sentil-ffi
+          root="$PWD/sentil-root"
+          install -d "$root/lib" "$root/include/sentil"
+          install -m644 target/release/libsentil.so "$root/lib/"
+          install -m644 sentil-ffi/include/sentil.h "$root/include/"
+          cp sentil-cpp/include/sentil/*.hpp "$root/include/sentil/"
+          echo "SENTIL_ROOT=$root" >> "$GITHUB_ENV"
+      - name: build vsomeip
+        run: |
+          git clone --depth 1 --branch 3.7.3 https://github.com/COVESA/vsomeip
+          cmake -S vsomeip -B vsomeip/build -G Ninja \
+            -DCMAKE_INSTALL_PREFIX="$PWD/vsomeip-install" \
+            -DCMAKE_BUILD_TYPE=Release -DENABLE_SIGNAL_HANDLING=1
+          ninja -C vsomeip/build
+          ninja -C vsomeip/build install
+          echo "VSOMEIP_ROOT=$PWD/vsomeip-install" >> "$GITHUB_ENV"
+      - name: build the adaptive apps against the stub
+        run: |
+          cmake -S sentil-autosar-adaptive -B build -G Ninja \
+            -DSENTIL_AP_VENDOR=stub -DSENTIL_ROOT="$SENTIL_ROOT" \
+            -DCMAKE_PREFIX_PATH="$VSOMEIP_ROOT"
+          ninja -C build
+      - name: assemble the /opt/sentil tree
+        run: |
+          P=pkgroot/opt/sentil
+          install -d "$P/bin" "$P/lib" "$P/manifest" "$P/etc/vsomeip" pkgroot/etc/ld.so.conf.d
+          install -m755 build/sentil_monitor build/sentil_control "$P/bin/"
+          install -m644 "$SENTIL_ROOT/lib/libsentil.so" "$P/lib/"
+          cp -a "$VSOMEIP_ROOT/lib/"libvsomeip3* "$P/lib/"
+          install -m644 sentil-autosar-adaptive/manifest/*.json "$P/manifest/"
+          install -m644 sentil-autosar-adaptive/manifest/vsomeip/*.json "$P/etc/vsomeip/"
+          echo /opt/sentil/lib > pkgroot/etc/ld.so.conf.d/sentil-autosar.conf
+      - name: build deb and rpm with nfpm
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version="0.3.0"
+          export SENTIL_VERSION="$version" NFPM_ARCH=amd64
+          cd sentil-autosar-adaptive
+          mkdir -p ../dist
+          ln -s ../../pkgroot pkgroot
+          "$(go env GOPATH)/bin/nfpm" package --config packaging/nfpm.yaml --packager deb --target ../dist/
+          "$(go env GOPATH)/bin/nfpm" package --config packaging/nfpm.yaml --packager rpm --target ../dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autosar-packages
+          path: dist/*
+
+  release:
+    name: attach to the release
+    needs: [deliverable, packages]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/**/*

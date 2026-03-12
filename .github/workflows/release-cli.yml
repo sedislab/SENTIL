@@ -65,6 +65,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: assets }
+      - name: make the tap public if it is private
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then exit 0; fi
+          priv=$(gh api repos/sedislab/homebrew-sentil --jq .private 2>/dev/null || echo "")
+          if [ "$priv" = "true" ]; then gh api -X PATCH repos/sedislab/homebrew-sentil -f visibility=public; fi
       - name: fill and push to the tap
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -90,6 +97,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: assets }
+      - name: make the bucket public if it is private
+        env:
+          GH_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then exit 0; fi
+          priv=$(gh api repos/sedislab/scoop-sentil --jq .private 2>/dev/null || echo "")
+          if [ "$priv" = "true" ]; then gh api -X PATCH repos/sedislab/scoop-sentil -f visibility=public; fi
       - name: fill and push to the bucket
         env:
           BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}

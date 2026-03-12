@@ -1,4 +1,0 @@
-build/sentil_monitor opt/sentil/bin
-build/sentil_control opt/sentil/bin
-manifest/* opt/sentil/manifest
-manifest/vsomeip/* opt/sentil/etc/vsomeip

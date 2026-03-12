@@ -1,0 +1,32 @@
+name: sentil-autosar-adaptive
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${SENTIL_VERSION}
+release: "1"
+section: utils
+priority: optional
+maintainer: Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>
+vendor: SEDIS Lab, Baylor University
+homepage: https://github.com/sedislab/SENTIL
+license: MIT OR Apache-2.0
+description: |
+  SENTIL runtime verification and controller synthesis for the AUTOSAR Adaptive Platform.
+  The sentil_monitor and sentil_control applications speak ara::com over SOME/IP, carry the
+  compiled SENTIL core, and install under /opt/sentil. This build links the open-source
+  vsomeip transport so it runs on a plain Linux box; for an ECU, rebuild against the vendor
+  Adaptive Platform with its toolchain.
+contents:
+  - src: pkgroot/opt/sentil/bin/*
+    dst: /opt/sentil/bin/
+  - src: pkgroot/opt/sentil/lib/*
+    dst: /opt/sentil/lib/
+  - src: pkgroot/opt/sentil/manifest/*.json
+    dst: /opt/sentil/manifest/
+  - src: pkgroot/opt/sentil/etc/vsomeip/*.json
+    dst: /opt/sentil/etc/vsomeip/
+  - src: pkgroot/etc/ld.so.conf.d/sentil-autosar.conf
+    dst: /etc/ld.so.conf.d/sentil-autosar.conf
+    type: config
+scripts:
+  postinstall: packaging/nfpm-postinstall.sh
+  postremove: packaging/nfpm-postinstall.sh

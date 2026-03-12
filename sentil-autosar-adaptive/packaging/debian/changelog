@@ -1,5 +1,0 @@
-sentil-autosar-adaptive (0.3.0-1) unstable; urgency=medium
-
-  * The sentil_monitor and sentil_control Adaptive Platform applications over ara::com, with the bundled SENTIL core, installing to /opt/sentil.
-
- -- Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>  Mon, 02 Mar 2026 14:22:00 -0600
