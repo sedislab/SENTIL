@@ -650,7 +650,7 @@ theorem deque_sliding_window_min_correct (stream : Deque Nat) (w : Nat)
   le_antisymm hab hba := Nat.le_antisymm hba hab
   le_total a b := Nat.le_total b a
 
-/-- Windowed maximum (the `eventually` monitor) -/
+/-- the `eventually` monitor -/
 theorem deque_sliding_window_max_correct (stream : Deque Nat) (w : Nat)
     (h_ti : TimeIncr stream) (hne : stream ≠ []) :
     ((@processN Nat NatOrdDual stream w).head?.map (·.value))

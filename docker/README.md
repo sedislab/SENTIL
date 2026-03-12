@@ -20,7 +20,7 @@ You can also compose the image yourself to run specific tests or benchmarks. Ins
 
 From the repository root, build the base image and run the CPU claim tier:
 
-```
+```bash
 docker compose -f docker/docker-compose.yml run --rm sentil-verify
 ```
 
@@ -30,13 +30,13 @@ This builds the core, runs the engine suite including the deterministic oracle a
 
 The GPU rare-event and synthesis-batching paths need an NVIDIA GPU reached through the [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). On a host with a GPU and the toolkit installed:
 
-```
+```bash
 docker compose -f docker/docker-compose.yml run --rm sentil-gpu
 ```
 
 or, with plain docker:
 
-```
+```bash
 docker build -f docker/Dockerfile --target gpu -t ghcr.io/sedislab/sentil-artifact:0.3.0-gpu .
 docker run --gpus all ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
 ```
@@ -45,4 +45,4 @@ The GPU stage is verified on a machine with a GPU, not in continuous integration
 
 ## Without Docker
 
-HPC environments usually have no Docker. The same verification runs directly through the Makefile and cargo: `cargo test -p sentil` for the engine suite and `make -C sentil-ffi test-ffi` for the C ABI. The GPU tier runs inside an interactive allocation on a node with a device.
+The same verification runs directly through the Makefile and cargo: `cargo test -p sentil` for the engine suite and `make -C sentil-ffi test-ffi` for the C ABI.
