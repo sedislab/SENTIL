@@ -18,6 +18,7 @@ TOOL = {
     "breach": _OKABE_ITO["orange"],
     "uppaal": _OKABE_ITO["purple"],
     "prism": _OKABE_ITO["green"],
+    "modest": _OKABE_ITO["orange"],
     "moonlight": _OKABE_ITO["sky"],
     "banquo": _OKABE_ITO["purple"],
 }
