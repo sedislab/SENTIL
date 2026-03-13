@@ -278,15 +278,20 @@ def particles(records):
     save(fig, "particles.png")
 
 def smc_circadian(records):
-    s = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "sentil"), None)
-    p = next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == "prism"), None)
+    def pick(tool):
+        return next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == tool), None)
+    s, p = pick("sentil"), pick("prism")
     if not s or not p:
         return
+    bars = [("SENTIL", s, style.TOOL["sentil"]), ("PRISM", p, style.TOOL["prism"])]
+    m = pick("modest")
+    if m:
+        bars.append(("Modest", m, style.TOOL["modest"]))
     fig, ax = plt.subplots(figsize=(5.8, 4.8))
-    tools = ["SENTIL", "PRISM"]
-    secs = [s["time_ms"] / 1000.0, p["time_ms"] / 1000.0]
-    probs = [s["probability"], p["probability"]]
-    rects = ax.bar(tools, secs, color=[style.TOOL["sentil"], style.TOOL["prism"]], width=0.5, zorder=3)
+    tools = [label for label, _, _ in bars]
+    secs = [r["time_ms"] / 1000.0 for _, r, _ in bars]
+    probs = [r["probability"] for _, r, _ in bars]
+    rects = ax.bar(tools, secs, color=[c for _, _, c in bars], width=0.5, zorder=3)
     ax.set_ylabel("seconds for 10,000 samples (lower is faster)")
     ax.set_title("Statistical model checking the circadian CTMC")
     ax.set_ylim(top=max(secs) * 1.25)
