@@ -1,0 +1,4 @@
+{"tool":"modest","version":"3.1.301","benchmark":"smc/biodiesel","model":"biodiesel_reactor","property":"Pmax(<> reached)","probability":0.1926,"ci_half_width":0.007778306772488822,"samples":10000,"time_ms":176400.0}
+{"tool":"modest","version":"3.1.301","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"Pmax(<>[T<=20] (a >= 100))","probability":0.038,"ci_half_width":0.003798328666593704,"samples":10000,"time_ms":73000.0}
+{"tool":"modest","version":"3.1.301","benchmark":"smc/powertrain","model":"powertrain_afr","property":"Pmax(<> (time >= 50 && !failed))","probability":0.5008,"ci_half_width":0.009848606869371584,"samples":10000,"time_ms":30100.0}
+{"tool":"modest","version":"3.1.301","benchmark":"smc/tandem_queue","model":"tandem_queue","property":"Pmax(<>[T<=50] (q1 == 20 || q2 == 20))","probability":0.7201,"ci_half_width":0.008848313667360441,"samples":10000,"time_ms":10200.0}
