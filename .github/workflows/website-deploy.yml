@@ -96,3 +96,52 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy out --project-name=sentil --branch=main
+
+  verify:
+    name: check the deployment is live
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: wait for the site to answer
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://sentil.pages.dev/ || true)
+            [ "$code" = "200" ] && exit 0
+            echo "attempt $i: got ${code:-none}, retrying"
+            sleep 10
+          done
+          echo "the site never answered 200 on /"
+          exit 1
+      - name: probe every surface
+        run: |
+          fail=0
+          for path in / /docs /docs/start/first-monitor /docs/reference/language/grammar /playground \
+                      /sitemap.xml /robots.txt /llms.txt \
+                      /engine/py-worker.js /engine/sentil_engine.js /engine/sentil_engine_bg.wasm \
+                      /pyodide/pyodide.mjs /og/docs/image.png; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://sentil.pages.dev$path")
+            echo "$code  $path"
+            [ "$code" = "200" ] || fail=1
+          done
+          exit $fail
+      - name: check the content is the real site
+        run: |
+          curl -s https://sentil.pages.dev/ | grep -q 'SENTIL' || { echo "home is missing the wordmark"; exit 1; }
+          curl -s https://sentil.pages.dev/docs/start/first-monitor | grep -q 'robustness' || { echo "docs body missing"; exit 1; }
+          locs=$(curl -s https://sentil.pages.dev/sitemap.xml | grep -c '<loc>')
+          echo "sitemap urls: $locs"
+          [ "$locs" -gt 100 ] || { echo "sitemap looks truncated"; exit 1; }
+      - name: check the security headers took effect
+        run: |
+          headers=$(curl -s -D - -o /dev/null https://sentil.pages.dev/)
+          echo "$headers" | grep -qi 'content-security-policy' || { echo "no CSP"; exit 1; }
+          echo "$headers" | grep -qi 'strict-transport-security' || { echo "no HSTS"; exit 1; }
+          echo "$headers" | grep -qi 'x-content-type-options: nosniff' || { echo "no nosniff"; exit 1; }
+      - name: check the wasm serves with its own type
+        run: |
+          ct=$(curl -s -o /dev/null -w '%{content_type}' https://sentil.pages.dev/engine/sentil_engine_bg.wasm)
+          echo "wasm content-type: $ct"
+          case "$ct" in application/wasm*) ;; *) echo "wrong type, streaming instantiation will fall back"; exit 1;; esac
