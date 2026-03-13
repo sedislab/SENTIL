@@ -34,8 +34,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: website/package-lock.json
+      - name: screen the lockfile
+        run: npx --yes lockfile-lint --path package-lock.json --type npm --validate-https --allowed-hosts npm --validate-integrity
       - name: install with scripts blocked
         run: npm ci --ignore-scripts
+      - name: verify registry signatures
+        run: npm audit signatures
       - name: generate the mdx collections
         run: npx fumadocs-mdx
       - name: lint
