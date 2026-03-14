@@ -4,10 +4,10 @@ const real DT = 0.01;
 const int MAX_STEPS = 10000;
 const real TARGET_CONVERSION = 0.99;
 
-real x_e = 0.0;      // ester fraction
-real x_tg = 1.0;     // triglyceride fraction
-real temp = 300.0;   // K
-real heater = 1.0;   // 1.0 on, 0.0 off
+real x_e = 0.0; // ester fraction
+real x_tg = 1.0; // triglyceride fraction
+real temp = 300.0; // K
+real heater = 1.0; // 1.0 on, 0.0 off
 int step = 0;
 bool reached = false;
 
@@ -37,7 +37,7 @@ process Simulate()
    :: when(step >= MAX_STEPS) break
    :: when(step < MAX_STEPS && x_e < TARGET_CONVERSION)
       tau palt {
-      :2:    {= heater = 0.0 =}; Step()   // heater fails on 0.02 percent of steps
+      :2:    {= heater = 0.0 =}; Step() // heater fails on 0.02 percent of steps
       :9998: Step()
       }
    }

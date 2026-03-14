@@ -14,9 +14,9 @@ property P_Overflow = Pmax(<>[T<=TIME_BOUND] (q1 == C || q2 == C));
 process Tandem()
 {
    alt {
-   :: when(q1 < C)           rate(LAMBDA) {= q1 = q1 + 1 =}              // arrival
-   :: when(q1 > 0 && q2 < C) rate(MU1)    {= q1 = q1 - 1, q2 = q2 + 1 =} // serve into queue 2
-   :: when(q2 > 0)           rate(MU2)    {= q2 = q2 - 1 =}              // departure
+   :: when(q1 < C)           rate(LAMBDA) {= q1 = q1 + 1 =}
+   :: when(q1 > 0 && q2 < C) rate(MU1)    {= q1 = q1 - 1, q2 = q2 + 1 =}
+   :: when(q2 > 0)           rate(MU2)    {= q2 = q2 - 1 =}
    };
    Tandem()
 }
