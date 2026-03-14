@@ -1,0 +1,157 @@
+---
+title: "Handle errors across bindings"
+description: "Every SENTIL binding folds the C ABI status codes and the thread-local last error into its own idiomatic error type, so bad input raises a typed exception instead of crashing."
+---
+
+Nothing a caller does can crash SENTIL. A malformed formula, a variable the trace does not carry, a statistical check on a formula with no `P` operator: each returns a typed, informative error. The engine decides that at one place, the C ABI, and every binding wears the same failure in its own error type.
+
+## One error model underneath
+
+The core reports failure through the C ABI in two ways, and both carry a code and a message. A function that returns a status returns `sentil_error_t`, where `SENTIL_OK` is zero and every other value is a failure. A function that returns a handle or a number returns a sentinel instead, a null pointer or a `NaN`, and leaves the reason on the calling thread, readable through `sentil_get_last_error_code` and `sentil_get_last_error`. The canonical code table, with what raises each code and the worked C read, is the [error codes reference](/docs/reference/methods/error-codes).
+
+The message is specific. A parse error points at the column, a dimension mismatch states both lengths, an out-of-range probability states the value and the valid range. Every binding surfaces that same message on its own exception.
+
+<Callout type="warn">
+The pointer from `sentil_get_last_error` is borrowed and per-thread. It stays valid only until the next SENTIL call on that thread, and it must never be freed. The bindings copy it into an owned string the moment a failure is raised, which is why the exception you catch keeps its message for as long as you hold it.
+</Callout>
+
+## Three failure kinds
+
+Every binding groups the status codes into three error subtypes: a parse failure, a meaning failure, and an evaluation failure. The table maps each C ABI status to the family it belongs to.
+
+| C ABI status | Code | Family |
+|---|---|---|
+| `SENTIL_ERR_PARSE` | 3 | Parse |
+| `SENTIL_ERR_UNKNOWN_VARIABLE` | 4 | Semantic |
+| `SENTIL_ERR_NOT_PROBABILISTIC` | 7 | Semantic |
+| `SENTIL_ERR_UNSUPPORTED` | 13 | Semantic |
+| `SENTIL_ERR_NULL_POINTER` | 1 | Evaluation |
+| `SENTIL_ERR_UTF8` | 2 | Evaluation |
+| `SENTIL_ERR_EVALUATION` | 5 | Evaluation |
+| `SENTIL_ERR_TRACE` | 6 | Evaluation |
+| `SENTIL_ERR_INVALID_NOISE_MODEL` | 8 | Evaluation |
+| `SENTIL_ERR_INVALID_CONFIG` | 9 | Evaluation |
+| `SENTIL_ERR_FIT` | 10 | Evaluation |
+| `SENTIL_ERR_INGEST` | 11 | Evaluation |
+| `SENTIL_ERR_SPLITTING` | 12 | Evaluation |
+| `SENTIL_ERR_TRANSPILATION` | 14 | Evaluation |
+| `SENTIL_ERR_GPU` | 15 | Evaluation |
+| `SENTIL_ERR_JSON` | 16 | Evaluation |
+| `SENTIL_ERR_PANIC` | 17 | Evaluation |
+
+A parse family error means the formula text is malformed. A semantic error means the text parsed but says something the engine cannot act on: an unknown variable, a statistical check on a deterministic formula, a construct the current build does not carry. An evaluation error covers the rest, from a bad noise model to a trace that will not load. The full per-code reference is on the [error codes page](/docs/reference/methods/error-codes).
+
+## The type each binding raises
+
+The families carry the same names everywhere, so a reader who learned the Python hierarchy already knows the Julia one. Catch the base type to handle any failure, or a subtype to separate the kinds.
+
+| Binding | Base type | Parse | Semantic | Evaluation |
+|---|---|---|---|---|
+| Rust | `sentil::Error` (enum) | `Error::Parse` | `Error::UnknownVariable`, `Error::NotProbabilistic`, `Error::Unsupported` | `Error::InvalidConfig`, `Error::SignalLengthMismatch`, and the rest |
+| Python | `SentilError` | `ParseError` | `SemanticError` | `EvaluationError` |
+| C++ | `sentil::SentilError` | `sentil::ParseError` | `sentil::SemanticError` | `sentil::EvaluationError` |
+| Java | `SentilException` (checked) | `ParseException` | `SemanticException` | `EvaluationException` |
+| Julia | `SentilError` (abstract) | `ParseError` | `SemanticError` | `EvaluationError` |
+| MATLAB | `MException` | `sentil:parse` | `sentil:semantic` | `sentil:evaluation` |
+
+Rust matches directly on the core's `Error` enum, which is finer-grained than three variants; the grouping above is how the other bindings fold those variants down. Every subtype carries the originating status code, so you can branch on the code when you need to and read the message when you want to explain the failure to a user. C has no type hierarchy of its own, so a C caller reads `sentil_get_last_error_code` and switches on the `sentil_error_t` value.
+
+## A caught bad input
+
+The same mistake in each language, a formula that stops after the comparison operator. Every binding raises its parse type, and the program keeps running.
+
+<Tabs groupId="lang" persist items={["Python","Rust","C","C++","Java","Julia","MATLAB"]}>
+<Tab value="Python">
+```python
+from sentil import Formula, ParseError, SentilError
+
+try:
+    phi = Formula.parse("G (speed >")
+except ParseError as e:
+    print(f"could not parse: {e}")
+except SentilError as e:
+    print(f"sentil error: {e}")
+```
+</Tab>
+<Tab value="Rust">
+```rust
+use sentil::{Error, Formula};
+
+match Formula::parse("G (speed >") {
+    Ok(phi) => { /* use phi */ }
+    Err(Error::Parse(e)) => eprintln!("could not parse: {e}"),
+    Err(e) => eprintln!("sentil error: {e}"),
+}
+```
+</Tab>
+<Tab value="C++">
+```cpp
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+try {
+    auto phi = sentil::Formula::parse("G (speed >");
+} catch (const sentil::ParseError& e) {
+    std::cerr << "could not parse: " << e.what() << "\n";
+} catch (const sentil::SentilError& e) {
+    std::cerr << "sentil error: " << e.what() << "\n";
+}
+```
+</Tab>
+<Tab value="Java">
+```java
+try {
+    Formula phi = Formula.parse("G (speed >");
+} catch (ParseException e) {
+    System.err.println("could not parse: " + e.getMessage());
+} catch (SentilException e) {
+    System.err.println("sentil error: " + e.getMessage());
+}
+```
+</Tab>
+<Tab value="Julia">
+```julia
+using Sentil
+
+try
+    phi = formula("G (speed >")
+catch e
+    e isa ParseError ? println("could not parse: ", e.msg) :
+    e isa SentilError ? println("sentil error: ", e.msg) : rethrow()
+end
+```
+</Tab>
+<Tab value="MATLAB">
+```matlab
+try
+    phi = sentil.Formula.parse('G (speed >');
+catch err
+    switch err.identifier
+        case 'sentil:parse'
+            fprintf('could not parse: %s\n', err.message);
+        otherwise
+            fprintf('sentil error: %s\n', err.message);
+    end
+end
+```
+</Tab>
+<Tab value="C">
+```c
+sentil_formula_t *phi = sentil_formula_parse("G (speed >");
+if (phi == NULL) {
+    fprintf(stderr, "parse failed (code %d): %s\n",
+            sentil_get_last_error_code(), sentil_get_last_error());
+}
+```
+</Tab>
+</Tabs>
+
+Swap the formula for `"G (speeed > 5)"` against a trace whose only signal is `speed` and you get a semantic error instead, from the unknown variable, caught by the same structure one branch over. The code changes, the pattern does not.
+
+## Related
+
+<Cards>
+<Card title="Error codes reference" href="/docs/reference/methods/error-codes" description="Every sentil_error_t value, what raises it, and the message it carries." />
+<Card title="Parse errors" href="/docs/reference/language/parse-errors" description="How a malformed formula reports its column, and the mistakes that trigger it." />
+<Card title="Call SENTIL from a new language" href="/docs/languages/across/new-language-cabi" description="Bind the same C ABI from a language SENTIL does not yet ship." />
+</Cards>

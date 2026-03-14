@@ -1,0 +1,129 @@
+---
+title: "Call SENTIL from a new language"
+description: "Bind SENTIL from any language that speaks C: link -lsentil, follow the opaque-handle and thread-local-error contract in sentil.h, and wire the offline and streaming calls."
+---
+
+Most shipped bindings sit on one C ABI, `sentil.h`, backed by `libsentil.{so,dylib,dll}`. Julia reaches it through `ccall`, Java through JNI, and C and C++ over the header directly. Python is the exception: PyO3 compiles a native extension against the core crate rather than calling the C ABI at runtime, though its surface mirrors the same operations. If your language can call a C function, it can drive the whole engine: deterministic monitoring, statistical model checking, and synthesis. This walks the contract you bind against and the two calls you need first.
+
+## Link the library
+
+The shared library is `libsentil`, so the linker flag is `-lsentil`, and the header is `include/sentil.h`. A pkg-config file and a CMake config ship alongside for discovery:
+
+```bash
+cc app.c $(pkg-config --cflags --libs sentil) -o app
+```
+
+Most languages reach a C library through a foreign-function layer rather than a C compiler, and for that you need two things: the shared library on the loader path, and the symbol names and signatures from the header. Nothing in `sentil.h` uses C++ name mangling or a non-C calling convention, so the symbols are exactly the `sentil_*` names as written.
+
+## The stable contract
+
+Three rules hold for every function in the header. Learn them once and all 267 functions follow the same shape.
+
+### Opaque handles
+
+Every object is an incomplete struct behind a pointer typedef, `sentil_formula_t`, `sentil_trace_t`, `sentil_monitor_t`, and the rest. You never see its fields and never dereference it. A `_create`, `_parse`, or builder function returns an owned handle, and a matching `_destroy` frees it. In your language, wrap the raw pointer in the type that runs cleanup deterministically: a Python object with `__del__` or a context manager, a Julia `finalizer`, a Java `Cleaner`, an RAII wrapper in C++.
+
+Builders that take handles consume them. `sentil_monitor_create` takes a formula and owns it afterward, whether it succeeds or returns null, so you must not free that formula yourself. The header says so at each such function; read the comment before you wire the ownership.
+
+### Every call clears the last error on entry, then leaves one on failure
+
+Each function clears the calling thread's last error when it starts. On failure it returns a sentinel, a null handle, a `NaN`, or a nonzero `sentil_error_t`, and leaves a code and message you can read back. The codes run 0 through 17 and are stable across releases; the canonical table is the [error codes reference](/docs/reference/methods/error-codes).
+
+```c
+sentil_error_t sentil_get_last_error_code(void);
+const char *sentil_get_last_error(void);
+size_t sentil_get_last_error_message(char *buffer, size_t length);
+```
+
+`sentil_get_last_error` returns a borrowed pointer, valid only until the next SENTIL call on the same thread. For anything you keep, use the two-call sizing form: call `sentil_get_last_error_message` with a null buffer to get the length needed, allocate, then call again to fill it. That is exactly what the Julia and Java bindings do to hand you an owned message on the exception.
+
+### The last error is per thread
+
+The code and message live in thread-local storage, so two threads calling SENTIL at once do not clobber each other's error. The corollary is that you read the error on the same thread that made the failing call, before that thread makes another SENTIL call. If your language marshals a call onto a worker thread, read the error there and carry the copied message back yourself.
+
+<Callout type="info">
+Map failures to your language's idiomatic error type the way every shipped binding does: a parse code becomes a parse exception, a semantic code a semantic one, everything else an evaluation error. The families and the code-to-family split are on [handle errors across bindings](/docs/languages/across/handle-errors).
+</Callout>
+
+One group of symbols is not always present. The shipped `libsentil` carries the full surface, statistical and synthesis functions included, but the GPU group is compiled out of the ARM and embedded packages, where there is no WebGPU device. The header marks those functions; a binding that must run against a reduced build should resolve them lazily and treat their absence as the feature being off. On a full build, `sentil_gpu_is_available` reports whether a device actually answered.
+
+## Walk the offline call
+
+Robustness of a formula over a recorded trace is five calls. Build a trace over strictly increasing times, add a named signal, parse the formula, evaluate, and free both handles. The same program with its compile line and full error handling is the first monitor on the [C page](/docs/languages/c); the walk here is annotated for a binder wiring each call through a foreign-function layer.
+
+<Steps>
+<Step>
+Create a trace over the sample times, then add each signal. Both times and values are plain `double` arrays with their lengths.
+
+```c
+double times[] = {0, 1, 2, 3, 4};
+double speed[] = {12, 9, 7, 4, 6};
+sentil_trace_t *trace = sentil_trace_create(times, 5);
+sentil_trace_add_signal(trace, "speed", speed, 5);
+```
+</Step>
+<Step>
+Parse the formula. A null return is a parse failure, and the message names the column.
+
+```c
+sentil_formula_t *phi = sentil_formula_parse("G (speed > 5)");
+if (phi == NULL) { /* read sentil_get_last_error, bail out */ }
+```
+</Step>
+<Step>
+Evaluate. Robustness comes back through an out-parameter; the return value is the status.
+
+```c
+double rho = 0.0;
+sentil_error_t code = sentil_formula_robustness(phi, trace, &rho);
+/* code == SENTIL_OK, rho == -1.0 */
+```
+
+The trace touches `4` at `t = 3`, one below the bound, so robustness comes back `-1.0`: sign is verdict, magnitude is margin, per [what is STL](/docs/monitoring/concepts/what-is-stl).
+</Step>
+<Step>
+Free every handle you created.
+
+```c
+sentil_formula_destroy(phi);
+sentil_trace_destroy(trace);
+```
+</Step>
+</Steps>
+
+## Walk the streaming call
+
+Online monitoring is two functions. `sentil_monitor_parse(formula, config)` builds a streaming monitor, with a `NULL` config meaning the default, discrete time. `sentil_monitor_update(monitor, time, names, values, n, &out)` folds one timed reading, at O(1) amortized cost per sample and memory that scales with the window rather than the trace. The out-struct `sentil_robustness_t` carries `resolved`, `satisfied`, and `value`; while a future-bounded formula is still undecided, `resolved` is false and `value` is the midpoint of the `lower` and `upper` bounds. Reading those five fields is the whole streaming interface. The worked loop, a sine wave against `G[0, 10] (x > -0.9)`, is on the [C page](/docs/languages/c) and translates to your language one foreign call at a time.
+
+## Ownership at a glance
+
+Anything the library hands back that is not a fixed-size struct is owned by you and has a named free function.
+
+| You received | Free it with |
+|---|---|
+| a handle from `_create`, `_parse`, or a builder | the matching `_destroy` |
+| a string (`char *`) | `sentil_free_string` |
+| a string array | `sentil_free_string_array` |
+| a `double` array | `sentil_free_doubles` |
+| an interval, sample, or robustness array | `sentil_free_intervals`, `sentil_free_samples`, `sentil_free_robustness` |
+
+A handle passed into a consuming builder is not yours to free afterward, even when the builder returns null. When in doubt, the header comment on each function states who owns what.
+
+## Two worked references
+
+You do not have to reverse-engineer any of this. Two shipped bindings are small, direct, and readable end to end.
+
+Julia binds the ABI with `ccall` and no glue code, so it reads almost like the header. A parse is one call:
+
+```julia
+h = ccall((:sentil_formula_parse, libsentil[]), Ptr{Cvoid}, (Cstring,), "G (speed > 5)")
+h == C_NULL && _raise_last()
+```
+
+The Python binding shows the other end of the design: how to wrap handles in objects with deterministic cleanup and turn the thread-local error into an exception hierarchy. Read whichever is closer to how your language reaches C.
+
+<Cards>
+<Card title="The C page" href="/docs/languages/c" description="The header used directly: the worked walks, the full function reference, ownership, and enums." />
+<Card title="Error codes" href="/docs/reference/methods/error-codes" description="The canonical sentil_error_t table: every code, what raises it, and the message it carries." />
+<Card title="Handle errors across bindings" href="/docs/languages/across/handle-errors" description="Map the C ABI codes and last error onto your language's error type." />
+</Cards>
