@@ -2,7 +2,7 @@
 
 Every performance and correctness claim SENTIL makes, with the command that reproduces it, the value to expect, the tolerance, and the tier it runs in. A claim marked confirmed is a test that passes or an artifact that regenerates. Where a number is bound to hardware we do not have, the expected value and the conditions are recorded rather than a measurement invented.
 
-The tiers are CPU (runs anywhere, including in continuous integration), GPU (needs a device, skipped cleanly without one), and hardware-bound (tied to a specific machine).
+The tiers are CPU (runs anywhere, including in continuous integration), GPU (needs a device, skipped cleanly without one), tool-bound (needs a baseline tool we may not redistribute, skipped cleanly without it), and hardware-bound (tied to a specific machine).
 
 The artifact-based claims below are checked automatically by `scripts/check_claims.py`, which reads the committed benchmark and experiment results and fails if a value falls outside its tolerance here. Run `python scripts/check_claims.py` directly, or get it as part of `make verify`. The exact claims (the deque equivalence, the interval coverage, the SPRT error rates, the oracle values) are guarded by the Rust test suite instead.
 
@@ -161,13 +161,17 @@ Expected: Type I rate at most 0.1, Type II rate at most 0.1. Tolerance: as state
 
 ## Statistical model checking, against UPPAAL-SMC, PRISM, Modest
 
-These are probabilistic model checkers, a different paradigm from SENTIL's trace and system monitoring, so a fair comparison needs one shared model both tools simulate. That model is the Barkai-Leibler circadian CTMC, and the shared property is that the activator reaches 100 within 20 time units, estimated by statistical model checking at 10,000 samples in both.
+These are probabilistic model checkers, a different paradigm from SENTIL's trace and system monitoring, so a fair comparison needs one shared model every tool simulates. That model is the Barkai-Leibler circadian CTMC, and the shared property is that the activator reaches 100 within 20 time units, estimated by statistical model checking at 10,000 samples in each.
 
 PRISM runs it cleanly: it estimates the probability at about 0.04 (0.0393 to 0.0438 across runs, half-width about 0.005 at 99 percent) in about 27 seconds. SENTIL simulates the identical CTMC with Gillespie's direct method and estimates the same probability, 0.0378, by direct Monte Carlo in about 1 second, roughly 27 times faster with an agreeing estimate.
 Command: `cargo run --release -p sentil-benchmarks --bin sentil_ctmc_runner` and `PRISM=<prism> bash benchmarks/runners/prism_runner.sh <circadian.nm>`.
 Expected: both near 0.04 within the confidence interval, SENTIL more than an order of magnitude faster. Tolerance: the estimates agree within the intervals; the speedup is machine and load dependent. Tier: CPU and tool-bound. Artifact: `benchmarks/results/sentil_smc_circadian.jsonl`, `prism_smc_circadian.jsonl`.
 
-Modest and UPPAAL do not give a clean run on the provided models. Modest rejects `circadian.modest` at parse time because it declares an action named `tau`, a reserved word. UPPAAL's `verifyta` runs on `circadian.xml` but warns of a general hybrid guard without an urgent channel and returns a degenerate verdict rather than an SMC estimate. Both are reported as they are rather than forced into a number the runs do not support; the model files are the reference project's and are read-only here.
+Modest runs it once the reference models are ported to the v3.1.301 grammar, which `benchmarks/baselines/modest` carries. It estimates 0.038 (half-width about 0.004 at 95 percent) in about 73 seconds on the same machine, agreeing with SENTIL and PRISM. The toolset may not be redistributed, so it is never vendored here and never installed in continuous integration, and the runner skips without it. The same runner covers three further ported models, the tandem queue, the biodiesel reactor, and the powertrain controller, which have no SENTIL or PRISM counterpart and so are recorded without a comparison.
+Command: `MODEST=<modest> bash benchmarks/runners/modest_runner.sh benchmarks/baselines/modest/circadian.modest`, or `make bench-modest` for all four.
+Expected: near 0.04 within the interval, SENTIL more than an order of magnitude faster. Tolerance: the estimates agree within the intervals; Modest's wall time ranged from about 43 to 73 seconds across runs on a shared machine, so the ratio is an order-of-magnitude statement rather than a fixed figure. Tier: CPU and tool-bound. Artifact: `benchmarks/results/modest_smc.jsonl`.
+
+UPPAAL does not give a clean run. Its `verifyta` runs on `circadian.xml` but warns of a general hybrid guard without an urgent channel and returns a degenerate verdict rather than an SMC estimate, because the model encodes the reaction propensities as general expressions rather than as clock constraints or exponential rates, which is outside the fragment UPPAAL-SMC samples. That is reported as it is rather than forced into a number the run does not support.
 Tier: tool-bound.
 
 ## GPU acceleration
