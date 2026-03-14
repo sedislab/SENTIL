@@ -1,0 +1,1039 @@
+---
+title: "Rust"
+description: "The full API reference for Rust."
+---
+
+The `sentil` crate is the engine every other binding wraps. The first half of this page is a working tour and the second half is the complete reference. Snippets that use `?` assume an enclosing function returning `sentil::Result<()>`.
+
+## Install
+
+The crate is on crates.io, so we run `cargo add sentil`.
+
+### From crates.io
+
+<Steps>
+<Step>
+
+Add the dependency.
+
+```bash
+cargo add sentil
+```
+
+The default features carry the STL monitor, the statistical layer, synthesis, trace ingest with SQLite, Rayon parallelism, and the specifications library. The [feature table](#cargo-features) below has the exact set.
+
+</Step>
+<Step>
+
+When a project needs a specific heavy backend, name it in the manifest. The `gpu` feature enables the WebGPU statistical path.
+
+```toml title="Cargo.toml"
+[dependencies]
+sentil = { version = "0.3.0", features = ["gpu", "parquet"] }
+```
+
+Note that `hdf5` expects a library already on the machine.
+
+If you need a build that only monitors STL, run
+
+```bash
+cargo add sentil --no-default-features --features std
+```
+
+Dropping `std` as well gives the `no_std` monitor for microcontroller targets.
+
+</Step>
+<Step>
+
+Check it.
+
+```bash
+cargo tree -p sentil --depth 0   # sentil v0.3.0
+```
+
+Then run the [first monitor](#first-monitor) below.
+
+</Step>
+</Steps>
+
+### From the repository tip
+
+<Steps>
+<Step>
+
+Point the dependency at the repository instead of the registry. Cargo picks the workspace member named `sentil`, which is `sentil-core`, and the feature keys work exactly as they do in the registry form.
+
+```toml title="Cargo.toml"
+[dependencies]
+sentil = { git = "https://github.com/sedislab/SENTIL" }
+```
+
+</Step>
+<Step>
+
+Resolve it.
+
+```bash
+cargo tree -p sentil --depth 0
+```
+
+The line names the crate, version 0.3.0, and the git source with the commit written into your `Cargo.lock`.
+
+</Step>
+</Steps>
+
+### From source
+
+You need a Rust toolchain from [rustup.rs](https://rustup.rs) and a C compiler, since the default `sqlite` feature builds a bundled SQLite.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The distribution's compiler package covers it: `build-essential` on Debian and Ubuntu, `gcc` and `glibc-devel` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools carry clang and the linker.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Rust links through MSVC, so install the Visual Studio Build Tools with the "Desktop development with C++" workload. The rustup installer prompts for this and can start it for you.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone and build the engine. `rust-toolchain.toml` pins the stable channel, so rustup switches to it inside the checkout and pulls rustfmt and clippy along with it.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+cargo build -p sentil
+```
+
+</Step>
+<Step>
+
+Point your own project at the checkout with a path dependency.
+
+```toml title="Cargo.toml"
+[dependencies]
+sentil = { path = "../SENTIL/sentil-core" }
+```
+
+</Step>
+<Step>
+
+Run an example.
+
+```bash
+cargo run -p sentil --example offline_monitoring
+```
+
+```text
+robustness:       -1
+per sample:       [-1.0, -1.0, -1.0, -1.0, 1.0]
+dense robustness: -1
+```
+
+For the longer check, `cargo test -p sentil` runs the engine's whole test suite.
+
+</Step>
+</Steps>
+
+`rust-toolchain.toml` also installs the aarch64 and armv7 Linux targets, and `.cargo/config.toml` names the cross-linkers for the gnu ones. The prebuilt ARM archives and which board takes which are on the [CLI page](/docs/languages/cli#on-a-raspberry-pi). The same checkout builds the CLI and the C ABI, and [from source](/docs/start/install#from-source) has those two commands.
+
+## First monitor
+
+Build a trace, specify a formula, and see the robustness.
+
+```rust title="src/main.rs"
+use sentil::{Formula, Trace};
+
+fn main() -> sentil::Result<()> {
+    let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+    trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+
+    let phi = Formula::parse("G (speed > 5)")?;
+    println!("robustness: {}", phi.robustness(&trace)?); // robustness: -1
+    Ok(())
+}
+```
+
+The robustness is $-1.0$. [What STL is](/docs/monitoring/concepts/what-is-stl) covers how to read the robustness. `phi.robustness_signal(&trace)?` returns the robustness at every sample, and `phi.robustness_dense(&trace)?` returns the dense robustness.
+
+## Traces
+
+A `Trace` is one strictly increasing time vector with named, equal-length signals over it. Beyond `Trace::new` plus `add_signal`, you can read one from CSV text, from a file, or resample onto a new grid.
+
+```rust
+use sentil::{Interpolation, Trace};
+
+let trace = Trace::from_csv_str("time,speed\n0,12\n1,9\n2,7\n3,4\n4,6")?;
+assert_eq!(trace.variables(), vec!["speed"]);
+
+let halves: Vec<f64> = (0..9).map(|i| f64::from(i) * 0.5).collect();
+let fine = trace.resample(halves, Interpolation::Linear)?;
+assert_eq!(fine.signal("speed").unwrap()[7], 5.0); // interpolated between 4 and 6 at t = 3.5
+```
+
+The time column is detected by name, or the first column is taken when no column is named `time`. The other columns that are not named `time` are treated as signals. `time`, `timestamp`, `t`, `time_s`, `time_sec`, `time_ms`, `time_ns`, `elapsed`, `elapsed_time`, `epoch` are all recognized as time columns.`Trace::from_path` picks a reader from the extension. We support CSVs, TSVs, text, MATLAB `.mat` files, Parquet, Arrow, SQLite, HDF5, and MCAP files. We go into more detail about trace formats in [format features](/docs/reference/methods/trace-formats). Interpolation is `Linear`, `ZeroOrderHold`, or `CubicSpline`.
+
+## Streaming
+
+For a live loop, `Monitor` folds one timestamped sample at a time and holds memory proportional to the largest temporal window, not the stream. Each `update` returns a [`Robustness`](#streaming-verdicts) verdict you can act on the instant it resolves.
+
+```rust title="stream.rs"
+use sentil::{Monitor, MonitorConfig};
+
+fn main() -> sentil::Result<()> {
+    let mut monitor = Monitor::new("G[0, 10] (x > -0.9)", MonitorConfig::new())?;
+    for t in 0..60 {
+        let x = (f64::from(t) * 0.3).sin();
+        let verdict = monitor.update(f64::from(t), &[("x", x)])?;
+        if verdict.is_resolved() && verdict.value() < 0.0 {
+            println!("violated at t={t}, robustness={:.3}", verdict.value());
+            return Ok(());
+        }
+    }
+    println!("held over the whole stream");
+    Ok(())
+}
+```
+
+This prints `violated at t=15, robustness=-0.078`. Until the ten-second window behind a sample has fully passed, `is_resolved()` stays false and `value()` reports a provisional midpoint. The bounded operators run on the monotonic deque, which is what keeps the per-sample cost flat. The benchmark sustains a median of 81 ns per sample and more than eleven million updates a second, well past a 10 kHz control loop. The [deque page](/docs/monitoring/concepts/monotonic-deque) explains the structure and its proof.
+
+On the hot path, skip the name lookup by just resolving each variable's slot once with `symbol_index`, then pushing plain slices.
+
+```rust
+let slot = monitor.symbol_index("x")?.expect("x is in the formula");
+let mut values = [0.0];
+for t in 0..60 {
+    values[slot] = (f64::from(t) * 0.3).sin();
+    monitor.update_packed(f64::from(t), &values)?;
+}
+```
+
+A probabilistic formula streams the same way, and the running satisfaction estimate is readable at any instant through the live-probability accessor. `Monitor::last_probability` prints out the last probability and the `StreamMonitor` object shows you the full result.
+
+```rust
+use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, StreamMonitor};
+
+let phi = Formula::parse("P>=0.9 (G[0, 5] (x > 0))")?;
+let mut lifting = LiftingRegistry::new();
+lifting.register("x", NoiseModel::gaussian(0.0, 0.3)?, NoiseInteraction::Additive);
+let config = SmcConfig { samples: 200, ..SmcConfig::default() };
+
+let mut monitor = StreamMonitor::with_lifting(&phi, &lifting, &config)?;
+for t in 0..20 {
+    monitor.update(f64::from(t), &[("x", 0.8)])?;
+    if let Some(p) = monitor.last_probability() {
+        println!("running probability {p:.3}"); // 0.975 by the final sample
+    }
+}
+```
+
+## Probabilistic checking
+
+A formula like `P>=0.9 (G (x > 0))` asks whether under noise the inner property holds with at least 90 percent probability. We give each channel a noise model, then call `check` on the formula.
+
+```rust title="prstl.rs"
+use sentil::{Formula, LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig, Trace};
+
+fn main() -> sentil::Result<()> {
+    let times: Vec<f64> = (0..20).map(f64::from).collect();
+    let mut trace = Trace::new(times)?;
+    trace.add_signal("x", (0..20).map(|i| 0.4 + 0.05 * f64::from(i)).collect::<Vec<_>>())?;
+
+    let mut lifting = LiftingRegistry::new();
+    lifting.register("x", NoiseModel::gaussian(0.0, 0.3)?, NoiseInteraction::Additive);
+
+    let phi = Formula::parse("P>=0.9 (G (x > 0))")?;
+    let config = SmcConfig { samples: 5000, ..SmcConfig::default() };
+    let result = phi.check(&trace, &lifting, &config)?;
+    println!(
+        "probability {:.3}, interval [{:.3}, {:.3}], holds {}",
+        result.probability, result.interval.lower, result.interval.upper, result.holds
+    );
+    Ok(())
+}
+```
+
+This prints `probability 0.733, interval [0.721, 0.745], holds false`. The early samples sit near 0.4, so noise with a 0.3 standard deviation pushes them below zero often enough that the 0.9 threshold fails, and the Wilson interval around the estimate says 5000 samples were plenty to be sure. `register` returns `&mut Self` for chaining, not a `Result`, so no `?` goes after it. `SmcConfig` defaults to 10,000 samples, 0.95 confidence, seed 42, and the Wilson interval. [What PrSTL is](/docs/probabilistic/concepts/what-is-prstl) covers the operator, and [confidence intervals](/docs/probabilistic/concepts/confidence-intervals) the surety about the estimate.
+
+Instead of `check`, you can use `check_conservative` to rerun the verdict with the Clopper-Pearson exact interval or `check_distribution` which returns how the inner robustness spread across the ensemble.
+
+### Sequential tests
+
+A sequential test draws only as many samples as the decision needs as compared to a fixed-budget test. Wald's SPRT decides between an indifference region's two hypotheses with bounded error rates:
+
+```rust
+use sentil::{SprtConfig, SprtResult};
+
+let sprt = SprtConfig::new(0.85, 0.95, 0.05, 0.05, 10_000)?;
+match phi.check_sequential(&trace, &lifting, &sprt)? {
+    SprtResult::AcceptH1 { samples } => println!("holds, decided after {samples} draws"),
+    SprtResult::AcceptH0 { samples } => println!("fails, decided after {samples} draws"),
+    SprtResult::Inconclusive { samples, .. } => println!("undecided after {samples} draws"),
+}
+```
+
+On a trace that clearly satisfies the property, this decides after a few dozen draws where the fixed-budget check would burn thousands. The Bayesian alternative starts from a uniform Beta(1, 1) prior and stops when the Bayes factor clears a cutoff:
+
+```rust
+use sentil::{BayesConfig, BayesResult};
+
+let bayes = BayesConfig::new(0.9, 100.0, 10_000)?;
+match phi.check_bayesian(&trace, &lifting, &bayes)? {
+    BayesResult::Holds { samples, posterior } => println!("holds after {samples} draws, posterior {posterior:.3}"),
+    BayesResult::Fails { samples, .. } => println!("fails after {samples} draws"),
+    BayesResult::Inconclusive { samples, .. } => println!("undecided after {samples} draws"),
+}
+```
+
+The [SPRT concept page](/docs/probabilistic/concepts/sprt) derives the decision bounds and [statistical methods](/docs/reference/methods/statistical-methods) compares the three methods.
+
+### Rare events
+
+Below probabilities below $10^{-5}$, plain Monte Carlo ceases to be effective. The rare-event path runs adaptive multilevel splitting over a `StochasticSystem` and is able to resolve probabilities down to $10^{-12}$ or lower.
+
+```rust
+use sentil::{Formula, NoiseModel, RareEventConfig, StochasticSystem};
+
+// A random walk with Gaussian steps; drifting past 12 within the horizon is rare.
+let step = NoiseModel::gaussian(0.0, 0.3)?;
+let system = StochasticSystem::new(["x"], 1.0, 100, |_rng| vec![0.0], move |prev, _t, rng| {
+    vec![prev[0] + step.sample(rng)]
+})?;
+
+let phi = Formula::parse("P>=0.9999 (G (x < 12))")?;
+let config = RareEventConfig { particles: 4096, ..RareEventConfig::default() };
+let result = phi.check_rare_event(&system, &config)?;
+println!(
+    "violation probability {:.2e} from {} simulations, holds {}",
+    result.violation_probability, result.simulations, result.holds
+);
+```
+
+This resolves a violation probability near $5 \times 10^{-5}$, far below what 4096 plain samples could see. The inner formula should be a `G`, over a predicate. The [rare events page](/docs/probabilistic/concepts/rare-events) explains the algorithm, and the [GPU guide](/docs/probabilistic/guides/rare-events-gpu) covers the `gpu`-feature path for large particle counts.
+
+## Synthesis
+
+Given a system model and a spec, can we find the input that satisfies it? This is the problem that Synthesis seeks to solve. The default backend is projected gradient ascent on a smooth robustness.
+
+```rust title="synth.rs"
+use sentil::{Backend, Bounds, Formula, LinearModel, SynthesisProblem, Synthesizer};
+
+fn main() -> sentil::Result<()> {
+    // A single integrator x_{t+1} = x_t + u_t, five steps from x0 = 0.
+    let model = LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 5)?;
+    let spec = Formula::parse("F[0, 5] (pos > 2)")?;
+
+    let problem = SynthesisProblem::new(&model, &spec)
+        .with_bounds(Bounds::new(vec![-1.0; 5], vec![1.0; 5])?)
+        .with_backend(Backend::Gradient)
+        .with_budget(200);
+    let result = Synthesizer::solve(&problem)?;
+    println!(
+        "input {:?}, robustness {:.3}, holds {}",
+        result.input, result.robustness, result.holds
+    );
+    Ok(())
+}
+```
+
+This finds `input [1.0, 1.0, 1.0, 1.0, 1.0]` with robustness 3.0: pushing at full bound reaches position 5, three units past the target. An infeasible spec returns the least-violating input rather than an error. Online, `Controller` re-plans a short horizon every step inside a hard deadline:
+
+```rust
+use std::time::Duration;
+use sentil::{Bounds, Controller, Formula, LinearModel};
+
+let model = LinearModel::new(vec![vec![1.0]], vec![vec![1.0]], [0.0], ["pos"], 1.0, 8)?;
+let spec = Formula::parse("F[0, 8] (pos > 2)")?;
+let mut controller = Controller::new(&model, &spec, 1, Duration::from_millis(5))
+    .with_bounds(Bounds::new(vec![-1.0; 8], vec![1.0; 8])?);
+
+let mut state = vec![0.0];
+for _ in 0..8 {
+    let u = controller.control(&state)?;
+    state[0] += u[0]; // ends at 8.0, well past the target
+}
+```
+
+The same machinery searches in reverse: `spec.falsify(&model, &bounds, CmaConfig::default(), 3)?` hunts for a violating input and returns it as a `Witness`, and `mine_tightest_parameter` finds the sharpest constant a spec supports on recorded traces. On the first-monitor trace it recovers exactly the dip:
+
+```rust
+use sentil::mine_tightest_parameter;
+
+let traces = [trace]; // the first-monitor trace
+let c = mine_tightest_parameter(
+    |c| Formula::parse(&format!("G (speed > {c})")),
+    &traces,
+    0.0,
+    20.0,
+)?;
+// c is 4.000, the tightest threshold the trace satisfies
+```
+
+Backend selection, the smooth semantics, and the MILP encoding are covered in [synthesis backends](/docs/reference/methods/synthesis-backends); the [synthesis guides](/docs/synthesis) work through receding horizon control, falsification, chance constraints, and the safety filter.
+
+## Errors
+
+Anything fallible returns `sentil::Result<T>`, an alias for `Result<T, sentil::Error>`. Nothing reachable from user input panics. Match the variant you can act on and propagate the rest with `?`:
+
+```rust
+use sentil::{Error, Formula};
+
+match Formula::parse("G (speed >") {
+    Ok(phi) => println!("{:?}", phi.variables()),
+    Err(Error::Parse(e)) => {
+        eprintln!("parse failed at line {}, column {}: {}", e.line, e.column, e.message);
+    }
+    Err(e) => eprintln!("{e}"),
+}
+```
+
+This prints ``parse failed at line 1, column 11: expected a value or `(`, found end of input``; both coordinates are 1-based. The failure a first session actually hits is a name mismatch between formula and trace, which arrives as `Error::UnknownVariable`:
+
+```rust
+let phi = Formula::parse("G (velocity > 5)")?;
+match phi.robustness(&trace) {
+    Err(Error::UnknownVariable { name }) => {
+        eprintln!("the trace has no signal named {name}"); // velocity
+    }
+    other => println!("{other:?}"),
+}
+```
+
+`Error` is `#[non_exhaustive]`, so a match always carries a catch-all arm; it implements `std::error::Error` and fits any error chain. The [reference table below](#the-error-type) lists all twenty variants, and the same messages cross into every binding: see [errors across bindings](/docs/languages/across/handle-errors) and the [error-code mapping](/docs/reference/methods/error-codes).
+
+## Cargo features
+
+Everything below this point is the reference: every public item, grouped by task. It starts with the features that gate the layers.
+
+| Feature | What it adds |
+|---|---|
+| `std` | The standard library; drop it for a `no_std` STL monitor that does its math through libm |
+| `serde` | `Serialize`/`Deserialize` on `Formula`, `NoiseModel`, and the run configs |
+| `statistical` | The PrSTL layer: noise models, lifting, Monte Carlo, intervals, SPRT, Bayesian, rare events |
+| `synthesis` | The synthesis subsystem and smooth robustness; dependency-free and `no_std`-friendly |
+| `parallel` | Rayon work-stealing for the Monte Carlo path; same answers, each sample independently seeded |
+| `ingest` | Trace reading from CSV, TSV, text, and classic MATLAB `.mat` files |
+| `specs` | The premade specifications library, embedded as parameterized templates |
+| `parquet` / `arrow` / `sqlite` / `hdf5` / `mcap` | One trace format each on top of `ingest`; SQLite is bundled, HDF5 needs the library |
+| `gpu` | The WebGPU statistical path and the `SimModel`/`SimExpr`/`GpuSplittingEstimate` re-exports |
+| `synthesis-gpu` | GPU batching for synthesis; implies both `synthesis` and `gpu` |
+
+The `default` set is `std`, `statistical`, `ingest`, `parallel`, `synthesis`, `specs`, and `sqlite`. A monitor-only build is `--no-default-features --features std`.
+
+Three gate consequences are easy to miss. First, the statistical methods on the monitor family disappear in a monitor-only build: `MonitorConfig::smc`/`rare`/`smc_config`/`rare_config`, `Monitor::check`/`check_sequential`/`check_rare`/`last_probability`, `StreamMonitor::with_lifting`/`last_probability`, `MultiFormulaMonitor::add_probabilistic`/`probabilities`/`probability`, and `FormulaBank::check` are all behind `statistical`. Second, `SynthesisProblem::on_gpu` needs `synthesis-gpu`, not plain `synthesis`, and `solve_milp` additionally needs `std`. Third, GPU entry points return a typed `Error::Gpu` when no device is present rather than silently switching; call `sentil::gpu::is_available()` to decide, once, whether to take the GPU path. The [feature reference](/docs/reference/methods/features) has the cross-package matrix.
+
+## The error type
+
+`Result<T>` is an alias for `core::result::Result<T, Error>`. `Error` has twenty variants, each carrying what a caller needs to fix the input; the enum and its richer variants are `#[non_exhaustive]`, so match with a catch-all arm and destructure struct variants with `..`.
+
+| Variant | Payload | When it arises |
+|---|---|---|
+| `Parse` | `Parse(ParseError)` | The formula text is malformed; the payload points at the spot |
+| `UnknownVariable` | `{ name: String }` | The formula reads a signal the trace or update does not carry |
+| `DivisionByZero` | `{ term: String }` | An arithmetic term divided by zero, named in the payload |
+| `UnknownFunction` | `{ name: String, arity: usize }` | A predicate called a function outside the twelve provided |
+| `ArityMismatch` | `{ name, expected, found }` | A known function got the wrong argument count |
+| `NonMonotonicTime` | `{ previous: f64, time: f64 }` | Trace or stream times failed to strictly increase |
+| `NonFiniteSample` | `{ kind: &'static str, value: f64 }` | A time or value was NaN or infinite |
+| `SignalLengthMismatch` | `{ variable, expected, found }` | A signal's sample count does not match the time grid |
+| `EmptyTrace` | unit | Robustness was requested over zero samples |
+| `PackedLength` | `{ expected, found }` | An `update_packed` slice had the wrong width |
+| `ProbabilisticOperator` | unit | A `P` operator reached deterministic evaluation, which cannot score it |
+| `Unsupported` | `{ feature: &'static str }` | The build or target lacks what the call needs |
+| `InvalidNoiseModel` | `{ model: &'static str, reason: String }` | Constructor parameters outside the family's valid range |
+| `NotProbabilistic` | unit | A statistical check on a formula not wrapped in `P` |
+| `Ingest` | `{ path, row, message }` | A trace source could not be read; path and 1-based row when known |
+| `Fit` | `{ method: &'static str, message: String }` | Noise fitting failed, for example on too few samples |
+| `InvalidConfig` | `{ context: &'static str, message: String }` | A configuration value out of range, naming the procedure |
+| `Splitting` | `{ particle, level, message }` | A rare-event run hit a numerical problem |
+| `Transpilation` | `{ message: String }` | A formula cannot lower to a GPU shader; `gpu` |
+| `Gpu` | `{ message: String }` | A device fault after acquisition; `gpu` |
+
+`ParseError` is `{ message: String, line: usize, column: usize }` with public fields, both coordinates 1-based, and `ParseError::at(message, line, column)` constructs one when a tool of your own wants to report positions the same way. Every variant maps to a stable C ABI status code; the [error-code reference](/docs/reference/methods/error-codes) has the table.
+
+## Formulas and the syntax tree
+
+`Formula` is a parsed PrSTL syntax tree; the [grammar](/docs/reference/language/grammar) defines the text it accepts and the [operator reference](/docs/reference/language/operators) the semantics of each node.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Formula::parse` | `parse(input: &str) -> Result<Formula>` | Parse text; the error's `ParseError` points at line and column |
+| `phi.variables()` | `variables(&self) -> Vec<String>` | The signal names the formula reads, sorted and deduplicated |
+| `phi.depth()` | `depth(&self) -> usize` | Nesting depth; a bare predicate is 1 |
+| `phi.has_temporal()` | `has_temporal(&self) -> bool` | Whether any temporal operator appears |
+| `phi.to_string()` | via `Display` | Round-trips to parseable text |
+
+The tree itself is public under `sentil::formula`, so you can build formulas without the parser and bindings can inspect them. `Formula` has thirteen variants:
+
+| Variant | Shape |
+|---|---|
+| `Predicate` | `Predicate(Predicate)` |
+| `Not` | `Not(Box<Formula>)` |
+| `And` / `Or` / `Implies` | `And(Box<Formula>, Box<Formula>)` and likewise |
+| `Always` / `Eventually` | `Always(Interval, Box<Formula>)` and likewise |
+| `Until` / `Since` | `Until(Interval, Box<Formula>, Box<Formula>)` and likewise |
+| `Next` | `Next(Box<Formula>)` |
+| `Historically` / `Once` | `Historically(Interval, Box<Formula>)` and likewise |
+| `Probabilistic` | `Probabilistic(ProbabilityOp, f64, Box<Formula>)` |
+
+A built tree compares equal to its parsed twin:
+
+```rust
+use sentil::formula::{ComparisonOp, Expr, Formula, Interval, Predicate};
+
+let phi = Formula::Always(
+    Interval::bounded(0.0, 10.0)?,
+    Box::new(Formula::Predicate(Predicate {
+        lhs: Expr::Variable("speed".to_owned()),
+        op: ComparisonOp::Greater,
+        rhs: Expr::Literal(5.0),
+    })),
+);
+assert_eq!(phi, Formula::parse("G[0, 10] (speed > 5)")?);
+```
+
+The supporting types, all under `sentil::formula`:
+
+| Type | Members |
+|---|---|
+| `Predicate` | `{ lhs: Expr, op: ComparisonOp, rhs: Expr }`, all public |
+| `Expr` | `Binary(BinaryOp, Box<Expr>, Box<Expr>)`, `Call(String, Vec<Expr>)`, `Literal(f64)`, `Variable(String)` |
+| `ComparisonOp` | `Less`, `LessEqual`, `Greater`, `GreaterEqual`, `Equal`, `NotEqual` |
+| `BinaryOp` | `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow` |
+| `ProbabilityOp` | `GreaterEqual`, `Greater`, `LessEqual`, `Less` |
+
+`Interval` is the time window a temporal operator quantifies over; its fields are private and every constructor validates.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Interval::new` | `new(lower: f64, upper: Option<f64>) -> Result<Interval>` | The validating entry point; `None` means unbounded above |
+| `Interval::bounded` | `bounded(lower: f64, upper: f64) -> Result<Interval>` | `[lower, upper]` |
+| `Interval::from_lower` | `from_lower(lower: f64) -> Result<Interval>` | `[lower, inf)` |
+| `Interval::unbounded` | `unbounded() -> Interval` | `[0, inf)`, what an omitted interval means |
+| `lower()` / `upper()` | `-> f64` / `-> Option<f64>` | The bounds as stored |
+| `upper_or_infinity()` | `-> f64` | The upper bound, or positive infinity |
+| `is_bounded()` | `-> bool` | Whether a finite upper bound exists |
+| `is_unbounded()` | `-> bool` | Whether the interval is the whole future `[0, inf)` |
+| `contains(t)` | `contains(&self, t: f64) -> bool` | Membership, inclusive at both ends |
+
+Note that `is_bounded` and `is_unbounded` are not complements: `Interval::from_lower(2.0)?` is neither, since it has no finite upper bound but is not the whole future.
+
+## Evaluating robustness
+
+Five methods on `Formula` and one free function score a formula against a trace. The [robustness semantics](/docs/reference/language/robustness-semantics) page gives the exact value each operator computes, in both time models.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `phi.robustness` | `robustness(&self, trace: &Trace) -> Result<f64>` | Discrete-time robustness at the trace start |
+| `phi.robustness_dense` | `robustness_dense(&self, trace: &Trace) -> Result<f64>` | Dense-time robustness, catching crossings between samples |
+| `phi.robustness_signal` | `robustness_signal(&self, trace: &Trace) -> Result<Vec<f64>>` | The robustness at every sample |
+| `phi.robustness_dense_signal` | `robustness_dense_signal(&self, trace: &Trace) -> Result<Vec<f64>>` | The per-sample signal in dense time |
+| `phi.violations` | `violations(&self, trace: &Trace) -> Result<Vec<(f64, f64)>>` | The time spans where the formula fails |
+| `violation_intervals` | `violation_intervals(times: &[f64], signal: &[f64]) -> Vec<(f64, f64)>` | The negative spans of any robustness signal |
+
+On the first-monitor trace, `Formula::parse("speed > 5")?.robustness_signal(&trace)?` is `[7.0, 4.0, 2.0, -1.0, 1.0]` and `violations` returns `[(3.0, 3.0)]`, the single dip as a degenerate span.
+
+## Monitors
+
+`Monitor` wraps one formula with a configuration and serves offline evaluation, streaming, and statistical checking from one handle. `MonitorConfig` is a consuming builder; `TimeMode` is `Discrete` (the default) or `Dense`.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `MonitorConfig::new` | `new() -> MonitorConfig` | The default config: discrete time |
+| `.time` | `time(self, mode: TimeMode) -> MonitorConfig` | Pick the time model for offline evaluation |
+| `.smc` | `smc(self, smc: SmcConfig) -> MonitorConfig` | Monte Carlo settings for `check`; `statistical` |
+| `.rare` | `rare(self, rare: RareEventConfig) -> MonitorConfig` | Splitting settings for `check_rare`; `statistical` |
+| `.time_mode` | `time_mode(&self) -> TimeMode` | Read back the time model |
+| `.smc_config` / `.rare_config` | `-> SmcConfig` / `-> RareEventConfig` | Read back the statistical settings; `statistical` |
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Monitor::new` | `new(formula: &str, config: MonitorConfig) -> Result<Monitor>` | Parse and wrap in one step |
+| `Monitor::from_formula` | `from_formula(formula: Formula, config: MonitorConfig) -> Monitor` | Wrap an already-built tree; cannot fail |
+| `.robustness` | `robustness(&self, trace: &Trace) -> Result<f64>` | Offline evaluation honouring the configured `TimeMode` |
+| `.robustness_signal` | `robustness_signal(&self, trace: &Trace) -> Result<Vec<f64>>` | Per-sample values under the configured mode |
+| `.violations` | `violations(&self, trace: &Trace) -> Result<Vec<(f64, f64)>>` | Failing spans under the configured mode |
+| `.update` | `update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Robustness>` | Fold one named sample |
+| `.update_packed` | `update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness>` | Fold one sample by slot, no name lookup |
+| `.symbol_index` | `symbol_index(&mut self, name: &str) -> Result<Option<usize>>` | The packed slot for a variable |
+| `.last_probability` | `last_probability(&self) -> Option<f64>` | The live satisfaction estimate for a `P` formula; `statistical` |
+| `.reset` | `reset(&mut self)` | Forget the stream and start over |
+| `.formula` / `.config` | `-> &Formula` / `-> &MonitorConfig` | Borrow what the monitor wraps |
+| `.check` | `check(&self, trace: &Trace, lifting: &LiftingRegistry) -> Result<SmcResult>` | The Monte Carlo check with the configured `SmcConfig`; `statistical` |
+| `.check_sequential` | `check_sequential(&self, trace: &Trace, lifting: &LiftingRegistry, sprt: &SprtConfig) -> Result<SprtResult>` | The SPRT check; `statistical` |
+| `.check_rare` | `check_rare(&self, system: &StochasticSystem) -> Result<RareEventResult>` | Splitting with the configured `RareEventConfig`; `statistical` |
+
+The same checks exist directly on `Formula` when you would rather pass the config per call: `check`, `check_distribution`, `check_conservative`, `check_sequential`, `check_bayesian`, `check_rare_event`, and, under `gpu`, `check_rare_event_gpu`. Only the Bayesian regime has no `Monitor` form.
+
+## Streaming verdicts
+
+`Robustness` is the verdict every streaming update returns. It is an enum, not a struct: `Concrete(f64)` once the value is final, `Interval(f64, f64)` while future samples can still move it.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Robustness::TRUE` / `FALSE` | consts | `Concrete` positive and negative infinity |
+| `Robustness::UNKNOWN` | const | `Interval(-inf, inf)`, nothing decided yet |
+| `.is_resolved` | `is_resolved(&self) -> bool` | Whether the value is final |
+| `.value` | `value(&self) -> f64` | The value, or the interval midpoint while unresolved; NaN for `UNKNOWN` |
+| `.concrete` | `concrete(&self) -> Option<f64>` | The value only when resolved |
+| `.lower` / `.upper` | `lower(&self) -> f64` / `upper(&self) -> f64` | The interval ends; equal once resolved |
+| `.is_satisfied` | `is_satisfied(&self) -> bool` | Whether `value() >= 0`, so zero counts as satisfied and an unresolved verdict answers from the midpoint |
+| `.negate` / `.min` / `.max` / `.implies` | `negate(self) -> Robustness` and likewise | The STL operations lifted to intervals |
+
+```rust
+use sentil::Robustness;
+
+let pending = Robustness::Interval(-0.5, 2.0);
+assert!(!pending.is_resolved());
+assert_eq!(pending.value(), 0.75); // midpoint until the window closes
+
+let done = Robustness::Concrete(1.5);
+assert_eq!(done.concrete(), Some(1.5));
+assert!(done.is_satisfied());
+```
+
+Treat `is_satisfied` on an unresolved verdict as provisional; gate alarms on `is_resolved()` first, as the streaming example above does.
+
+## Multi-formula monitoring
+
+Three types run more than one property, or strip the single-formula path to its core. All are crate-root exports.
+
+`StreamMonitor` is the bare streaming engine behind `Monitor`, with no config and no offline path:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `StreamMonitor::new` | `new(formula: &str) -> Result<StreamMonitor>` | Parse and build |
+| `StreamMonitor::from_formula` | `from_formula(formula: &Formula) -> Result<StreamMonitor>` | Build from a tree |
+| `StreamMonitor::with_lifting` | `with_lifting(formula: &Formula, lifting: &LiftingRegistry, config: &SmcConfig) -> Result<StreamMonitor>` | Online PrSTL: stream a particle ensemble; `statistical` |
+| `.update` / `.update_packed` | as `Monitor` | Fold one sample |
+| `.run` | `run(&mut self, trace: &Trace) -> Result<Vec<Robustness>>` | Replay a whole trace, one verdict per sample |
+| `.symbol_index` | `symbol_index(&self, name: &str) -> Option<usize>` | The packed slot; note `&self` and a bare `Option`, unlike `Monitor` |
+| `.variable_count` | `variable_count(&self) -> usize` | The packed width |
+| `.last_probability` | `last_probability(&self) -> Option<f64>` | The live estimate under `with_lifting`; `statistical` |
+| `.reset` | `reset(&mut self)` | Forget the stream |
+
+`MultiFormulaMonitor` advances many streaming formulas under one clock, each keyed by an id:
+
+```rust
+use sentil::MultiFormulaMonitor;
+
+let mut fleet = MultiFormulaMonitor::new();
+fleet.add("speed-floor", "G[0, 10] (speed > 5)")?;
+fleet.add("accel-cap", "G[0, 10] (accel < 3)")?;
+
+let verdicts = fleet.update(0.0, &[("speed", 9.0), ("accel", 1.0)])?;
+for (id, verdict) in &verdicts {
+    if verdict.is_resolved() && !verdict.is_satisfied() {
+        println!("{id} violated");
+    }
+}
+```
+
+| Item | Signature | What it does |
+|---|---|---|
+| `MultiFormulaMonitor::new` | `new() -> MultiFormulaMonitor` | An empty set |
+| `.add` | `add(&mut self, id: impl Into<String>, formula: &str) -> Result<()>` | Parse and register under an id |
+| `.add_formula` | `add_formula(&mut self, id: impl Into<String>, formula: &Formula) -> Result<()>` | Register a built tree |
+| `.add_probabilistic` | `add_probabilistic(&mut self, id, formula: &Formula, lifting: &LiftingRegistry, config: &SmcConfig) -> Result<()>` | Register a streaming PrSTL formula; `statistical` |
+| `.update` | `update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Vec<(String, Robustness)>>` | One shared sample in, one verdict per formula out |
+| `.probabilities` / `.probability` | `probabilities(&self) -> Vec<(String, Option<f64>)>` / `probability(&self, id: &str) -> Option<f64>` | The live estimates; `statistical` |
+| `.reset` / `.remove` | `reset(&mut self)` / `remove(&mut self, id: &str) -> bool` | Restart the clock, or drop one formula |
+| `.ids` / `.len` / `.is_empty` | `ids(&self) -> impl Iterator<Item = &str>` and the usual pair | Enumerate and count |
+
+`FormulaBank` is the offline counterpart, evaluating many named formulas over one trace; per-formula failures come back as per-id `Result`s rather than failing the batch:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `FormulaBank::new` | `new() -> FormulaBank` | An empty bank |
+| `.add` / `.add_formula` | `add(&mut self, id, formula: &str) -> Result<()>` / `add_formula(&mut self, id, formula: &Formula)` | Register |
+| `.robustness` / `.robustness_dense` | `robustness(&self, trace: &Trace) -> Vec<(String, Result<f64>)>` and the dense twin | Score every formula |
+| `.check` | `check(&self, trace: &Trace, lifting: &LiftingRegistry, config: &SmcConfig) -> Vec<(String, Result<SmcResult>)>` | Batch PrSTL checks; `statistical` |
+| `.ids` / `.len` / `.is_empty` | as `MultiFormulaMonitor` | Enumerate and count |
+
+## Traces and buffers
+
+The trace types in full. Construction and file reading:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Trace::new` | `new(times: impl Into<Vec<f64>>) -> Result<Trace>` | A trace over strictly increasing times, no signals yet |
+| `Trace::from_signal` | `from_signal(times, name: &str, values) -> Result<Trace>` | The one-signal convenience |
+| `Trace::indexed` | `indexed(len: usize) -> Trace` | Integer times `0..len` for evenly sampled data |
+| `Trace::from_csv_str` / `from_tsv_str` | `from_csv_str(text: &str) -> Result<Trace>` and the TSV twin | Parse in-memory text; `ingest` |
+| `Trace::from_path` | `from_path(path: impl AsRef<Path>) -> Result<Trace>` | Read a file, choosing the reader by extension; `ingest` plus format features |
+| `.add_signal` | `add_signal(&mut self, name: &str, values: impl Into<Vec<f64>>) -> Result<()>` | Add or replace a named signal |
+
+Reading and resampling:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `.times` / `.signal` | `times(&self) -> &[f64]` / `signal(&self, name: &str) -> Option<&[f64]>` | Borrow the grid or one signal |
+| `.variables` | `variables(&self) -> Vec<&str>` | The signal names |
+| `.len` / `.is_empty` | `len(&self) -> usize` / `is_empty(&self) -> bool` | Sample count |
+| `.resample` | `resample(&self, times, interpolation: Interpolation) -> Result<Trace>` | A new trace on a new grid |
+| `.prepare` | `prepare(&self, interp: Interpolation) -> PreparedTrace` | Fix interpolation coefficients once |
+| `PreparedTrace::resample` | `resample(&self, times: impl Into<Vec<f64>>) -> Result<Trace>` | Resample repeatedly without refitting |
+
+`RingBuffer` is a fixed-capacity rolling window with running statistics, the piece you reach for when a monitor's verdict should react to recent history you manage yourself:
+
+```rust
+use sentil::RingBuffer;
+
+let mut window = RingBuffer::new(4)?;
+for (t, v) in [(0.0, 12.0), (1.0, 9.0), (2.0, 7.0), (3.0, 4.0), (4.0, 6.0)] {
+    window.push(t, v)?; // the fifth push evicts (0.0, 12.0) and returns it
+}
+assert_eq!(window.min(), Some(4.0));
+assert_eq!(window.mean(), Some(6.5));
+```
+
+| Item | Signature | What it does |
+|---|---|---|
+| `RingBuffer::new` | `new(capacity: usize) -> Result<RingBuffer>` | A window holding at most `capacity` samples |
+| `.push` | `push(&mut self, time: f64, value: f64) -> Result<Option<(f64, f64)>>` | Append; returns the evicted oldest sample when full |
+| `.pop_front` / `.pop_back` | `-> Option<(f64, f64)>` | Remove from either end |
+| `.get` / `.front` / `.back` | `get(&self, index: usize) -> Option<(f64, f64)>` and the ends | Indexed access |
+| `.capacity` / `.len` / `.is_empty` / `.is_full` | the usual accessors | Size state |
+| `.clear` | `clear(&mut self)` | Empty the window |
+| `.time_range` | `time_range(&self) -> Option<(f64, f64)>` | Oldest and newest timestamps |
+| `.mean` / `.variance` / `.std_dev` | `-> Option<f64>` | Running statistics over the window |
+| `.recompute_statistics` | `recompute_statistics(&mut self)` | Rebuild the running sums from scratch |
+| `.min` / `.max` | `-> Option<f64>` | Extremes over the window |
+| `.iter` / `.values` / `.times` | iterators | Walk pairs, values, or times |
+| `.recent` | `recent(&self, count: usize) -> impl Iterator` | The newest `count` samples |
+| `.at_time` / `.closest_to_time` | `at_time(&self, time: f64) -> Option<f64>` and the pair form | Exact or nearest lookup |
+| `.between` | `between(&self, start: f64, end: f64) -> impl Iterator` | The samples in a time span |
+
+## Noise models and lifting
+
+Everything here is behind `statistical`. `NoiseModel` carries seventeen families, each behind a validating constructor; the [noise models reference](/docs/reference/methods/noise-models) describes when each fits.
+
+| Constructor | Signature |
+|---|---|
+| `NoiseModel::dirac` | `dirac(value: f64) -> Result<NoiseModel>` |
+| `NoiseModel::gaussian` | `gaussian(mean: f64, std_dev: f64) -> Result<NoiseModel>` |
+| `NoiseModel::uniform` | `uniform(low: f64, high: f64) -> Result<NoiseModel>` |
+| `NoiseModel::log_normal` | `log_normal(mu: f64, sigma: f64) -> Result<NoiseModel>` |
+| `NoiseModel::exponential` | `exponential(lambda: f64) -> Result<NoiseModel>` |
+| `NoiseModel::gamma` | `gamma(shape: f64, scale: f64) -> Result<NoiseModel>` |
+| `NoiseModel::beta` | `beta(alpha: f64, beta: f64) -> Result<NoiseModel>` |
+| `NoiseModel::weibull` | `weibull(shape: f64, scale: f64) -> Result<NoiseModel>` |
+| `NoiseModel::rayleigh` | `rayleigh(scale: f64) -> Result<NoiseModel>` |
+| `NoiseModel::gumbel` | `gumbel(location: f64, scale: f64) -> Result<NoiseModel>` |
+| `NoiseModel::cauchy` | `cauchy(location: f64, scale: f64) -> Result<NoiseModel>` |
+| `NoiseModel::student_t` | `student_t(df: f64, location: f64, scale: f64) -> Result<NoiseModel>` |
+| `NoiseModel::truncated_normal` | `truncated_normal(mean: f64, std_dev: f64, lower: f64, upper: f64) -> Result<NoiseModel>` |
+| `NoiseModel::poisson` | `poisson(lambda: f64) -> Result<NoiseModel>` |
+| `NoiseModel::binomial` | `binomial(n: u64, p: f64) -> Result<NoiseModel>` |
+| `NoiseModel::bootstrap` | `bootstrap(residuals: impl Into<Vec<f64>>) -> Result<NoiseModel>` |
+| `NoiseModel::mixture` | `mixture(weights: impl Into<Vec<f64>>, components: Vec<NoiseModel>) -> Result<NoiseModel>` |
+
+Fitting a model from paired calibration data is a two-step: compute residuals under an interaction, then fit a family to them.
+
+```rust
+use sentil::{NoiseInteraction, NoiseModel};
+
+let residuals = NoiseModel::residuals(&ground_truth, &readings, NoiseInteraction::Additive)?;
+let fitted = NoiseModel::fit_gaussian(&residuals)?;
+```
+
+| Item | Signature | What it does |
+|---|---|---|
+| `NoiseModel::residuals` | `residuals(ground_truth: &[f64], readings: &[f64], interaction: NoiseInteraction) -> Result<Vec<f64>>` | `y - g` or `y / g` per pair |
+| `NoiseModel::fit_gaussian` | `fit_gaussian(samples: &[f64]) -> Result<NoiseModel>` | Maximum-likelihood Gaussian |
+| `NoiseModel::fit_bootstrap` | `fit_bootstrap(samples: &[f64]) -> Result<NoiseModel>` | The empirical distribution, resampled with replacement |
+| `NoiseModel::fit_bootstrap_reservoir` | `fit_bootstrap_reservoir(samples: &[f64], max_samples: usize) -> Result<NoiseModel>` | Bootstrap with a bounded reservoir for long calibrations |
+| `NoiseModel::fit_gaussian_mixture` | `fit_gaussian_mixture(samples: &[f64], components: usize, seed: u64) -> Result<NoiseModel>` | Expectation-maximization mixture fit |
+| `.sample` | `sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64` | One draw |
+| `.mean` / `.variance` | `-> Option<f64>` | Moments, when the family has them |
+| `NoiseInteraction` | `Additive` or `Multiplicative` | How noise combines with a reading |
+| `NoiseInteraction::apply` | `apply(self, reading: f64, noise: f64) -> f64` | `reading + noise` or `reading * noise` |
+
+`LiftingRegistry` maps variables to noise models and turns a deterministic trace into noisy realizations:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `LiftingRegistry::new` | `new() -> LiftingRegistry` | An empty registry |
+| `.register` | `register(&mut self, variable: &str, model: NoiseModel, interaction: NoiseInteraction) -> &mut LiftingRegistry` | Attach a model; returns `&mut Self` for chaining, not a `Result` |
+| `.variables` / `.is_empty` | `variables(&self) -> Vec<&str>` / `is_empty(&self) -> bool` | What is registered |
+| `.lift` | `lift(&self, trace: &Trace, seed: u64) -> Result<Trace>` | One seeded noisy realization; unregistered signals pass through |
+
+The [lifting guide](/docs/probabilistic/guides/lift-trace) walks a full calibration.
+
+## Confidence intervals and sample sizing
+
+The interval machinery is public on its own, and the free functions live at the `sentil::stats::` path rather than the crate root.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `ConfidenceInterval` | `{ lower: f64, upper: f64, level: f64 }`, all public | An interval at a confidence level |
+| `.width` / `.contains` | `width(&self) -> f64` / `contains(&self, p: f64) -> bool` | Read it |
+| `IntervalMethod` | `Wilson` (default), `ClopperPearson`, `Jeffreys`, `AgrestiCoull` | The four interval constructions |
+| `IntervalMethod::interval` | `interval(self, successes: u64, trials: u64, level: f64) -> ConfidenceInterval` | Apply any method by value |
+| `stats::wilson_interval` | `wilson_interval(successes: u64, trials: u64, level: f64) -> ConfidenceInterval` | The default score interval |
+| `stats::clopper_pearson` | same shape | The conservative exact interval |
+| `stats::jeffreys_interval` / `stats::agresti_coull` | same shape | The Bayesian-prior and pragmatic alternatives |
+| `stats::z_score` | `z_score(level: f64) -> f64` | The two-sided normal quantile; `z_score(0.95)` is 1.959964 |
+| `stats::chernoff_hoeffding_samples` | `chernoff_hoeffding_samples(epsilon: f64, delta: f64) -> Result<u64>` | A priori sample sizing; `(0.1, 0.05)` gives 185 |
+| `stats::wilson_samples` | `wilson_samples(epsilon: f64, level: f64) -> Result<u64>` | Samples for a target half-width; `(0.01, 0.95)` gives 9604 |
+
+A number to check the wiring with: `stats::clopper_pearson(50, 100, 0.95)` is `[0.398321, 0.601679]`, slightly wider than Wilson's `[0.4038, 0.5962]` on the same counts, which is the exact interval's price. [Confidence intervals](/docs/probabilistic/concepts/confidence-intervals) explains how to choose, and the [sample-size guide](/docs/probabilistic/guides/sample-size) budgets a run.
+
+The Monte Carlo configuration and results:
+
+| Item | Shape | Notes |
+|---|---|---|
+| `SmcConfig` | `{ samples: u64, confidence: f64, seed: u64, interval_method: IntervalMethod }` | Default is 10,000 samples, 0.95, seed 42, Wilson |
+| `SmcResult` | `{ probability: f64, interval: ConfidenceInterval, satisfactions: u64, samples: u64, holds: bool }` | `satisfactions` is the raw success count behind the estimate |
+| `RobustnessDistribution` | `{ count: u64, mean: f64, variance: f64, min: f64, max: f64 }` plus `std_dev()` | From `check_distribution`, the ensemble's spread |
+
+## Sequential test configuration
+
+`SprtConfig` and `BayesConfig` validate on construction and again on deserialization under `serde`, so an invalid shape cannot arrive from a config file.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SprtConfig::new` | `new(p0: f64, p1: f64, alpha: f64, beta: f64, max_samples: u64) -> Result<SprtConfig>` | The indifference region `(p0, p1)` and both error rates |
+| `.with_seed` | `with_seed(self, seed: u64) -> SprtConfig` | Reseed the draws |
+| `.seed` / `.p0` / `.p1` / `.alpha` / `.beta` / `.max_samples` | accessors | Read the settings back |
+| `SprtResult` | `AcceptH0 { samples }`, `AcceptH1 { samples }`, `Inconclusive { samples, log_likelihood }` | `AcceptH1` means the property holds at the `p1` rate |
+| `stats::sequential_test` | `sequential_test<F: FnMut() -> Result<bool>>(config: &SprtConfig, draw: F) -> Result<SprtResult>` | Run Wald's test over any Bernoulli source |
+| `BayesConfig::new` | `new(threshold: f64, bayes_factor: f64, max_samples: u64) -> Result<BayesConfig>` | Beta(1, 1) prior, stop at the factor cutoff |
+| `.with_seed` and accessors | as `SprtConfig` | |
+| `BayesResult` | `Holds { samples, posterior }`, `Fails { samples, posterior }`, `Inconclusive { samples, posterior }` | Every variant carries the posterior |
+| `stats::bayes_sequential_test` | `bayes_sequential_test<F: FnMut() -> Result<bool>>(config: &BayesConfig, draw: F) -> Result<BayesResult>` | The Bayesian loop over any Bernoulli source |
+
+The two free functions accept any draw closure, so they also test things that are not formulas; feeding `sequential_test` a source that succeeds nine times in ten decides `AcceptH1` within a handful of draws. The [SPRT guide](/docs/probabilistic/guides/run-sprt) tunes the error rates.
+
+## Stochastic systems and rare events
+
+`StochasticSystem` wraps two closures into a sampling-ready simulator; it drives both `check_rare_event` and `ChanceConstraint::validate`.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `StochasticSystem::new` | `new(variables, dt: f64, horizon: usize, init: impl Fn(&mut dyn RngCore) -> Vec<f64> + Sync + 'static, step: impl Fn(&[f64], f64, &mut dyn RngCore) -> Vec<f64> + Sync + 'static) -> Result<StochasticSystem>` | `init` draws the initial state, `step` advances it one `dt` |
+| `.thread_confined` / `.is_thread_confined` | `thread_confined(self) -> StochasticSystem` and the accessor | Opt out of parallel sampling when the closures touch a runtime that is not `Sync`-safe in practice |
+| `.variables` / `.dt` / `.horizon` | accessors | The declared shape |
+| `.initial` / `.advance` | `initial(&self, rng: &mut dyn RngCore) -> Vec<f64>` / `advance(&self, previous: &[f64], time: f64, rng: &mut dyn RngCore) -> Vec<f64>` | Drive it by hand |
+| `.simulate` | `simulate(&self, rng: &mut dyn RngCore) -> Result<Trace>` | One full trajectory: the initial state plus `horizon` steps, so `horizon + 1` samples |
+
+The splitting configuration and result:
+
+| Item | Shape | Notes |
+|---|---|---|
+| `RareEventConfig` | `{ particles: usize, margin: f64, seed: u64 }` | Default is 4096 particles, margin 0, seed 42 |
+| `RareEventResult` | `{ probability: f64, violation_probability: f64, holds: bool, simulations: u64 }` | The two probabilities sum to one; a point estimate by design, with no interval |
+
+Underneath sits a generic estimator you can drive with your own state machine, at the `sentil::stats::` path:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `RareEventSimulator` | trait: `type State: Clone`, `initial_state(&self, rng) -> State`, `step(&self, &State, rng) -> State`, `is_terminal(&self, &State) -> (bool, bool)`, `score(&self, &State) -> f64` | `is_terminal` returns (finished, event occurred); `score` must rise toward the event |
+| `RareEventEstimate` | `{ probability: f64, simulations: u64 }` | The raw estimate |
+| `stats::adaptive_multilevel_splitting` | `adaptive_multilevel_splitting<S: RareEventSimulator>(simulator: &S, particles: usize, target_score: f64, max_steps: u64, seed: u64) -> Result<RareEventEstimate>` | Clone survivors level by level until the target score is reached |
+
+`SimModel` is the declarative twin of `StochasticSystem`: dynamics as `SimExpr` terms instead of closures, which is what lets the GPU transpile them. Both re-export at the crate root under the `gpu` feature.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SimExpr` | `Prev(usize)`, `Time`, `Const(f64)`, `Add`, `Sub`, `Mul`, `Div`, `Call(String, Vec<SimExpr>)`, `Noise(usize)` | One update term; `Prev(i)` reads variable `i` at the previous step, `Noise(i)` draws from noise source `i` |
+| `SimModel::new` | `new(variables, dt: f64, horizon: usize, init: Vec<SimExpr>, advance: Vec<SimExpr>, noise: Vec<NoiseModel>) -> Result<SimModel>` | One init and one advance expression per variable |
+| `.variables` / `.dt` / `.horizon` | accessors | The declared shape |
+| `.simulate` | `simulate(&self, rng: &mut dyn RngCore) -> Result<Trace>` | Interpret on the CPU |
+| `.to_stochastic_system` | `to_stochastic_system(&self) -> Result<StochasticSystem>` | Bridge to every CPU consumer |
+| `Formula::check_rare_event_gpu` | `check_rare_event_gpu(&self, model: &SimModel, config: &RareEventConfig) -> Result<GpuSplittingEstimate>` | GPU splitting; needs a `G`-shaped, atemporal-bodied inner formula with a window starting at 0 |
+| `gpu::is_available` | `is_available() -> bool` | Whether a usable device exists; cached after the first call |
+| `GpuSplittingEstimate` | `{ violation_probability: f64, particles: usize, levels: u32 }` | What the GPU run resolved |
+
+## Synthesis reference
+
+The synthesis surface in full. The worked path is in the [synthesis section](#synthesis) above; backends and their tradeoffs are on [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+Models. `SystemModel` is the trait the synthesizer drives, and implementing it is how custom dynamics plug in; the cart in this example damps its velocity by ten percent per step:
+
+```rust
+use sentil::{Bounds, Formula, SynthesisProblem, Synthesizer, SystemModel, Trace};
+
+struct Cart {
+    x0: [f64; 2],
+}
+
+impl SystemModel for Cart {
+    fn input_dimension(&self) -> usize {
+        10
+    }
+
+    fn initial_state(&self) -> &[f64] {
+        &self.x0
+    }
+
+    fn rollout_from(&self, initial: &[f64], input: &[f64]) -> sentil::Result<Trace> {
+        let (mut pos, mut vel) = (initial[0], initial[1]);
+        let mut positions = Vec::with_capacity(input.len());
+        for u in input {
+            vel = 0.9 * vel + u;
+            pos += vel;
+            positions.push(pos);
+        }
+        let times: Vec<f64> = (1..=input.len()).map(|i| i as f64).collect();
+        Trace::from_signal(times, "pos", positions)
+    }
+}
+
+let model = Cart { x0: [0.0, 0.0] };
+let spec = Formula::parse("F[0, 10] (pos > 4)")?;
+let problem = SynthesisProblem::new(&model, &spec)
+    .with_bounds(Bounds::new(vec![-1.0; 10], vec![1.0; 10])?);
+assert!(Synthesizer::solve(&problem)?.holds);
+```
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SystemModel::input_dimension` | `input_dimension(&self) -> usize` | The packed input length |
+| `SystemModel::initial_state` | `initial_state(&self) -> &[f64]` | The default start; the online controller rolls from the live state instead |
+| `SystemModel::rollout_from` | `rollout_from(&self, initial: &[f64], input: &[f64]) -> Result<Trace>` | Turn an input into the trace the formula reads |
+| `SystemModel::affine_form` | `affine_form(&self) -> Option<AffineForm>` | Opt into the MILP backend; the default `None` opts out |
+| `LinearModel::new` | `new(a: Vec<Vec<f64>>, b: Vec<Vec<f64>>, x0, variables, dt: f64, horizon: usize) -> Result<LinearModel>` | Built-in `x_{t+1} = A x_t + B u_t`, each state component a named signal |
+| `AffineForm` | `{ a, b, x0, variables: Vec<String>, dt: f64, horizon: usize }`, all public | The affine structure a model hands the MILP encoder |
+| `Bounds::new` | `new(lower: impl Into<Vec<f64>>, upper: impl Into<Vec<f64>>) -> Result<Bounds>` | A per-coordinate box |
+| `Bounds::unbounded` | `unbounded(dimension: usize) -> Bounds` | No box, for barrier-only filtering |
+| `.clamp` / `.dimension` / `.lower` / `.upper` | `clamp(&self, point: &mut [f64])` and accessors | Project a point into the box, or read it |
+
+Problems and solving:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SynthesisProblem::new` | `new(model: &M, spec: &Formula) -> SynthesisProblem<M>` | An open-loop problem; the builder methods consume and return `self` |
+| `.with_bounds` / `.with_smooth` / `.with_budget` / `.with_backend` / `.with_population` | builder methods | Box, smoothing, iteration cap, backend choice, CMA-ES population |
+| `.on_gpu` | `on_gpu(self, enable: bool) -> SynthesisProblem<M>` | Batch candidate scoring on the GPU; `synthesis-gpu` |
+| `Synthesizer::solve` | `solve(problem: &SynthesisProblem<M>) -> Result<SynthesisResult>` | Run the chosen backend |
+| `SynthesisResult` | `{ input: Vec<f64>, robustness: f64, holds: bool, backend: Backend }` | `backend` records which solver actually ran |
+| `Backend` | `Auto` (default), `Gradient`, `CmaEs`, `Milp` | `Auto` picks by problem structure |
+
+Smoothing. Synthesis differentiates through a soft robustness; the [smooth semantics](/docs/reference/language/smooth-semantics) page defines it exactly.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SmoothConfig::new` | `new(temperature: f64) -> Result<SmoothConfig>` | Lower temperature hugs the exact min and max tighter |
+| `.with_kind` / `.temperature` / `.kind` | builder and accessors | Pick the softening |
+| `SoftKind` | `LogSumExp` (default), `ArithmeticGeometricMean` | The two soft-extremum families |
+| `Formula::smooth_robustness` | `smooth_robustness(&self, trace: &Trace, config: SmoothConfig) -> Result<f64>` | The differentiable score; a soft minimum sits at or below the exact one |
+| `Formula::smooth_value_and_gradient` | `smooth_value_and_gradient(&self, trace: &Trace, config: SmoothConfig) -> Result<(f64, BTreeMap<String, Vec<f64>>)>` | Reverse-mode gradients per signal; `LogSumExp` only |
+| `Formula::smooth_gradient` | `smooth_gradient(&self, model: &impl SystemModel, initial: &[f64], input: &[f64], config: SmoothConfig) -> Result<(f64, Vec<f64>)>` | Value and gradient with respect to the input, through the model |
+| `synthesis::soft_min` / `soft_max` | `soft_min(values: &[f64], temperature: f64) -> f64` and the dual | The raw soft extrema |
+
+Control:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Controller::new` | `new(model: &M, spec: &Formula, input_width: usize, budget: Duration) -> Controller<M>` | Receding horizon under a wall-clock deadline; anytime, returning the best input found in budget |
+| `Controller::with_iterations` | `with_iterations(model: &M, spec: &Formula, input_width: usize, max_iters: usize) -> Controller<M>` | The alternate constructor: a fixed iteration cap instead of a clock, for `no_std` targets |
+| `.with_bounds` / `.with_smooth` | builder methods | Constrain and tune |
+| `.control` | `control(&mut self, state: &[f64]) -> Result<Vec<f64>>` | One planned input, warm-started from the previous step |
+| `SafetyFilter::new` | `new(bounds: Bounds) -> SafetyFilter` | A least-restrictive shield over any nominal controller |
+| `SafetyFilter::filter` | `filter(&self, nominal: &[f64], barriers: &[(Vec<f64>, f64)]) -> Result<Vec<f64>>` | Each barrier is `a . u >= b`; a safe nominal passes through unchanged, an unsafe one moves the least distance that satisfies every barrier |
+| `ChanceConstraint::new` | `new(formula: Formula, probability: f64) -> Result<ChanceConstraint>` | A probabilistic guarantee; `statistical` too |
+| `.with_confidence` / `.with_tightening` | builder methods | The validation level and a conservative margin |
+| `.validate` | `validate(&self, system: &StochasticSystem, samples: u64, seed: u64) -> Result<ChanceReport>` | Sample the system and test the guarantee |
+| `ChanceReport` | `{ estimate: f64, lower_bound: f64, samples: u64, holds: bool }` | `holds` compares the interval's lower bound against the target |
+
+Falsification and mining:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Formula::find_counterexample` | `find_counterexample(&self, model: &M, bounds: &Bounds, max_iters: usize, smooth: SmoothConfig) -> Result<Witness>` | Gradient descent toward a violation |
+| `Formula::falsify` | `falsify(&self, model: &M, bounds: &Bounds, config: CmaConfig, restarts: usize) -> Result<Witness>` | Restarted CMA-ES, for rugged objectives |
+| `Witness` | `{ input: Vec<f64>, robustness: f64, trace: Trace }`, all public | Negative robustness means a genuine counterexample |
+| `mine_tightest_parameter` | `mine_tightest_parameter<M: Fn(f64) -> Result<Formula>>(make, traces: &[Trace], lower: f64, upper: f64) -> Result<f64>` | Binary-search the sharpest constant that holds on every trace |
+| `CmaConfig` | `{ population, max_generations, initial_step, tol_step, seed }`, all public, with `Default` | Tuning for CMA-ES and the falsifier |
+
+Numeric building blocks, at the `sentil::synthesis::` path; useful when you drive the optimizers directly:
+
+| Item | Signature | What it does |
+|---|---|---|
+| `synthesis::maximize` | `maximize<F: Fn(&[f64]) -> Result<(f64, Vec<f64>)>>(objective, start: &[f64], bounds: &Bounds, max_iters: usize) -> Result<(Vec<f64>, f64)>` | Projected gradient ascent on any objective that returns value and gradient |
+| `synthesis::cma_es` | `cma_es<F: Fn(&[f64]) -> Result<f64>>(objective, start: &[f64], bounds: &Bounds, config: CmaConfig) -> Result<(Vec<f64>, f64)>` | Black-box search, no gradient needed |
+| `synthesis::cma_es_batched` | `cma_es_batched<F: Fn(&[Vec<f64>]) -> Result<Vec<f64>>>(batch_objective, start, bounds, config) -> Result<(Vec<f64>, f64)>` | Score a whole generation per call, the shape GPU batching uses |
+| `synthesis::solve_qp` | `solve_qp(p: &[Vec<f64>], q: &[f64], g: &[Vec<f64>], h: &[f64], max_iters: usize) -> Result<Vec<f64>>` | Minimize `1/2 uᵀPu + qᵀu` subject to `Gu <= h`, for positive-definite `P` |
+| `synthesis::solve_milp` | `solve_milp(affine: &AffineForm, spec: &Formula, bounds: &Bounds, max_nodes: usize) -> Result<Vec<f64>>` | The complete big-M encoding over affine dynamics; `std` |
+| `synthesis::symmetric_eigen` | `symmetric_eigen(matrix: &[Vec<f64>]) -> Result<(Vec<f64>, Vec<Vec<f64>>)>` | Eigendecomposition of a symmetric matrix |
+| `synthesis::solve_spd` | `solve_spd(matrix: &[Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>>` | Solve a symmetric positive-definite system |
+
+## The specifications library
+
+Behind `specs`, the crate embeds the standards-derived specification templates and resolves them by name. The catalog itself is browsable under [specifications](/docs/reference/specifications/catalog).
+
+```rust
+use sentil::SpecRegistry;
+
+let builder = SpecRegistry::global()
+    .builder("controls/overshoot")?
+    .with_param("max_overshoot", 0.02)?
+    .with_variant("bidirectional")?;
+
+println!("{}", builder.build_deterministic()?);
+// always[0, 30.0](abs(output - reference) < 0.02 * 1.0)
+let monitor = SpecRegistry::global().builder("controls/overshoot")?.into_monitor()?;
+```
+
+`with_param` rejects a name the template does not define, so a typo fails at build time rather than monitoring the wrong thing; `controls/overshoot` takes `max_overshoot`, `step_amplitude`, `T`, and `p`. The builder methods consume `self` and return `Result<Self>`, so chain them with `?`.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SpecRegistry::global` | `global() -> &'static SpecRegistry` | The process-wide registry of embedded templates |
+| `.available` | `available(&self) -> Vec<String>` | Every template name, sorted |
+| `.get` | `get(&self, name: &str) -> Result<SpecTemplate>` | The raw parsed template |
+| `.load_file` | `load_file<P: AsRef<Path>>(&self, path: P) -> Result<SpecTemplate>` | Read a template you authored, same format as the embedded ones |
+| `.builder` | `builder(&self, name: &str) -> Result<SpecBuilder>` | Start resolving a named template |
+| `SpecBuilder::new` | `new(template: SpecTemplate) -> SpecBuilder` | Build from a template you loaded yourself |
+| `.template` | `template(&self) -> &SpecTemplate` | Borrow the template underneath |
+| `.with_variant` | `with_variant(self, variant: &str) -> Result<SpecBuilder>` | Select a named variant |
+| `.with_param` | `with_param(self, name: &str, value: f64) -> Result<SpecBuilder>` | Override a parameter; unknown names and out-of-range values error |
+| `.available_variants` | `available_variants(&self) -> Vec<&str>` | The variant names |
+| `.parameters` | `parameters(&self) -> HashMap<String, f64>` | The effective parameter values after overrides |
+| `.build_deterministic` / `.build_probabilistic` | `-> Result<String>` | The resolved formula as text, STL or PrSTL |
+| `.build_formula` / `.build_probabilistic_formula` | `-> Result<Formula>` | The same, parsed |
+| `.resolved_noise` | `resolved_noise(&self) -> Option<HashMap<String, NoiseDef>>` | The template's noise declarations after variant overrides |
+| `.build_lifting_registry` | `build_lifting_registry(&self) -> Result<LiftingRegistry>` | The declared noise as a ready registry |
+| `.smc_settings` / `.sprt_settings` / `.ams_settings` | `-> Option<&SmcSettings>` and kin | The template's recommended verification settings |
+| `.noise_fit` | `noise_fit(&self) -> Option<&HashMap<String, NoiseFitDef>>` | How the template suggests fitting noise from your calibration data |
+| `.into_monitor` | `into_monitor(self) -> Result<Monitor>` | A monitor preloaded with the spec and its recommended settings |
+
+The template's component types live at the `sentil::spec_builder::` path; you meet them when authoring templates or introspecting one:
+
+| Type | Shape |
+|---|---|
+| `SpecTemplate` | `{ metadata, variables, parameters, formulas, noise, noise_fit, verification, variants }`, all public |
+| `Metadata` | `{ name, domain, description, references }` |
+| `VariableDef` | `{ unit, description }` |
+| `ParameterDef` | `{ param_type, default: f64, unit, range: Option<[f64; 2]>, description }` |
+| `Formulas` | `{ deterministic: String, probabilistic: Option<String> }` |
+| `NoiseDef` | `{ model: String, interaction: String, params }` |
+| `NoiseFitDef` | `{ algorithm, k, max_iters, interaction }` |
+| `VerificationConfig` | `{ smc, sprt, ams }` |
+| `SmcSettings` / `SprtSettings` / `AmsSettings` | `{ confidence, sample_budget }` / `{ p0, p1, alpha, beta, max_samples }` / `{ num_particles, max_steps }` |
+| `VariantDef` / `VariantFormulas` / `VariantParamOverride` | a variant's description, formula overrides, and `{ default: f64 }` parameter overrides |
+| `spec_builder::noise_model_from_def` | `noise_model_from_def(def: &NoiseDef) -> Result<NoiseModel>` turns one declaration into a model |
+
+## Related pages
+
+<Cards>
+  <Card title="Errors across bindings" href="/docs/languages/across/handle-errors" description="The status-code and error-family mapping every binding shares." />
+  <Card title="Cargo features" href="/docs/reference/methods/features" description="The cross-package feature matrix and the minimal builds." />
+  <Card title="Operator reference" href="/docs/reference/language/operators" description="Syntax, semantics, and a worked example for every operator." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="Gradient, CMA-ES, and MILP: what each solves and when Auto picks it." />
+</Cards>
