@@ -1,19 +1,19 @@
 # Modest SMC baseline models
 
-We test four models on the Modest Toolset. Each model gives a statistical model checking baseline for the SENTIL statistical layer. PRISM and SENTIL check the circadian model network with the same property, so the three tools give comparable numbers.
+We test four models on the Modest Toolset. Each model gives a statistical model checking baseline for the SENTIL statistical layer. Modest, PRISM and SENTIL all check the circadian network with the same property. You can compare their numbers directly.
 
 ## The models
 
 | File | What it models | Ported from | Change made |
 | --- | --- | --- | --- |
-| `circadian.modest` | Barkai-Leibler gene network, a CTMC | the PRISM model | reactions become rate transitions |
-| `tandem_queue.modest` | two queues in series, a CTMC | the PRISM model | reactions become rate transitions |
-| `biodiesel.modest` | a reactor with a heater that can fail | the reference model | functions replace the local variables |
-| `powertrain.modest` | air-fuel-ratio control | the reference model | one step becomes three blocks |
+| `circadian.modest` | Barkai-Leibler gene network |
+| `tandem_queue.modest` | two queues in series |
+| `biodiesel.modest` | a reactor with a heater that can fail |
+| `powertrain.modest` | air-fuel-ratio control |
 
 ## Running them
 
-Install the Modest Toolset first. Get the toolset from `modestchecker.net`.
+Get the Modest Toolset from `modestchecker.net`. Then install it.
 
 Set `MODEST` to the launcher. Then run one model:
 
