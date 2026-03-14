@@ -16,12 +16,16 @@ case "$name" in
   *) echo "no property registered for $name" >&2; exit 2 ;;
 esac
 
-out=$("$MODEST" simulate "$model" -N 10000 --max-run-length 0 --seed 20260304 2>&1)
-p=$(printf '%s\n' "$out" | sed -n 's/.*Estimated probability: *\([0-9.][0-9.]*\).*/\1/p')
-ci=$(printf '%s\n' "$out" | sed -n 's/.*Interval half-width: *\([0-9.][0-9.]*\).*/\1/p')
-secs=$(printf '%s\n' "$out" | sed -n 's/.*Simulation time: *\([0-9.][0-9.]*\) s.*/\1/p')
+if ! out=$("$MODEST" simulate "$model" -N 10000 --max-run-length 0 --seed 20260304 2>&1); then
+  echo "modest failed on $name: $out" >&2
+  exit 1
+fi
 
-if [ -z "$p" ]; then
+p=$(printf '%s\n' "$out" | sed -n 's/.*Estimated probability: *\([-+0-9.eE][-+0-9.eE]*\).*/\1/p')
+ci=$(printf '%s\n' "$out" | sed -n 's/.*Interval half-width: *\([-+0-9.eE][-+0-9.eE]*\).*/\1/p')
+secs=$(printf '%s\n' "$out" | sed -n 's/.*Simulation time: *\([-+0-9.eE][-+0-9.eE]*\) s.*/\1/p')
+
+if [ -z "$p" ] || [ -z "$ci" ] || [ -z "$secs" ]; then
   echo "modest ran but gave no estimate for $name" >&2
   exit 1
 fi
