@@ -6,6 +6,16 @@ services:
       target: base
     image: ghcr.io/sedislab/sentil-artifact:0.3.0
 
+  sentil-modest:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: base
+    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    volumes:
+      - ${MODEST_HOME:?set MODEST_HOME to a Modest install}:/opt/modest:ro
+    command: make bench-modest MODEST=/opt/modest/modest
+
   sentil-gpu:
     build:
       context: ..

@@ -43,6 +43,14 @@ docker run --gpus all ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
 
 The GPU stage is verified on a machine with a GPU, not in continuous integration, because the hosted runners have no device.
 
+### Modest
+
+1. Download the Linux build from [modestchecker.net](modestchecker.net).
+2. Unpack it and run <modest-dir>/modest.
+3. Check with <modest-dir>/modest --version.
+4. MODEST_HOME=<modest-dir>/modest.
+5. Run `MODEST_HOME=/path/to/Modest docker compose -f docker/docker-compose.yml run --rm sentil-modest`.
+
 ## Without Docker
 
-The same verification runs directly through the Makefile and cargo: `cargo test -p sentil` for the engine suite and `make -C sentil-ffi test-ffi` for the C ABI.
+The same verification runs directly through the Makefile and cargo: `cargo test -p sentil` for the engine suite and `make -C sentil-ffi test-ffi` for the C ABI. The Modest baseline runs the same way with `make bench-modest MODEST=<path>/modest`.
