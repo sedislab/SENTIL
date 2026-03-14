@@ -13,7 +13,8 @@ services:
       target: base
     image: ghcr.io/sedislab/sentil-artifact:0.3.0
     volumes:
-      - ${MODEST_HOME:?set MODEST_HOME to a Modest install}:/opt/modest:ro
+      - ${MODEST_HOME:-.}:/opt/modest:ro
+      - ../benchmarks/results:/sentil/benchmarks/results
     command: make bench-modest MODEST=/opt/modest/modest
 
   sentil-gpu:
