@@ -1,0 +1,727 @@
+---
+title: "Python"
+description: "The full API reference for the Python binding."
+---
+
+The binding is a PyO3 native extension module rather than a wrapper over the C ABI. Crossing into native code costs about 521 ns per call in the cross-language benchmark.
+
+## Install
+
+We have two ways of installing SENTIL for Python. Through pip, or building it from source.
+
+### From PyPI
+
+<Steps>
+<Step>
+
+Install the wheel. SENTIL needs Python 3.8 or newer. Wheels are published for Linux, macOS, and Windows on x86_64, and for Linux and macOS on arm64. Where none matches, notably Windows on arm64, pip falls back to the source distribution and that build needs a Rust toolchain, so follow [from source](#from-source) instead.
+
+```bash
+pip install sentil
+```
+
+</Step>
+<Step>
+
+Add the extras you want. `sentil[pandas]` brings the DataFrame reader and `sentil[plotting]` the Matplotlib figures; without them, `import sentil.pandas` and `import sentil.plotting` raise `ModuleNotFoundError` with the install hint in the message.
+
+```bash
+pip install 'sentil[pandas]' 'sentil[plotting]'
+```
+
+</Step>
+<Step>
+
+Check it.
+
+```bash
+python -c "import sentil; print(sentil.__version__)"
+```
+
+```text
+0.3.0
+```
+
+</Step>
+</Steps>
+
+### From source
+
+You need a Rust toolchain from [rustup.rs](https://rustup.rs), [maturin](https://www.maturin.rs), and a linker.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The distribution's compiler package supplies the linker: `build-essential` on Debian and Ubuntu, `gcc` and `glibc-devel` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply the linker.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Rust links through MSVC, so install the Visual Studio Build Tools with the "Desktop development with C++" workload before rustup. The rustup installer prompts for this and can trigger it for you.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone the repository and enter the Python package.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL/sentil-py
+```
+
+</Step>
+<Step>
+
+Build the extension into the active environment. `maturin develop` compiles `sentil-core` from the same checkout, so the binding you get is built against the source you have.
+
+```bash
+pip install maturin
+maturin develop --release --extras pandas,plotting
+```
+
+The compiled extension lands at `sentil-py/sentil/_sentil.abi3.so` and the `sentil` package is importable in that environment. Drop `--release` for a faster build and a slower monitor.
+
+</Step>
+<Step>
+
+Run the binding's own tests, then the same version check as the wheel route.
+
+```bash
+python -m pytest tests
+python -c "import sentil; print(sentil.__version__)"
+```
+
+```text
+0.3.0
+```
+
+</Step>
+</Steps>
+
+To build a wheel rather than install in place, `maturin build --release --out dist -m sentil-py/Cargo.toml` from the repository root writes it to `dist/`.
+
+## First monitor
+
+A dict of channels over a list of timestamps is a trace; one parsed formula scores it.
+
+```python title="first_monitor.py"
+import sentil
+from sentil import Formula
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = Formula.parse("G (speed > 5)")
+
+print(phi.robustness(trace))  # -1.0
+```
+
+The predicate scores `speed - 5` at each sample, giving `7, 4, 2, -1, 1`, and `G`, read always, keeps the worst of them: speed drops to 4 at $t = 3$, one unit under the bound, so the answer is $-1.0$. Why a signed margin instead of a boolean is the subject of [what STL is](/docs/monitoring/concepts/what-is-stl); the syntax `parse` accepts is in the [grammar](/docs/reference/language/grammar). The same formula also answers per-sample, dense-time, and where-did-it-fail questions:
+
+```python title="reads.py"
+phi.robustness_signal(trace)   # [-1. -1. -1. -1.  1.], the value at every sample
+phi.robustness_dense(trace)    # -1.0 under dense-time interpolation
+phi.violations(trace)          # one Interval with .start 0.0 and .end 3.0
+```
+
+`violations` returns the spans of evaluation times where the formula fails; here the suffix starting anywhere in `[0, 3]` contains the dip, and the suffix starting at 4 does not.
+
+## Traces
+
+A `Trace` pairs one time vector with named signals of matching length. Feed it lists, tuples, or NumPy arrays; times must be strictly increasing. It behaves like a read-only mapping: `len(trace)` counts samples, `trace["speed"]` returns the values as a NumPy array, `"speed" in trace` tests membership, iteration yields signal names, and `trace.get(name, default)` mirrors `dict.get`.
+
+```python title="traces.py"
+import sentil
+from sentil import Interpolation, Trace
+
+t = Trace.from_csv("time,speed\n0,12\n1,9\n2,7\n3,4\n4,6")
+t5 = Trace.indexed(5)               # times 0 through 4, add signals afterwards
+t5.add_signal("speed", [12, 9, 7, 4, 6])
+
+tr = Trace([0, 2, 4], {"x": [0.0, 2.0, 0.0]})
+tr.resample([0, 1, 2, 3, 4], Interpolation.Linear)["x"]   # [0. 1. 2. 1. 0.]
+prep = tr.prepare(Interpolation.CubicSpline)
+prep.resample([1.0, 3.0])["x"]                            # [1.375 1.375]
+```
+
+`Trace.from_path` reads csv, tsv, and txt out of the box, and parquet, arrow, sqlite, hdf5, mat, and mcap when the core is built with the matching format features; see [trace formats](/docs/reference/methods/trace-formats). For data already in a DataFrame, the `[pandas]` extra converts directly:
+
+```python title="from_pandas.py"
+import pandas as pd
+from sentil import Formula
+from sentil.pandas import trace_from_dataframe
+
+df = pd.DataFrame({"time": [0, 1, 2, 3, 4], "speed": [12, 9, 7, 4, 6]})
+trace = trace_from_dataframe(df)
+print(Formula.parse("G (speed > 5)").robustness(trace))  # -1.0
+```
+
+`trace_from_dataframe` takes the timestamps from `time_column` (default `"time"`) and turns every other column into a signal, or only the ones you name in `value_columns`. A missing column raises `KeyError` naming it.
+
+## Streaming
+
+`OnlineMonitor` ingests samples as they arrive and holds only what the temporal windows need, O(1) amortized per update; the mechanism is the [monotonic deque](/docs/monitoring/concepts/monotonic-deque). Each `update` returns a `Robustness` verdict.
+
+```python title="stream.py"
+import math
+import sentil
+
+monitor = sentil.OnlineMonitor("G[0, 10] (x > -0.9)")
+for t in range(60):
+    verdict = monitor.update(float(t), {"x": math.sin(t * 0.3)})
+    if verdict.resolved and not verdict.satisfied:
+        print(f"violated at t={t}, robustness={verdict.value:.3f}")
+        break
+```
+
+```text
+violated at t=15, robustness=-0.078
+```
+
+A verdict is resolved once the window it depends on has fully passed; until then `.resolved` is false and `.value` reads the midpoint of the running `[.lower, .upper]` bounds. To replay a recorded trace through the same incremental path, `run` returns the verdict after each sample:
+
+```python title="replay.py"
+import sentil
+
+m = sentil.OnlineMonitor("G[0, 2] (speed > 5)")
+verdicts = m.run(sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]}))
+[(v.resolved, v.value) for v in verdicts]
+# [(False, -inf), (False, -inf), (True, 2.0), (True, -1.0), (True, -1.0)]
+```
+
+The first two are unresolved because the `[0, 2]` window is still open; the third closes the window for time 0 with margin 2.0. A dict is rebuilt on every `update`; in a tight loop, look up each variable's slot once with `symbol_index` and pass `update_packed` a packed array in slot order instead.
+
+### Live probability
+
+A monitor built with `with_lifting` tracks a `P~p` formula as samples arrive, and `last_probability` reads the current satisfaction estimate, `None` before the first resolved window.
+
+```python title="live_probability.py"
+from sentil import LiftingRegistry, NoiseModel, OnlineMonitor, SmcConfig
+
+lifting = LiftingRegistry()
+lifting.register("x", NoiseModel.gaussian(0.0, 0.3))
+
+pm = OnlineMonitor.with_lifting("P>=0.9 (G[0, 5] (x > 0))", lifting, SmcConfig(samples=1000))
+for t in range(12):
+    pm.update(float(t), {"x": 0.4 + 0.05 * t})
+print(pm.last_probability())  # 0.978
+```
+
+To watch many formulas under one clock, `MultiMonitor` keys each by an id: `add` for deterministic formulas, `add_probabilistic` for `P~p` ones, and each `update` returns a dict of verdicts. `probability(id)` and `probabilities()` read the live estimates, `None` for deterministic ids.
+
+## Probabilistic checking
+
+A `P~p` formula asserts a property holds with probability at least, or at most, `p` once each reading is treated as a noisy observation. Register a noise model per channel (the interaction defaults to `NoiseInteraction.Additive`, residual `y - g`; pass `Multiplicative` for `y / g`), then `check` lifts the trace into an ensemble, evaluates the inner formula on each sample, and estimates the satisfaction probability with a confidence interval.
+
+```python title="prstl.py"
+import sentil
+from sentil import Formula, LiftingRegistry, NoiseModel, SmcConfig
+
+trace = sentil.Trace(list(range(20)), {"x": [0.4 + 0.05 * i for i in range(20)]})
+lifting = LiftingRegistry()
+lifting.register("x", NoiseModel.gaussian(0.0, 0.3))
+
+phi = Formula.parse("P>=0.9 (G (x > 0))")
+r = phi.check(trace, lifting, SmcConfig(samples=5000))
+print(f"probability {r.probability:.3f}, interval [{r.interval.lower:.3f}, {r.interval.upper:.3f}], holds {r.holds}")
+```
+
+```text
+probability 0.733, interval [0.721, 0.745], holds False
+```
+
+The margins run from 0.4 to 1.35 while the noise sigma is 0.3, so a lifted trajectory has a real chance of dipping below zero somewhere in twenty samples: 73 percent of the ensemble satisfies, short of the 0.9 bar. How the operator and the decision rule work is covered in [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl) and [confidence intervals](/docs/probabilistic/concepts/confidence-intervals).
+
+`SmcConfig` carries the four knobs: `samples` (default 10000), `confidence` (0.95), `seed` (42, so runs reproduce), and `method`, one of the four `IntervalMethod` variants with Wilson the default. `check_conservative` is a shortcut that reruns the interval as Clopper-Pearson, the exact conservative choice; the point estimate and verdict are unchanged. `check_distribution` additionally returns a `RobustnessDistribution` summarizing the ensemble's robustness values; on the run above it reports mean 0.104, standard deviation 0.188, and extremes -0.716 and 0.658 over the 5000 samples.
+
+### Sequential decisions
+
+When a verdict matters more than the estimate, the sequential tests stop as soon as the evidence decides, usually after far fewer lifted samples than a fixed budget. Continuing with the trace, lifting, and formula from `prstl.py`:
+
+```python title="sequential.py"
+from sentil import BayesConfig, SprtConfig
+
+sprt = phi.check_sequential(trace, lifting, SprtConfig(p0=0.85, p1=0.95))
+sprt.verdict, sprt.samples     # (SprtVerdict.AcceptH0, 32)
+
+bayes = phi.check_bayesian(trace, lifting, BayesConfig(threshold=0.9))
+bayes.verdict, bayes.samples   # (BayesVerdict.Fails, 60)
+```
+
+Wald's SPRT decides `H0: p <= p0` against `H1: p >= p1` with Type I and II error bounded by `alpha` and `beta`; here it settles on the failing side after 32 samples instead of 5000. The Bayesian test runs a Beta(1, 1) prior to a Bayes-factor cutoff and agrees at 60, with `posterior` 0.0008 as the remaining belief that the threshold is met.
+
+### Rare events
+
+Describe the system as a `SimModel`, and `check_rare_event` runs adaptive multilevel splitting over it; the concept page is [rare events](/docs/probabilistic/concepts/rare-events).
+
+```python title="rare.py"
+from sentil import Formula, NoiseModel, RareEventConfig, SimExpr, SimModel
+
+x = SimExpr.prev(0) * SimExpr.constant(0.9) + SimExpr.noise(0)
+model = SimModel(["x"], 1.0, 50, [SimExpr.constant(0.0)], [x], [NoiseModel.gaussian(0.0, 1.0)])
+system = model.to_stochastic_system()
+
+phi = Formula.parse("P>=0.99999 (G (x < 12))")
+res = phi.check_rare_event(system, RareEventConfig(particles=2000, seed=3))
+res.violation_probability   # 1.83e-06
+res.holds                   # True
+```
+
+The model is an AR(1) process that rarely wanders past 12; splitting resolves the 2-in-a-million tail from 2000 particles. With a GPU present, `check_rare_event_gpu(model)` moves the fixed-effort splitting onto the device and returns a `GpuSplittingEstimate`; `sentil.gpu.is_available()` is the runtime capability check, and without a device the GPU call raises `EvaluationError` ("no compatible GPU adapter for the splitting path") rather than silently falling back. See [rare events on the GPU](/docs/probabilistic/guides/rare-events-gpu).
+
+## Synthesis
+
+`sentil.synthesis` turns a specification into an input sequence, and `Controller` closes the loop online. The worked model below is one state with `x' = x + u`, started at 1.
+
+```python title="synth.py"
+from sentil import Bounds, Formula, SafetyFilter, SystemModel, synthesis
+
+model = SystemModel.linear([[1.0]], [[1.0]], [1.0], ["x"], 1.0, 3)
+spec = Formula.parse("G (x > 0)")
+bounds = Bounds([-1.0] * 3, [1.0] * 3)
+
+r = synthesis.synthesize(model, spec, bounds)
+r.input, r.robustness, r.holds, r.backend
+# ([1., -1., 0.], 1.0, True, Backend.Milp)
+
+shield = SafetyFilter(bounds)
+shield.filter([2.0, 0.5, -3.0])   # [1.0, 0.5, -1.0]
+```
+
+`Backend.Auto` routed this problem to the exact MILP encoding because the dynamics are affine and the spec is plain STL; the built-in simplex solves it with no external dependency. The robustness 1.0 is optimal here, since the fixed start `x0 = 1` caps the worst margin at 1. Pass `backend=Backend.Gradient` or `Backend.CmaEs` to choose the smooth-gradient or black-box path instead, `smooth=SmoothConfig(...)` to tune the soft semantics, and `max_iters` or `population` to bound the search. The routing rules are in [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+The receding-horizon `Controller` re-plans within a hard per-step budget in nanoseconds, anytime: it returns the best input found when the clock runs out. Here altitude decays 20 percent a step and the controller holds it by applying exactly the lost 0.6:
+
+```python title="controller.py"
+from sentil import Bounds, Controller, Formula, SystemModel
+
+model = SystemModel.linear([[0.8]], [[1.0]], [3.0], ["alt"], 1.0, 5)
+ctl = Controller(model, Formula.parse("G (alt > 2)"), 1, 2_000_000, Bounds([-1.0] * 5, [1.0] * 5))
+alt = 3.0
+for step in range(3):
+    u = ctl.control([alt])[0]
+    alt = 0.8 * alt + u
+    print(f"u={u:.3f} alt={alt:.3f}")
+```
+
+```text
+u=0.600 alt=3.000
+u=0.600 alt=3.000
+u=0.600 alt=3.000
+```
+
+Falsification runs the same machinery in reverse. `falsify` is a `Formula` method: it searches for an input whose trajectory violates the formula and returns a `Witness` whose negative robustness is the proof.
+
+```python title="falsify.py"
+from sentil import Bounds, CmaConfig, Formula, SystemModel
+
+model = SystemModel.linear([[1.0]], [[1.0]], [1.0], ["x"], 1.0, 3)
+bounds = Bounds([-1.0] * 3, [1.0] * 3)
+
+unsafe = Formula.parse("G (x < 3)")
+w = unsafe.falsify(model, bounds, CmaConfig(max_generations=100), restarts=2)
+w.input, w.robustness    # ([1., 1., 1.], -1.0): x runs 1, 2, 3, 4 and breaches at 4
+
+cex = Formula.parse("G (x > 0)").find_counterexample(model, bounds, max_iters=100)
+cex.input, cex.robustness    # ([-1., -1., -1.], -2.0), driving x down to -2
+```
+
+`ChanceConstraint(spec, probability)` states a probabilistic requirement for synthesis, with optional `confidence` and `tightening`, and `validate(system)` checks it against a `StochasticSystem` by sampling, returning a `ChanceReport` with the estimate and its lower confidence bound.
+
+## Errors
+
+Everything raises from one small hierarchy, so `except SentilError` catches all of it and a subclass separates the kind. Nothing in the library can crash the interpreter, and no handle discipline is needed: objects are plain garbage-collected Python objects and no call consumes its arguments.
+
+```python title="errors.py"
+from sentil import Formula, ParseError, SentilError
+
+try:
+    Formula.parse("G (speed >")
+except ParseError as e:
+    print(e)   # parse error at line 1, column 11: expected a value or `(`, found end of input
+```
+
+| Exception | Raised for |
+|---|---|
+| `SentilError` | The base; catches everything |
+| `ParseError` | A malformed formula; the message names line and column |
+| `SemanticError` | A well-formed formula that means something invalid, such as an unknown variable |
+| `EvaluationError` | An evaluation, data, fit, GPU, or configuration failure at run time |
+
+The messages are the core's own and say what to do next; evaluating a formula over a trace missing `speed` raises `SemanticError` with "no value available for variable `speed`; add a signal named `speed` to the trace, or include it in the streaming update". The code-to-family mapping shared by every binding is on [error handling across languages](/docs/languages/across/handle-errors).
+
+## Reference
+
+The rest of this page lists the whole public surface, task by task. `sentil.__version__` is the version string. Five submodules hang off the top level: `sentil.stats` (interval and sample-size functions), `sentil.synthesis` (the optimization entry points), `sentil.gpu` (the capability check), and the two extras `sentil.pandas` and `sentil.plotting`. The builder DSL functions below are re-exported at the top level, so `from sentil import var, always` works.
+
+### Building formulas
+
+`Formula` is a parsed PrSTL tree; build one from text, from the builder functions, or from `Expr` comparisons.
+
+| Member | Signature | What it does |
+|---|---|---|
+| `Formula.parse` | `parse(text) -> Formula` | Parse PrSTL text; `sentil.parse` is the same function at the top level |
+| `Formula.from_json` | `from_json(text) -> Formula` | Rebuild a formula from its JSON tree |
+| `to_json` | `to_json() -> str` | Serialize the tree to JSON |
+| `variables` | `-> list[str]` | The variable names the formula reads |
+| `depth` | `-> int` | Nesting depth of the tree |
+| `is_temporal` | `-> bool` | Whether any temporal operator appears |
+| `always` | `always(lower=0.0, upper=None) -> Formula` | Wrap in `G[lower, upper]`; `upper=None` is unbounded |
+| `eventually` | `eventually(lower=0.0, upper=None) -> Formula` | Wrap in `F` |
+| `historically` | `historically(lower=0.0, upper=None) -> Formula` | Past-time mirror of `G` |
+| `once` | `once(lower=0.0, upper=None) -> Formula` | Past-time mirror of `F` |
+| `next` | `next() -> Formula` | Shift evaluation one sample forward |
+| `until` | `until(other, lower=0.0, upper=None) -> Formula` | `self U other` |
+| `since` | `since(other, lower=0.0, upper=None) -> Formula` | Past-time dual of `U` |
+| `probability` | `probability(threshold, op=">=") -> Formula` | Wrap in `P~p`; `op` is one of `">="`, `">"`, `"<="`, `"<"` |
+
+The boolean connectives are operator overloads: `phi & psi` is and, `phi | psi` is or, `~phi` is not, and `phi >> psi` is implies.
+
+The builder DSL offers the same combinators as free functions, handy for building formulas bottom-up without method chains:
+
+| Function | Signature | Note |
+|---|---|---|
+| `var` | `var(name) -> Expr` | A named signal; same as `Expr.var` |
+| `lit` | `lit(value) -> Expr` | A constant; same as `Expr.constant` |
+| `parse` | `parse(text) -> Formula` | Alias of `Formula.parse` |
+| `always` | `always(formula, lower=0.0, upper=None) -> Formula` | |
+| `eventually` | `eventually(formula, lower=0.0, upper=None) -> Formula` | |
+| `historically` | `historically(formula, lower=0.0, upper=None) -> Formula` | |
+| `once` | `once(formula, lower=0.0, upper=None) -> Formula` | |
+| `nxt` | `nxt(formula) -> Formula` | Named `nxt` because `next` is a Python builtin |
+| `until` | `until(left, right, lower=0.0, upper=None) -> Formula` | |
+| `since` | `since(left, right, lower=0.0, upper=None) -> Formula` | |
+
+`Expr` is the arithmetic layer under the predicates. `Expr.var(name)` and `Expr.constant(value)` are the leaves; the operators `+ - * / % **` and unary `-` combine them; `abs(expr)` and the methods `sqrt`, `exp`, `log` (base 10), `ln` (natural), `sin`, `cos`, `tan`, `floor`, `ceil`, `min(other)`, and `max(other)` cover the function set; and the comparisons `> >= < <=` against an `Expr` or a number yield a `Formula`. Equality predicates (`==`, `!=`) exist in the text grammar only, not as `Expr` overloads.
+
+### Scoring robustness
+
+Five `Formula` methods evaluate against a `Trace`; each `Interval` in a violations list carries `.start` and `.end`.
+
+| Method | Signature | What it returns |
+|---|---|---|
+| `robustness` | `robustness(trace) -> float` | Discrete-time robustness at the first sample |
+| `robustness_dense` | `robustness_dense(trace) -> float` | Dense-time robustness, catching between-sample crossings |
+| `robustness_signal` | `robustness_signal(trace) -> ndarray` | The discrete value at every sample |
+| `robustness_dense_signal` | `robustness_dense_signal(trace) -> ndarray` | The dense value at every sample |
+| `violations` | `violations(trace) -> list[Interval]` | The evaluation-time spans where the formula fails |
+
+### Traces
+
+| Member | Signature | What it does |
+|---|---|---|
+| `Trace` | `Trace(times, signals=None)` | Times plus an optional dict of `name -> values` |
+| `Trace.indexed` | `indexed(len) -> Trace` | Integer times 0 through `len - 1`, so `len` samples |
+| `Trace.from_csv` | `from_csv(text) -> Trace` | Parse CSV text with a header row |
+| `Trace.from_tsv` | `from_tsv(text) -> Trace` | Parse TSV text |
+| `Trace.from_path` | `from_path(path) -> Trace` | Read a file; format sniffed from the extension |
+| `add_signal` | `add_signal(name, values)` | Add one signal after construction |
+| `add_signals` | `add_signals(signals)` | Add several from a dict |
+| `len(trace)` | `-> int` | Sample count |
+| `is_empty` | `-> bool` | Whether the trace has no samples |
+| `times` | `-> ndarray` | The time vector |
+| `variables` | `-> list[str]` | The signal names |
+| `trace[name]` | `-> ndarray` | One signal's values; raises `KeyError` if absent |
+| `get` | `get(name, default=None)` | The signal or the default, dict-style |
+| `name in trace` | `-> bool` | Membership test |
+| `iter(trace)` | | Iterates signal names |
+| `resample` | `resample(times, interp) -> Trace` | Interpolate onto new times |
+| `prepare` | `prepare(interp) -> PreparedTrace` | Precompute interpolation state for reuse |
+| `PreparedTrace.resample` | `resample(times) -> Trace` | Resample without re-deriving the interpolant |
+
+### Ring buffer
+
+`RingBuffer(capacity)` holds the newest `capacity` samples as `(time, value)` pairs, with mean, variance, and extrema maintained in O(1). When full, `push` evicts the oldest sample and returns it.
+
+| Member | Signature | What it does |
+|---|---|---|
+| `push` | `push(time, value) -> tuple or None` | Append; returns the evicted `(time, value)` once full |
+| `len(buf)` | `-> int` | Current sample count |
+| `capacity` | `-> int` | Fixed capacity |
+| `is_empty` | `-> bool` | |
+| `is_full` | `-> bool` | |
+| `clear` | `clear()` | Drop everything |
+| `buf[i]` | `-> tuple` | The i-th oldest sample; raises `IndexError` out of range |
+| `get` | `get(i) -> tuple or None` | Indexing that returns `None` instead of raising |
+| `front` | `front() -> tuple or None` | Oldest sample |
+| `back` | `back() -> tuple or None` | Newest sample |
+| `pop_front` | `pop_front() -> tuple or None` | Remove and return the oldest |
+| `pop_back` | `pop_back() -> tuple or None` | Remove and return the newest |
+| `mean` | `mean() -> float or None` | Running mean of the values |
+| `variance` | `variance() -> float or None` | Running variance |
+| `std_dev` | `std_dev() -> float or None` | Running standard deviation |
+| `min` | `min() -> float or None` | Smallest value in the window |
+| `max` | `max() -> float or None` | Largest value in the window |
+| `recompute_statistics` | `recompute_statistics()` | Rebuild the running sums from the stored samples, clearing float drift |
+| `time_range` | `time_range() -> tuple or None` | `(oldest time, newest time)` |
+| `at_time` | `at_time(time) -> float or None` | The value at an exact timestamp |
+| `closest_to_time` | `closest_to_time(time) -> tuple or None` | The sample nearest a timestamp |
+| `between` | `between(start, end) -> list[tuple]` | The samples in a closed time range |
+
+### Monitors
+
+`Config(time=TimeMode.Discrete)` selects the time semantics and exposes it as `.time`. Every monitor verdict is a `Robustness` with `.resolved`, `.satisfied`, `.value`, `.lower`, and `.upper`; `float(verdict)` reads `.value`, and `.satisfied` is meaningful only once `.resolved` is true.
+
+| `Monitor` member | Signature | What it does |
+|---|---|---|
+| ctor | `Monitor(formula, config=None)` | Formula object or text |
+| `robustness` | `robustness(trace) -> float` | Offline robustness under the config's time mode |
+| `robustness_signal` | `robustness_signal(trace) -> ndarray` | The per-sample values |
+| `violations` | `violations(trace) -> list[Interval]` | Failure spans |
+| `update` | `update(time, values) -> Robustness` | Feed one sample from a dict |
+| `update_packed` | `update_packed(time, values) -> Robustness` | Feed a packed array in `symbol_index` order |
+| `symbol_index` | `symbol_index(name) -> int or None` | A variable's slot in the packed layout |
+| `reset` | `reset()` | Forget all streamed state |
+| `formula` | `-> Formula` | The formula being monitored |
+| `config` | `-> Config` | The active configuration |
+| `check` | `check(trace, lifting) -> SmcResult` | Probabilistic check of a `P~p` formula |
+| `check_sequential` | `check_sequential(trace, lifting, config) -> SprtResult` | SPRT from the monitor |
+| `check_rare` | `check_rare(system) -> RareEventResult` | Splitting over a `StochasticSystem` |
+
+| `OnlineMonitor` member | Signature | What it does |
+|---|---|---|
+| ctor | `OnlineMonitor(formula)` | Streaming monitor, O(1) amortized per update |
+| `OnlineMonitor.with_lifting` | `with_lifting(formula, lifting, config=None) -> OnlineMonitor` | Track a `P~p` formula live |
+| `update` | `update(time, values) -> Robustness` | Feed one sample |
+| `update_packed` | `update_packed(time, values) -> Robustness` | The dict-free hot path |
+| `run` | `run(trace) -> list[Robustness]` | Replay a trace, one verdict per sample |
+| `symbol_index` | `symbol_index(name) -> int or None` | Slot lookup for the packed path |
+| `variable_count` | `-> int` | Width of the packed layout |
+| `reset` | `reset()` | Restart the stream |
+| `last_probability` | `last_probability() -> float or None` | Live satisfaction estimate; `None` before the first resolved window |
+
+| `MultiMonitor` member | Signature | What it does |
+|---|---|---|
+| ctor | `MultiMonitor()` | Many streaming formulas under one clock |
+| `add` | `add(id, formula)` | Register a deterministic formula |
+| `add_probabilistic` | `add_probabilistic(id, formula, lifting, config=None)` | Register a `P~p` formula |
+| `remove` | `remove(id) -> bool` | Drop one; false if the id is unknown |
+| `reset` | `reset()` | Restart every stream |
+| `len(mm)` | `-> int` | Registered formula count |
+| `ids` | `-> list[str]` | The registered ids |
+| `update` | `update(time, values) -> dict[str, Robustness]` | One sample in, a verdict per id out |
+| `probability` | `probability(id) -> float or None` | Live estimate for one id; `None` for deterministic ids |
+| `probabilities` | `probabilities() -> dict` | Live estimates for all ids at once |
+
+`FormulaBank()` scores a set of named formulas against a whole trace: `add(id, formula)` registers, `ids` and `len(bank)` enumerate, and `robustness(trace)` and `robustness_dense(trace)` return a dict of values keyed by id, sharing one pass over the trace.
+
+### Noise models and lifting
+
+`NoiseModel` describes one channel's noise; build it from any of seventeen families or learn it with one of four fitters.
+
+| Constructor | Signature |
+|---|---|
+| `NoiseModel.dirac` | `dirac(value)` |
+| `NoiseModel.gaussian` | `gaussian(mean, std_dev)` |
+| `NoiseModel.uniform` | `uniform(low, high)` |
+| `NoiseModel.log_normal` | `log_normal(mu, sigma)` |
+| `NoiseModel.exponential` | `exponential(rate)` |
+| `NoiseModel.gamma` | `gamma(shape, scale)` |
+| `NoiseModel.beta` | `beta(alpha, beta)` |
+| `NoiseModel.weibull` | `weibull(shape, scale)` |
+| `NoiseModel.rayleigh` | `rayleigh(scale)` |
+| `NoiseModel.gumbel` | `gumbel(location, scale)` |
+| `NoiseModel.cauchy` | `cauchy(location, scale)` |
+| `NoiseModel.student_t` | `student_t(df, location, scale)` |
+| `NoiseModel.truncated_normal` | `truncated_normal(mean, std_dev, lower, upper)` |
+| `NoiseModel.poisson` | `poisson(rate)` |
+| `NoiseModel.binomial` | `binomial(trials, probability)` |
+| `NoiseModel.bootstrap` | `bootstrap(residuals)` |
+| `NoiseModel.mixture` | `mixture(weights, components)` |
+
+| Fitter or method | Signature | What it does |
+|---|---|---|
+| `NoiseModel.fit_gaussian` | `fit_gaussian(samples) -> NoiseModel` | Maximum-likelihood Gaussian |
+| `NoiseModel.fit_bootstrap` | `fit_bootstrap(samples) -> NoiseModel` | Empirical distribution, resampled with replacement |
+| `NoiseModel.fit_bootstrap_reservoir` | `fit_bootstrap_reservoir(samples, max_samples) -> NoiseModel` | Bootstrap with a bounded reservoir |
+| `NoiseModel.fit_gaussian_mixture` | `fit_gaussian_mixture(samples, components, max_iters) -> NoiseModel` | Mixture by expectation-maximization |
+| `NoiseModel.residuals` | `residuals(truth, sensor, interaction) -> ndarray` | Paired residuals to feed a fitter |
+| `mean` | `mean() -> float or None` | `None` where undefined, as for Cauchy |
+| `variance` | `variance() -> float or None` | Likewise |
+| `to_json` / `NoiseModel.from_json` | `to_json() -> str`, `from_json(text) -> NoiseModel` | Serialize and restore |
+| `NoiseModel.from_file` | `from_file(path) -> NoiseModel` | Load a saved model |
+
+`LiftingRegistry()` maps variables to models: `register(variable, model, interaction=NoiseInteraction.Additive)` adds one, `variables` and `is_empty` inspect, and `lift(trace, seed=42)` draws one noisy realization of a trace, the same operation `check` repeats per sample. The families and fitting workflow are covered in [noise models](/docs/reference/methods/noise-models).
+
+### Probability estimates
+
+| Type | Fields | Notes |
+|---|---|---|
+| `SmcConfig` | `SmcConfig(samples=10000, confidence=0.95, seed=42, method=IntervalMethod.Wilson)` | All four are readable and writable attributes |
+| `SmcResult` | `probability`, `interval`, `satisfactions`, `samples`, `holds` | `satisfactions` of `samples` lifted runs satisfied the formula |
+| `ConfidenceInterval` | `lower`, `upper`, `level`, `width` | `width` is `upper - lower` |
+| `RobustnessDistribution` | `count`, `mean`, `variance`, `std_dev`, `min`, `max` | Summary of the ensemble's robustness values |
+
+The entry points are the `Formula` methods `check(trace, lifting, config=None)`, `check_conservative(...)` (same estimate, Clopper-Pearson interval), and `check_distribution(...)` which returns the pair `(SmcResult, RobustnessDistribution)`.
+
+### Sequential tests
+
+| Type | Fields | Notes |
+|---|---|---|
+| `SprtConfig` | `SprtConfig(p0, p1, alpha=0.05, beta=0.05, max_samples=100000, seed=42)` | Indifference region `[p0, p1]`, error bounds, sample cap |
+| `SprtResult` | `verdict`, `samples`, `log_likelihood` | `log_likelihood` is the ratio where the walk stopped, reported for an inconclusive stop |
+| `BayesConfig` | `BayesConfig(threshold, bayes_factor=100.0, max_samples=100000, seed=42)` | Beta(1, 1) prior, Bayes-factor cutoff |
+| `BayesResult` | `verdict`, `samples`, `posterior` | `posterior` is the remaining belief that `p` meets the threshold |
+
+Run them with `phi.check_sequential(trace, lifting, sprt_config)` and `phi.check_bayesian(trace, lifting, bayes_config)`, or from a `Monitor`. The theory is on [statistical methods](/docs/reference/methods/statistical-methods).
+
+### The stats functions
+
+`sentil.stats` exposes the interval mathematics directly, useful for sizing an experiment before running it.
+
+| Function | Signature | What it computes |
+|---|---|---|
+| `stats.wilson_interval` | `wilson_interval(successes, trials, level) -> ConfidenceInterval` | The default interval |
+| `stats.clopper_pearson` | `clopper_pearson(successes, trials, level) -> ConfidenceInterval` | The exact conservative interval |
+| `stats.jeffreys_interval` | `jeffreys_interval(successes, trials, level) -> ConfidenceInterval` | The Jeffreys-prior interval |
+| `stats.agresti_coull` | `agresti_coull(successes, trials, level) -> ConfidenceInterval` | The Agresti-Coull approximation |
+| `stats.interval` | `interval(successes, trials, level, method=IntervalMethod.Wilson) -> ConfidenceInterval` | Any of the four by enum |
+| `stats.z_score` | `z_score(level) -> float` | The two-sided normal quantile |
+| `stats.chernoff_hoeffding_samples` | `chernoff_hoeffding_samples(epsilon, delta) -> int` | Samples for error `epsilon` at confidence `1 - delta` |
+| `stats.wilson_samples` | `wilson_samples(epsilon, level) -> int` | Samples for a Wilson half-width of `epsilon` |
+
+```python title="stats.py"
+from sentil import stats
+
+stats.wilson_interval(50, 100, 0.95)          # [0.4038, 0.5962]
+stats.clopper_pearson(50, 100, 0.95)          # [0.3983, 0.6017], wider as promised
+stats.z_score(0.95)                           # 1.959964
+stats.chernoff_hoeffding_samples(0.1, 0.05)   # 185
+stats.wilson_samples(0.01, 0.95)              # 9604
+```
+
+### Stochastic systems and rare events
+
+`SimExpr` terms describe update rules declaratively so the sampler can run them fast: `SimExpr.prev(i)` reads variable `i` at the previous step, `SimExpr.time()` the current time, `SimExpr.constant(value)` a literal, and `SimExpr.noise(i)` a draw from the i-th noise model. Terms combine with `+ - * /`, `abs`, the methods `sin`, `cos`, `tan`, `sqrt`, `exp`, `log`, `ln`, `floor`, `ceil`, and `min(other)` / `max(other)`.
+
+| Type or function | Signature | What it does |
+|---|---|---|
+| `SimModel` | `SimModel(variables, dt, horizon, init, advance, noise)` | One init and one advance term per variable; a horizon of `n` yields `n + 1` samples |
+| `SimModel.simulate` | `simulate(seed=42) -> Trace` | One sampled trajectory |
+| `SimModel.to_stochastic_system` | `to_stochastic_system() -> StochasticSystem` | The sampling-ready form `check_rare_event` consumes |
+| `SimModel` properties | `variables`, `dt`, `horizon` | Also on `StochasticSystem` |
+| `StochasticSystem.simulate` | `simulate(seed=42) -> Trace` | Same sampling from the compiled form |
+| `RareEventConfig` | `RareEventConfig(particles=4096, margin=0.0, seed=42)` | `margin` shifts the event to robustness at or below `-margin`; 0.0 is any violation |
+| `RareEventResult` | `probability`, `violation_probability`, `holds`, `simulations` | `probability` is `1 - violation_probability`; `simulations` counts total steps run |
+| `Formula.check_rare_event` | `check_rare_event(system, config=None) -> RareEventResult` | Adaptive multilevel splitting on the CPU |
+| `Formula.check_rare_event_gpu` | `check_rare_event_gpu(model, config=None) -> GpuSplittingEstimate` | Fixed-effort splitting on the device; takes the `SimModel` itself |
+| `GpuSplittingEstimate` | `violation_probability`, `particles`, `levels` | The device estimate and the level count it used |
+| `gpu.is_available` | `is_available() -> bool` | Runtime GPU capability check; needs the GPU build of the core |
+
+### Synthesis
+
+The `sentil.synthesis` functions, and the `Formula` methods that share the smooth-robustness machinery.
+
+| Function | Signature | What it does |
+|---|---|---|
+| `synthesis.synthesize` | `synthesize(model, spec, bounds=None, smooth=None, backend=Backend.Auto, max_iters=0, population=0) -> SynthesisResult` | Open-loop synthesis; zero means the backend's default budget |
+| `synthesis.soft_min` | `soft_min(values, temperature) -> float` | Log-sum-exp soft minimum |
+| `synthesis.soft_max` | `soft_max(values, temperature) -> float` | Its dual |
+| `synthesis.solve_qp` | `solve_qp(p, q, g, h, max_iters=200) -> ndarray` | Minimize `1/2 u'Pu + q'u` subject to `Gu <= h` |
+| `synthesis.solve_spd` | `solve_spd(matrix, rhs) -> ndarray` | Solve a symmetric positive-definite system |
+| `synthesis.symmetric_eigen` | `symmetric_eigen(matrix) -> (values, vectors)` | Eigendecomposition of a symmetric matrix |
+
+The numeric helpers are checkable by hand: `solve_qp([[2, 0], [0, 2]], [-2, -4], [[1, 1]], [1])` returns `[0.0, 1.0]`, `solve_spd([[4, 1], [1, 3]], [1, 2])` returns `[1/11, 7/11]`, and `symmetric_eigen([[2, 1], [1, 2]])` finds eigenvalues `[1.0, 3.0]`.
+
+| `Formula` method | Signature | What it does |
+|---|---|---|
+| `smooth_robustness` | `smooth_robustness(trace, config=None) -> float` | Differentiable robustness under the soft semantics |
+| `smooth_value_and_gradient` | `smooth_value_and_gradient(trace, config=None) -> (float, dict)` | The value plus the gradient per signal |
+| `smooth_gradient` | `smooth_gradient(model, initial, input, config=None) -> (float, list)` | The value plus the gradient with respect to the input sequence |
+| `find_counterexample` | `find_counterexample(model, bounds, max_iters=200, smooth=None) -> Witness` | Gradient search for a violating input |
+| `falsify` | `falsify(model, bounds, config=None, restarts=1) -> Witness` | CMA-ES search for a violating input |
+
+| Type | Fields or signature | Notes |
+|---|---|---|
+| `SmoothConfig` | `SmoothConfig(temperature=10.0, kind=SoftKind.LogSumExp)` | Higher temperature hugs the exact min and max tighter |
+| `Bounds` | `Bounds(lower, upper)`, `Bounds.unbounded(dimension)`; `lower`, `upper`, `dimension`, `clamp(point)` | A per-coordinate box; `clamp` projects into it |
+| `SystemModel` | `SystemModel.linear(a, b, x0, variables, dt, horizon)`; `input_dimension` | Affine dynamics `x' = Ax + Bu` from `x0` |
+| `SynthesisResult` | `input`, `robustness`, `holds`, `backend` | `backend` records which solver actually ran |
+| `SafetyFilter` | `SafetyFilter(bounds)`; `filter(nominal, barriers=...) -> ndarray` | Control-barrier shield over any nominal input |
+| `Controller` | `Controller(model, spec, input_width, budget_ns, bounds=None, smooth=None)`; `control(state) -> ndarray` | Receding horizon; applies `input_width` values per step within `budget_ns` |
+| `ChanceConstraint` | `ChanceConstraint(spec, probability, confidence=0.0, tightening=0.0)`; `validate(system, samples=1000, seed=42) -> ChanceReport` | A probabilistic requirement, validated by sampling |
+| `ChanceReport` | `estimate`, `lower_bound`, `samples`, `holds` | `holds` compares the lower bound to the requirement |
+| `Witness` | `input`, `robustness`, `trace` | Negative robustness makes it a genuine counterexample |
+| `CmaConfig` | `CmaConfig(population=0, max_generations=300, initial_step=0.3, tol_step=1e-11, seed=42)` | Zero population sizes itself from the dimension |
+
+### The specifications library
+
+`SpecBuilder` loads a vetted, standards-derived specification by name and instantiates it with your parameters. There are 54 in the catalog; browse them under [specifications](/docs/reference/specifications/catalog).
+
+```python title="specs.py"
+from sentil import SpecBuilder
+
+len(SpecBuilder.available())     # 54
+b = SpecBuilder("controls/overshoot")
+b.parameters()                   # {'max_overshoot': 0.05, 'step_amplitude': 1.0, 'T': 30.0, 'p': 0.95}
+b.available_variants             # ['bidirectional', 'step_down', 'step_up']
+b.with_param("max_overshoot", 0.02).build_deterministic()
+# 'always[0, 30.0](output - reference < 0.02 * 1.0)'
+```
+
+An unknown parameter raises `EvaluationError` naming the ones the template defines.
+
+| Member | Signature | What it does |
+|---|---|---|
+| ctor | `SpecBuilder(name)` | Load an embedded spec by catalog name |
+| `SpecBuilder.available` | `available() -> list[str]` | Every embedded spec name |
+| `SpecBuilder.from_file` | `from_file(path) -> SpecBuilder` | Load a spec definition from disk |
+| `with_variant` | `with_variant(variant) -> SpecBuilder` | Select a variant |
+| `with_param` | `with_param(name, value) -> SpecBuilder` | Override one parameter |
+| `available_variants` | `-> list[str]` | The variants this spec defines |
+| `parameters` | `parameters() -> dict[str, float]` | Current parameter values |
+| `build_deterministic` | `build_deterministic() -> str` | The STL formula text |
+| `build_probabilistic` | `build_probabilistic() -> str` | The `P~p` formula text |
+| `build_formula` | `build_formula() -> Formula` | The parsed deterministic formula |
+| `build_probabilistic_formula` | `build_probabilistic_formula() -> Formula` | The parsed `P~p` formula |
+| `build_lifting_registry` | `build_lifting_registry() -> LiftingRegistry` | The spec's recommended noise models |
+| `build_monitor` | `build_monitor() -> Monitor` | A ready monitor for the spec |
+| `smc_settings` | `smc_settings() -> tuple or None` | The spec's `(confidence, samples)` recommendation |
+| `sprt_settings` | `sprt_settings() -> tuple or None` | Its `(p0, p1, alpha, beta, max_samples)` |
+| `ams_settings` | `ams_settings() -> tuple or None` | Its `(particles, max_levels)` for rare events |
+
+### pandas and plotting
+
+Both modules are extras; each raises `ModuleNotFoundError` with the install command if its dependency is absent. Every plotting function returns the Matplotlib `Figure`, so you decide whether to show, save, or compose it.
+
+| Function | Signature | What it does |
+|---|---|---|
+| `pandas.trace_from_dataframe` | `trace_from_dataframe(df, time_column="time", value_columns=None) -> Trace` | A trace from a DataFrame |
+| `plotting.robustness_figure` | `robustness_figure(formula, trace, **kwargs) -> Figure` | Compute and plot the robustness signal in one call |
+| `plotting.plot_robustness` | `plot_robustness(times, robustness, title="robustness over time", figsize=(10, 6)) -> Figure` | A robustness curve with the zero line marked |
+| `plotting.plot_signals` | `plot_signals(signals, times=None, title="signals", figsize=(10, 6)) -> Figure` | Raw signals on one axis |
+| `plotting.plot_smc_convergence` | `plot_smc_convergence(samples, estimates, intervals, true_probability=None, figsize=(10, 6)) -> Figure` | Estimate and interval against sample count |
+
+### Enums
+
+Eight value enums, every member listed.
+
+| Enum | Members |
+|---|---|
+| `TimeMode` | `Discrete` (default), `Dense` |
+| `Interpolation` | `Linear`, `ZeroOrderHold`, `CubicSpline` |
+| `IntervalMethod` | `Wilson` (default), `ClopperPearson`, `Jeffreys`, `AgrestiCoull` |
+| `NoiseInteraction` | `Additive` (residual `y - g`, default), `Multiplicative` (residual `y / g`) |
+| `SprtVerdict` | `AcceptH0` (`p` at or below `p0`), `AcceptH1` (`p` at or above `p1`), `Inconclusive` |
+| `BayesVerdict` | `Holds`, `Fails`, `Inconclusive` |
+| `SoftKind` | `LogSumExp` (default), `ArithmeticGeometricMean` |
+| `Backend` | `Auto` (default), `Gradient`, `CmaEs`, `Milp` |
+
+## Related
+
+<Cards>
+  <Card title="Grammar" href="/docs/reference/language/grammar" description="The PrSTL syntax Formula.parse accepts." />
+  <Card title="Statistical methods" href="/docs/reference/methods/statistical-methods" description="Wilson, Clopper-Pearson, SPRT, Bayesian, and sample sizing." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="Gradient, CMA-ES, and MILP, and how Auto picks between them." />
+  <Card title="Error handling across languages" href="/docs/languages/across/handle-errors" description="The code-to-exception mapping every binding shares." />
+</Cards>
