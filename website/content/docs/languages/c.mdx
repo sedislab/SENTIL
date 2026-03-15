@@ -1,0 +1,1296 @@
+---
+title: "C"
+description: "Use SENTIL from C."
+---
+
+The C ABI is the smallest surface SENTIL ships, basically a header file and a compiled library file. The C++, Java, Julia, MATLAB, and embedded bindings sit on it, and any language with a C FFI can too; the one exception is Python, which binds the Rust core directly through PyO3.
+
+## Install
+
+On Debian, Ubuntu, Fedora, and RHEL the distro package is the easiest way to install  one: it drops the shared and static libraries, `sentil.h`, and `sentil.pc` under `/usr`. vcpkg and Conan carry the same prebuilt library on Linux, macOS, and Windows alike, and add a CMake package on top of it, so reach for one of those if your project already uses either. The release archive is a plain prefix you unpack wherever you like, for a project that uses neither. Build from source for an unreleased change or a platform the prebuilt bundles skip. Linux on arm64 is the one to know about: the library and header for a Raspberry Pi ride along in the ARM archives described on the [CLI page](/docs/languages/cli#on-a-raspberry-pi), built with `--no-default-features`, so the 19 GPU symbols the [reference](#reference) marks as gated are absent from that library.
+
+### From apt or dnf
+
+<Steps>
+<Step>
+
+Download the package for your distribution from the [release page](https://github.com/sedislab/SENTIL/releases). Both are x86_64: `libsentil-dev_0.3.0_amd64.deb` for apt, `libsentil-devel-0.3.0.x86_64.rpm` for dnf.
+
+</Step>
+<Step>
+
+Install the file you downloaded. The leading `./` is what tells apt and dnf they are looking at a path rather than a package name.
+
+```bash
+sudo apt install ./libsentil-dev_0.3.0_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./libsentil-devel-0.3.0.x86_64.rpm   # Fedora, RHEL
+```
+
+Four files land: `/usr/lib/libsentil.so`, `/usr/lib/libsentil.a`, `/usr/include/sentil.h`, and `/usr/lib/pkgconfig/sentil.pc`. Neither package carries a CMake package config, so `find_package(Sentil)` has nothing to find on this route. pkg-config is the discovery path here; the archive and the two package managers below ship the CMake config as well.
+
+</Step>
+<Step>
+
+Confirm pkg-config sees it. On Debian and Ubuntu `/usr/lib/pkgconfig` is already on the default search path. A 64-bit Fedora or RHEL searches `/usr/lib64/pkgconfig` and `/usr/share/pkgconfig` instead, so there you name the directory the rpm wrote to.
+
+```bash
+pkg-config --modversion sentil                                     # Debian, Ubuntu
+PKG_CONFIG_PATH=/usr/lib/pkgconfig pkg-config --modversion sentil  # Fedora, RHEL
+```
+
+```text
+0.3.0
+```
+
+</Step>
+</Steps>
+
+On Arch, the `sentil` package in the AUR carries the same four files, plus `/usr/lib/cmake/Sentil/SentilConfig.cmake` and the CLI. The [CLI page](/docs/languages/cli#from-a-package-manager) has the two ways to install it.
+
+### From vcpkg or Conan
+
+<Steps>
+<Step>
+
+Install the package. It is named `sentil` in both, and neither compiles any Rust: each downloads the prebuilt bundle for the host.
+
+```bash
+vcpkg install sentil
+```
+
+```bash
+conan install --requires=sentil/0.3.0
+```
+
+The bundles cover x64 Linux, x64 and arm64 macOS, and x64 Windows. Any other target stops the install with a message naming the platforms that exist, rather than half-installing.
+
+</Step>
+<Step>
+
+Wire it into your build. Both write a CMake package config for the `Sentil::sentil` target, which is the route each one's own usage note recommends.
+
+```cmake title="CMakeLists.txt"
+find_package(Sentil CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Sentil::sentil)
+```
+
+pkg-config resolves too, with one step on each side. vcpkg writes `sentil.pc` into its installed tree, which pkg-config does not search on its own, so name that directory:
+
+```bash
+export PKG_CONFIG_PATH=/path/to/vcpkg/installed/x64-linux/lib/pkgconfig:$PKG_CONFIG_PATH
+cc my_app.c $(pkg-config --cflags --libs sentil) -o my_app
+```
+
+Conan writes its own discovery files from the recipe rather than shipping the bundle's, so ask for the generator you want: `-g PkgConfigDeps` for the `sentil.pc`, `-g CMakeDeps` for the `Sentil` config with the same target name.
+
+On Windows the shared library is `sentil.dll` and the linker wants the `sentil.dll.lib` import library beside it. The config vcpkg writes records both, and there is no pkg-config on that platform.
+
+</Step>
+<Step>
+
+Check the link with a program that reads the version out of the library and nothing else.
+
+```c title="version.c"
+#include <sentil.h>
+#include <stdio.h>
+
+int main(void) {
+    uint32_t major, minor, patch;
+    sentil_version(&major, &minor, &patch);
+    printf("%u.%u.%u\n", major, minor, patch);
+    return 0;
+}
+```
+
+Add it as the `my_app` target from the previous step, then build and run it.
+
+```bash
+cmake --build build
+./build/my_app   # 0.3.0
+```
+
+</Step>
+</Steps>
+
+### From a GitHub release
+
+The archive is a prefix rather than an installer. Inside are `include/sentil.h`, the shared library and the static `libsentil.a` under `lib/`, `lib/pkgconfig/sentil.pc`, and `lib/cmake/Sentil/SentilConfig.cmake`.
+
+<Steps>
+<Step>
+
+Download the archive for your platform from the [release page](https://github.com/sedislab/SENTIL/releases) and unpack it.
+
+<OsTabs>
+<OsTab value="Linux">
+
+`sentil-0.3.0-linux-x86_64.tar.gz`, carrying `libsentil.so`.
+
+```bash
+tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
+prefix=$PWD/sentil-0.3.0-linux-x86_64
+```
+
+</OsTab>
+<OsTab value="macOS">
+
+`sentil-0.3.0-macos-arm64.tar.gz` on Apple silicon, `sentil-0.3.0-macos-x86_64.tar.gz` on Intel. The shared library is `libsentil.dylib`.
+
+```bash
+tar -xzf sentil-0.3.0-macos-arm64.tar.gz
+prefix=$PWD/sentil-0.3.0-macos-arm64
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+`sentil-0.3.0-windows-x86_64.tar.gz`, carrying `sentil.dll` with its `sentil.dll.lib` import library. `tar` ships with Windows 10 and later.
+
+```powershell
+tar -xzf sentil-0.3.0-windows-x86_64.tar.gz
+$prefix = "$PWD\sentil-0.3.0-windows-x86_64"
+```
+
+</OsTab>
+</OsTabs>
+
+</Step>
+<Step>
+
+Point CMake at the unpacked directory. `SentilConfig.cmake` resolves the header and the library relative to its own location, so the archive works from wherever it sits, and `CMAKE_PREFIX_PATH` is read from the environment too if you would rather export it once for the shell.
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$prefix"
+```
+
+Ask for the package by name only. The archive carries no `SentilConfigVersion.cmake`, so `find_package(Sentil 0.3.0 CONFIG REQUIRED)` finds the config and then rejects it as version unknown; `find_package(Sentil CONFIG REQUIRED)` is the form that works here.
+
+</Step>
+<Step>
+
+For pkg-config, override the prefix. The `sentil.pc` in the archive is the one built for a system install and records `prefix=/usr/local`, so `PKG_CONFIG_PATH` on its own would hand the compiler `-L/usr/local/lib` and lose the archive entirely.
+
+```bash
+export PKG_CONFIG_PATH=$prefix/lib/pkgconfig:$PKG_CONFIG_PATH
+cc my_app.c $(pkg-config --define-variable=prefix=$prefix --cflags --libs sentil) \
+    -Wl,-rpath,$prefix/lib -o my_app
+```
+
+The `-rpath` is what lets the finished binary find `libsentil.so` at run time in a directory the loader does not search. Windows has no pkg-config, so name the import library on the command line instead, `cl /I "$prefix\include" my_app.c "$prefix\lib\sentil.dll.lib"`, and keep `sentil.dll` beside the executable or on `PATH`.
+
+</Step>
+<Step>
+
+Check it.
+
+```bash
+pkg-config --define-variable=prefix=$prefix --modversion sentil
+```
+
+```text
+0.3.0
+```
+
+</Step>
+</Steps>
+
+### From source
+
+You need a Rust toolchain from [rustup.rs](https://rustup.rs), a C compiler, and `make`. The [shared from-source page](/docs/start/install#from-source) covers the toolchain; what differs per system is the compiler.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The distribution's compiler package supplies `cc`, `make`, and the linker Rust needs: `build-essential` on Debian and Ubuntu, `gcc` and `make` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply `cc` and `make`.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Rust links through MSVC, so install the Visual Studio Build Tools with the "Desktop development with C++" workload. The Makefile below is POSIX only; on Windows run `cargo build --release -p sentil-ffi` from the repository root instead, which writes `sentil.dll` and `sentil.dll.lib` into `target/release`, and compile against them with `cl /I sentil-ffi\include`.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone the repository and enter the C package.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL/sentil-ffi
+```
+
+</Step>
+<Step>
+
+Build the library. `make` runs `cargo build --release -p sentil-ffi` and leaves `libsentil.so` (or `libsentil.dylib`) and `libsentil.a` in `target/release` at the repository root. The header is not generated: it is checked in at `sentil-ffi/include/sentil.h`.
+
+```bash
+make
+```
+
+</Step>
+<Step>
+
+Run the C test suite. Each test compiles against the library you built, links it, and runs.
+
+```bash
+make test-ffi   # the last line reads "all C tests passed"
+```
+
+That covers everything under `tests/` but the GPU test, which needs a device and runs on its own as `make test-ffi-gpu`. `make leakcheck` runs the same CPU set under valgrind, and `make examples` builds and runs the four programs in `examples/`.
+
+</Step>
+<Step>
+
+Link against the build tree. From `sentil-ffi/`, name the include directory and the library directory, and bake in an rpath so the finished binary still resolves the library. The rpath has to be absolute: the loader reads a relative one against the working directory rather than against the binary.
+
+```bash
+cc -Iinclude my_app.c -L../target/release -lsentil -Wl,-rpath,"$PWD/../target/release" -lm -o my_app
+```
+
+Or install under a prefix, which writes the libraries, the header, `sentil.pc` with that prefix filled in, and the CMake config:
+
+```bash
+make install PREFIX=$HOME/.local
+```
+
+</Step>
+<Step>
+
+Check the installed prefix.
+
+```bash
+PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig pkg-config --modversion sentil
+```
+
+```text
+0.3.0
+```
+
+</Step>
+</Steps>
+
+`make dist` packs the build into `target/dist/sentil-0.3.0-<os>-<arch>.tar.gz` if you want to move it to another machine. The layout matches the release archive, with a `SentilConfigVersion.cmake` the release archive leaves out, so a versioned `find_package` resolves against this one.
+
+However the library arrives, the header is `sentil.h`, the link flag is `-lsentil`, and the CMake target is `Sentil::sentil`. `SENTIL_LIB_DIR` belongs to the C++ and Java builds, which take it as a CMake cache variable naming a directory that holds `libsentil`; a C project has no use for it. The archive and the distro packages carry the C ABI only, so the C++ wrapper header comes from the [C++ binding](/docs/languages/cpp).
+
+## First monitor
+
+Five samples of a speed signal, one rule, and a result you can check by eye. The rule needs speed above 5 and the trace dips to 4 at t=3, so the margin is 4 - 5 = -1 and the robustness is -1.0 exactly.
+
+```c title="check.c"
+#include <stdio.h>
+#include <sentil.h>
+
+int main(void) {
+    const double times[] = {0, 1, 2, 3, 4};
+    const double speed[] = {12, 9, 7, 4, 6};
+    sentil_trace_t *trace = sentil_trace_from_signal(times, 5, "speed", speed, 5);
+    sentil_formula_t *phi = sentil_formula_parse("G (speed > 5)");
+    double rho;
+    if (!trace || !phi || sentil_formula_robustness(phi, trace, &rho) != SENTIL_OK) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+    printf("%f\n", rho);
+    sentil_formula_destroy(phi);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+```bash
+cc check.c $(pkg-config --cflags --libs sentil) -o check
+./check
+```
+
+```text
+-1.000000
+```
+
+[What robustness measures](/docs/monitoring/concepts/what-is-stl) builds the intuition behind the number. Every C-ABI habit is already in these few lines. A constructor returns a handle or `NULL`. A computing call writes through an out-pointer and returns a `sentil_error_t`, `SENTIL_OK` on success. Each handle goes back through its own `_destroy`, and the failure branch reads the thread-local message covered under [errors](#errors). `sentil_formula_robustness_dense` scores the same pair in dense time, catching threshold crossings between samples; on this trace it also returns -1.0.
+
+## Traces
+
+A trace holds named signals on a shared time grid, times strictly increasing. Build one incrementally with `sentil_trace_create` plus `sentil_trace_add_signal`, in one call with `sentil_trace_from_signal`, or with integer times 0 through n-1 via `sentil_trace_indexed`. For recorded data, `sentil_trace_from_csv` and `sentil_trace_from_tsv` parse text with a header row and an auto-detected time column, and `sentil_trace_from_path` dispatches on file extension, reading csv, tsv, parquet, arrow, sqlite, mat, and more; the [trace formats page](/docs/reference/methods/trace-formats) lists them.
+
+```c title="traces.c"
+#include <sentil.h>
+#include <stdio.h>
+
+int main(void) {
+    sentil_trace_t *trace = sentil_trace_from_csv("time,speed\n0,12\n1,9\n2,7\n3,4\n4,6");
+    if (trace == NULL) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+    printf("%zu samples\n", sentil_trace_len(trace));
+
+    size_t n = 0;
+    const double *speed = sentil_trace_signal(trace, "speed", &n);
+    printf("speed[3] = %g\n", speed[3]);
+
+    const double fine_times[] = {0.0, 0.5, 1.0, 1.5, 2.0};
+    sentil_trace_t *fine = sentil_trace_resample(trace, fine_times, 5, SENTIL_INTERP_LINEAR);
+    const double *fs = sentil_trace_signal(fine, "speed", &n);
+    printf("speed at t=0.5: %g\n", fs[1]);
+
+    sentil_trace_destroy(fine);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+```text
+5 samples
+speed[3] = 4
+speed at t=0.5: 10.5
+```
+
+`sentil_trace_times` and `sentil_trace_signal` return borrowed pointers, valid until the trace changes or is freed; copy anything you need to keep. When one trace resamples onto many grids, `sentil_trace_prepare` fixes the interpolation coefficients once and each `sentil_prepared_trace_resample` reuses them.
+
+## Streaming
+
+`sentil_monitor_parse` builds a streaming monitor, and each `sentil_monitor_update` feeds it one timestamped sample. Every update fills a `sentil_robustness_t` whose fields are `resolved`, `satisfied`, `value`, `lower`, and `upper`; while the temporal window is still open, `resolved` stays false and `value` splits the difference between the bounds.
+
+```c title="stream.c"
+#include <sentil.h>
+#include <math.h>
+#include <stdio.h>
+
+int main(void) {
+    sentil_monitor_t *monitor = sentil_monitor_parse("G[0, 10] (x > -0.9)", NULL);
+    if (monitor == NULL) {
+        fprintf(stderr, "parse error: %s\n", sentil_get_last_error());
+        return 1;
+    }
+
+    const char *names[] = {"x"};
+    for (int t = 0; t < 60; ++t) {
+        double x = sin(t * 0.3);
+        sentil_robustness_t out;
+        if (sentil_monitor_update(monitor, (double)t, names, &x, 1, &out) != SENTIL_OK) {
+            fprintf(stderr, "update error: %s\n", sentil_get_last_error());
+            sentil_monitor_destroy(monitor);
+            return 1;
+        }
+        if (out.resolved && !out.satisfied) {
+            printf("violated at t=%d, robustness=%.3f\n", t, out.value);
+            sentil_monitor_destroy(monitor);
+            return 0;
+        }
+    }
+
+    printf("held over the whole stream\n");
+    sentil_monitor_destroy(monitor);
+    return 0;
+}
+```
+
+```bash
+cc stream.c $(pkg-config --cflags --libs sentil) -lm -o stream
+./stream
+```
+
+```text
+violated at t=15, robustness=-0.078
+```
+
+The per-sample cost is flat regardless of trace length, which is the [monotonic deque](/docs/monitoring/concepts/monotonic-deque) at work. A named update compares strings to find each slot; resolve every variable once with `sentil_monitor_symbol_index`, and `sentil_monitor_update_packed` then takes values in index order with no `strcmp` in the loop. `sentil_monitor_reset` clears streaming state for a fresh trace. Passing `NULL` for the config gives discrete time; build a `sentil_monitor_config_t` with `sentil_monitor_config_create` and `sentil_monitor_config_set_time` to evaluate in dense time. To run many formulas over one stream, `sentil_multi_monitor_create` holds them under string ids and `sentil_multi_monitor_update` advances all of them per sample.
+
+### Live probability
+
+The statistical layer streams too: `sentil_stream_monitor_with_lifting` tracks a `P~p` formula over a particle ensemble drawn through a lifting registry, and `sentil_stream_monitor_last_probability` reads the running satisfaction estimate after any update. The registry and config are explained under [probabilistic checking](#probabilistic-checking) below.
+
+```c title="live.c"
+#include <sentil.h>
+#include <math.h>
+#include <stdio.h>
+
+int main(void) {
+    sentil_formula_t *phi = sentil_formula_parse("P>=0.9 (G[0, 10] (x > -0.9))");
+    sentil_lifting_registry_t *lifting = sentil_lifting_registry_create();
+    sentil_lifting_registry_register(lifting, "x", sentil_noise_gaussian(0.0, 0.05),
+                                     SENTIL_NOISE_ADDITIVE);
+    sentil_smc_config_t config = sentil_smc_config_default();
+    config.samples = 500;
+
+    sentil_stream_monitor_t *monitor = sentil_stream_monitor_with_lifting(phi, lifting, &config);
+    if (monitor == NULL) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+
+    const char *names[] = {"x"};
+    for (int t = 0; t < 17; ++t) {
+        double x = sin(t * 0.3);
+        sentil_robustness_t out;
+        sentil_stream_monitor_update(monitor, (double)t, names, &x, 1, &out);
+        if (t >= 12) {
+            printf("t=%d  P=%.3f  satisfied=%s\n", t,
+                   sentil_stream_monitor_last_probability(monitor),
+                   out.satisfied ? "true" : "false");
+        }
+    }
+
+    sentil_stream_monitor_destroy(monitor);
+    sentil_lifting_registry_destroy(lifting);
+    sentil_formula_destroy(phi);
+    return 0;
+}
+```
+
+```text
+t=12  P=1.000  satisfied=true
+t=13  P=1.000  satisfied=true
+t=14  P=0.748  satisfied=false
+t=15  P=0.048  satisfied=false
+t=16  P=0.000  satisfied=false
+```
+
+The estimate follows the trailing window. The signal dips below -0.9 near t=15; as the dip enters the `[0, 10]` window the estimate collapses from 1.000 through 0.748 to 0.048 in three samples, and the verdict flips the moment it crosses the 0.9 threshold. The accessor returns NaN for a deterministic formula. For a `P~p` formula it reports the settled share, the fraction of particles whose own window has already closed satisfied, which is why it reads 0 for the first ten samples here and jumps to 1.000 at t=10 when the `[0, 10]` window first fills. Over those first ten samples the verdict beside it comes back with `resolved` false and `value` NaN rather than a pass the monitor has not earned, so gate on `out.resolved` before you read `out.satisfied`. The same accessor exists as `sentil_monitor_last_probability`, and per id as `sentil_multi_monitor_probability` after `sentil_multi_monitor_add_probabilistic`.
+
+## Probabilistic checking
+
+Attach a noise model to each noisy signal in a `sentil_lifting_registry_t`, then call `sentil_formula_check`; the `P~p` operator itself has its own page, [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl). Seventeen noise families ship, from `sentil_noise_gaussian` to `sentil_noise_mixture`, and the fitters `sentil_noise_fit_gaussian`, `sentil_noise_fit_bootstrap`, and `sentil_noise_fit_gaussian_mixture` learn a model from calibration residuals instead of parameters you guess.
+
+```c title="prstl.c"
+#include <sentil.h>
+#include <stdio.h>
+
+int main(void) {
+    double times[20], values[20];
+    for (int i = 0; i < 20; ++i) {
+        times[i] = i;
+        values[i] = 0.4 + 0.05 * i;
+    }
+    sentil_trace_t *trace = sentil_trace_from_signal(times, 20, "x", values, 20);
+
+    sentil_lifting_registry_t *lifting = sentil_lifting_registry_create();
+    sentil_lifting_registry_register(lifting, "x", sentil_noise_gaussian(0.0, 0.3),
+                                     SENTIL_NOISE_ADDITIVE);
+
+    sentil_formula_t *phi = sentil_formula_parse("P>=0.9 (G (x > 0))");
+    sentil_smc_config_t config = sentil_smc_config_default();
+    config.samples = 5000;
+
+    sentil_smc_result_t result;
+    if (sentil_formula_check(phi, trace, lifting, &config, &result) != SENTIL_OK) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+    printf("probability %.3f, interval [%.3f, %.3f], holds %s\n", result.probability,
+           result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+
+    sentil_formula_destroy(phi);
+    sentil_lifting_registry_destroy(lifting);
+    sentil_trace_destroy(trace);
+    return 0;
+}
+```
+
+```text
+probability 0.733, interval [0.721, 0.745], holds false
+```
+
+`sentil_smc_config_default()` gives 10000 samples, 0.95 confidence, seed 42, and the Wilson interval; set the fields you want to change, as the example does with `samples`. `sentil_formula_check_conservative` runs the same estimate but always reports the exact Clopper-Pearson interval, and `sentil_formula_check_distribution` additionally fills a `sentil_robustness_distribution_t` with the mean, spread, and range of robustness across the ensemble. How the interval turns into the `holds` verdict is on the [confidence intervals page](/docs/probabilistic/concepts/confidence-intervals).
+
+### Sequential and Bayesian tests
+
+A fixed sample budget spends 5000 simulations whether the answer is obvious or marginal. The sequential tests stop as soon as the evidence is clear, at a bounded error rate.
+
+```c title="sequential.c"
+sentil_sprt_config_t sprt = {0.85, 0.95, 0.05, 0.05, 100000, 42};
+sentil_sprt_result_t sr;
+if (sentil_formula_check_sequential(phi, trace, lifting, &sprt, &sr) == SENTIL_OK) {
+    printf("sprt: %s after %llu samples\n",
+           sr.verdict == SENTIL_SPRT_ACCEPT_H1 ? "accept H1" : "accept H0",
+           (unsigned long long)sr.samples);
+}
+
+sentil_bayes_config_t bayes = {0.9, 100.0, 100000, 42};
+sentil_bayes_result_t br;
+if (sentil_formula_check_bayesian(phi, trace, lifting, &bayes, &br) == SENTIL_OK) {
+    printf("bayes: %s after %llu samples, posterior %.4f\n",
+           br.verdict == SENTIL_BAYES_HOLDS ? "holds" : "fails",
+           (unsigned long long)br.samples, br.posterior);
+}
+```
+
+On the trace and lifting from the example above, both tests reach the answer the 5000-sample estimate gave, in a fraction of the work:
+
+```text
+sprt: accept H0 after 32 samples
+bayes: fails after 60 samples, posterior 0.0008
+```
+
+The SPRT config is `{p0, p1, alpha, beta, max_samples, seed}` and requires `0 < p0 < p1 < 1`, both error rates in `(0, 1)`, and a positive sample cap; accepting H0 means the satisfaction probability sits at or below p0. The Bayes config is `{threshold, bayes_factor, max_samples, seed}` with `threshold` in `(0, 1)` and `bayes_factor > 1`, and its result carries the posterior probability that the threshold claim is true. Both tests also run over your own Bernoulli source through `sentil_sequential_test` and `sentil_bayes_sequential_test`, no trace involved.
+
+### Rare events
+
+10000 samples of a 2.7e-7 event almost never contain even one hit, so at that scale a plain Monte Carlo estimate is zero. `sentil_formula_check_rare_event` estimates such probabilities by adaptive multilevel splitting over a `sentil_stochastic_system_t` you define with callbacks. Two rules keep the callbacks correct: derive all randomness from the seed argument, because the callbacks run on several threads at once, and give the inner formula a safety shape like `G`, read always, since the estimator hunts the rare violation.
+
+```c title="rare.c"
+#include <sentil.h>
+#include <stdio.h>
+
+/* splitmix64: one uniform draw in [0, 1) from a seed */
+static double uniform(uint64_t seed) {
+    uint64_t z = seed + 0x9e3779b97f4a7c15ull;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+    z = z ^ (z >> 31);
+    return (double)(z >> 11) / 9007199254740992.0;
+}
+
+static void init(void *userdata, uint64_t seed, double *out_state, size_t n) {
+    (void)userdata; (void)seed;
+    for (size_t i = 0; i < n; ++i) out_state[i] = 0.0;
+}
+
+static void step(void *userdata, const double *prev, size_t n, double time, uint64_t seed,
+                 double *out_state) {
+    (void)userdata; (void)time;
+    for (size_t i = 0; i < n; ++i) out_state[i] = prev[i] + 0.2 * (uniform(seed) - 0.5);
+}
+
+int main(void) {
+    const char *vars[] = {"x"};
+    sentil_system_callbacks_t callbacks = {NULL, init, step};
+    sentil_stochastic_system_t *system = sentil_stochastic_system_create(vars, 1, 1.0, 50, callbacks);
+
+    sentil_formula_t *phi = sentil_formula_parse("P>=0.999 (G (x < 2))");
+    sentil_rare_event_config_t config = sentil_rare_event_config_default();
+
+    sentil_rare_event_result_t result;
+    if (sentil_formula_check_rare_event(phi, system, &config, &result) != SENTIL_OK) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+    printf("violation probability %.2e, holds %s, %llu simulations\n", result.violation_probability,
+           result.holds ? "true" : "false", (unsigned long long)result.simulations);
+
+    sentil_formula_destroy(phi);
+    sentil_stochastic_system_destroy(system);
+    return 0;
+}
+```
+
+```text
+violation probability 2.68e-07, holds true, 726298 simulations
+```
+
+The random walk takes uniform steps of at most 0.1 per sample, so reaching 2 within 50 steps is a genuine tail event, resolved here in 726298 simulations. The defaults are 4096 particles, margin 0, seed 42; widen `particles` to tighten the estimate. With a GPU present, `sentil_formula_check_rare_event_gpu` runs fixed-effort splitting on the device over a declarative `sentil_sim_model_t`. The method is on the [rare events page](/docs/probabilistic/concepts/rare-events).
+
+## Synthesis
+
+One call covers open-loop synthesis: hand `sentil_synthesize` a model, bounds, and a spec, and it fills a result with the best input sequence it found. When the spec cannot be met the result holds the least violating input rather than nothing.
+
+```c title="synth.c"
+#include <sentil.h>
+#include <stdio.h>
+
+int main(void) {
+    const double a[] = {1.0};
+    const double b[] = {1.0};
+    const double x0[] = {1.0};
+    const char *vars[] = {"x"};
+    sentil_system_model_t *model = sentil_linear_model_create(a, 1, b, 1, x0, vars, 1, 1.0, 3);
+
+    sentil_formula_t *spec = sentil_formula_parse("G (x > 0)");
+    const double lower[] = {-1.0, -1.0, -1.0};
+    const double upper[] = {1.0, 1.0, 1.0};
+    sentil_bounds_t *bounds = sentil_bounds_create(lower, upper, 3);
+
+    sentil_synthesis_result_t result;
+    if (sentil_synthesize(model, spec, bounds, NULL, 0, SENTIL_BACKEND_AUTO, 0, &result) != SENTIL_OK) {
+        fprintf(stderr, "%s\n", sentil_get_last_error());
+        return 1;
+    }
+    printf("robustness %.3f, holds %s, inputs", result.robustness, result.holds ? "true" : "false");
+    for (size_t i = 0; i < result.input_len; ++i) printf(" %.3f", result.input[i]);
+    printf("\n");
+
+    sentil_free_doubles(result.input, result.input_len);
+    sentil_bounds_destroy(bounds);
+    sentil_formula_destroy(spec);
+    sentil_system_model_destroy(model);
+    return 0;
+}
+```
+
+```text
+robustness 1.000, holds true, inputs 1.000 -1.000 0.000
+```
+
+`SENTIL_BACKEND_AUTO` picks by problem structure; `SENTIL_BACKEND_GRADIENT`, `SENTIL_BACKEND_CMA_ES`, and `SENTIL_BACKEND_MILP` force one, and the [backends page](/docs/reference/methods/synthesis-backends) says when each wins. The receding-horizon controller, the safety filter, chance constraints, falsification, and parameter mining each have a reference section below.
+
+## Errors
+
+Nothing in the library aborts the process. Every failure comes back as a `sentil_error_t` code or a `NULL` handle, with a message describing what went wrong left on a per-thread slot. `sentil_get_last_error_code()` reads the code and `sentil_get_last_error()` the message; the pointer is borrowed and valid only until the next `sentil_*` call on the same thread, and passing it to `sentil_free_string` is an error. To keep a message past the next call, size a copy with a null buffer, then fill it:
+
+```c title="errors.c"
+#include <sentil.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    sentil_formula_t *phi = sentil_formula_parse("G (speed >");
+    if (phi == NULL) {
+        printf("code %d: %s\n", (int)sentil_get_last_error_code(), sentil_get_last_error());
+
+        size_t needed = sentil_get_last_error_message(NULL, 0);
+        char *copy = malloc(needed);
+        sentil_get_last_error_message(copy, needed);
+        printf("kept: %s\n", copy);
+        free(copy);
+    }
+    return 0;
+}
+```
+
+```text
+code 3: parse error at line 1, column 11: expected a value or `(`, found end of input
+kept: parse error at line 1, column 11: expected a value or `(`, found end of input
+```
+
+The full `sentil_error_t` enumeration, all 18 constants:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `SENTIL_OK` | 0 | Success |
+| `SENTIL_ERR_NULL_POINTER` | 1 | A required pointer argument was `NULL` |
+| `SENTIL_ERR_UTF8` | 2 | A C string argument was not valid UTF-8 |
+| `SENTIL_ERR_PARSE` | 3 | A formula failed to parse; the message points at the column |
+| `SENTIL_ERR_UNKNOWN_VARIABLE` | 4 | The formula reads a signal the trace does not carry |
+| `SENTIL_ERR_EVALUATION` | 5 | An arithmetic or evaluation error, for instance division by zero |
+| `SENTIL_ERR_TRACE` | 6 | A malformed trace: non-monotonic times, a length mismatch, or empty |
+| `SENTIL_ERR_NOT_PROBABILISTIC` | 7 | A statistical call got a formula without a top-level `P~p` |
+| `SENTIL_ERR_INVALID_NOISE_MODEL` | 8 | Noise-model parameters out of range |
+| `SENTIL_ERR_INVALID_CONFIG` | 9 | A configuration or shape argument is invalid |
+| `SENTIL_ERR_FIT` | 10 | A distribution fit failed |
+| `SENTIL_ERR_INGEST` | 11 | A trace file could not be read or parsed |
+| `SENTIL_ERR_SPLITTING` | 12 | The rare-event splitter failed |
+| `SENTIL_ERR_UNSUPPORTED` | 13 | The operation is not supported for this input |
+| `SENTIL_ERR_TRANSPILATION` | 14 | A model could not be lowered for the GPU path |
+| `SENTIL_ERR_GPU` | 15 | A GPU device error, or no device is present |
+| `SENTIL_ERR_JSON` | 16 | JSON serialization or parsing failed |
+| `SENTIL_ERR_PANIC` | 17 | An internal invariant was violated and caught at the boundary |
+
+A failure that would panic in the core is caught at the boundary and surfaces as `SENTIL_ERR_PANIC`, never as an abort. The mapping from each code to the Rust error variant behind it is on the [error codes page](/docs/reference/methods/error-codes).
+
+## Reference
+
+All 267 exported functions follow, with signatures verbatim from `sentil.h`. The header carries the same one-line descriptions inline, so it doubles as offline documentation. Exactly 19 symbols depend on a build feature: the 17 `sentil_sim_*` functions, `sentil_gpu_is_available`, and `sentil_formula_check_rare_event_gpu` exist only when `sentil-ffi` is built with the `gpu` feature, which is on by default; a `--no-default-features` build for an embedded target omits them, and no synthesis symbol is gated.
+
+### Version and errors
+
+The version is available at compile time as the macros `SENTIL_VERSION_MAJOR`, `SENTIL_VERSION_MINOR`, and `SENTIL_VERSION_PATCH`, currently 0, 3, 0.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_version` | `void sentil_version(uint32_t *major, uint32_t *minor, uint32_t *patch);` | Write the runtime version; `NULL` out-pointers are skipped |
+| `sentil_get_last_error_code` | `sentil_error_t sentil_get_last_error_code(void);` | Last error code set on this thread, or `SENTIL_OK` |
+| `sentil_get_last_error` | `const char *sentil_get_last_error(void);` | Last message on this thread, borrowed; empty string when no error |
+| `sentil_get_last_error_message` | `size_t sentil_get_last_error_message(char *buffer, size_t length);` | Copy the message; returns the length needed including the terminator |
+
+### Ownership and freeing
+
+Every handle a constructor returns is yours to free with its `_destroy`, and `NULL` is a no-op for every `_destroy` and `sentil_free_*` call. The 21 opaque handle types:
+
+| Handle | Freed with |
+|---|---|
+| `sentil_formula_t` | `sentil_formula_destroy` |
+| `sentil_expr_t` | `sentil_expr_destroy` |
+| `sentil_trace_t` | `sentil_trace_destroy` |
+| `sentil_prepared_trace_t` | `sentil_prepared_trace_destroy` |
+| `sentil_ring_buffer_t` | `sentil_ring_buffer_destroy` |
+| `sentil_monitor_config_t` | `sentil_monitor_config_destroy` |
+| `sentil_monitor_t` | `sentil_monitor_destroy` |
+| `sentil_stream_monitor_t` | `sentil_stream_monitor_destroy` |
+| `sentil_multi_monitor_t` | `sentil_multi_monitor_destroy` |
+| `sentil_formula_bank_t` | `sentil_formula_bank_destroy` |
+| `sentil_noise_model_t` | `sentil_noise_destroy` |
+| `sentil_lifting_registry_t` | `sentil_lifting_registry_destroy` |
+| `sentil_sim_expr_t` | `sentil_sim_expr_destroy` |
+| `sentil_sim_model_t` | `sentil_sim_model_destroy` |
+| `sentil_stochastic_system_t` | `sentil_stochastic_system_destroy` |
+| `sentil_bounds_t` | `sentil_bounds_destroy` |
+| `sentil_system_model_t` | `sentil_system_model_destroy` |
+| `sentil_controller_t` | `sentil_controller_destroy` |
+| `sentil_safety_filter_t` | `sentil_safety_filter_destroy` |
+| `sentil_chance_constraint_t` | `sentil_chance_constraint_destroy` |
+| `sentil_spec_builder_t` | `sentil_spec_builder_destroy` |
+
+Some builders consume the handles you pass them, whether the call succeeds or returns `NULL`, so never free those afterward. The consuming calls: the `sentil_expr_*` combinators and `sentil_sim_expr_*` combinators consume their operands, the `sentil_formula_*` builders consume their children, `sentil_noise_mixture` consumes its component models, `sentil_lifting_registry_register` consumes the model, `sentil_monitor_create` consumes the formula, `sentil_sim_model_create` consumes its init, advance, and noise handles, `sentil_controller_create` consumes the model and spec, `sentil_safety_filter_create` consumes the bounds, `sentil_chance_constraint_create` consumes the spec, and `sentil_spec_builder_with_variant`, `sentil_spec_builder_with_param`, and `sentil_spec_builder_into_monitor` consume the builder.
+
+Arrays and strings the library returns are freed by a matching free function:
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_free_string` | `void sentil_free_string(char *string);` | Strings from `_to_json`, `_build_deterministic`, and the like |
+| `sentil_free_string_array` | `void sentil_free_string_array(char **array, size_t count);` | Name lists from `_variables`, `_ids`, `_available` |
+| `sentil_free_doubles` | `void sentil_free_doubles(double *array, size_t count);` | Robustness signals, residuals, synthesized inputs |
+| `sentil_free_samples` | `void sentil_free_samples(sentil_sample_t *samples, size_t count);` | Ring-buffer sample ranges |
+| `sentil_free_intervals` | `void sentil_free_intervals(sentil_interval_t *intervals, size_t count);` | Violation spans |
+| `sentil_free_robustness` | `void sentil_free_robustness(sentil_robustness_t *array, size_t count);` | Per-step verdicts from `sentil_stream_monitor_run` |
+| `sentil_free_named_robustness` | `void sentil_free_named_robustness(sentil_named_robustness_t *array, size_t count);` | Per-id verdicts from `sentil_multi_monitor_update` |
+| `sentil_free_bank_results` | `void sentil_free_bank_results(sentil_bank_result_t *array, size_t count);` | Results from the formula bank |
+
+### Formula parsing and inspection
+
+Parse once, evaluate many times; a formula handle is immutable.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_formula_parse` | `sentil_formula_t *sentil_formula_parse(const char *input);` | Parse a PrSTL formula; `NULL` on error |
+| `sentil_formula_destroy` | `void sentil_formula_destroy(sentil_formula_t *formula);` | Free the handle |
+| `sentil_formula_to_json` | `char *sentil_formula_to_json(const sentil_formula_t *formula);` | JSON form; free with `sentil_free_string` |
+| `sentil_formula_from_json` | `sentil_formula_t *sentil_formula_from_json(const char *json);` | Rebuild from `sentil_formula_to_json` output |
+| `sentil_formula_depth` | `size_t sentil_formula_depth(const sentil_formula_t *formula);` | A predicate is 1; each operator adds a level |
+| `sentil_formula_has_temporal` | `bool sentil_formula_has_temporal(const sentil_formula_t *formula);` | True when a temporal operator is present |
+| `sentil_formula_variables` | `char **sentil_formula_variables(const sentil_formula_t *formula, size_t *out_count);` | Variable names, sorted and unique |
+
+### Formula builders
+
+Build a formula programmatically instead of parsing a string, from expressions upward. Every builder consumes the handles passed to it, which is the mistake to watch for: after wrapping a formula in `sentil_formula_always`, the inner handle is gone and freeing it is a double free.
+
+```c
+sentil_formula_t *pred = sentil_formula_predicate(
+    sentil_expr_variable("speed"), SENTIL_CMP_GT, sentil_expr_literal(5.0));
+sentil_formula_t *phi = sentil_formula_always(0.0, 0.0, false, pred);
+/* pred is consumed; free only phi */
+```
+
+This builds `G (speed > 5)` and scores -1.0 on the first-monitor trace, matching the parsed form exactly.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_expr_variable` | `sentil_expr_t *sentil_expr_variable(const char *name);` | A named signal |
+| `sentil_expr_literal` | `sentil_expr_t *sentil_expr_literal(double value);` | A constant |
+| `sentil_expr_binary` | `sentil_expr_t *sentil_expr_binary(sentil_binary_op_t op, sentil_expr_t *left, sentil_expr_t *right);` | Arithmetic; consumes both operands |
+| `sentil_expr_call` | `sentil_expr_t *sentil_expr_call(const char *name, sentil_expr_t **args, size_t count);` | A function call like `abs` or `min`; consumes the args |
+| `sentil_expr_destroy` | `void sentil_expr_destroy(sentil_expr_t *expr);` | Free an expression not yet consumed |
+| `sentil_formula_predicate` | `sentil_formula_t *sentil_formula_predicate(sentil_expr_t *lhs, sentil_comparison_op_t op, sentil_expr_t *rhs);` | Compare two expressions; consumes both |
+| `sentil_formula_not` | `sentil_formula_t *sentil_formula_not(sentil_formula_t *child);` | Negation |
+| `sentil_formula_and` | `sentil_formula_t *sentil_formula_and(sentil_formula_t *left, sentil_formula_t *right);` | Conjunction |
+| `sentil_formula_or` | `sentil_formula_t *sentil_formula_or(sentil_formula_t *left, sentil_formula_t *right);` | Disjunction |
+| `sentil_formula_implies` | `sentil_formula_t *sentil_formula_implies(sentil_formula_t *left, sentil_formula_t *right);` | Implication |
+| `sentil_formula_next` | `sentil_formula_t *sentil_formula_next(sentil_formula_t *child);` | Shift one sample forward |
+| `sentil_formula_always` | `sentil_formula_t *sentil_formula_always(double lower, double upper, bool has_upper, sentil_formula_t *child);` | `has_upper` false means unbounded above |
+| `sentil_formula_eventually` | `sentil_formula_t *sentil_formula_eventually(double lower, double upper, bool has_upper, sentil_formula_t *child);` | Dual of always |
+| `sentil_formula_historically` | `sentil_formula_t *sentil_formula_historically(double lower, double upper, bool has_upper, sentil_formula_t *child);` | Past-time always |
+| `sentil_formula_once` | `sentil_formula_t *sentil_formula_once(double lower, double upper, bool has_upper, sentil_formula_t *child);` | Past-time eventually |
+| `sentil_formula_until` | `sentil_formula_t *sentil_formula_until(double lower, double upper, bool has_upper, sentil_formula_t *left, sentil_formula_t *right);` | Left holds until right does |
+| `sentil_formula_since` | `sentil_formula_t *sentil_formula_since(double lower, double upper, bool has_upper, sentil_formula_t *left, sentil_formula_t *right);` | Past-time until |
+| `sentil_formula_probabilistic` | `sentil_formula_t *sentil_formula_probabilistic(sentil_probability_op_t op, double threshold, sentil_formula_t *child);` | Wrap in `P~p`; threshold in `[0, 1]` |
+
+The three builder enums, with every constant:
+
+| Enum | Constants |
+|---|---|
+| `sentil_comparison_op_t` | `SENTIL_CMP_LT` 0, `SENTIL_CMP_LE` 1, `SENTIL_CMP_GT` 2, `SENTIL_CMP_GE` 3, `SENTIL_CMP_EQ` 4, `SENTIL_CMP_NE` 5 |
+| `sentil_binary_op_t` | `SENTIL_BIN_ADD` 0, `SENTIL_BIN_SUB` 1, `SENTIL_BIN_MUL` 2, `SENTIL_BIN_DIV` 3, `SENTIL_BIN_MOD` 4, `SENTIL_BIN_POW` 5 |
+| `sentil_probability_op_t` | `SENTIL_PROB_GE` 0, `SENTIL_PROB_GT` 1, `SENTIL_PROB_LE` 2, `SENTIL_PROB_LT` 3 |
+
+### Offline evaluation
+
+Robustness straight off a formula and a trace, no monitor needed. The dense forms catch threshold crossings between samples; the plain forms read the grid.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_formula_robustness` | `sentil_error_t sentil_formula_robustness(const sentil_formula_t *formula, const sentil_trace_t *trace, double *out_value);` | One value on the sample grid |
+| `sentil_formula_robustness_dense` | `sentil_error_t sentil_formula_robustness_dense(const sentil_formula_t *formula, const sentil_trace_t *trace, double *out_value);` | One value in dense time |
+| `sentil_formula_robustness_signal` | `double *sentil_formula_robustness_signal(const sentil_formula_t *formula, const sentil_trace_t *trace, size_t *out_len);` | Robustness at every sample; free with `sentil_free_doubles` |
+| `sentil_formula_robustness_dense_signal` | `double *sentil_formula_robustness_dense_signal(const sentil_formula_t *formula, const sentil_trace_t *trace, size_t *out_len);` | Dense form of the signal |
+| `sentil_formula_violations` | `sentil_interval_t *sentil_formula_violations(const sentil_formula_t *formula, const sentil_trace_t *trace, size_t *out_count);` | Spans where the formula does not hold |
+| `sentil_violation_intervals` | `sentil_interval_t *sentil_violation_intervals(const double *times, size_t n, const double *signal, size_t m, size_t *out_count);` | Violation spans of a robustness signal you already have |
+
+`sentil_interval_t` is `{ double start; double end }`.
+
+### Formula banks
+
+A bank evaluates many formulas over one trace in a single call, for batch offline checking.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_formula_bank_create` | `sentil_formula_bank_t *sentil_formula_bank_create(void);` | Empty bank |
+| `sentil_formula_bank_add` | `sentil_error_t sentil_formula_bank_add(sentil_formula_bank_t *bank, const char *id, const char *formula);` | Add from a string |
+| `sentil_formula_bank_add_formula` | `sentil_error_t sentil_formula_bank_add_formula(sentil_formula_bank_t *bank, const char *id, const sentil_formula_t *formula);` | Add from a borrowed handle |
+| `sentil_formula_bank_ids` | `char **sentil_formula_bank_ids(const sentil_formula_bank_t *bank, size_t *out_count);` | Ids in insertion order |
+| `sentil_formula_bank_len` | `size_t sentil_formula_bank_len(const sentil_formula_bank_t *bank);` | Number of formulas |
+| `sentil_formula_bank_is_empty` | `bool sentil_formula_bank_is_empty(const sentil_formula_bank_t *bank);` | |
+| `sentil_formula_bank_robustness` | `sentil_bank_result_t *sentil_formula_bank_robustness(const sentil_formula_bank_t *bank, const sentil_trace_t *trace, size_t *out_count);` | Every formula over the trace |
+| `sentil_formula_bank_robustness_dense` | `sentil_bank_result_t *sentil_formula_bank_robustness_dense(const sentil_formula_bank_t *bank, const sentil_trace_t *trace, size_t *out_count);` | Dense form |
+| `sentil_formula_bank_destroy` | `void sentil_formula_bank_destroy(sentil_formula_bank_t *bank);` | Free the handle |
+
+`sentil_bank_result_t` is `{ char *id; bool ok; double value; sentil_error_t code }`; when one formula errors, its `ok` is false with `value` NaN and `code` set, and the rest still evaluate.
+
+### Trace handling
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_trace_create` | `sentil_trace_t *sentil_trace_create(const double *times, size_t n);` | Over strictly increasing times |
+| `sentil_trace_from_signal` | `sentil_trace_t *sentil_trace_from_signal(const double *times, size_t n, const char *name, const double *values, size_t m);` | Times and one signal in one call |
+| `sentil_trace_indexed` | `sentil_trace_t *sentil_trace_indexed(size_t len);` | Integer times 0 to len - 1, no signals yet |
+| `sentil_trace_add_signal` | `sentil_error_t sentil_trace_add_signal(sentil_trace_t *trace, const char *name, const double *values, size_t n);` | Add or replace; length must match |
+| `sentil_trace_len` | `size_t sentil_trace_len(const sentil_trace_t *trace);` | Number of time points |
+| `sentil_trace_is_empty` | `bool sentil_trace_is_empty(const sentil_trace_t *trace);` | True when no time points |
+| `sentil_trace_times` | `const double *sentil_trace_times(const sentil_trace_t *trace, size_t *out_len);` | Borrowed view of the times |
+| `sentil_trace_variables` | `char **sentil_trace_variables(const sentil_trace_t *trace, size_t *out_count);` | Signal names, sorted |
+| `sentil_trace_signal` | `const double *sentil_trace_signal(const sentil_trace_t *trace, const char *name, size_t *out_len);` | Borrowed view of one signal, or `NULL` if absent |
+| `sentil_trace_resample` | `sentil_trace_t *sentil_trace_resample(const sentil_trace_t *trace, const double *times, size_t n, sentil_interpolation_t interp);` | Onto new times |
+| `sentil_trace_prepare` | `sentil_prepared_trace_t *sentil_trace_prepare(const sentil_trace_t *trace, sentil_interpolation_t interp);` | Fix interpolation coefficients once |
+| `sentil_prepared_trace_resample` | `sentil_trace_t *sentil_prepared_trace_resample(const sentil_prepared_trace_t *prepared, const double *times, size_t n);` | Reuse them per grid |
+| `sentil_prepared_trace_destroy` | `void sentil_prepared_trace_destroy(sentil_prepared_trace_t *prepared);` | Free the prepared handle |
+| `sentil_trace_from_csv` | `sentil_trace_t *sentil_trace_from_csv(const char *text);` | Parse CSV text |
+| `sentil_trace_from_tsv` | `sentil_trace_t *sentil_trace_from_tsv(const char *text);` | Parse TSV text |
+| `sentil_trace_from_path` | `sentil_trace_t *sentil_trace_from_path(const char *path);` | Dispatch on file extension |
+| `sentil_trace_destroy` | `void sentil_trace_destroy(sentil_trace_t *trace);` | Free the handle |
+
+`sentil_interpolation_t`: `SENTIL_INTERP_LINEAR` 0, `SENTIL_INTERP_HOLD` 1, `SENTIL_INTERP_CUBIC` 2.
+
+### Ring buffers
+
+A fixed-capacity buffer of timestamped values with running statistics.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_ring_buffer_create` | `sentil_ring_buffer_t *sentil_ring_buffer_create(size_t capacity);` | Fixed capacity |
+| `sentil_ring_buffer_push` | `sentil_error_t sentil_ring_buffer_push(sentil_ring_buffer_t *buffer, double time, double value, sentil_sample_t *out_evicted);` | On overflow the oldest lands in `out_evicted`, which may be `NULL` |
+| `sentil_ring_buffer_clear` | `void sentil_ring_buffer_clear(sentil_ring_buffer_t *buffer);` | Remove every sample |
+| `sentil_ring_buffer_len` | `size_t sentil_ring_buffer_len(const sentil_ring_buffer_t *buffer);` | Samples held |
+| `sentil_ring_buffer_capacity` | `size_t sentil_ring_buffer_capacity(const sentil_ring_buffer_t *buffer);` | Fixed capacity |
+| `sentil_ring_buffer_is_empty` | `bool sentil_ring_buffer_is_empty(const sentil_ring_buffer_t *buffer);` | |
+| `sentil_ring_buffer_is_full` | `bool sentil_ring_buffer_is_full(const sentil_ring_buffer_t *buffer);` | True when len equals capacity |
+| `sentil_ring_buffer_front` | `sentil_sample_t sentil_ring_buffer_front(const sentil_ring_buffer_t *buffer);` | Oldest sample |
+| `sentil_ring_buffer_back` | `sentil_sample_t sentil_ring_buffer_back(const sentil_ring_buffer_t *buffer);` | Newest sample |
+| `sentil_ring_buffer_get` | `sentil_sample_t sentil_ring_buffer_get(const sentil_ring_buffer_t *buffer, size_t index);` | Index 0 is the oldest |
+| `sentil_ring_buffer_pop_front` | `sentil_sample_t sentil_ring_buffer_pop_front(sentil_ring_buffer_t *buffer);` | Remove and return the oldest |
+| `sentil_ring_buffer_pop_back` | `sentil_sample_t sentil_ring_buffer_pop_back(sentil_ring_buffer_t *buffer);` | Remove and return the newest |
+| `sentil_ring_buffer_closest_to_time` | `sentil_sample_t sentil_ring_buffer_closest_to_time(const sentil_ring_buffer_t *buffer, double time);` | Nearest sample to the query time |
+| `sentil_ring_buffer_mean` | `bool sentil_ring_buffer_mean(const sentil_ring_buffer_t *buffer, double *out);` | False when empty |
+| `sentil_ring_buffer_variance` | `bool sentil_ring_buffer_variance(const sentil_ring_buffer_t *buffer, double *out);` | Needs two samples |
+| `sentil_ring_buffer_std_dev` | `bool sentil_ring_buffer_std_dev(const sentil_ring_buffer_t *buffer, double *out);` | Needs two samples |
+| `sentil_ring_buffer_min` | `bool sentil_ring_buffer_min(const sentil_ring_buffer_t *buffer, double *out);` | False when empty |
+| `sentil_ring_buffer_max` | `bool sentil_ring_buffer_max(const sentil_ring_buffer_t *buffer, double *out);` | False when empty |
+| `sentil_ring_buffer_recompute_statistics` | `void sentil_ring_buffer_recompute_statistics(sentil_ring_buffer_t *buffer);` | Rebuild the running mean and variance, clearing float drift |
+| `sentil_ring_buffer_at_time` | `bool sentil_ring_buffer_at_time(const sentil_ring_buffer_t *buffer, double time, double *out);` | Value recorded at the query time, within a small tolerance |
+| `sentil_ring_buffer_time_range` | `bool sentil_ring_buffer_time_range(const sentil_ring_buffer_t *buffer, double *out_start, double *out_end);` | Earliest and latest times held |
+| `sentil_ring_buffer_between` | `sentil_sample_t *sentil_ring_buffer_between(const sentil_ring_buffer_t *buffer, double start, double end, size_t *out_count);` | Samples in `[start, end]`; free with `sentil_free_samples` |
+| `sentil_ring_buffer_destroy` | `void sentil_ring_buffer_destroy(sentil_ring_buffer_t *buffer);` | Free the handle |
+
+`sentil_sample_t` is `{ bool found; double time; double value }`; `found` is false when a query had no answer, for instance popping an empty buffer.
+
+### Monitors
+
+The full-featured monitor: streaming updates, offline evaluation honoring a time mode, and the probabilistic checks in one handle.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_monitor_config_create` | `sentil_monitor_config_t *sentil_monitor_config_create(void);` | Default configuration: discrete time |
+| `sentil_monitor_config_set_time` | `sentil_error_t sentil_monitor_config_set_time(sentil_monitor_config_t *config, sentil_time_mode_t mode);` | Switch discrete or dense |
+| `sentil_monitor_config_time_mode` | `sentil_time_mode_t sentil_monitor_config_time_mode(const sentil_monitor_config_t *config);` | Read the mode back |
+| `sentil_monitor_config_destroy` | `void sentil_monitor_config_destroy(sentil_monitor_config_t *config);` | Free the config |
+| `sentil_monitor_create` | `sentil_monitor_t *sentil_monitor_create(sentil_formula_t *formula, const sentil_monitor_config_t *config);` | Consumes the formula, even on `NULL` return; config `NULL` for default |
+| `sentil_monitor_parse` | `sentil_monitor_t *sentil_monitor_parse(const char *formula, const sentil_monitor_config_t *config);` | From a formula string |
+| `sentil_monitor_formula` | `sentil_formula_t *sentil_monitor_formula(const sentil_monitor_t *monitor);` | An owned copy of the formula |
+| `sentil_monitor_config` | `sentil_monitor_config_t *sentil_monitor_config(const sentil_monitor_t *monitor);` | An owned copy of the config |
+| `sentil_monitor_update` | `sentil_error_t sentil_monitor_update(sentil_monitor_t *monitor, double time, const char *const *names, const double *values, size_t n, sentil_robustness_t *out);` | Fold one sample by name |
+| `sentil_monitor_update_packed` | `sentil_error_t sentil_monitor_update_packed(sentil_monitor_t *monitor, double time, const double *values, size_t n, sentil_robustness_t *out);` | Fold one sample in symbol-index order |
+| `sentil_monitor_robustness` | `sentil_error_t sentil_monitor_robustness(const sentil_monitor_t *monitor, const sentil_trace_t *trace, double *out);` | Offline, honoring the time mode |
+| `sentil_monitor_robustness_signal` | `double *sentil_monitor_robustness_signal(const sentil_monitor_t *monitor, const sentil_trace_t *trace, size_t *out_len);` | Robustness at every sample |
+| `sentil_monitor_violations` | `sentil_interval_t *sentil_monitor_violations(const sentil_monitor_t *monitor, const sentil_trace_t *trace, size_t *out_count);` | Spans where robustness is negative |
+| `sentil_monitor_symbol_index` | `sentil_error_t sentil_monitor_symbol_index(sentil_monitor_t *monitor, const char *name, size_t *out_index, bool *out_found);` | Packed-update position; `out_found` false if unused |
+| `sentil_monitor_last_probability` | `double sentil_monitor_last_probability(const sentil_monitor_t *monitor);` | Running estimate for a `P~p` formula, else NaN |
+| `sentil_monitor_reset` | `void sentil_monitor_reset(sentil_monitor_t *monitor);` | Clear streaming state |
+| `sentil_monitor_check` | `sentil_error_t sentil_monitor_check(const sentil_monitor_t *monitor, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, sentil_smc_result_t *out);` | SMC with the monitor's configured settings |
+| `sentil_monitor_check_sequential` | `sentil_error_t sentil_monitor_check_sequential(const sentil_monitor_t *monitor, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, const sentil_sprt_config_t *config, sentil_sprt_result_t *out);` | SPRT through the monitor |
+| `sentil_monitor_check_rare` | `sentil_error_t sentil_monitor_check_rare(const sentil_monitor_t *monitor, const sentil_stochastic_system_t *system, sentil_rare_event_result_t *out);` | Rare-event splitting through the monitor |
+| `sentil_monitor_destroy` | `void sentil_monitor_destroy(sentil_monitor_t *monitor);` | Free the handle |
+
+`sentil_time_mode_t`: `SENTIL_TIME_DISCRETE` 0, `SENTIL_TIME_DENSE` 1. `sentil_robustness_t` is `{ bool resolved; bool satisfied; double value; double lower; double upper }`.
+
+### Streaming monitors
+
+A leaner monitor for pure streaming, plus the probabilistic ensemble form.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_stream_monitor_create` | `sentil_stream_monitor_t *sentil_stream_monitor_create(const char *formula);` | From a formula string |
+| `sentil_stream_monitor_from_formula` | `sentil_stream_monitor_t *sentil_stream_monitor_from_formula(const sentil_formula_t *formula);` | From a borrowed handle |
+| `sentil_stream_monitor_with_lifting` | `sentil_stream_monitor_t *sentil_stream_monitor_with_lifting( const sentil_formula_t *formula, const sentil_lifting_registry_t *lifting, const sentil_smc_config_t *config);` | Track a `P~p` formula over a particle ensemble |
+| `sentil_stream_monitor_variable_count` | `size_t sentil_stream_monitor_variable_count(const sentil_stream_monitor_t *monitor);` | Variables the formula reads |
+| `sentil_stream_monitor_symbol_index` | `sentil_error_t sentil_stream_monitor_symbol_index(const sentil_stream_monitor_t *monitor, const char *name, size_t *out_index, bool *out_found);` | Packed-update position |
+| `sentil_stream_monitor_update` | `sentil_error_t sentil_stream_monitor_update(sentil_stream_monitor_t *monitor, double time, const char *const *names, const double *values, size_t n, sentil_robustness_t *out);` | Fold one sample by name |
+| `sentil_stream_monitor_update_packed` | `sentil_error_t sentil_stream_monitor_update_packed(sentil_stream_monitor_t *monitor, double time, const double *values, size_t n, sentil_robustness_t *out);` | Fold one sample in index order |
+| `sentil_stream_monitor_run` | `sentil_robustness_t *sentil_stream_monitor_run(sentil_stream_monitor_t *monitor, const sentil_trace_t *trace, size_t *out_count);` | Replay a trace; free with `sentil_free_robustness` |
+| `sentil_stream_monitor_last_probability` | `double sentil_stream_monitor_last_probability(const sentil_stream_monitor_t *monitor);` | Running estimate for a `P~p` formula, else NaN |
+| `sentil_stream_monitor_reset` | `void sentil_stream_monitor_reset(sentil_stream_monitor_t *monitor);` | Clear streaming state |
+| `sentil_stream_monitor_destroy` | `void sentil_stream_monitor_destroy(sentil_stream_monitor_t *monitor);` | Free the handle |
+
+### Multi-formula monitors
+
+One update call advances every formula, deterministic and probabilistic mixed.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_multi_monitor_create` | `sentil_multi_monitor_t *sentil_multi_monitor_create(void);` | Empty monitor |
+| `sentil_multi_monitor_add` | `sentil_error_t sentil_multi_monitor_add(sentil_multi_monitor_t *monitor, const char *id, const char *formula);` | Add from a string |
+| `sentil_multi_monitor_add_formula` | `sentil_error_t sentil_multi_monitor_add_formula(sentil_multi_monitor_t *monitor, const char *id, const sentil_formula_t *formula);` | Add from a borrowed handle |
+| `sentil_multi_monitor_add_probabilistic` | `sentil_error_t sentil_multi_monitor_add_probabilistic( sentil_multi_monitor_t *monitor, const char *id, const sentil_formula_t *formula, const sentil_lifting_registry_t *lifting, const sentil_smc_config_t *config);` | Add a `P~p` formula with its ensemble |
+| `sentil_multi_monitor_remove` | `bool sentil_multi_monitor_remove(sentil_multi_monitor_t *monitor, const char *id);` | Returns whether one was found |
+| `sentil_multi_monitor_reset` | `void sentil_multi_monitor_reset(sentil_multi_monitor_t *monitor);` | Reset every contained monitor |
+| `sentil_multi_monitor_len` | `size_t sentil_multi_monitor_len(const sentil_multi_monitor_t *monitor);` | Formulas held |
+| `sentil_multi_monitor_is_empty` | `bool sentil_multi_monitor_is_empty(const sentil_multi_monitor_t *monitor);` | |
+| `sentil_multi_monitor_ids` | `char **sentil_multi_monitor_ids(const sentil_multi_monitor_t *monitor, size_t *out_count);` | Ids in insertion order |
+| `sentil_multi_monitor_update` | `sentil_named_robustness_t *sentil_multi_monitor_update(sentil_multi_monitor_t *monitor, double time, const char *const *names, const double *values, size_t n, size_t *out_count);` | Per-id verdicts in insertion order |
+| `sentil_multi_monitor_probability` | `double sentil_multi_monitor_probability(sentil_multi_monitor_t *monitor, const char *id);` | Running estimate for the id, else NaN |
+| `sentil_multi_monitor_destroy` | `void sentil_multi_monitor_destroy(sentil_multi_monitor_t *monitor);` | Free the handle |
+
+`sentil_named_robustness_t` is `{ char *id; sentil_robustness_t robustness }`; the id is owned by the result array.
+
+### Noise models
+
+Seventeen family constructors, each returning an owned model or `NULL` when a parameter is invalid, plus fitters that learn a model from calibration data.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_noise_dirac` | `sentil_noise_model_t *sentil_noise_dirac(double value);` | A point mass, no noise |
+| `sentil_noise_gaussian` | `sentil_noise_model_t *sentil_noise_gaussian(double mean, double std_dev);` | Normal |
+| `sentil_noise_uniform` | `sentil_noise_model_t *sentil_noise_uniform(double low, double high);` | Uniform on `[low, high]` |
+| `sentil_noise_log_normal` | `sentil_noise_model_t *sentil_noise_log_normal(double mu, double sigma);` | Log-normal |
+| `sentil_noise_exponential` | `sentil_noise_model_t *sentil_noise_exponential(double lambda);` | Exponential |
+| `sentil_noise_gamma` | `sentil_noise_model_t *sentil_noise_gamma(double shape, double scale);` | Gamma |
+| `sentil_noise_beta` | `sentil_noise_model_t *sentil_noise_beta(double alpha, double beta);` | Beta |
+| `sentil_noise_weibull` | `sentil_noise_model_t *sentil_noise_weibull(double shape, double scale);` | Weibull |
+| `sentil_noise_rayleigh` | `sentil_noise_model_t *sentil_noise_rayleigh(double scale);` | Rayleigh |
+| `sentil_noise_gumbel` | `sentil_noise_model_t *sentil_noise_gumbel(double location, double scale);` | Gumbel |
+| `sentil_noise_cauchy` | `sentil_noise_model_t *sentil_noise_cauchy(double location, double scale);` | Cauchy |
+| `sentil_noise_student_t` | `sentil_noise_model_t *sentil_noise_student_t(double df, double location, double scale);` | Student t |
+| `sentil_noise_truncated_normal` | `sentil_noise_model_t *sentil_noise_truncated_normal(double mean, double std_dev, double lower, double upper);` | Normal clipped to `[lower, upper]` |
+| `sentil_noise_poisson` | `sentil_noise_model_t *sentil_noise_poisson(double lambda);` | Poisson |
+| `sentil_noise_binomial` | `sentil_noise_model_t *sentil_noise_binomial(uint64_t n, double p);` | Binomial |
+| `sentil_noise_bootstrap` | `sentil_noise_model_t *sentil_noise_bootstrap(const double *residuals, size_t n);` | Resample the empirical residuals |
+| `sentil_noise_mixture` | `sentil_noise_model_t *sentil_noise_mixture(const double *weights, sentil_noise_model_t **models, size_t n);` | Weighted mixture; consumes the components |
+| `sentil_noise_mean` | `bool sentil_noise_mean(const sentil_noise_model_t *model, double *out);` | False when undefined, as for Cauchy |
+| `sentil_noise_variance` | `bool sentil_noise_variance(const sentil_noise_model_t *model, double *out);` | False when undefined |
+| `sentil_noise_residuals` | `double *sentil_noise_residuals(const double *ground_truth, size_t n, const double *sensor, size_t m, sentil_noise_interaction_t interaction, size_t *out_len);` | Paired residuals; free with `sentil_free_doubles` |
+| `sentil_noise_fit_gaussian` | `sentil_noise_model_t *sentil_noise_fit_gaussian(const double *samples, size_t n);` | Maximum-likelihood Gaussian |
+| `sentil_noise_fit_bootstrap` | `sentil_noise_model_t *sentil_noise_fit_bootstrap(const double *samples, size_t n);` | Empirical distribution |
+| `sentil_noise_fit_bootstrap_reservoir` | `sentil_noise_model_t *sentil_noise_fit_bootstrap_reservoir(const double *samples, size_t n, size_t max_samples);` | Reservoir-capped empirical fit |
+| `sentil_noise_fit_gaussian_mixture` | `sentil_noise_model_t *sentil_noise_fit_gaussian_mixture(const double *samples, size_t n, size_t components, size_t max_iters);` | Mixture by expectation-maximization |
+| `sentil_noise_to_json` | `char *sentil_noise_to_json(const sentil_noise_model_t *model);` | JSON form; free with `sentil_free_string` |
+| `sentil_noise_from_json` | `sentil_noise_model_t *sentil_noise_from_json(const char *json);` | Rebuild from JSON |
+| `sentil_noise_from_file` | `sentil_noise_model_t *sentil_noise_from_file(const char *path);` | Load from a JSON file |
+| `sentil_noise_destroy` | `void sentil_noise_destroy(sentil_noise_model_t *model);` | Free the handle |
+
+`sentil_noise_interaction_t`: `SENTIL_NOISE_ADDITIVE` 0 for residuals `y - g`, `SENTIL_NOISE_MULTIPLICATIVE` 1 for `y / g`.
+
+### Lifting registries
+
+The registry maps signal names to noise models; lifting draws one noisy realization of a trace.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_lifting_registry_create` | `sentil_lifting_registry_t *sentil_lifting_registry_create(void);` | Empty registry |
+| `sentil_lifting_registry_register` | `sentil_error_t sentil_lifting_registry_register(sentil_lifting_registry_t *registry, const char *variable, sentil_noise_model_t *model, sentil_noise_interaction_t interaction);` | Attach a model; consumes it |
+| `sentil_lifting_registry_variables` | `char **sentil_lifting_registry_variables(const sentil_lifting_registry_t *registry, size_t *out_count);` | Registered signals, sorted |
+| `sentil_lifting_registry_is_empty` | `bool sentil_lifting_registry_is_empty(const sentil_lifting_registry_t *registry);` | |
+| `sentil_lifting_registry_lift` | `sentil_trace_t *sentil_lifting_registry_lift(const sentil_lifting_registry_t *registry, const sentil_trace_t *trace, uint64_t seed);` | One seeded noisy realization |
+| `sentil_lifting_registry_destroy` | `void sentil_lifting_registry_destroy(sentil_lifting_registry_t *registry);` | Free the handle |
+
+### Statistical model checking
+
+Fixed-budget estimation of a `P~p` formula over the lifted ensemble. Each call needs a formula with a top-level probabilistic operator, or it returns `SENTIL_ERR_NOT_PROBABILISTIC`.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_smc_config_default` | `sentil_smc_config_t sentil_smc_config_default(void);` | 10000 samples, 0.95 confidence, seed 42, Wilson |
+| `sentil_formula_check` | `sentil_error_t sentil_formula_check(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, const sentil_smc_config_t *config, sentil_smc_result_t *out);` | Estimate and decide |
+| `sentil_formula_check_conservative` | `sentil_error_t sentil_formula_check_conservative(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, const sentil_smc_config_t *config, sentil_smc_result_t *out);` | Always the exact Clopper-Pearson interval |
+| `sentil_formula_check_distribution` | `sentil_error_t sentil_formula_check_distribution(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, const sentil_smc_config_t *config, sentil_smc_result_t *out_result, sentil_robustness_distribution_t *out_distribution);` | Also report the robustness distribution |
+
+The structs:
+
+| Struct | Fields | Note |
+|---|---|---|
+| `sentil_smc_config_t` | `{ uint64_t samples; double confidence; uint64_t seed; sentil_interval_method_t interval_method }` | Defaults above |
+| `sentil_smc_result_t` | `{ double probability; sentil_confidence_interval_t interval; uint64_t satisfactions; uint64_t samples; bool holds }` | `holds` decides the `P~p` threshold |
+| `sentil_robustness_distribution_t` | `{ uint64_t count; double mean; double variance; double std_dev; double min; double max }` | Robustness across the ensemble |
+
+### Confidence intervals and sample sizing
+
+Free-standing binomial statistics, usable with or without a formula. Fifty successes in a hundred trials at level 0.95 gives a Wilson interval of `[0.4038, 0.5962]`, and `sentil_z_score(0.95)` is 1.959964. Watch the naming: `sentil_clopper_pearson` and `sentil_agresti_coull` carry no `_interval` suffix.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_wilson_interval` | `sentil_confidence_interval_t sentil_wilson_interval(uint64_t successes, uint64_t trials, double level);` | The default method |
+| `sentil_clopper_pearson` | `sentil_confidence_interval_t sentil_clopper_pearson(uint64_t successes, uint64_t trials, double level);` | Exact, conservative |
+| `sentil_jeffreys_interval` | `sentil_confidence_interval_t sentil_jeffreys_interval(uint64_t successes, uint64_t trials, double level);` | Bayesian equal-tailed |
+| `sentil_agresti_coull` | `sentil_confidence_interval_t sentil_agresti_coull(uint64_t successes, uint64_t trials, double level);` | Adjusted Wald |
+| `sentil_interval` | `sentil_confidence_interval_t sentil_interval(sentil_interval_method_t method, uint64_t successes, uint64_t trials, double level);` | Pick the method by enum |
+| `sentil_z_score` | `double sentil_z_score(double level);` | Two-sided critical value for a level in `(0, 1)` |
+| `sentil_chernoff_hoeffding_samples` | `sentil_error_t sentil_chernoff_hoeffding_samples(double epsilon, double delta, uint64_t *out);` | A priori sample count; 0.1 and 0.05 give 185 |
+| `sentil_wilson_samples` | `sentil_error_t sentil_wilson_samples(double epsilon, double level, uint64_t *out);` | Sample count for a target half-width |
+
+`sentil_interval_method_t`: `SENTIL_WILSON` 0, `SENTIL_CLOPPER_PEARSON` 1, `SENTIL_JEFFREYS` 2, `SENTIL_AGRESTI_COULL` 3. `sentil_confidence_interval_t` is `{ double lower; double upper; double level }`.
+
+### Sequential tests
+
+SPRT and Bayesian testing over a formula, or over any Bernoulli source you supply through a callback.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_formula_check_sequential` | `sentil_error_t sentil_formula_check_sequential(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, const sentil_sprt_config_t *config, sentil_sprt_result_t *out);` | Wald's SPRT |
+| `sentil_formula_check_bayesian` | `sentil_error_t sentil_formula_check_bayesian(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_lifting_registry_t *lifting, const sentil_bayes_config_t *config, sentil_bayes_result_t *out);` | Bayes-factor test, Beta(1,1) prior |
+| `sentil_sequential_test` | `sentil_error_t sentil_sequential_test(const sentil_sprt_config_t *config, sentil_bernoulli_fn draw, void *userdata, sentil_sprt_result_t *out);` | SPRT over your own source |
+| `sentil_bayes_sequential_test` | `sentil_error_t sentil_bayes_sequential_test(const sentil_bayes_config_t *config, sentil_bernoulli_fn draw, void *userdata, sentil_bayes_result_t *out);` | Bayes over your own source |
+
+The callback is `typedef bool (*sentil_bernoulli_fn)(void *userdata);`, returning the next sample. The structs and verdicts:
+
+| Struct | Fields | Note |
+|---|---|---|
+| `sentil_sprt_config_t` | `{ double p0; double p1; double alpha; double beta; uint64_t max_samples; uint64_t seed }` | Requires `0 < p0 < p1 < 1`, error rates in `(0, 1)`, `max_samples > 0` |
+| `sentil_sprt_result_t` | `{ sentil_sprt_verdict_t verdict; uint64_t samples; double log_likelihood }` | |
+| `sentil_bayes_config_t` | `{ double threshold; double bayes_factor; uint64_t max_samples; uint64_t seed }` | Requires threshold in `(0, 1)`, `bayes_factor > 1`, `max_samples > 0` |
+| `sentil_bayes_result_t` | `{ sentil_bayes_verdict_t verdict; uint64_t samples; double posterior }` | |
+
+`sentil_sprt_verdict_t`: `SENTIL_SPRT_ACCEPT_H0` 0, `SENTIL_SPRT_ACCEPT_H1` 1, `SENTIL_SPRT_INCONCLUSIVE` 2. `sentil_bayes_verdict_t`: `SENTIL_BAYES_HOLDS` 0, `SENTIL_BAYES_FAILS` 1, `SENTIL_BAYES_INCONCLUSIVE` 2.
+
+### Rare-event estimation
+
+Adaptive multilevel splitting on the CPU, over a formula and system or over a raw simulator you define.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_rare_event_config_default` | `sentil_rare_event_config_t sentil_rare_event_config_default(void);` | 4096 particles, margin 0, seed 42 |
+| `sentil_formula_check_rare_event` | `sentil_error_t sentil_formula_check_rare_event(const sentil_formula_t *formula, const sentil_stochastic_system_t *system, const sentil_rare_event_config_t *config, sentil_rare_event_result_t *out);` | Estimate a `P~p` formula whose violation is rare |
+| `sentil_adaptive_multilevel_splitting` | `sentil_error_t sentil_adaptive_multilevel_splitting(sentil_ams_interface_t simulator, size_t particles, double target_score, uint64_t max_steps, uint64_t seed, sentil_rare_event_estimate_t *out);` | The raw estimator over your own state and score |
+
+| Struct | Fields | Note |
+|---|---|---|
+| `sentil_rare_event_config_t` | `{ size_t particles; double margin; uint64_t seed }` | Defaults above |
+| `sentil_rare_event_result_t` | `{ double probability; double violation_probability; bool holds; uint64_t simulations }` | `probability` and `violation_probability` sum to one |
+| `sentil_ams_interface_t` | `{ size_t state_size; void *userdata; void (*initial_state)(void *userdata, uint64_t seed, void *out_state); void (*step)(void *userdata, const void *state, uint64_t seed, void *out_state); bool (*is_terminal)(void *userdata, const void *state, bool *out_in_rare_event); double (*score)(void *userdata, const void *state) }` | Callbacks must be thread-safe |
+| `sentil_rare_event_estimate_t` | `{ double probability; uint64_t simulations }` | |
+
+### Stochastic systems
+
+A trajectory generator defined by callbacks, feeding the rare-event path and chance-constraint validation.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_stochastic_system_create` | `sentil_stochastic_system_t *sentil_stochastic_system_create(const char *const *variables, size_t n_vars, double dt, size_t horizon, sentil_system_callbacks_t callbacks);` | From init and step callbacks |
+| `sentil_stochastic_system_simulate` | `sentil_trace_t *sentil_stochastic_system_simulate(const sentil_stochastic_system_t *system, uint64_t seed);` | One seeded trajectory |
+| `sentil_stochastic_system_variables` | `char **sentil_stochastic_system_variables(const sentil_stochastic_system_t *system, size_t *out_count);` | Variable names |
+| `sentil_stochastic_system_dt` | `double sentil_stochastic_system_dt(const sentil_stochastic_system_t *system);` | Step size |
+| `sentil_stochastic_system_horizon` | `size_t sentil_stochastic_system_horizon(const sentil_stochastic_system_t *system);` | Steps per trajectory |
+| `sentil_stochastic_system_destroy` | `void sentil_stochastic_system_destroy(sentil_stochastic_system_t *system);` | Free the handle |
+
+`sentil_system_callbacks_t` is `{ void *userdata; void (*init)(void *userdata, uint64_t seed, double *out_state, size_t n); void (*step)(void *userdata, const double *prev, size_t n, double time, uint64_t seed, double *out_state) }`; the callbacks may run on several threads at once, so derive randomness from the seed argument.
+
+### Simulation models
+
+A declarative model built from expressions instead of callbacks, which is what lets the GPU path transpile it. These 17 functions exist only in a `gpu`-feature build, which is the default.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_sim_expr_prev` | `sentil_sim_expr_t *sentil_sim_expr_prev(size_t variable);` | Previous step's value of a variable |
+| `sentil_sim_expr_time` | `sentil_sim_expr_t *sentil_sim_expr_time(void);` | The current time |
+| `sentil_sim_expr_const` | `sentil_sim_expr_t *sentil_sim_expr_const(double value);` | A constant |
+| `sentil_sim_expr_noise` | `sentil_sim_expr_t *sentil_sim_expr_noise(size_t source);` | Draw from a noise source |
+| `sentil_sim_expr_add` | `sentil_sim_expr_t *sentil_sim_expr_add(sentil_sim_expr_t *left, sentil_sim_expr_t *right);` | Consumes both operands |
+| `sentil_sim_expr_sub` | `sentil_sim_expr_t *sentil_sim_expr_sub(sentil_sim_expr_t *left, sentil_sim_expr_t *right);` | Consumes both operands |
+| `sentil_sim_expr_mul` | `sentil_sim_expr_t *sentil_sim_expr_mul(sentil_sim_expr_t *left, sentil_sim_expr_t *right);` | Consumes both operands |
+| `sentil_sim_expr_div` | `sentil_sim_expr_t *sentil_sim_expr_div(sentil_sim_expr_t *left, sentil_sim_expr_t *right);` | Consumes both operands |
+| `sentil_sim_expr_call` | `sentil_sim_expr_t *sentil_sim_expr_call(const char *name, sentil_sim_expr_t **args, size_t count);` | A function call; consumes the args |
+| `sentil_sim_expr_destroy` | `void sentil_sim_expr_destroy(sentil_sim_expr_t *expr);` | Free an expression not yet consumed |
+| `sentil_sim_model_create` | `sentil_sim_model_t *sentil_sim_model_create(const char *const *variables, size_t n_vars, double dt, size_t horizon, sentil_sim_expr_t **init, size_t n_init, sentil_sim_expr_t **advance, size_t n_advance, sentil_noise_model_t **noise, size_t n_noise);` | One init and one advance per variable; consumes all handles, even on `NULL` return |
+| `sentil_sim_model_simulate` | `sentil_trace_t *sentil_sim_model_simulate(const sentil_sim_model_t *model, uint64_t seed);` | One seeded trajectory |
+| `sentil_sim_model_variables` | `char **sentil_sim_model_variables(const sentil_sim_model_t *model, size_t *out_count);` | Variable names |
+| `sentil_sim_model_dt` | `double sentil_sim_model_dt(const sentil_sim_model_t *model);` | Step size |
+| `sentil_sim_model_horizon` | `size_t sentil_sim_model_horizon(const sentil_sim_model_t *model);` | Steps per trajectory |
+| `sentil_sim_model_to_stochastic_system` | `sentil_stochastic_system_t *sentil_sim_model_to_stochastic_system(const sentil_sim_model_t *model);` | Convert for the CPU rare-event path |
+| `sentil_sim_model_destroy` | `void sentil_sim_model_destroy(sentil_sim_model_t *model);` | Free the handle |
+
+### GPU entry points
+
+Both exist only in a `gpu`-feature build. Without a device they return a typed error rather than silently falling back; the CPU rare-event check stays available.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_gpu_is_available` | `bool sentil_gpu_is_available(void);` | Whether a usable device is present |
+| `sentil_formula_check_rare_event_gpu` | `sentil_error_t sentil_formula_check_rare_event_gpu(const sentil_formula_t *formula, const sentil_sim_model_t *model, const sentil_rare_event_config_t *config, sentil_gpu_splitting_estimate_t *out);` | Fixed-effort splitting on the device over a sim model |
+
+`sentil_gpu_splitting_estimate_t` is `{ double violation_probability; size_t particles; uint32_t levels }`.
+
+### Smooth robustness
+
+The differentiable surrogate synthesis climbs: soft min and max with a temperature, and gradients with respect to signals or inputs.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_smooth_config_default` | `sentil_smooth_config_t sentil_smooth_config_default(void);` | Temperature 10, log-sum-exp |
+| `sentil_soft_min` | `double sentil_soft_min(const double *values, size_t n, double temperature);` | Smooth lower bound on the min |
+| `sentil_soft_max` | `double sentil_soft_max(const double *values, size_t n, double temperature);` | Smooth upper bound on the max |
+| `sentil_formula_smooth_robustness` | `sentil_error_t sentil_formula_smooth_robustness(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_smooth_config_t *config, double *out);` | Smooth robustness of a trace |
+| `sentil_formula_smooth_value_and_gradient` | `sentil_error_t sentil_formula_smooth_value_and_gradient(const sentil_formula_t *formula, const sentil_trace_t *trace, const sentil_smooth_config_t *config, double *out_value, double *out_gradient, size_t n_vars, size_t n_samples);` | Gradient per signal sample, row-major `[n_vars * n_samples]`; log-sum-exp only |
+| `sentil_formula_smooth_gradient` | `sentil_error_t sentil_formula_smooth_gradient(const sentil_formula_t *formula, const sentil_system_model_t *model, const double *initial, size_t n_initial, const double *input, size_t n_input, const sentil_smooth_config_t *config, double *out_value, double *out_gradient);` | Gradient per input coordinate through a model rollout |
+
+`sentil_smooth_config_t` is `{ double temperature; sentil_soft_kind_t kind }`; the temperature must be finite and positive, and the arithmetic-geometric-mean kind ignores it. `sentil_soft_kind_t`: `SENTIL_SOFT_LOG_SUM_EXP` 0, `SENTIL_SOFT_ARITHMETIC_GEOMETRIC_MEAN` 1.
+
+### Bounds
+
+Box constraints per input coordinate, shared by every optimizer and the safety filter.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_bounds_create` | `sentil_bounds_t *sentil_bounds_create(const double *lower, const double *upper, size_t n);` | `NULL` on NaN or `lower > upper` |
+| `sentil_bounds_unbounded` | `sentil_bounds_t *sentil_bounds_unbounded(size_t dimension);` | Constrain nothing |
+| `sentil_bounds_clamp` | `void sentil_bounds_clamp(const sentil_bounds_t *bounds, double *point, size_t n);` | Project into the box in place |
+| `sentil_bounds_dimension` | `size_t sentil_bounds_dimension(const sentil_bounds_t *bounds);` | Coordinate count |
+| `sentil_bounds_lower` | `void sentil_bounds_lower(const sentil_bounds_t *bounds, double *out);` | Copy the lower limits |
+| `sentil_bounds_upper` | `void sentil_bounds_upper(const sentil_bounds_t *bounds, double *out);` | Copy the upper limits |
+| `sentil_bounds_destroy` | `void sentil_bounds_destroy(sentil_bounds_t *bounds);` | Free the handle |
+
+### System models
+
+The plant a synthesizer or controller drives: linear time-invariant, or custom through a rollout callback.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_linear_model_create` | `sentil_system_model_t *sentil_linear_model_create(const double *a, size_t n, const double *b, size_t b_cols, const double *x0, const char *const *variables, size_t n_vars, double dt, size_t horizon);` | `x_{t+1} = A x_t + B u_t`, row-major matrices |
+| `sentil_system_model_create_custom` | `sentil_system_model_t *sentil_system_model_create_custom(const char *const *variables, size_t n_vars, double dt, size_t horizon, sentil_model_vtable_t vtable);` | From a thread-safe rollout callback |
+| `sentil_system_model_input_dimension` | `size_t sentil_system_model_input_dimension(const sentil_system_model_t *model);` | Inputs per step |
+| `sentil_system_model_destroy` | `void sentil_system_model_destroy(sentil_system_model_t *model);` | Free the handle |
+
+`sentil_model_vtable_t` is `{ void *userdata; size_t input_dimension; const double *initial_state; void (*rollout)(void *userdata, const double *initial, size_t n_state, const double *input, size_t n_input, double *out_signals) }`; rollout fills one row of `horizon + 1` samples per variable and may run on several threads.
+
+### Open-loop synthesis
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_synthesize` | `sentil_error_t sentil_synthesize(const sentil_system_model_t *model, const sentil_formula_t *spec, const sentil_bounds_t *bounds, const sentil_smooth_config_t *smooth, size_t max_iters, sentil_backend_t backend, size_t population, sentil_synthesis_result_t *out);` | `bounds` and `smooth` may be `NULL`; `max_iters` and `population` 0 take defaults |
+
+`sentil_backend_t`: `SENTIL_BACKEND_AUTO` 0, `SENTIL_BACKEND_GRADIENT` 1, `SENTIL_BACKEND_CMA_ES` 2, `SENTIL_BACKEND_MILP` 3. `sentil_synthesis_result_t` is `{ double *input; size_t input_len; double robustness; bool holds; sentil_backend_t backend }`; the input array is yours, freed with `sentil_free_doubles`.
+
+### Optimizers
+
+The optimizers behind synthesis, exposed for your own objectives.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_cma_config_default` | `sentil_cma_config_t sentil_cma_config_default(void);` | Population from dimension, 300 generations, step 0.3, seed 42 |
+| `sentil_maximize` | `sentil_error_t sentil_maximize(sentil_gradient_fn objective, void *userdata, const double *start, size_t n, const sentil_bounds_t *bounds, size_t max_iters, double *out_point, double *out_value);` | Projected gradient ascent |
+| `sentil_cma_es` | `sentil_error_t sentil_cma_es(sentil_objective_fn objective, void *userdata, const double *start, size_t n, const sentil_bounds_t *bounds, sentil_cma_config_t config, double *out_point, double *out_value);` | Gradient-free CMA-ES |
+| `sentil_cma_es_batched` | `sentil_error_t sentil_cma_es_batched(sentil_batch_objective_fn objective, void *userdata, const double *start, size_t n, const sentil_bounds_t *bounds, sentil_cma_config_t config, double *out_point, double *out_value);` | Scores a whole population per call, for parallel or GPU evaluation |
+
+The callback typedefs: `typedef void (*sentil_gradient_fn)(void *userdata, const double *x, size_t n, double *out_value, double *out_gradient);` fills the value and gradient at a point, `typedef double (*sentil_objective_fn)(void *userdata, const double *x, size_t n);` scores one point, and `typedef void (*sentil_batch_objective_fn)(void *userdata, const double *points, size_t population, size_t dim, double *out_scores);` scores `population` row-major points at once. `sentil_cma_config_t` is `{ size_t population; size_t max_generations; double initial_step; double tol_step; uint64_t seed }`.
+
+### Numerics
+
+Small dense solvers used by the convex synthesis path. Matrices are row-major and output buffers are caller-allocated.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_solve_qp` | `sentil_error_t sentil_solve_qp(const double *p, size_t n, const double *q, const double *g, size_t m, const double *h, size_t max_iters, double *out);` | Minimize `1/2 u'Pu + q'u` subject to `Gu <= h` |
+| `sentil_solve_spd` | `sentil_error_t sentil_solve_spd(const double *matrix, size_t n, const double *rhs, double *out);` | Solve `Ax = b` for symmetric positive-definite A |
+| `sentil_symmetric_eigen` | `sentil_error_t sentil_symmetric_eigen(const double *matrix, size_t n, double *out_values, double *out_vectors);` | Row j of `out_vectors` is the eigenvector for eigenvalue j |
+
+### Controllers
+
+The receding-horizon controller: plan a short horizon each step, return the best input found within a hard wall-clock budget.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_controller_create` | `sentil_controller_t *sentil_controller_create(sentil_system_model_t *model, sentil_formula_t *spec, size_t input_width, uint64_t budget_ns, const sentil_bounds_t *bounds, const sentil_smooth_config_t *smooth);` | Consumes model and spec, even on `NULL` return |
+| `sentil_controller_control` | `sentil_error_t sentil_controller_control(sentil_controller_t *controller, const double *state, size_t n, double *out);` | Writes the first input, length `input_width` |
+| `sentil_controller_destroy` | `void sentil_controller_destroy(sentil_controller_t *controller);` | Free the handle |
+
+### Safety filters
+
+A control-barrier shield: pass a nominal input through, minimally corrected to satisfy the barriers and bounds.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_safety_filter_create` | `sentil_safety_filter_t *sentil_safety_filter_create(sentil_bounds_t *bounds);` | Consumes the bounds; use `sentil_bounds_unbounded` for barrier-only |
+| `sentil_safety_filter_filter` | `sentil_error_t sentil_safety_filter_filter(const sentil_safety_filter_t *filter, const double *nominal, size_t n, const double *barrier_a, const double *barrier_b, size_t m, double *out);` | Closest input to nominal with `a_i . u >= b_i`; `barrier_a` is m-by-n row-major |
+| `sentil_safety_filter_destroy` | `void sentil_safety_filter_destroy(sentil_safety_filter_t *filter);` | Free the handle |
+
+### Chance constraints
+
+A probabilistic requirement carried as an object: the spec must hold with at least the given probability, validated by sampling as the system runs.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_chance_constraint_create` | `sentil_chance_constraint_t *sentil_chance_constraint_create(sentil_formula_t *spec, double probability, double confidence, double tightening);` | Consumes the spec; confidence 0 takes 0.95 |
+| `sentil_chance_constraint_validate` | `sentil_error_t sentil_chance_constraint_validate(const sentil_chance_constraint_t *constraint, const sentil_stochastic_system_t *system, uint64_t samples, uint64_t seed, sentil_chance_report_t *out);` | Sample the system, decide with a lower bound |
+| `sentil_chance_constraint_destroy` | `void sentil_chance_constraint_destroy(sentil_chance_constraint_t *constraint);` | Free the handle |
+
+`sentil_chance_report_t` is `{ double estimate; double lower_bound; uint64_t samples; bool holds }`.
+
+### Witnesses and falsification
+
+Search for an input that breaks the spec instead of one that satisfies it, generating counterexamples and test cases.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_formula_find_counterexample` | `sentil_error_t sentil_formula_find_counterexample(const sentil_formula_t *formula, const sentil_system_model_t *model, const sentil_bounds_t *bounds, size_t max_iters, const sentil_smooth_config_t *smooth, sentil_witness_t *out);` | Descend the smooth robustness |
+| `sentil_formula_falsify` | `sentil_error_t sentil_formula_falsify(const sentil_formula_t *formula, const sentil_system_model_t *model, const sentil_bounds_t *bounds, sentil_cma_config_t config, size_t restarts, sentil_witness_t *out);` | Minimize exact robustness with restarted CMA-ES |
+
+`sentil_witness_t` is `{ double *input; size_t input_len; double robustness; sentil_trace_t *trace }`; free the input with `sentil_free_doubles` and the trace with `sentil_trace_destroy`. Negative robustness means a genuine counterexample.
+
+### Parameter mining
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_mine_tightest_parameter` | `sentil_error_t sentil_mine_tightest_parameter(sentil_formula_fn make, void *userdata, const sentil_trace_t *const *traces, size_t n_traces, double lower, double upper, double *out);` | Tightest parameter for which `make(param)` holds on every trace |
+
+The callback is `typedef sentil_formula_t *(*sentil_formula_fn)(void *userdata, double param);`, returning an owned formula per parameter value.
+
+### Specification library
+
+Premade, standards-derived specifications by name, with variants, parameter overrides, and the verification settings each spec recommends.
+
+| Name | Signature | Note |
+|---|---|---|
+| `sentil_spec_registry_available` | `char **sentil_spec_registry_available(size_t *out_count);` | Names of the embedded specs, sorted |
+| `sentil_spec_builder_create` | `sentil_spec_builder_t *sentil_spec_builder_create(const char *name);` | Builder for a named spec |
+| `sentil_spec_builder_from_file` | `sentil_spec_builder_t *sentil_spec_builder_from_file(const char *path);` | Builder from a spec file |
+| `sentil_spec_builder_with_variant` | `sentil_spec_builder_t *sentil_spec_builder_with_variant(sentil_spec_builder_t *builder, const char *variant);` | Select a variant; consumes the builder, so reassign it |
+| `sentil_spec_builder_with_param` | `sentil_spec_builder_t *sentil_spec_builder_with_param(sentil_spec_builder_t *builder, const char *name, double value);` | Override a parameter; consumes the builder |
+| `sentil_spec_builder_available_variants` | `char **sentil_spec_builder_available_variants(const sentil_spec_builder_t *builder, size_t *out_count);` | Variant names, sorted |
+| `sentil_spec_builder_build_deterministic` | `char *sentil_spec_builder_build_deterministic(const sentil_spec_builder_t *builder);` | Formula text with parameters filled in |
+| `sentil_spec_builder_build_probabilistic` | `char *sentil_spec_builder_build_probabilistic(const sentil_spec_builder_t *builder);` | The `P~p` form as text |
+| `sentil_spec_builder_build_formula` | `sentil_formula_t *sentil_spec_builder_build_formula(const sentil_spec_builder_t *builder);` | The deterministic formula as a handle |
+| `sentil_spec_builder_build_probabilistic_formula` | `sentil_formula_t *sentil_spec_builder_build_probabilistic_formula( const sentil_spec_builder_t *builder);` | The probabilistic formula as a handle |
+| `sentil_spec_builder_build_lifting_registry` | `sentil_lifting_registry_t *sentil_spec_builder_build_lifting_registry( const sentil_spec_builder_t *builder);` | Registry from the spec's resolved noise models |
+| `sentil_spec_builder_parameters_json` | `char *sentil_spec_builder_parameters_json(const sentil_spec_builder_t *builder);` | Resolved parameters as JSON |
+| `sentil_spec_builder_into_monitor` | `sentil_monitor_t *sentil_spec_builder_into_monitor(sentil_spec_builder_t *builder);` | Monitor preloaded with the spec's settings; consumes the builder |
+| `sentil_spec_builder_smc_settings` | `bool sentil_spec_builder_smc_settings(const sentil_spec_builder_t *builder, sentil_spec_smc_settings_t *out);` | False if the spec carries none |
+| `sentil_spec_builder_sprt_settings` | `bool sentil_spec_builder_sprt_settings(const sentil_spec_builder_t *builder, sentil_spec_sprt_settings_t *out);` | False if the spec carries none |
+| `sentil_spec_builder_ams_settings` | `bool sentil_spec_builder_ams_settings(const sentil_spec_builder_t *builder, sentil_spec_ams_settings_t *out);` | False if the spec carries none |
+| `sentil_spec_builder_destroy` | `void sentil_spec_builder_destroy(sentil_spec_builder_t *builder);` | Free a builder not yet consumed |
+
+The settings structs: `sentil_spec_smc_settings_t` is `{ double confidence; uint64_t sample_budget }`, `sentil_spec_sprt_settings_t` is `{ double p0; double p1; double alpha; double beta; size_t max_samples }`, and `sentil_spec_ams_settings_t` is `{ size_t num_particles; size_t max_steps }`.
+
+## Related
+
+<Cards>
+  <Card title="C++" href="/docs/languages/cpp" description="The RAII wrapper over this ABI: destructors free handles, exceptions carry the messages." />
+  <Card title="Binding a new language" href="/docs/languages/across/new-language-cabi" description="The three-rule contract for wrapping this surface from any language with a C FFI." />
+  <Card title="Error codes" href="/docs/reference/methods/error-codes" description="Each status code alongside the Rust error variant behind it." />
+  <Card title="Handling errors across languages" href="/docs/languages/across/handle-errors" description="How every binding surfaces these same codes idiomatically." />
+</Cards>
