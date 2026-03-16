@@ -1,0 +1,738 @@
+---
+title: "Java"
+description: "The Java binding from Maven Central: a jar that bundles the native engine, try-with-resources handle management, checked exceptions, and the full io.github.sedislab.sentil reference."
+---
+
+The Java package binds the same engine every other language uses, through a small JNI shim. The published jar carries the compiled core for your platform, so a project with a JDK and nothing else can monitor a trace. Everything lives in the flat package `io.github.sedislab.sentil`.
+
+Types that hold a native handle, `Formula`, `Trace`, `OnlineMonitor`, `NoiseModel`, and their kin, extend the public `NativeResource` base and implement `AutoCloseable`, so open them in try-with-resources and the handle frees at the end of the scope. Value types like `Robustness` and `Interval` are plain immutable objects with nothing to manage. Every call that can fail throws a checked `SentilException`. A robustness call from Java measures about 680 ns over the core in the cross-language benchmark.
+
+## Install
+
+Two ways in. The jar from Maven Central is the one to reach for, since it carries the compiled engine and a project with a JDK needs nothing else. A build from a checkout covers an unreleased change, a platform the published jar does not carry, or work on the binding itself. There is no download route: the releases page carries no Java asset, because Maven Central is where the jar is published.
+
+### From Maven Central
+
+<Steps>
+<Step>
+
+Add the coordinate `io.github.sedislab:sentil:0.3.0`. SENTIL needs Java 11 or newer; the test suite runs on 11, 17, and 21.
+
+<Tabs groupId="jvm-build" persist items={["Maven", "Gradle"]}>
+<Tab value="Maven">
+```xml title="pom.xml"
+<dependency>
+  <groupId>io.github.sedislab</groupId>
+  <artifactId>sentil</artifactId>
+  <version>0.3.0</version>
+</dependency>
+```
+</Tab>
+<Tab value="Gradle">
+```groovy title="build.gradle"
+implementation 'io.github.sedislab:sentil:0.3.0'
+```
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+Add this class to your project and run it however your build runs a main class. It prints the version the native engine reports, so a line reading `0.3.0` means the jar found its native library and linked it.
+
+```java title="Check.java"
+import io.github.sedislab.sentil.Sentil;
+
+public class Check {
+    public static void main(String[] args) {
+        System.out.println(Sentil.version());   // 0.3.0
+    }
+}
+```
+
+`Sentil.version()` returns a `Version` with `major()`, `minor()`, and `patch()`.
+
+</Step>
+</Steps>
+
+The jar carries two shared libraries per platform under `native/<os>-<arch>/`, the engine and the JNI shim, each named the way its own platform names libraries: `libsentil.so` and `libsentil_jni.so` on Linux, the same pair with `.dylib` on macOS, `sentil.dll` and `sentil_jni.dll` on Windows. The first time you touch a native-backed type, both are extracted to a temporary directory and loaded, engine first, so the shim resolves the engine sitting beside it. There is nothing to configure, and no system property or environment variable overrides that path. Four platforms are inside the published jar: Linux x86_64, macOS x86_64, macOS arm64, and Windows x86_64. On anything else, Linux on arm64 included, the load throws an `UncheckedIOException` naming the folder it looked for, and the source build below is the way in.
+
+### From source
+
+Maven drives all three toolchains: one `package` runs `cargo build --release --package=sentil-ffi` for the engine, `javac -h` for the JNI headers, and CMake for the shim. You need Maven, a Rust toolchain from [rustup.rs](https://rustup.rs), CMake 3.16 or newer, a C++17 compiler, and a JDK 11 or newer whose `include` directory carries `jni.h`. A runtime-only Java install does not carry that header; [Adoptium](https://adoptium.net) publishes full JDKs for Linux, macOS, and Windows.
+
+<OsTabs>
+<OsTab value="Linux">
+
+`$JAVA_HOME/include/jni.h` has to exist, which means the JDK package rather than the JRE one. g++ and CMake come from the distribution's package manager.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply clang and the linker Rust needs.
+
+```bash
+xcode-select --install
+```
+
+CMake comes from whichever package manager or installer you already use.
+
+</OsTab>
+<OsTab value="Windows">
+
+The C++ compiler for the shim and the linker Rust needs both come from the Visual Studio Build Tools with the "Desktop development with C++" workload. Install it before rustup, which otherwise prompts for it. CMake builds the shim through that same MSVC toolchain.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone the repository and enter the Java package.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL/sentil-java
+```
+
+</Step>
+<Step>
+
+Build the jar.
+
+```bash
+mvn -DskipTests package
+```
+
+The result is `target/sentil-0.3.0.jar` with the engine and the shim inside under `native/<os>-<arch>/`. One run covers the machine it ran on; the published jar is built once per operating system and the `native/` trees merged. The shim links against `../target/release`, which is where a [build at the repository root](/docs/start/install#from-source) already leaves the engine. If yours sits somewhere else, point `-Dsentil.lib.dir=/path/to/lib` at it.
+
+</Step>
+<Step>
+
+Run the binding's tests.
+
+```bash
+mvn -B test
+```
+
+The suite includes the oracle test, which replays `benchmarks/deterministic/oracle.json` and holds Java to the robustness values every other binding produces, bit for bit.
+
+</Step>
+<Step>
+
+Then the same version check as the Maven Central route, compiled against the jar you built. Save `Check.java` from above in `sentil-java/` first.
+
+```bash
+javac -cp target/sentil-0.3.0.jar Check.java
+java -cp target/sentil-0.3.0.jar:. Check    # prints 0.3.0; on Windows the classpath separator is ;
+```
+
+</Step>
+</Steps>
+
+## Your first monitor
+
+Two handles in one try-with-resources, one robustness call.
+
+```java title="FirstMonitor.java"
+import io.github.sedislab.sentil.Formula;
+import io.github.sedislab.sentil.Trace;
+
+try (Trace trace = Trace.create(new double[] {0, 1, 2, 3, 4});
+        Formula phi = Formula.parse("G (speed > 5)")) {
+    trace.addSignal("speed", new double[] {12, 9, 7, 4, 6});
+    System.out.println(phi.robustness(trace));   // -1.0
+}
+```
+
+The result is `-1.0`, the margin at `t = 3`, where speed sits at 4 against the bound of 5. [What is STL](/docs/monitoring/concepts/what-is-stl) explains how to read the number, and the [operator reference](/docs/reference/language/operators) covers `G`, read always, and its siblings.
+
+One robustness value summarizes the whole trace. Three more calls give the detail behind it:
+
+```java
+double[] curve = phi.robustnessSignal(trace);   // robustness at every sample
+double dense = phi.robustnessDense(trace);      // dense time, reads between samples
+for (Interval v : phi.violations(trace)) {      // the spans where it fails
+    System.out.println(v.start() + " to " + v.end());
+}
+```
+
+`robustnessDense` and `robustnessDenseSignal` interpolate between samples so an inter-sample crossing is not missed; the [discrete versus dense guide](/docs/monitoring/guides/discrete-vs-dense) covers when the two differ.
+
+## Traces
+
+A `Trace` collects named signals over a shared time vector that must strictly increase. Build one from arrays, or read one from a file and let the reader dispatch on the extension:
+
+```java
+try (Trace a = Trace.fromSignal(new double[] {0, 1, 2}, "x", new double[] {1.0, 0.5, 0.2});
+        Trace b = Trace.fromPath("flight.csv")) {
+    a.addSignal("y", new double[] {0.0, 0.1, 0.4});
+    System.out.println(b.variables());
+}
+```
+
+`fromPath` reads csv, tsv, parquet, and the other formats on the [trace formats reference](/docs/reference/methods/trace-formats); `fromCsv` and `fromTsv` parse in-memory text. `resample` reads a trace onto a new grid under an `Interpolation` mode, and `prepare` fixes the interpolation coefficients into a `PreparedTrace` when you resample the same signal many times.
+
+## Streaming
+
+An `OnlineMonitor` watches a live stream without ever storing it: memory stays proportional to the largest temporal window and each update is O(1) amortized. The [monotonic deque](/docs/monitoring/concepts/monotonic-deque) is the structure underneath.
+
+```java title="Streaming.java"
+import io.github.sedislab.sentil.OnlineMonitor;
+import io.github.sedislab.sentil.Robustness;
+import java.util.Map;
+
+try (OnlineMonitor monitor = OnlineMonitor.create("G[0, 10] (x > -0.9)")) {
+    for (int t = 0; t < 60; t++) {
+        Robustness verdict = monitor.update(t, Map.of("x", Math.sin(t * 0.3)));
+        if (verdict.resolved() && !verdict.satisfied()) {
+            System.out.printf("violated at t=%d, robustness=%.3f%n", t, verdict.value());
+            break;
+        }
+    }
+}
+```
+
+While the monitor is still filling a future-time window, `resolved()` is false and `satisfied()` is provisional, which is why the formula bounds its horizon with `[0, 10]`.
+
+### The packed hot path
+
+`update` takes a map, which means boxed doubles and a name lookup on every call. `symbolIndex` gives each variable's position once, and `updatePacked` then takes a plain `double[]` with neither cost:
+
+```java
+try (OnlineMonitor monitor = OnlineMonitor.create("G[0, 5] (x > 0 & y < 2)")) {
+    int xi = (int) monitor.symbolIndex("x").getAsLong();
+    int yi = (int) monitor.symbolIndex("y").getAsLong();
+    double[] packed = new double[(int) monitor.variableCount()];
+    packed[xi] = 0.7;
+    packed[yi] = 1.1;
+    monitor.updatePacked(0.0, packed);
+}
+```
+
+Do not assume the order; `symbolIndex` is the contract, and it returns an empty `OptionalLong` for a variable the formula never reads.
+
+### Streaming probability
+
+A streaming monitor can track a probabilistic formula online. `OnlineMonitor.withLifting` lifts each reading into a particle ensemble through a noise registry, and `lastProbability()` reads the running satisfaction estimate after any update:
+
+```java
+try (Formula phi = Formula.parse("P>=0.95 (G[0, 10] (x > 0))");
+        LiftingRegistry lifting = new LiftingRegistry();
+        NoiseModel noise = NoiseModel.gaussian(0.0, 0.3)) {
+    lifting.register("x", noise);
+    try (OnlineMonitor monitor = OnlineMonitor.withLifting(phi, lifting,
+            new SmcConfig().samples(500))) {
+        for (int t = 0; t < 40; t++) {
+            monitor.update(t, Map.of("x", 0.4 + 0.05 * t));
+            monitor.lastProbability().ifPresent(p -> System.out.println("P = " + p));
+        }
+    }
+}
+```
+
+`lastProbability()` returns an empty `OptionalDouble` for a deterministic formula or before the first update. `withLifting` borrows the formula and the registry, so both stay usable after.
+
+To run several formulas under one clock, use a `MultiMonitor`; to score a batch of named formulas over one recorded trace, a `FormulaBank`. Both are tabled in the [reference below](#monitors-and-streaming).
+
+## Probabilistic monitoring
+
+Attach a `NoiseModel` to each sensor variable through a `LiftingRegistry`; `check` then estimates how often the inner formula holds under that noise and reports a confidence interval. For the operator itself, start at [what is PrSTL](/docs/probabilistic/concepts/what-is-prstl):
+
+```java title="Probabilistic.java"
+import io.github.sedislab.sentil.*;
+
+double[] times = new double[20];
+double[] xs = new double[20];
+for (int i = 0; i < 20; i++) {
+    times[i] = i;
+    xs[i] = 0.4 + 0.05 * i;
+}
+try (Trace trace = Trace.create(times);
+        LiftingRegistry lifting = new LiftingRegistry();
+        Formula phi = Formula.parse("P>=0.9 (G (x > 0))")) {
+    trace.addSignal("x", xs);
+    lifting.register("x", NoiseModel.gaussian(0.0, 0.3));
+
+    SmcResult result = phi.check(trace, lifting, new SmcConfig().samples(5000));
+    System.out.printf("P = %.3f in [%.3f, %.3f], holds %b%n",
+            result.probability(), result.interval().lower(),
+            result.interval().upper(), result.holds());
+}
+```
+
+The two-argument `register(variable, model)` uses the additive interaction; pass a `NoiseInteraction` third argument for a multiplicative residual. The model is consumed by registration. Families and fitting are on the [noise models reference](/docs/reference/methods/noise-models), and the interval math on [confidence intervals](/docs/probabilistic/concepts/confidence-intervals).
+
+Two variants refine the fixed-budget check. `checkConservative` reports the exact Clopper-Pearson interval instead of Wilson. `checkDistribution` also returns the robustness distribution across the ensemble, which tells you how close the population sits to the threshold rather than only how often it clears it.
+
+### Sequential tests
+
+The fixed-budget check above spent 5000 draws on a question a sequential test settles in a few dozen:
+
+```java
+SprtResult sprt = phi.checkSequential(trace, lifting, new SprtConfig(0.85, 0.95));
+// sprt.verdict() is ACCEPT_H0, ACCEPT_H1, or INCONCLUSIVE; sprt.samples() says how
+// many draws the decision took
+
+BayesResult bayes = phi.checkBayesian(trace, lifting, new BayesConfig(0.9));
+// bayes.verdict() is HOLDS, FAILS, or INCONCLUSIVE; bayes.posterior() is the
+// posterior satisfaction estimate under the Beta(1, 1) prior
+```
+
+`SprtConfig(p0, p1)` is Wald's SPRT over the indifference band `[p0, p1]` with error rates `alpha` and `beta` defaulting to 0.05. `BayesConfig(threshold)` stops when the Bayes factor passes its cutoff, 100 by default. Both cap at `maxSamples` (100000) and take a `seed`. The three regimes are compared on the [statistical methods reference](/docs/reference/methods/statistical-methods).
+
+### Rare events
+
+Monte Carlo cannot resolve a probability far below one in a million; adaptive multilevel splitting can. Describe the system as a `SimModel`, one init and one advance expression per variable, convert it, and check:
+
+```java
+try (Formula phi = Formula.parse("P>=0.9999 (G[0, 200] (q < 1))");
+        SimModel model = SimModel.create(
+                new String[] {"q"}, 1.0, 200,
+                new SimExpr[] {SimExpr.constant(0.0)},
+                new SimExpr[] {SimExpr.prev(0).mul(0.9).add(SimExpr.noise(0))},
+                new NoiseModel[] {NoiseModel.gaussian(0.0, 0.1)});
+        StochasticSystem system = model.toStochasticSystem()) {
+    RareEventResult r = phi.checkRareEvent(system);
+    // r.probability() and r.violationProbability() sum to one;
+    // r.simulations() counts the trajectories the splitter ran
+}
+```
+
+For dynamics that will not fit a declarative model, `StochasticSystem.custom` wraps two host callbacks, a `SystemInit` and a `SystemStep`. When a GPU is present, `Gpu.isAvailable()` returns true and `checkRareEventGpu(model, config)` runs the splitting on the device; the CPU path stays available either way. How splitting works is on the [rare events concept page](/docs/probabilistic/concepts/rare-events).
+
+## Synthesis
+
+Every value below is checked by the binding's test suite: an integrator driven by five inputs bounded to `[-3, 3]`, with a spec that wants `x` past 5 within the horizon.
+
+```java title="Synthesize.java"
+try (SystemModel model = SystemModel.linear(
+                new double[][] {{1.0}}, new double[][] {{1.0}},
+                new double[] {0.0}, new String[] {"x"}, 1.0, 5);
+        Formula spec = Formula.parse("F[0, 5] (x > 5)");
+        Bounds bounds = new Bounds(new double[] {-3, -3, -3, -3, -3},
+                new double[] {3, 3, 3, 3, 3})) {
+    SynthesisResult r = Synthesis.synthesize(model, spec, bounds,
+            new SmoothConfig(), Backend.GRADIENT, 200, 0);
+    // r.input() is {3, 3, 3, 3, 3}: push as hard as allowed every step
+    // r.robustness() is 10.0 and r.holds() is true; x reaches 15 > 5
+}
+```
+
+The bounds arrays run one entry per input element over the whole horizon. `synthesize` borrows the model and spec, and shorter overloads drop the smoothing, backend, iteration cap, and population to let the library choose; backend tradeoffs are on the [synthesis backends reference](/docs/reference/methods/synthesis-backends).
+
+`Controller`, `SafetyFilter`, `ChanceConstraint`, and the falsification pair `falsify` and `findCounterexample` are all tabled in the [synthesis reference](#synthesis-and-optimization) below.
+
+## Errors
+
+Every fallible call throws a checked `SentilException` carrying the engine's message, which names the offending construct and where it arose. Three subclasses split the kinds:
+
+| Exception | Raised for |
+|---|---|
+| `ParseException` | text that does not parse; the message points at the line and column |
+| `SemanticException` | an unknown variable, a statistical check on a non-probabilistic formula, or an unsupported construct |
+| `EvaluationException` | every other failure, including invalid configuration and fit failures |
+
+```java
+try {
+    Formula phi = Formula.parse("G (speed >");   // throws before any resource exists
+    phi.close();
+} catch (ParseException e) {
+    System.err.println("bad formula: " + e.getMessage());
+} catch (SentilException e) {
+    System.err.println("error " + e.errorCode() + ": " + e.getMessage());
+}
+```
+
+All three subclasses extend `SentilException` and share its `(String message, int code)` constructor, so catching the base catches everything. `errorCode()` returns the stable `ErrorCode` behind the failure and `code()` its integer form, the same status the C ABI and every other binding surface; `ErrorCode.fromCode(int)` maps an integer back to the enum, yielding `UNKNOWN` for an unrecognized value. The full code list is on the [error codes reference](/docs/reference/methods/error-codes), and the cross-language mapping on [handling errors across bindings](/docs/languages/across/handle-errors).
+
+### Handles and consumption
+
+`NativeResource`, the public base of every handle-owning type, implements `AutoCloseable` with an idempotent `close()`; a `Cleaner` frees a handle you forget, but try-with-resources is the idiom. Using a closed handle throws an unchecked `IllegalStateException` naming the type.
+
+Some calls hand a handle to the core, which closes the Java object as a side effect. Reusing a consumed object throws the same `IllegalStateException`, so write consuming chains as one expression:
+
+| Call | What it consumes |
+|---|---|
+| `Formula` combinators, `not()` through `probability(...)` | the formula or formulas they act on |
+| `Expr` and `SimExpr` methods | the terms they act on |
+| `new Monitor(formula)` and `new Monitor(formula, config)` | the formula |
+| `LiftingRegistry.register(...)` | the noise model |
+| `NoiseModel.mixture(weights, models...)` | the component models |
+| `SpecBuilder.withVariant`, `withParam`, `intoMonitor` | the builder, even when the call rejects the input |
+| `new Controller(model, spec, ...)` | the model and the spec |
+| `new SafetyFilter(bounds)` | the bounds |
+| `new ChanceConstraint(spec, ...)` | the spec |
+| `SimModel.create(...)` | the init, advance, and noise arrays |
+
+Everything else borrows. In particular `OnlineMonitor.fromFormula` and `withLifting`, `MultiMonitor.add` and `addProbabilistic`, `FormulaBank.add`, `Synthesis.synthesize`, `findCounterexample`, and `falsify` leave their arguments usable. Closing a consumed object again is harmless.
+
+## Reference
+
+Everything below lives in `io.github.sedislab.sentil`. Methods that reach the engine declare `throws SentilException`; the accessors on plain result types do not throw.
+
+### Library
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Sentil.version` | `static Version version()` | the native engine's version |
+| `Version` | `major()`, `minor()`, `patch()` | version components; `toString()` prints `major.minor.patch`, and `equals` and `hashCode` compare by value |
+| `Gpu.isAvailable` | `static boolean isAvailable()` | whether a usable GPU device is present |
+| `NativeResource` | `abstract class, implements AutoCloseable` | base of every handle-owning type; `close()` is final and idempotent |
+
+### Formulas
+
+`Formula` is the parsed specification. Parse, inspect, and evaluate:
+
+| Method | Signature | What it does |
+|---|---|---|
+| `parse` | `static Formula parse(String formula)` | parse PrSTL text |
+| `fromJson` | `static Formula fromJson(String json)` | rebuild from the `toJson()` form |
+| `toJson` | `String toJson()` | the JSON form of the tree |
+| `depth` | `long depth()` | nesting depth; a predicate counts one |
+| `hasTemporal` | `boolean hasTemporal()` | whether any temporal operator appears |
+| `variables` | `List<String> variables()` | the variables read, sorted and unique |
+| `robustness` | `double robustness(Trace trace)` | robustness on the sample grid |
+| `robustnessDense` | `double robustnessDense(Trace trace)` | dense-time robustness |
+| `robustnessSignal` | `double[] robustnessSignal(Trace trace)` | robustness at every sample |
+| `robustnessDenseSignal` | `double[] robustnessDenseSignal(Trace trace)` | dense robustness at every sample |
+| `violations` | `List<Interval> violations(Trace trace)` | the spans where the property fails |
+
+The combinators build a formula operator by operator, consuming their operands:
+
+| Combinator | Builds |
+|---|---|
+| `not()` | negation |
+| `and(other)`, `or(other)` | conjunction, disjunction |
+| `implies(consequent)` | implication |
+| `next()` | the next-sample shift |
+| `always()`, `always(lower)`, `always(lower, upper)` | `G` over `[0, inf]`, `[lower, inf]`, `[lower, upper]` |
+| `eventually()`, `eventually(lower)`, `eventually(lower, upper)` | `F` over the same windows |
+| `historically()`, `historically(lower)`, `historically(lower, upper)` | the past dual of `G` |
+| `once()`, `once(lower)`, `once(lower, upper)` | the past dual of `F` |
+| `until(right)`, `until(right, lower)`, `until(right, lower, upper)` | until, right-operand consumed too |
+| `since(right)`, `since(right, lower)`, `since(right, lower, upper)` | the past dual of until |
+| `probability(op, threshold)` | wrap in `P~p`; `op` is a `ProbabilityOp`, threshold in `[0, 1]` |
+
+The probabilistic and synthesis evaluation methods on `Formula` are tabled with [statistical checks](#statistical-checks) and [synthesis](#synthesis-and-optimization).
+
+### The Expr builder
+
+`Expr` builds predicates programmatically, for formulas assembled from data rather than parsed from text. Start a term with a static factory, combine terms, then compare two terms to get a `Formula`. Every method consumes the terms it acts on, so chain:
+
+```java
+try (Formula phi = Expr.var("speed").sub(5).abs().lt(2)) {
+    // the predicate |speed - 5| < 2
+}
+```
+
+| Method | Signature | What it does |
+|---|---|---|
+| `var` | `static Expr var(String name)` | a term reading the named variable |
+| `constant` | `static Expr constant(double value)` | a constant term |
+| `add`, `sub`, `mul`, `div`, `mod`, `pow` | `Expr add(Expr other)` or `Expr add(double other)`, likewise for the rest | arithmetic on two terms |
+| `min`, `max` | `Expr min(Expr other)` or `Expr min(double other)` | the smaller or larger term |
+| `abs`, `sqrt`, `exp`, `ln`, `log`, `sin`, `cos`, `tan`, `floor`, `ceil` | `Expr abs()`, likewise | the function applied to the term; `ln` is natural, `log` base 10 |
+| `negate` | `Expr negate()` | the arithmetic negation |
+| `lt`, `le`, `gt`, `ge`, `eq`, `ne` | `Formula lt(Expr other)` or `Formula lt(double other)`, likewise | the comparison predicate, as a formula |
+
+The `BinaryOp` enum (`ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `POW`) and `ComparisonOp` enum (`LT`, `LE`, `GT`, `GE`, `EQ`, `NE`) name the operations these methods encode.
+
+### Traces
+
+| Method | Signature | What it does |
+|---|---|---|
+| `create` | `static Trace create(double[] times)` | an empty trace over the times |
+| `fromSignal` | `static Trace fromSignal(double[] times, String name, double[] values)` | a trace holding one signal |
+| `indexed` | `static Trace indexed(long length)` | integer times `0..length-1` |
+| `fromCsv`, `fromTsv` | `static Trace fromCsv(String text)` | parse delimited text |
+| `fromPath` | `static Trace fromPath(String path)` | read a file, dispatching on extension |
+| `addSignal` | `void addSignal(String name, double[] values)` | add or replace a signal, length matching the trace |
+| `length` | `long length()` | the number of samples |
+| `isEmpty` | `boolean isEmpty()` | whether the trace has no samples |
+| `times` | `double[] times()` | the time vector |
+| `variables` | `List<String> variables()` | the signal names |
+| `signal` | `Optional<double[]> signal(String name)` | one signal's values, or empty |
+| `resample` | `Trace resample(double[] times, Interpolation interpolation)` | read onto a new grid |
+| `prepare` | `PreparedTrace prepare(Interpolation interpolation)` | fix interpolation coefficients for repeated resampling |
+
+`PreparedTrace.resample(double[] times)` reads the prepared signal onto a grid without refitting. `Interpolation` is `LINEAR`, `ZERO_ORDER_HOLD`, or `CUBIC_SPLINE`.
+
+### Monitors and streaming
+
+`Monitor` pairs one formula with a `Config` and works both offline and one sample at a time. Its constructors consume the formula; the static `parse` factories skip the intermediate `Formula` entirely.
+
+| Method | Signature | What it does |
+|---|---|---|
+| constructor | `Monitor(Formula formula)`, `Monitor(Formula formula, Config config)` | wrap a formula, consuming it |
+| `parse` | `static Monitor parse(String formula)`, `static Monitor parse(String formula, Config config)` | parse and wrap in one step |
+| `formula` | `Formula formula()` | a copy of the monitored formula |
+| `config` | `Config config()` | a copy of the monitor's config |
+| `robustness` | `double robustness(Trace trace)` | robustness honoring the config's time mode |
+| `robustnessSignal` | `double[] robustnessSignal(Trace trace)` | robustness at every sample |
+| `violations` | `List<Interval> violations(Trace trace)` | the failing spans |
+| `symbolIndex` | `OptionalLong symbolIndex(String name)` | a variable's packed-update position |
+| `update` | `Robustness update(double time, Map<String, Double> values)` | fold one named sample |
+| `updatePacked` | `Robustness updatePacked(double time, double[] values)` | fold one packed sample, the hot path |
+| `reset` | `void reset()` | clear streaming state |
+| `lastProbability` | `OptionalDouble lastProbability()` | the last streamed P estimate, empty for a deterministic formula |
+| `check` | `SmcResult check(Trace trace, LiftingRegistry lifting)` | the SMC check with the monitor's settings |
+| `checkSequential` | `SprtResult checkSequential(Trace trace, LiftingRegistry lifting, SprtConfig config)` | the SPRT decision |
+| `checkRare` | `RareEventResult checkRare(StochasticSystem system)` | rare-event splitting over a system |
+
+`Monitor.check` uses the monitor's own SMC settings, which are the defaults unless the monitor came from `SpecBuilder.intoMonitor`, where the spec's recommended settings ride along. `Config` carries the time mode: `new Config()` is discrete, `new Config(TimeMode.DENSE)` evaluates densely, and `timeMode()` reads it back.
+
+`OnlineMonitor` is the dedicated streaming monitor from the [streaming section](#streaming):
+
+| Method | Signature | What it does |
+|---|---|---|
+| `create` | `static OnlineMonitor create(String formula)` | a streaming monitor from text |
+| `fromFormula` | `static OnlineMonitor fromFormula(Formula formula)` | from a formula, which is borrowed |
+| `withLifting` | `static OnlineMonitor withLifting(Formula formula, LiftingRegistry lifting, SmcConfig config)` | a probabilistic streaming monitor; both arguments borrowed |
+| `variableCount` | `long variableCount()` | how many variables the formula reads |
+| `symbolIndex` | `OptionalLong symbolIndex(String name)` | a variable's packed position |
+| `update` | `Robustness update(double time, Map<String, Double> values)` | fold one named sample |
+| `updatePacked` | `Robustness updatePacked(double time, double[] values)` | fold one packed sample |
+| `run` | `List<Robustness> run(Trace trace)` | replay a whole trace |
+| `reset` | `void reset()` | clear streaming state |
+| `lastProbability` | `OptionalDouble lastProbability()` | the running P estimate |
+
+`Robustness` reports `resolved()`, `satisfied()`, and `value()`; while a probabilistic verdict is unresolved, `value()` is the midpoint of `[lower(), upper()]`.
+
+`MultiMonitor` drives several streaming formulas under one clock:
+
+| Method | Signature | What it does |
+|---|---|---|
+| constructor | `MultiMonitor()` | an empty set |
+| `add` | `void add(String id, String formula)` or `void add(String id, Formula formula)` | register under an id; a `Formula` is borrowed |
+| `addProbabilistic` | `void addProbabilistic(String id, Formula formula, LiftingRegistry lifting, SmcConfig config)` | register a P formula tracked online; arguments borrowed |
+| `remove` | `boolean remove(String id)` | drop a formula, reporting whether it existed |
+| `update` | `Map<String, Robustness> update(double time, Map<String, Double> values)` | advance every formula, verdicts keyed by id |
+| `probability` | `OptionalDouble probability(String id)` | one formula's last P estimate |
+| `probabilities` | `Map<String, OptionalDouble> probabilities()` | every last estimate, keyed by id |
+| `ids`, `size`, `isEmpty` | `List<String> ids()`, `long size()`, `boolean isEmpty()` | contents |
+| `reset` | `void reset()` | clear every monitor's state |
+
+`FormulaBank` takes `add(id, formula)` in either form, plus `ids()`, `size()`, and `isEmpty()`; `robustness(trace)` and `robustnessDense(trace)` return a map keyed by id. If any formula fails to evaluate, the call throws and names the offending id rather than returning a partial map.
+
+`RingBuffer` keeps the newest samples up to a fixed capacity, with running statistics maintained as samples enter and leave:
+
+| Method | Signature | What it does |
+|---|---|---|
+| `create` | `static RingBuffer create(long capacity)` | a buffer holding at most capacity samples |
+| `push` | `Optional<Sample> push(double time, double value)` | append; on overflow returns the evicted oldest sample; times must not move backward |
+| `popFront`, `popBack` | `Sample popFront()` | remove the oldest or newest sample |
+| `front`, `back`, `get` | `Sample front()`, `Sample back()`, `Sample get(long index)` | peek, index counted from the oldest |
+| `closestToTime` | `Sample closestToTime(double time)` | the sample nearest a query time |
+| `atTime` | `OptionalDouble atTime(double time)` | the value recorded at a time, within tolerance |
+| `between` | `List<Sample> between(double start, double end)` | the samples in a time span, oldest first |
+| `timeRange` | `Optional<double[]> timeRange()` | the earliest and latest times held |
+| `mean`, `variance`, `stdDev`, `min`, `max` | `OptionalDouble mean()`, likewise | running statistics; variance and stdDev need two samples |
+| `recomputeStatistics` | `void recomputeStatistics()` | rebuild mean and variance from scratch, clearing accumulated float drift |
+| `length`, `capacity`, `isEmpty`, `isFull` | `long length()`, `long capacity()`, `boolean isEmpty()`, `boolean isFull()` | occupancy |
+| `clear` | `void clear()` | drop every sample, keeping the capacity |
+
+`Sample` carries `found()`, `time()`, and `value()`; a query with no answer returns a sample whose `found()` is false.
+
+### Noise models and lifting
+
+`NoiseModel` has one static constructor per family:
+
+| Constructor | Signature |
+|---|---|
+| `dirac` | `dirac(double value)` |
+| `gaussian` | `gaussian(double mean, double stdDev)` |
+| `uniform` | `uniform(double low, double high)` |
+| `logNormal` | `logNormal(double mu, double sigma)` |
+| `exponential` | `exponential(double rate)` |
+| `gamma` | `gamma(double shape, double scale)` |
+| `beta` | `beta(double alpha, double beta)` |
+| `weibull` | `weibull(double shape, double scale)` |
+| `rayleigh` | `rayleigh(double scale)` |
+| `gumbel` | `gumbel(double location, double scale)` |
+| `cauchy` | `cauchy(double location, double scale)` |
+| `studentT` | `studentT(double df, double location, double scale)` |
+| `truncatedNormal` | `truncatedNormal(double mean, double stdDev, double lower, double upper)` |
+| `poisson` | `poisson(double rate)` |
+| `binomial` | `binomial(long n, double p)` |
+| `bootstrap` | `bootstrap(double[] residuals)` |
+| `mixture` | `mixture(double[] weights, NoiseModel... models)`, components consumed |
+
+Fitting and inspection:
+
+| Method | Signature | What it does |
+|---|---|---|
+| `fitGaussian` | `static NoiseModel fitGaussian(double[] samples)` | maximum-likelihood Gaussian |
+| `fitBootstrap` | `static NoiseModel fitBootstrap(double[] samples)` | the empirical bootstrap |
+| `fitBootstrapReservoir` | `static NoiseModel fitBootstrapReservoir(double[] samples, long maxSamples)` | a bootstrap capped by reservoir sampling |
+| `fitGaussianMixture` | `static NoiseModel fitGaussianMixture(double[] samples, long components, long maxIters)` | a Gaussian mixture fit by expectation-maximization |
+| `residuals` | `static double[] residuals(double[] groundTruth, double[] sensor, NoiseInteraction interaction)` | the `y - g` or `y / g` residuals a fit runs on |
+| `fromJson`, `fromFile` | `static NoiseModel fromJson(String json)`, `static NoiseModel fromFile(String path)` | load a serialized model |
+| `toJson` | `String toJson()` | serialize |
+| `mean`, `variance` | `OptionalDouble mean()`, `OptionalDouble variance()` | analytic moments, empty where undefined, for instance Cauchy |
+
+`NoiseInteraction` is `ADDITIVE` or `MULTIPLICATIVE`. `LiftingRegistry` connects models to signals: `register(variable, model, interaction)` or the two-argument additive form, `variables()`, `isEmpty()`, and `lift(trace, seed)` for one seeded noisy realization of a trace.
+
+### Statistical checks
+
+The checking methods on `Formula`:
+
+| Method | Signature | What it does |
+|---|---|---|
+| `check` | `SmcResult check(Trace trace, LiftingRegistry lifting)` or with an `SmcConfig` | fixed-budget SMC estimate |
+| `checkConservative` | same shapes as `check` | the Clopper-Pearson interval instead of Wilson |
+| `checkDistribution` | `SmcDistribution checkDistribution(Trace trace, LiftingRegistry lifting, SmcConfig config)` | the estimate plus the robustness distribution |
+| `checkSequential` | `SprtResult checkSequential(Trace trace, LiftingRegistry lifting, SprtConfig config)` | Wald's SPRT |
+| `checkBayesian` | `BayesResult checkBayesian(Trace trace, LiftingRegistry lifting, BayesConfig config)` | the Bayesian sequential test |
+| `checkRareEvent` | `RareEventResult checkRareEvent(StochasticSystem system)` or with a `RareEventConfig` | adaptive multilevel splitting on the CPU |
+| `checkRareEventGpu` | `GpuSplittingEstimate checkRareEventGpu(SimModel model, RareEventConfig config)` | splitting on the GPU; throws without a device |
+
+The configuration and result types:
+
+| Type | Members | Notes |
+|---|---|---|
+| `SmcConfig` | `samples` (10000), `confidence` (0.95), `seed` (42), `method` (`WILSON`) | fluent getter and setter per field |
+| `SmcResult` | `probability()`, `interval()`, `satisfactions()`, `samples()`, `holds()` | the fixed-budget outcome |
+| `SmcDistribution` | `result()`, `distribution()` | pairs an `SmcResult` with the distribution |
+| `RobustnessDistribution` | `count()`, `mean()`, `variance()`, `stdDev()`, `min()`, `max()` | the ensemble's robustness spread |
+| `ConfidenceInterval` | `lower()`, `upper()`, `level()`, `width()` | the interval on the estimate |
+| `SprtConfig` | `SprtConfig(p0, p1)`, then `alpha` (0.05), `beta` (0.05), `maxSamples` (100000), `seed` (42) | the indifference band is required |
+| `SprtResult` | `verdict()`, `samples()`, `logLikelihood()` | verdict is an `SprtVerdict` |
+| `BayesConfig` | `BayesConfig(threshold)`, then `bayesFactor` (100), `maxSamples` (100000), `seed` (42) | Beta(1, 1) prior |
+| `BayesResult` | `verdict()`, `samples()`, `posterior()` | verdict is a `BayesVerdict` |
+| `RareEventConfig` | `particles` (4096), `margin` (0), `seed` (42) | fluent |
+| `RareEventResult` | `probability()`, `violationProbability()`, `holds()`, `simulations()` | the two probabilities sum to one |
+| `GpuSplittingEstimate` | `violationProbability()`, `particles()`, `levels()` | the GPU splitting outcome |
+
+`StochasticSystem` is the sampling form the estimators consume. `custom(String[] variables, double dt, long horizon, SystemInit init, SystemStep step)` wraps host callbacks, `simulate(long seed)` draws one trajectory, and `variables()`, `dt()`, and `horizon()` describe it. `SystemInit.init(long seed)` returns the initial state; `SystemStep.step(double[] previous, double time, long seed)` returns the next. Both may run on several threads, so they must be thread-safe.
+
+`SimModel` is the declarative alternative and the only form the GPU path accepts: `create(variables, dt, horizon, init, advance, noise)` consumes its expression and noise arrays, then `simulate(seed)`, `variables()`, `dt()`, `horizon()`, and `toStochasticSystem()`. `SimExpr` terms come from `prev(variable)`, `time()`, `constant(value)`, and `noise(source)`, combine with `add`, `sub`, `mul`, `div` (each also accepting a `double`), `min`, `max`, and pass through `abs`, `sin`, `cos`, `sqrt`, `exp`, `ln`, and `negate`, consuming like `Expr`.
+
+`Stats` exposes the interval and sizing primitives directly, over raw counts rather than traces:
+
+```java
+Stats.wilson(50, 100, 0.95);               // [0.403831, 0.596169]
+Stats.clopperPearson(50, 100, 0.95);       // [0.398321, 0.601679]
+Stats.jeffreys(50, 100, 0.95);             // the Beta(1/2, 1/2) credible interval
+Stats.agrestiCoull(50, 100, 0.95);         // the Agresti-Coull approximation
+Stats.interval(IntervalMethod.WILSON, 50, 100, 0.95);   // pick the method at run time
+Stats.zScore(0.95);                        // 1.959964
+Stats.chernoffHoeffdingSamples(0.1, 0.05); // 185
+Stats.wilsonSamples(0.01, 0.95);           // 9604
+```
+
+`sequentialTest(SprtConfig config, BooleanSupplier draw)` and `bayesSequentialTest(BayesConfig config, BooleanSupplier draw)` run the sequential machinery over any Bernoulli source you supply, one draw per call on the calling thread.
+
+`Synthesis.adaptiveMultilevelSplitting(AmsInterface simulator, long particles, double targetScore, long maxSteps, long seed)` runs the splitter over a fully user-defined simulator and returns a `RareEventEstimate` with `probability()` and `simulations()`. `AmsInterface` packs its state into bytes: implement `stateSize()`, `initialState(seed)`, `step(state, seed)`, `isTerminal(state, inRareEvent)`, and `score(state)`, all thread-safe.
+
+### Synthesis and optimization
+
+The static entry points on `Synthesis`:
+
+| Method | Signature | What it does |
+|---|---|---|
+| `synthesize` | `static SynthesisResult synthesize(SystemModel model, Formula spec)`, plus overloads adding `Bounds`, a `Backend`, or `(Bounds, SmoothConfig, Backend, long maxIters, long population)` | open-loop input search; model and spec borrowed |
+| `softMin`, `softMax` | `static double softMin(double[] values, double temperature)` | the smooth min and max the optimizers climb |
+| `maximize` | `static Optimum maximize(GradientObjective objective, double[] start, Bounds bounds, long maxIters)` | projected gradient ascent; bounds may be null |
+| `cmaEs` | `static Optimum cmaEs(ToDoubleFunction<double[]> objective, double[] start, Bounds bounds, CmaConfig config)` | gradient-free CMA-ES |
+| `cmaEsBatched` | `static Optimum cmaEsBatched(BatchObjective objective, double[] start, Bounds bounds, CmaConfig config)` | CMA-ES scoring a whole population per call; the objective must be thread-safe |
+| `solveQp` | `static double[] solveQp(double[][] p, double[] q, double[][] g, double[] h, long maxIters)` | minimize `1/2 u'Pu + q'u` subject to `Gu <= h` |
+| `solveSpd` | `static double[] solveSpd(double[][] matrix, double[] rhs)` | solve `Ax = b` for symmetric positive-definite `A` |
+| `symmetricEigen` | `static EigenDecomposition symmetricEigen(double[][] matrix)` | eigenvalues and eigenvectors of a symmetric matrix |
+| `mineTightestParameter` | `static double mineTightestParameter(ParameterFormula make, List<Trace> traces, double lower, double upper)` | the tightest parameter for which the built formula holds on every trace |
+| `adaptiveMultilevelSplitting` | see [statistical checks](#statistical-checks) | rare events over a custom simulator |
+
+A concrete anchor, verified by the test suite: `Synthesis.maximize` on the concave objective `-(x-3)^2 - (y+1)^2` climbs to the peak at `(3, -1)`, and `mineTightestParameter` over `G[0, 2](x < c)` on traces peaking at 3 and 5 returns `5.0`.
+
+Models, bounds, and results:
+
+| Type | Members | Notes |
+|---|---|---|
+| `SystemModel` | `linear(double[][] a, double[][] b, double[] x0, String[] variables, double dt, long horizon)`, `custom(String[] variables, double dt, long horizon, double[] initialState, long inputDimension, Rollout rollout)`, `inputDimension()` | a linear model `x' = Ax + Bu` or a host rollout |
+| `Bounds` | `Bounds(double[] lower, double[] upper)`, `unbounded(long dimension)`, `dimension()`, `lower()`, `upper()`, `clamp(double[] point)` | box constraints; `clamp({5, -5})` under `[-1, 1]` bounds gives `{1, -1}` |
+| `SynthesisResult` | `input()`, `robustness()`, `holds()`, `backend()` | the synthesized plan |
+| `SmoothConfig` | `temperature` (10.0), `kind` (`LOG_SUM_EXP`) | fluent; a larger temperature tracks the exact min and max more closely |
+| `CmaConfig` | `population` (0, sized from the dimension), `maxGenerations` (300), `initialStep` (0.3), `tolStep` (1e-11), `seed` (42) | fluent |
+| `Optimum` | `point()`, `value()` | the best point an optimizer found |
+| `EigenDecomposition` | `values()`, `vectors()` | from `symmetricEigen` |
+
+The online and search surface:
+
+| Type | Members | Notes |
+|---|---|---|
+| `Controller` | `Controller(SystemModel model, Formula spec, long inputWidth, long budgetNs)`, plus `(..., Bounds bounds, SmoothConfig smooth)`; `control(double[] state)` | receding-horizon; replans each step inside the nanosecond budget and returns the first input; consumes the model and spec |
+| `SafetyFilter` | `SafetyFilter(Bounds bounds)`; `filter(double[] nominal)`, `filter(double[] nominal, double[][] barrierA, double[] barrierB)` | the least-restrictive shield; returns the input closest to nominal inside the bounds and barrier half-spaces |
+| `ChanceConstraint` | `ChanceConstraint(Formula spec, double probability)`, plus `(..., double confidence, double tightening)`; `validate(StochasticSystem system)` or `validate(system, long samples, long seed)` | a probabilistic requirement validated by sampling, 1000 samples and seed 42 by default |
+| `ChanceReport` | `estimate()`, `lowerBound()`, `samples()`, `holds()` | the validation outcome; `holds()` compares the lower bound to the target |
+| `Witness` | `input()`, `robustness()`, `trace()`, `close()` | a run from the search methods; negative robustness is a genuine counterexample; closing frees the owned trace |
+
+`Formula.smoothRobustness(trace)` and `smoothRobustness(trace, config)` evaluate the differentiable surrogate. `smoothValueAndGradient(trace, config)` returns a `SignalGradient`, the value with a `[variable][sample]` gradient in sorted variable order, and `smoothGradient(model, initial, input, config)` returns an `InputGradient`, the value with one gradient entry per input coordinate; both gradient types expose `value()` and `gradient()`. `findCounterexample(model, bounds, maxIters, smooth)` descends the smooth robustness; `falsify(model, bounds, config, restarts)` searches globally with restarted CMA-ES on exact robustness. The callback interfaces are single-method: `GradientObjective.evaluate(x, gradient)` returns the value and fills the gradient, `BatchObjective.evaluate(points)` scores a population, `ParameterFormula.make(param)` builds the formula the miner probes, and `Rollout.rollout(initial, input)` returns a trajectory as one row of `horizon + 1` samples per variable.
+
+### The specifications library
+
+Every binding and the CLI expose one registry of shipped specifications, and `SpecBuilder` is Java's door into it. Pick one by name, adjust it, and turn it into a formula or a preloaded monitor:
+
+```java
+import io.github.sedislab.sentil.SpecBuilder;
+
+System.out.println(SpecBuilder.available().size());   // 54, sorted names
+
+try (SpecBuilder spec = new SpecBuilder("aerospace/airspeed_envelope")
+        .withParam("V_stall", 115.0);
+        Formula phi = spec.buildFormula()) {
+    System.out.println(spec.buildDeterministic());   // the formula text, filled in
+}
+```
+
+`withVariant` and `withParam` consume the builder and return a new one, so chain them; a rejected name or parameter still consumes the input, so start again from the name.
+
+| Method | Signature | What it does |
+|---|---|---|
+| constructor | `SpecBuilder(String name)` | load a spec from the embedded registry |
+| `available` | `static List<String> available()` | every embedded spec name, sorted |
+| `fromFile` | `static SpecBuilder fromFile(String path)` | load a spec template file |
+| `withVariant` | `SpecBuilder withVariant(String variant)` | select a variant, consuming the builder |
+| `withParam` | `SpecBuilder withParam(String name, double value)` | override a parameter, consuming the builder |
+| `availableVariants` | `List<String> availableVariants()` | the variant names the spec offers |
+| `buildDeterministic` | `String buildDeterministic()` | the deterministic formula text |
+| `buildProbabilistic` | `String buildProbabilistic()` | the probabilistic formula text |
+| `buildFormula` | `Formula buildFormula()` | the deterministic formula, parsed |
+| `buildProbabilisticFormula` | `Formula buildProbabilisticFormula()` | the probabilistic formula, parsed |
+| `buildLiftingRegistry` | `LiftingRegistry buildLiftingRegistry()` | a registry from the spec's noise models |
+| `parametersJson` | `String parametersJson()` | the resolved parameters as JSON |
+| `intoMonitor` | `Monitor intoMonitor()` | a monitor preloaded with the spec's settings, consuming the builder |
+| `smcSettings` | `Optional<SpecSmcSettings> smcSettings()` | the recommended SMC settings, if any |
+| `sprtSettings` | `Optional<SpecSprtSettings> sprtSettings()` | the recommended SPRT settings, if any |
+| `amsSettings` | `Optional<SpecAmsSettings> amsSettings()` | the recommended splitting settings, if any |
+
+The settings carriers are plain: `SpecSmcSettings` has `confidence()` and `sampleBudget()`; `SpecSprtSettings` has `p0()`, `p1()`, `alpha()`, `beta()`, and `maxSamples()`; `SpecAmsSettings` has `numParticles()` and `maxSteps()`. The catalog itself is on the [specifications reference](/docs/reference/specifications/catalog).
+
+### Enums
+
+Every enum carries `code()`, the integer the C ABI uses.
+
+| Enum | Values |
+|---|---|
+| `TimeMode` | `DISCRETE`, `DENSE` |
+| `Interpolation` | `LINEAR`, `ZERO_ORDER_HOLD`, `CUBIC_SPLINE` |
+| `BinaryOp` | `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `POW` |
+| `ComparisonOp` | `LT`, `LE`, `GT`, `GE`, `EQ`, `NE` |
+| `ProbabilityOp` | `GE`, `GT`, `LE`, `LT` |
+| `IntervalMethod` | `WILSON`, `CLOPPER_PEARSON`, `JEFFREYS`, `AGRESTI_COULL` |
+| `NoiseInteraction` | `ADDITIVE`, `MULTIPLICATIVE` |
+| `SprtVerdict` | `ACCEPT_H0`, `ACCEPT_H1`, `INCONCLUSIVE` |
+| `BayesVerdict` | `HOLDS`, `FAILS`, `INCONCLUSIVE` |
+| `SoftKind` | `LOG_SUM_EXP`, `ARITHMETIC_GEOMETRIC_MEAN` |
+| `Backend` | `AUTO`, `GRADIENT`, `CMA_ES`, `MILP` |
+| `ErrorCode` | `OK`, `NULL_POINTER`, `UTF8`, `PARSE`, `UNKNOWN_VARIABLE`, `EVALUATION`, `TRACE`, `NOT_PROBABILISTIC`, `INVALID_NOISE_MODEL`, `INVALID_CONFIG`, `FIT`, `INGEST`, `SPLITTING`, `UNSUPPORTED`, `TRANSPILATION`, `GPU`, `JSON`, `PANIC`, plus `UNKNOWN` for an unrecognized integer |
+
+`ErrorCode.UTF8` covers a string argument that was not valid UTF-8, and `ErrorCode.fromCode(int)` is the reverse mapping. The value types `Robustness`, `Interval`, `Sample`, `ConfidenceInterval`, `SmcResult`, `SprtResult`, `BayesResult`, `RareEventResult`, `RareEventEstimate`, `GpuSplittingEstimate`, `RobustnessDistribution`, `ChanceReport`, `SynthesisResult`, and `Version` override `toString` with a readable dump, and `Version` adds value-based `equals` and `hashCode`.
+
+## Related links
+
+<Cards>
+<Card title="Formula grammar" href="/docs/reference/language/grammar" description="The operators, aliases, functions, and windows a formula string accepts." />
+<Card title="Probabilistic monitoring" href="/docs/probabilistic/concepts/what-is-prstl" description="How the P operator, lifting, and confidence bounds fit together." />
+<Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="Gradient, CMA-ES, and MILP, and when the Auto backend picks each." />
+<Card title="Error codes" href="/docs/reference/methods/error-codes" description="What each status code means and how every binding surfaces it." />
+</Cards>

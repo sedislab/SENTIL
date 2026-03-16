@@ -1,0 +1,757 @@
+---
+title: "Julia"
+description: "The Julia package: formulas built from operators the language already has, monitoring and checking through ccall with no glue layer, the consume contract, and the full exported-name reference."
+---
+
+The Julia package binds the engine through `ccall`, so there is no glue layer and no build step of your own: add the package, point `SENTIL_LIB` at the core, and `using Sentil` brings the full surface into scope. Formulas build from the operators Julia already has, the way a JuMP constraint comes from a comparison, and mutating functions carry the trailing bang. The binding costs nothing you can feel: reading a robustness measures 114 ns against 112 ns for calling the core from Rust itself.
+
+## Install
+
+Two pieces have to meet: the Julia package, which compiles nothing of its own because it is pure `ccall`, and the shared library it calls into. The package comes from the General registry. The library comes from a C ABI release bundle or from a `cargo build` in a checkout, and `SENTIL_LIB` names the file for the loader. The package does declare a per-platform artifact as a fallback, but the 0.3.0 entries in its `Artifacts.toml` still carry placeholder hashes and name tarballs no release builds, so the download fails and `SENTIL_LIB` is the route that works rather than an override.
+
+### From the Julia registry
+
+At the Pkg REPL (press `]`):
+
+```julia
+add Sentil
+```
+
+From a script it is `import Pkg; Pkg.add("Sentil")`. Julia 1.10 or newer. Every dependency is a standard library, so nothing builds and no compiler is involved on the Julia side.
+
+`using Sentil` raises an `InitError` at this point, with `SENTIL_LIB` named in the message, because no core is on disk yet. A release bundle or a source build puts one there, and both are below.
+
+### From a GitHub release
+
+Every tagged release attaches one C ABI bundle per platform. Julia reads the shared library inside it and ignores the rest; `include/sentil.h` and the pkg-config and CMake files under `lib/` are there for the C and C++ builds.
+
+| Platform | Asset | Library inside |
+| --- | --- | --- |
+| Linux x86_64 | `sentil-0.3.0-linux-x86_64.tar.gz` | `lib/libsentil.so` |
+| macOS Apple silicon | `sentil-0.3.0-macos-arm64.tar.gz` | `lib/libsentil.dylib` |
+| macOS Intel | `sentil-0.3.0-macos-x86_64.tar.gz` | `lib/libsentil.dylib` |
+| Windows x86_64 | `sentil-0.3.0-windows-x86_64.tar.gz` | `lib/sentil.dll` |
+
+No bundle here covers Linux on arm64 or Windows on arm64. For a Raspberry Pi or another ARM Linux board, the gnu archives on the [CLI page](/docs/languages/cli#on-a-raspberry-pi) carry `lib/libsentil.so` next to the binary and serve the same purpose, while the musl archive holds the CLI alone. Those ARM cores are built without the GPU feature, so `gpu_available()` raises on one rather than returning false. Windows on arm64 builds from source.
+
+<Steps>
+<Step>
+
+Download the bundle for your platform and unpack it. It expands into a directory named after itself.
+
+<OsTabs>
+<OsTab value="Linux">
+
+```bash
+curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-linux-x86_64.tar.gz
+tar xzf sentil-0.3.0-linux-x86_64.tar.gz
+```
+
+</OsTab>
+<OsTab value="macOS">
+
+```bash
+curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-arm64.tar.gz
+tar xzf sentil-0.3.0-macos-arm64.tar.gz
+```
+
+On an Intel Mac, swap `macos-arm64` for `macos-x86_64` in both lines and in the export below.
+
+</OsTab>
+<OsTab value="Windows">
+
+```powershell
+$url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-windows-x86_64.tar.gz"
+Invoke-WebRequest -Uri $url -OutFile sentil.tar.gz
+tar xzf sentil.tar.gz
+```
+
+</OsTab>
+</OsTabs>
+
+Inside a checkout, `scripts/fetch-prebuilt-core.sh` picks the bundle matching the machine, unpacks it, and prints the export line to paste.
+
+</Step>
+<Step>
+
+Point `SENTIL_LIB` at the library file itself, not at the directory holding it. The loader reads the variable once, in the package's `__init__`, so it has to be set before the first `using Sentil` in that session. A path with no file at it fails on the spot and the message repeats the path back to you.
+
+<OsTabs>
+<OsTab value="Linux">
+
+```bash
+export SENTIL_LIB="$PWD/sentil-0.3.0-linux-x86_64/lib/libsentil.so"
+```
+
+</OsTab>
+<OsTab value="macOS">
+
+```bash
+export SENTIL_LIB="$PWD/sentil-0.3.0-macos-arm64/lib/libsentil.dylib"
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+```powershell
+$env:SENTIL_LIB = "$PWD\sentil-0.3.0-windows-x86_64\lib\sentil.dll"
+```
+
+</OsTab>
+</OsTabs>
+
+</Step>
+<Step>
+
+Check the load.
+
+```julia
+using Sentil
+version()   # (0, 3, 0)
+```
+
+`version()` reads the numbers back out of the library through `ccall`, so `(0, 3, 0)` means the core opened and the call path works.
+
+</Step>
+</Steps>
+
+### From source
+
+Building the core needs a Rust toolchain from [rustup.rs](https://rustup.rs) and a linker, which comes from a different place on each system. The repository-wide steps are on [install from source](/docs/start/install#from-source); what follows is the Julia path through them.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The distribution's compiler package supplies the linker: `build-essential` on Debian and Ubuntu, `gcc` and `glibc-devel` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply the linker.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Rust links through MSVC, so install the Visual Studio Build Tools with the "Desktop development with C++" workload before rustup. The rustup installer prompts for this and can trigger it for you.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone the repository and build the C ABI.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+cargo build --release -p sentil-ffi
+```
+
+</Step>
+<Step>
+
+Point the loader at what you built.
+
+<OsTabs>
+<OsTab value="Linux">
+
+```bash
+export SENTIL_LIB="$PWD/target/release/libsentil.so"
+```
+
+</OsTab>
+<OsTab value="macOS">
+
+```bash
+export SENTIL_LIB="$PWD/target/release/libsentil.dylib"
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+```powershell
+$env:SENTIL_LIB = "$PWD\target\release\sentil.dll"
+```
+
+</OsTab>
+</OsTabs>
+
+</Step>
+<Step>
+
+Develop the package against the checkout and check the load.
+
+```julia
+import Pkg
+Pkg.develop(path="sentil-jl")
+
+using Sentil
+version()   # (0, 3, 0)
+```
+
+`Pkg.test("Sentil")` then runs the package's own suite against the core you built, including the oracle cases every binding shares.
+
+</Step>
+</Steps>
+
+## Your first monitor
+
+```julia title="first_monitor.jl"
+using Sentil
+
+phi = formula("G (speed > 5)")
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12.0, 9.0, 7.0, 4.0, 6.0])
+robustness(phi, trace)   # -1.0
+```
+
+The result is `-1.0`: `G`, read always, keeps the worst margin, and the worst comes at `t = 3` where the speed reads `4` against the `5` bound. A negative value is a violation and its size is how far the trace missed. [What robustness means](/docs/monitoring/concepts/what-is-stl) covers the semantics, and the [grammar reference](/docs/reference/language/grammar) covers everything `formula` accepts.
+
+## Traces
+
+A `Trace` maps signal names onto one time grid. Build one from vectors, a `Dict`, a file, or delimited text, and read values back by name.
+
+```julia
+trace = Trace([0.0, 1.0, 2.0], Dict("x" => [1.0, 2.0, 3.0], "y" => [0.5, 0.4, 0.3]))
+add_signal!(trace, "z", [9.0, 8.0, 7.0])
+
+trace["x"]           # [1.0, 2.0, 3.0]; an unknown name raises SemanticError
+haskey(trace, "y")   # true
+length(trace)        # 3
+
+logged = read_trace("run.csv")            # format from the .csv or .tsv extension
+inline = parse_trace("t,x\n0,1\n1,2")     # in-memory text; format=:csv or :tsv
+```
+
+The shipped core reads CSV and TSV; the extended formats on the [trace formats reference](/docs/reference/methods/trace-formats) need a core built with the matching features. For dense-time work, `resample` interpolates onto a new grid, and `prepare` fixes the interpolation once so resampling onto many grids is cheap:
+
+```julia
+fine = resample(trace, collect(0.0:0.1:2.0); interp=Interpolation.Cubic)
+p = prepare(trace; interp=Interpolation.Linear)   # a PreparedTrace
+finer = resample(p, collect(0.0:0.05:2.0))
+```
+
+The full constructor and accessor set is under [trace functions](#trace-functions) below.
+
+## Streaming
+
+An `OnlineMonitor` takes one `update!` per reading, and neither cost nor memory grows with the stream; the [monotonic deque](/docs/monitoring/concepts/monotonic-deque) page covers how.
+
+```julia title="streaming.jl"
+using Sentil
+
+monitor = OnlineMonitor("G[0, 10] (x > -0.9)")
+for t in 0:59
+    verdict = update!(monitor, Float64(t), Dict("x" => sin(t * 0.3)))
+    if verdict.resolved && !verdict.satisfied
+        println("violated at t=$t, robustness=$(round(verdict.value, digits=3))")
+        break
+    end
+end
+```
+
+Each `update!` returns a `Robustness`; the loop's guard, `verdict.resolved && !verdict.satisfied`, alarms only on settled violations, since an open window reports `value` as the midpoint of `lower` and `upper`. A bounded horizon like the `[0, 10]` here is what lets a live stream ever resolve.
+
+Every `update!` through a `Dict` allocates; resolve each variable's slot once with `symbol_index` and hand `update_packed!` a preallocated vector in that order.
+
+```julia
+i = symbol_index(monitor, "x")                        # 1-based slot in packed order
+buf = Vector{Float64}(undef, variable_count(monitor))
+buf[i] = read_sensor()
+update_packed!(monitor, t, buf)
+```
+
+`reset!` rewinds the state, and `run!(monitor, trace)` replays a recorded trace, returning the verdict at every step.
+
+### Live probability
+
+Give the constructor a lifting registry and the monitor tracks a `P~p` formula live; `last_probability` reads the running estimate after any update. It returns `nothing` for a deterministic formula and before the first sample arrives.
+
+```julia
+lifting = LiftingRegistry()
+register_noise!(lifting, "x", gaussian(0.0, 0.3))
+
+pm = OnlineMonitor(formula("P>=0.9 (G[0, 10] (x > -0.9))"), lifting)
+update!(pm, 0.0, Dict("x" => 0.2))
+last_probability(pm)   # the current satisfaction estimate
+```
+
+## Probabilistic monitoring
+
+Attach a noise model per sensor, and a check lifts the trace into an ensemble, evaluates the formula on every member, and reports a probability with a confidence interval; the `P~p` operator itself is covered in [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl).
+
+Fit the model from calibration data rather than guessing it:
+
+```julia title="prstl.jl"
+using Sentil
+
+truth  = [10.0, 10.5, 11.0, 10.8, 10.2, 9.9, 10.4]
+sensor = [10.2, 10.3, 11.3, 10.6, 10.5, 10.1, 10.2]
+noise = fit_gaussian(residuals(truth, sensor))
+
+lifting = LiftingRegistry()
+register_noise!(lifting, "x", noise)   # consumes the model handle
+
+trace = Trace(collect(0.0:1.0:30.0), "x", fill(10.5, 31))
+phi = formula("P>=0.9 (G (x > 9))")
+
+result = check(phi, trace, lifting)
+result.probability   # the estimate over 10000 sampled trajectories
+result.interval      # a ConfidenceInterval with lower, upper, level
+result.holds         # whether the estimate meets the P>=0.9 threshold
+```
+
+`check` takes its settings as a keyword: `check(phi, trace, lifting; config=SmcConfig(samples=5000, confidence=0.99))`. `check_conservative` swaps in the Clopper-Pearson exact interval, `check_distribution` also returns the spread of robustness values across the ensemble, and `lift(lifting, trace; seed=42)` hands you one noisy realization when you want to see what the ensemble is made of. Choosing an interval is covered in [confidence intervals](/docs/probabilistic/concepts/confidence-intervals), the seventeen families in [noise models](/docs/probabilistic/concepts/noise-models).
+
+### Sequential and Bayesian decisions
+
+If a yes or no is all you need, the sequential tests get there in far fewer lifted samples than an estimate. Both take their config positionally, unlike `check`:
+
+```julia
+check_sequential(phi, trace, lifting, SprtConfig(0.85, 0.95)).verdict   # AcceptH0, AcceptH1, or Inconclusive
+check_bayesian(phi, trace, lifting, BayesConfig(0.9)).verdict           # Holds, Fails, or Inconclusive
+```
+
+`sequential_test` and `bayes_sequential_test` run the same tests over any `() -> Bool` source you supply, with no trace involved.
+
+### Rare events
+
+`check_rare_event` runs adaptive multilevel splitting over a `StochasticSystem`, with its config as a keyword; [rare events](/docs/probabilistic/concepts/rare-events) explains how the splitter reaches probabilities sampling cannot:
+
+```julia
+system = StochasticSystem(["x"], 1.0, 200;
+    init = seed -> [0.0],
+    step = (prev, t, seed) -> [0.9 * prev[1] + 0.1 * randn()])
+
+rare = check_rare_event(phi, system; config=RareEventConfig(particles=8192))
+rare.probability   # with rare.violation_probability, rare.holds, rare.simulations
+```
+
+The GPU path takes a declarative `SimModel`, not a `StochasticSystem`, because the dynamics must lower onto the device. Without a `gpu` build and a present device it raises `EvaluationError` with code `SENTIL_ERR_GPU` rather than silently falling back to the CPU; probe with `gpu_available()` first. Declaring a `SimModel` is shown under [stochastic systems](#stochastic-systems-and-simulation).
+
+## Synthesis
+
+Synthesis runs the engine backward: given a system model, bounds, and a spec, find an input that satisfies it. The package covers open-loop synthesis, a receding-horizon controller, falsification, and parameter mining; the solvers behind them are on [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+```julia title="synthesis.jl"
+using Sentil
+
+a = reshape([1.0], 1, 1)
+b = reshape([1.0], 1, 1)
+model = linear_model(a, b, [0.0], ["x"], 1.0, 10)
+spec = formula("F[0, 10](x > 5) & G[0, 10](x < 12)")
+
+result = synthesize(model, spec; bounds=Bounds(fill(-3.0, 10), fill(3.0, 10)))
+result.input        # the input sequence found
+result.robustness   # positive when the spec is met
+result.holds
+result.backend      # the solver that ran, e.g. Backend.Gradient
+```
+
+`synthesize` is keyword-driven: `bounds`, `smooth`, `backend`, `max_iters`, and `population` all have working defaults, and `Backend.Auto` picks a solver from the problem's structure. An infeasible spec returns the least violating input rather than nothing.
+
+The online form is a `Controller` that re-plans every step within a hard deadline, here one millisecond:
+
+```julia
+controller = Controller(linear_model(a, b, [0.0], ["x"], 1.0, 10), spec, 1, 1_000_000;
+                        bounds=Bounds([-3.0], [3.0]))
+u = control(controller, [0.0])   # the planned input for this step
+```
+
+`Controller` consumes the model and spec it is built from. `SafetyFilter`, `ChanceConstraint`, falsification, and parameter mining are all under [synthesis and optimization](#synthesis-and-optimization).
+
+## Errors and the consume contract
+
+Every failure raises a subtype of the abstract `SentilError`: `ParseError` for text that does not parse, with the offending column in the message; `SemanticError` for well-formed input the engine cannot use, an unknown variable or a statistical check on a formula with no `P` operator; `EvaluationError` for everything at runtime, from an invalid config to a failed fit. Each carries `msg` and a `code::SentilErrorCode`, the same stable status every binding surfaces, enumerated on [error codes](/docs/reference/methods/error-codes).
+
+```julia
+try
+    formula("G (speed >")
+catch e
+    e isa ParseError && println("bad formula: ", e.msg)
+end
+```
+
+One contract is worth knowing before it bites: composition consumes its operands. `always(f)` and its family, `&`, `|`, `!`, `until`, `since`, `probability`, `Monitor(f)`, `register_noise!` on its model, `mixture` on its components, `Controller`, `ChanceConstraint`, and `SafetyFilter` on theirs, and the `SpecBuilder` chain all take ownership of the handles they build on. Touching a consumed handle raises `EvaluationError` saying the handle is no longer usable. The escape hatch is `copy(f)`:
+
+```julia
+p = formula("speed > 5")
+g = always(copy(p))    # the copy is consumed, p stays usable
+h = eventually(p)      # p is consumed here
+# robustness(p, trace) would now raise EvaluationError
+```
+
+Handles free their native memory through finalizers; `close!(handle)` releases it eagerly instead. Calling it twice is safe, and a closed handle raises the same typed error rather than touching freed memory. The cross-binding conventions are in [handling errors across bindings](/docs/languages/across/handle-errors).
+
+## Reference
+
+The exported names in full; signatures show keyword defaults exactly as the source defines them.
+
+### Package and handles
+
+| Name | Signature | What it is |
+|---|---|---|
+| `version` | `version() -> Tuple{Int, Int, Int}` | the bound core's version, `(0, 3, 0)` |
+| `close!` | `close!(handle)` | free a handle's native memory now; safe to repeat |
+| `copy` | `copy(f::Formula) -> Formula` | an independent duplicate, the escape from the consume contract |
+| `SENTIL_LIB` | environment variable | path to the core, read before the bundled artifact |
+
+### Enums
+
+Each enum is a small module, so members read as `TimeMode.Dense` and never collide across enums.
+
+| Enum | Members |
+|---|---|
+| `TimeMode` | `Discrete`, `Dense` |
+| `Interpolation` | `Linear`, `Hold`, `Cubic` |
+| `IntervalMethod` | `Wilson`, `ClopperPearson`, `Jeffreys`, `AgrestiCoull` |
+| `NoiseInteraction` | `Additive`, `Multiplicative` |
+| `SprtVerdict` | `AcceptH0`, `AcceptH1`, `Inconclusive` |
+| `BayesVerdict` | `Holds`, `Fails`, `Inconclusive` |
+| `SoftKind` | `LogSumExp`, `ArithmeticGeometricMean` |
+| `Backend` | `Auto`, `Gradient`, `CmaEs`, `Milp` |
+| `ProbabilityOp` | `Ge`, `Gt`, `Le`, `Lt` |
+
+`SentilErrorCode` is a flat `@enum` of the C status integers, `SENTIL_OK = 0` through `SENTIL_ERR_PANIC = 17`.
+
+### Trace functions
+
+A `Trace` owns its grid and signals; the accessors copy values out, so what you get back is yours.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `Trace` | `Trace(times)`, `Trace(times, name, values)`, `Trace(times, signals::AbstractDict)` | build over a grid: empty, one signal, or many |
+| `indexed_trace` | `indexed_trace(len) -> Trace` | the grid `0, 1, ..., len - 1` |
+| `add_signal!` | `add_signal!(trace, name, values) -> trace` | add a signal matching the grid length |
+| `times` | `times(trace) -> Vector{Float64}` | the time grid |
+| `signal` | `signal(trace, name) -> Union{Vector{Float64}, Nothing}` | a signal's values, `nothing` if absent |
+| `variables` | `variables(trace) -> Vector{String}` | the signal names |
+| `read_trace` | `read_trace(path) -> Trace` | read a file, format from the extension |
+| `parse_trace` | `parse_trace(text; format=:csv) -> Trace` | parse delimited text, `:csv` or `:tsv` |
+| `resample` | `resample(trace, times; interp=Interpolation.Linear) -> Trace` | interpolate onto a new grid |
+| `prepare` | `prepare(trace; interp=Interpolation.Linear) -> PreparedTrace` | fix the interpolation; `resample(prepared, times)` then costs one call per grid |
+
+Base extensions: `length`, `isempty`, `haskey(trace, name)`, and indexing `trace[name]` (`getindex`), which raises `SemanticError` for a name the trace does not carry.
+
+### Ring buffers
+
+`RingBuffer(capacity)` holds the newest timed samples with running statistics. Queries with no answer return `nothing`; positional queries return a `Sample` with `found`, `time`, and `value`.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `RingBuffer` | `RingBuffer(capacity::Integer)` | a buffer of the most recent `capacity` samples |
+| `push!` | `push!(buffer, time, value) -> Union{Sample, Nothing}` | append; once full, returns the evicted oldest sample |
+| `capacity` | `capacity(b) -> Int` | the size limit |
+| `is_full` | `is_full(b) -> Bool` | whether at capacity |
+| `clear!` | `clear!(b) -> b` | drop every sample |
+| `front` / `back` | `front(b) -> Union{Sample, Nothing}` | oldest and newest |
+| `pop_front!` / `pop_back!` | `pop_front!(b) -> Union{Sample, Nothing}` | remove and return oldest or newest |
+| `closest_to_time` | `closest_to_time(b, time) -> Union{Sample, Nothing}` | the sample nearest in time |
+| `at_time` | `at_time(b, time) -> Union{Float64, Nothing}` | the value recorded at `time`, within a small tolerance |
+| `time_range` | `time_range(b) -> Union{Tuple{Float64, Float64}, Nothing}` | earliest and latest times held |
+| `between` | `between(b, start, stop) -> Vector{Sample}` | the samples in `[start, stop]` |
+| `mean` / `var` / `std` | `mean(b) -> Union{Float64, Nothing}` | running statistics; variance and deviation need two samples |
+| `minimum` / `maximum` | `minimum(b) -> Union{Float64, Nothing}` | extrema over the held values |
+| `recompute_statistics!` | `recompute_statistics!(b) -> b` | rebuild the running statistics from the held samples |
+
+Base extensions: `length`, `isempty`, and 1-based indexing `b[i]`, which raises `BoundsError` out of range.
+
+### Formula building
+
+Parse text, or build from terms. A term is a `Sentil.Expr` (deliberately unexported, so the name never shadows `Base.Expr`), created by `variable` and `literal` and combined with ordinary operators; comparing two terms yields a predicate `Formula` rather than a `Bool`. Every combinator consumes its operands, per the contract above.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `formula` | `formula(text) -> Formula` | parse PrSTL text; `parse(Formula, text)` is the same call |
+| `variable` | `variable(name) -> Expr` | a term reading a signal |
+| `literal` | `literal(value::Real) -> Expr` | a constant term |
+| `pow` | `pow(a, b) -> Expr` | exponentiation; `a ^ b` reads the same |
+| `ln` | `ln(e) -> Expr` | natural log; in formulas `log` is log10 |
+| `and` / `or` | `and(a, b) -> Formula` | same as `a & b` and `a \| b` |
+| `implies` | `implies(a, b) -> Formula` | `!a \| b` |
+| `next` | `next(f) -> Formula` | holds at the next sample |
+| `always` / `eventually` | `always(f; lower=0.0, upper=nothing) -> Formula` | bounded when `upper` is set, open-ended otherwise |
+| `historically` / `once` | `historically(f; lower=0.0, upper=nothing) -> Formula` | the past-time duals |
+| `until` / `since` | `until(a, b; lower=0.0, upper=nothing) -> Formula` | two operands, both consumed |
+| `probability` | `probability(f, op::ProbabilityOp.T, threshold) -> Formula` | wrap in `P~p`; the threshold is validated in `[0, 1]` |
+| `to_json` / `from_json` | `to_json(f) -> String`, `from_json(Formula, json) -> Formula` | round-trip a formula |
+| `depth` | `depth(f) -> Int` | nesting depth; a predicate is 1 |
+| `is_temporal` | `is_temporal(f) -> Bool` | whether a temporal operator is present |
+| `variables` | `variables(f) -> Vector{String}` | the referenced names, sorted and unique |
+
+Base extensions on terms and formulas: arithmetic `+`, `-`, `*`, `/`, `%` (also `mod`), and `^` with `Real` coercion on either side; comparisons `<`, `<=`, `>`, `>=`, `==`, `!=` building predicates; boolean `!`, `~`, `&`, `|` on formulas; and the math functions `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tan`, `floor`, `ceil`, `min`, `max` on terms.
+
+```julia
+speed = variable("speed")
+phi = always(speed > 5; lower=0.0, upper=10.0)   # G[0, 10](speed > 5)
+```
+
+### Formula evaluation
+
+| Name | Signature | What it does |
+|---|---|---|
+| `robustness` | `robustness(f, trace; dense=false) -> Float64` | robustness at the start time |
+| `robustness_signal` | `robustness_signal(f, trace; dense=false) -> Vector{Float64}` | robustness at every sample |
+| `violations` | `violations(f, trace) -> Vector{Interval}` | the failing spans, each an `Interval` with `start` and `stop` |
+| `violation_intervals` | `violation_intervals(times, values) -> Vector{Interval}` | the negative spans of a robustness signal you already hold |
+
+`dense=true` interpolates between samples so a crossing between grid points still counts; [discrete versus dense](/docs/monitoring/guides/discrete-vs-dense) is the guide.
+
+### Monitors
+
+`Monitor` compiles a formula once and serves both whole-trace and streaming evaluation under a `Config`. Building one from a `Formula` consumes it; building from text does not involve a handle at all.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `Config` | `Config(; time=TimeMode.Discrete)` | the monitor's time mode; `Config(time=TimeMode.Dense)` makes every evaluation dense |
+| `time_mode` | `time_mode(c) -> TimeMode.T` | read it back |
+| `Monitor` | `Monitor(f::Formula; config=Config())`, `Monitor(text; config=Config())` | compile; the `Formula` form consumes `f` |
+| `formula` | `formula(m::Monitor) -> Formula` | an owned copy of the watched formula |
+| `config` | `config(m::Monitor) -> Config` | an owned copy of its config |
+| `robustness` / `robustness_signal` / `violations` | `robustness(m, trace) -> Float64` and friends | whole-trace evaluation under the config's time mode |
+| `update!` | `update!(m, time, samples::AbstractDict) -> Robustness` | fold one sample |
+| `update_packed!` | `update_packed!(m, time, values::AbstractVector) -> Robustness` | the allocation-free fold, values in `symbol_index` order |
+| `symbol_index` | `symbol_index(m, name) -> Union{Int, Nothing}` | the 1-based packed slot |
+| `reset!` | `reset!(m) -> m` | rewind the streaming state |
+| `last_probability` | `last_probability(m) -> Union{Float64, Nothing}` | the running `P~p` estimate |
+| `check` | `check(m, trace, lifting) -> SmcResult` | statistical check with the monitor's own settings |
+| `check_sequential` | `check_sequential(m, trace, lifting, config::SprtConfig) -> SprtResult` | sequential decision |
+| `check_rare_event` | `check_rare_event(m, system) -> RareEventResult` | splitting with the monitor's defaults |
+
+### Streaming monitors
+
+`OnlineMonitor` is the streaming-only form: no whole-trace calls and the smallest state. Its constructors borrow their arguments rather than consuming them.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `OnlineMonitor` | `OnlineMonitor(text)`, `OnlineMonitor(f::Formula)` | deterministic streaming |
+| `OnlineMonitor` | `OnlineMonitor(f, lifting::LiftingRegistry; config=SmcConfig())` | track a `P~p` formula live |
+| `update!` / `update_packed!` | as on `Monitor` | fold one sample |
+| `symbol_index` | `symbol_index(m, name) -> Union{Int, Nothing}` | the packed slot |
+| `variable_count` | `variable_count(m) -> Int` | how many distinct variables the formula reads |
+| `run!` | `run!(m, trace) -> Vector{Robustness}` | replay a trace, one verdict per step |
+| `reset!` / `last_probability` | as on `Monitor` | rewind; read the running estimate |
+
+Both monitor types return a `Robustness` struct: `resolved`, `satisfied`, `value`, `lower`, `upper`.
+
+### Multi-formula monitoring
+
+`MultiMonitor` advances several named formulas from one sample stream; `FormulaBank` evaluates a named set over a whole trace at once. `add!` borrows a `Formula`, so yours stays usable.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `MultiMonitor` | `MultiMonitor()` | empty; add formulas under ids |
+| `add!` | `add!(m, id, text)`, `add!(m, id, f::Formula)` | track another formula |
+| `add_probabilistic!` | `add_probabilistic!(m, id, f, lifting; config=SmcConfig()) -> m` | track a `P~p` formula alongside the deterministic ones |
+| `remove!` | `remove!(m, id) -> Bool` | stop tracking; whether the id was there |
+| `ids` | `ids(m) -> Vector{String}` | in insertion order |
+| `update!` | `update!(m, time, samples) -> Dict{String, Robustness}` | one sample in, every verdict out |
+| `probability` | `probability(m, id) -> Union{Float64, Nothing}` | one formula's running estimate |
+| `probabilities` | `probabilities(m) -> Dict{String, Union{Float64, Nothing}}` | every estimate keyed by id |
+| `reset!` | `reset!(m) -> m` | rewind all of them |
+| `FormulaBank` | `FormulaBank()` | a named set for offline evaluation; `add!` and `ids` as above |
+| `robustness` | `robustness(bank, trace; dense=false) -> Dict{String, Float64}` | every formula's robustness by id; a failing formula raises, naming its id |
+
+`length` and `isempty` work on both.
+
+### Noise models and lifting
+
+Each of the seventeen families has its own constructor returning a `NoiseModel`. One naming caveat: `binomial` is deliberately unexported because the bare name is Base's binomial coefficient, so qualify it as `Sentil.binomial(n, p)`; a bare `binomial(20, 0.4)` reaches `Base.binomial` and fails on the `Float64`.
+
+| Constructor | Signature |
+|---|---|
+| `dirac` | `dirac(value)` |
+| `gaussian` | `gaussian(mean, std_dev)` |
+| `uniform` | `uniform(low, high)` |
+| `log_normal` | `log_normal(mu, sigma)` |
+| `exponential` | `exponential(lambda)` |
+| `gamma` | `gamma(shape, scale)` |
+| `beta` | `beta(alpha, b)` |
+| `weibull` | `weibull(shape, scale)` |
+| `rayleigh` | `rayleigh(scale)` |
+| `gumbel` | `gumbel(location, scale)` |
+| `cauchy` | `cauchy(location, scale)` |
+| `student_t` | `student_t(df, location, scale)` |
+| `truncated_normal` | `truncated_normal(mean, std_dev, lower, upper)` |
+| `poisson` | `poisson(lambda)` |
+| `Sentil.binomial` | `Sentil.binomial(n, p)` |
+| `bootstrap` | `bootstrap(residuals)` |
+| `mixture` | `mixture(weights, components)`; the component models are consumed |
+
+Fitting and registration:
+
+| Name | Signature | What it does |
+|---|---|---|
+| `fit_gaussian` | `fit_gaussian(samples) -> NoiseModel` | maximum-likelihood Gaussian |
+| `fit_bootstrap` | `fit_bootstrap(samples) -> NoiseModel` | the empirical distribution, resampled with replacement |
+| `fit_bootstrap_reservoir` | `fit_bootstrap_reservoir(samples, max_samples) -> NoiseModel` | bootstrap under a memory cap |
+| `fit_gaussian_mixture` | `fit_gaussian_mixture(samples, components, max_iters) -> NoiseModel` | Gaussian mixture by expectation-maximization |
+| `residuals` | `residuals(ground_truth, sensor; interaction=NoiseInteraction.Additive) -> Vector{Float64}` | `y - g` or `y / g`, ready to fit |
+| `mean` / `var` | `mean(m::NoiseModel) -> Union{Float64, Nothing}` | the model's moments, `nothing` when undefined |
+| `to_json` / `from_json` | `to_json(m) -> String`, `from_json(NoiseModel, json)` | serialize a fitted model |
+| `from_file` | `Sentil.from_file(NoiseModel, path) -> NoiseModel` | load the saved JSON from disk (unexported) |
+| `LiftingRegistry` | `LiftingRegistry()` | maps variables to noise models; `isempty` works on it |
+| `register_noise!` | `register_noise!(r, variable, model; interaction=NoiseInteraction.Additive) -> r` | attach a model; the model is consumed |
+| `lift` | `lift(r, trace; seed=42) -> Trace` | one seeded noisy realization |
+| `variables` | `variables(r) -> Vector{String}` | the registered names |
+
+### Statistical checks
+
+The estimators behind `check`, and the interval helpers usable with no trace at all. Every number here is checkable by hand.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `SmcConfig` | `SmcConfig(; samples=10000, confidence=0.95, seed=42, method=IntervalMethod.Wilson)` | the estimator settings |
+| `check` | `check(f, trace, lifting; config=SmcConfig()) -> SmcResult` | estimate a `P~p` formula's satisfaction probability |
+| `check_conservative` | same shape | always the Clopper-Pearson interval |
+| `check_distribution` | `check_distribution(f, trace, lifting; config=SmcConfig()) -> Tuple{SmcResult, RobustnessDistribution}` | the estimate plus the robustness spread |
+
+`SmcResult` carries `probability`, `interval::ConfidenceInterval`, `satisfactions`, `samples`, and `holds`. `RobustnessDistribution` carries `count`, `mean`, `variance`, `std_dev`, `min`, `max`.
+
+| Name | Signature | What it returns |
+|---|---|---|
+| `wilson_interval` | `wilson_interval(successes, trials, level) -> ConfidenceInterval` | the default interval; `wilson_interval(50, 100, 0.95)` gives `[0.403831, 0.596169]` |
+| `clopper_pearson` | same shape | the exact interval; `[0.398321, 0.601679]` on the same counts |
+| `jeffreys_interval` / `agresti_coull` | same shape | the two alternatives |
+| `interval` | `interval(successes, trials, level; method=IntervalMethod.Wilson)` | any of the four by enum |
+| `width` | `width(ci::ConfidenceInterval) -> Float64` | `upper - lower` |
+| `z_score` | `z_score(level) -> Float64` | the two-sided normal quantile; `z_score(0.95)` is `1.959964` |
+| `chernoff_hoeffding_samples` | `chernoff_hoeffding_samples(epsilon, delta) -> Int` | a priori sizing; `(0.1, 0.05)` gives `185` |
+| `wilson_samples` | `wilson_samples(epsilon, level) -> Int` | sizing for a target half-width; `(0.01, 0.95)` gives `9604` |
+
+### Sequential tests
+
+Both configs are positional in the check calls, and both tests also run standalone over a Bernoulli source you supply.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `SprtConfig` | `SprtConfig(p0, p1; alpha=0.05, beta=0.05, max_samples=100000, seed=42)` | Wald's SPRT over the indifference band `[p0, p1]` |
+| `check_sequential` | `check_sequential(f, trace, lifting, config::SprtConfig) -> SprtResult` | decide a `P~p` formula sequentially |
+| `BayesConfig` | `BayesConfig(threshold; bayes_factor=100.0, max_samples=100000, seed=42)` | Beta(1, 1) prior, stop at the Bayes-factor cutoff |
+| `check_bayesian` | `check_bayesian(f, trace, lifting, config::BayesConfig) -> BayesResult` | the Bayesian decision |
+| `sequential_test` | `sequential_test(draw, config::SprtConfig) -> SprtResult` | SPRT over any `() -> Bool` source |
+| `bayes_sequential_test` | `bayes_sequential_test(draw, config::BayesConfig) -> BayesResult` | the same, Bayesian |
+
+`SprtResult` is `verdict`, `samples`, `log_likelihood`; `BayesResult` is `verdict`, `samples`, `posterior`. The theory is on [the SPRT page](/docs/probabilistic/concepts/sprt).
+
+### Stochastic systems and simulation
+
+Two ways to describe dynamics. A `SimModel` is declarative, built from `SimExpr` terms, which is what allows it to lower onto a GPU. A `StochasticSystem` runs host callbacks, so any Julia function can be the dynamics.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `sim_prev` | `sim_prev(i) -> SimExpr` | the previous value of variable `i`, 1-based |
+| `sim_time` | `sim_time() -> SimExpr` | the current time |
+| `sim_const` | `sim_const(value) -> SimExpr` | a constant |
+| `sim_noise` | `sim_noise(i) -> SimExpr` | a draw from noise source `i`, 1-based |
+| `SimModel` | `SimModel(variables, dt, horizon, init::Vector{SimExpr}, advance::Vector{SimExpr}, noise::Vector{NoiseModel})` | assemble a model; the expression and noise handles are consumed |
+| `to_stochastic_system` | `to_stochastic_system(m) -> StochasticSystem` | make the model samplable by the parallel engine |
+| `StochasticSystem` | `StochasticSystem(variables, dt, horizon; init, step)` | callback dynamics: `init(seed)` and `step(prev, time, seed)` each return a state vector |
+| `simulate` | `simulate(system; seed=42) -> Trace`, `simulate(model; seed=42)` | one seeded trajectory |
+| `dt` / `horizon` | on both types | step size and step count |
+| `variables` | `variables(s) -> Vector{String}` | the variable names |
+
+`SimExpr` supports `+`, `-`, `*`, `/` and the math functions `abs`, `sin`, `cos`, `tan`, `sqrt`, `exp`, `log`, `floor`, `ceil`, `min`, `max`, each combination consuming its operands, the same contract formulas follow. An AR(1) process in three lines:
+
+```julia
+ar1 = SimModel(["x"], 1.0, 200,
+               [sim_const(0.0)],
+               [sim_prev(1) * 0.9 + sim_noise(1)],
+               [gaussian(0.0, 1.0)])
+trace = simulate(ar1; seed=7)
+```
+
+### Rare-event estimation
+
+| Name | Signature | What it does |
+|---|---|---|
+| `RareEventConfig` | `RareEventConfig(; particles=4096, margin=0.0, seed=42)` | the splitting settings |
+| `check_rare_event` | `check_rare_event(f, system; config=RareEventConfig()) -> RareEventResult` | CPU splitting over a `StochasticSystem`; config is a keyword |
+| `check_rare_event_gpu` | `check_rare_event_gpu(f, model::SimModel; config=RareEventConfig()) -> GpuSplittingEstimate` | GPU splitting over a declarative model |
+| `gpu_available` | `gpu_available() -> Bool` | whether a usable device is present |
+| `adaptive_multilevel_splitting` | `adaptive_multilevel_splitting(; state_type, initial_state, step, is_terminal, score, particles, target_score, max_steps, seed=42) -> RareEventEstimate` | splitting over your own simulator; `state_type` must be an isbits type |
+
+`RareEventResult` is `probability`, `violation_probability`, `holds`, `simulations`; `RareEventEstimate` is `probability` and `simulations`; `GpuSplittingEstimate` is `violation_probability`, `particles`, `levels`. For `adaptive_multilevel_splitting`, `initial_state(seed)` and `step(state, seed)` return a state, `is_terminal(state)` returns `(terminal, in_rare_event)`, and `score(state)` returns a real. The method itself is on [rare events](/docs/probabilistic/concepts/rare-events).
+
+### Synthesis and optimization
+
+The synthesizers, controllers, and search entry points, then the smooth semantics and numeric helpers they are built from.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `linear_model` | `linear_model(A, B, x0, variables, dt, horizon) -> SystemModel` | discrete-time `x' = A x + B u` |
+| `SystemModel` | `SystemModel(variables, dt, horizon; input_dimension, rollout, initial)` | custom dynamics: `rollout(initial, input)` returns a signal matrix of `length(variables)` rows by `horizon + 1` columns |
+| `input_dimension` | `input_dimension(m) -> Int` | total input values over the horizon |
+| `synthesize` | `synthesize(model, spec; bounds=nothing, smooth=nothing, backend=Backend.Auto, max_iters=0, population=0) -> SynthesisResult` | find the input sequence that best satisfies the spec |
+| `Bounds` | `Bounds(lower, upper)` | a per-coordinate box |
+| `unbounded_bounds` | `unbounded_bounds(dimension) -> Bounds` | a box with no limits |
+| `dimension` / `lower` / `upper` | `dimension(b) -> Int`, `lower(b) -> Vector{Float64}` | box accessors |
+| `Controller` | `Controller(model, spec, input_width, budget_ns; bounds=nothing, smooth=nothing)` | receding horizon within a hard deadline; consumes model and spec |
+| `control` | `control(c, state) -> Vector{Float64}` | plan one step from the current state |
+| `SafetyFilter` | `SafetyFilter(bounds)` | least-restrictive shield; consumes the bounds |
+| `safe_input` | `safe_input(sf, nominal; barriers=[]) -> Vector{Float64}` | the input nearest `nominal` that is safe; each barrier `(coeff, bound)` means `coeff . u >= bound` |
+| `ChanceConstraint` | `ChanceConstraint(spec, probability; confidence=0.0, tightening=0.0)` | probabilistic satisfaction as a risk constraint; consumes the spec |
+| `validate` | `validate(cc, system; samples=1000, seed=42) -> ChanceReport` | check the constraint by sampling |
+| `find_counterexample` | `find_counterexample(f, model, bounds=nothing; max_iters=200, smooth=nothing) -> Witness` | gradient descent toward a violating run |
+| `falsify` | `falsify(f, model, bounds=nothing; config=CmaConfig(), restarts=1) -> Witness` | restarted CMA-ES falsification |
+| `mine_tightest_parameter` | `mine_tightest_parameter(make, traces, lower, upper) -> Float64` | the tightest `p` where `make(p)` holds on every trace; each formula `make` returns is consumed |
+
+`SynthesisResult` is `input`, `robustness`, `holds`, and `backend::Backend.T`, the solver that actually ran. `Witness` is `input`, `robustness`, and the `trace` it produces. `ChanceReport` is `estimate`, `lower_bound`, `samples`, `holds`.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `SmoothConfig` | `SmoothConfig(; temperature=10.0, kind=SoftKind.LogSumExp)` | the soft min and max settings; temperature is ignored by the arithmetic-geometric-mean kind |
+| `smooth_robustness` | `smooth_robustness(f, trace; config=SmoothConfig()) -> Float64` | the differentiable robustness the optimizers climb |
+| `smooth_value_and_gradient` | `smooth_value_and_gradient(f, trace; config=SmoothConfig()) -> Tuple{Float64, Dict{String, Vector{Float64}}}` | the value plus a per-signal, per-sample gradient |
+| `smooth_gradient` | `smooth_gradient(f, model, initial, input; config=SmoothConfig()) -> Tuple{Float64, Vector{Float64}}` | value and gradient through a model rollout |
+| `soft_min` / `soft_max` | `soft_min(values, temperature) -> Float64` | the underlying soft extrema |
+| `maximize` | `maximize(objective, start; bounds=nothing, max_iters=0) -> Tuple{Vector{Float64}, Float64}` | projected gradient ascent; `objective(x)` returns `(value, gradient)` |
+| `cma_es` | `cma_es(objective, start; bounds=nothing, config=CmaConfig()) -> Tuple{Vector{Float64}, Float64}` | black-box search; `objective(x)` returns a scalar |
+| `cma_es_batched` | same shape | scores a generation at once; `objective` takes a matrix whose columns are the candidate points |
+| `CmaConfig` | `CmaConfig(; population=0, max_generations=300, initial_step=0.3, tol_step=1e-11, seed=42)` | CMA-ES settings; population 0 sizes itself from the dimension |
+| `solve_qp` | `solve_qp(P, q, G, h; max_iters=200) -> Vector{Float64}` | minimize `1/2 u' P u + q' u` subject to `G u <= h` |
+| `solve_spd` | `solve_spd(matrix, rhs) -> Vector{Float64}` | solve a symmetric positive-definite system |
+| `symmetric_eigen` | `symmetric_eigen(matrix) -> Tuple{Vector{Float64}, Matrix{Float64}}` | eigenvalues and eigenvectors, one eigenvector per row |
+| `clamp!` | `clamp!(bounds, point) -> point` | project a point into the box in place |
+
+### Specification library
+
+The shipped specification catalog, resolved by name. The builder chain consumes itself at each step, so keep the returned builder, not the one you passed in.
+
+```julia
+available_specs()   # includes "aerospace/altitude_hold"
+b = with_param(SpecBuilder("aerospace/altitude_hold"), "tolerance", 50.0)
+build_deterministic(b)       # the PrSTL text
+monitor = build_monitor(b)   # consumes b
+```
+
+| Name | Signature | What it does |
+|---|---|---|
+| `SpecBuilder` | `SpecBuilder(name)`, `SpecBuilder(; file=path)` | by library name, or from a spec file |
+| `available_specs` | `available_specs() -> Vector{String}` | every spec name in the library |
+| `available_variants` | `available_variants(b) -> Vector{String}` | the variants this spec offers |
+| `with_variant` | `with_variant(b, variant) -> SpecBuilder` | select one; consumes the input builder |
+| `with_param` | `with_param(b, name, value) -> SpecBuilder` | set a parameter; consumes the input builder |
+| `build_deterministic` / `build_probabilistic` | `build_deterministic(b) -> String` | the spec as PrSTL text |
+| `build_formula` / `build_probabilistic_formula` | `build_formula(b) -> Formula` | the spec parsed |
+| `build_lifting_registry` | `build_lifting_registry(b) -> LiftingRegistry` | the spec's noise models |
+| `build_monitor` | `build_monitor(b) -> Monitor` | a ready monitor; consumes the builder |
+| `parameters_json` | `parameters_json(b) -> String` | the resolved parameters as JSON |
+| `smc_settings` | `smc_settings(b) -> Union{SpecSmcSettings, Nothing}` | recommended SMC settings: `confidence`, `sample_budget` |
+| `sprt_settings` | `sprt_settings(b) -> Union{SpecSprtSettings, Nothing}` | recommended SPRT settings: `p0`, `p1`, `alpha`, `beta`, `max_samples` |
+| `ams_settings` | `ams_settings(b) -> Union{SpecAmsSettings, Nothing}` | recommended splitting settings: `num_particles`, `max_steps` |
+
+The library itself, with each spec's source and citation, is documented under [specifications](/docs/reference/specifications/catalog).
+
+## Related pages
+
+<Cards>
+<Card title="Formula grammar" href="/docs/reference/language/grammar" description="The operators, aliases, functions, and windows a formula string accepts." />
+<Card title="Temporal operators" href="/docs/reference/language/operators" description="Syntax, semantics, and a worked example for every operator." />
+<Card title="Probabilistic monitoring" href="/docs/probabilistic/concepts/what-is-prstl" description="How the P operator, lifting, and confidence bounds fit together." />
+<Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="Gradient, CMA-ES, and MILP, and how Auto picks between them." />
+</Cards>
