@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<nta>
+<declaration>
+// Barkai-Leibler circadian gene-regulatory network
+const int N = 1000;
+
+int[0,N] A = 10;
+int[0,N] R = 10;
+int[0,N] MA = 5;
+int[0,N] MR = 5;
+</declaration>
+
+<template>
+<name>Circadian</name>
+
+<location id="id0" x="0" y="0">
+    <name x="-10" y="-34">Run</name>
+    <label kind="exponentialrate">1.0*(1+A) + 0.5*MA + 0.2*A + 1.0*(1+A) + 0.5*MR + 0.2*R + 10.0*A*R</label>
+</location>
+
+<branchpoint id="id1" x="160" y="0"/>
+
+<init ref="id0"/>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">10*(1+A)</label>
+    <label kind="assignment">MA = MA &lt; N ? MA + 1 : N</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">5*MA</label>
+    <label kind="assignment">A = A &lt; N ? A + 1 : N</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">2*A</label>
+    <label kind="assignment">A--</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">10*(1+A)</label>
+    <label kind="assignment">MR = MR &lt; N ? MR + 1 : N</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">5*MR</label>
+    <label kind="assignment">R = R &lt; N ? R + 1 : N</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">2*R</label>
+    <label kind="assignment">R--</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">100*A*R</label>
+    <label kind="assignment">A--, R--</label>
+</transition>
+
+</template>
+
+<system>
+gene = Circadian();
+system gene;
+</system>
+</nta>
