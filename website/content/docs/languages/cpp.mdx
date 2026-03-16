@@ -1,0 +1,801 @@
+---
+title: "C++"
+description: "One header over the C ABI: RAII wrappers that free their own handles and throw typed errors, the move and consume rules, and the complete sentil.hpp reference."
+---
+
+The C++ binding is one header, `sentil/sentil.hpp`, over the [C ABI](/docs/languages/c). Every wrapper class owns its C handle and frees it in its destructor, so you never call a `_destroy` function, and every fallible operation throws a `sentil::SentilError` carrying the core's own message. A robustness call through the wrapper measures about 134 ns in the cross-language benchmark, against 74 ns for raw C. It requires C++17 or newer.
+
+## Install
+
+The wrapper is header-only, so an install is two things in place: `libsentil` with its C header where the linker looks, and `sentil/sentil.hpp` on your include path. vcpkg and Conan do both at once through the `sentil-cpp` package, which is the route to reach for. The releases page has no C++ archive; the bundle published there is the C ABI alone, so that route means the bundle plus the headers from a checkout. A build from source produces both halves out of one tree.
+
+### From vcpkg or Conan
+
+<Steps>
+<Step>
+
+Install the package. `sentil-cpp` carries the headers and depends on `sentil`, the C package, so one command brings in both.
+
+<Tabs groupId="cpp-pkg" persist items={["vcpkg", "Conan"]}>
+<Tab value="vcpkg">
+
+```bash
+vcpkg install sentil-cpp
+```
+
+</Tab>
+<Tab value="Conan">
+
+```bash
+conan install --requires=sentil-cpp/0.3.0
+```
+
+</Tab>
+</Tabs>
+
+The C library underneath is a prebuilt binary, published for Linux x64, macOS x64 and arm64, and Windows x64. On any other target both stop with an error naming the platforms they have, and the way forward there is [from source](#from-source).
+
+</Step>
+<Step>
+
+Wire it into your build. From CMake, one target covers both halves:
+
+```cmake title="CMakeLists.txt"
+find_package(SentilCpp CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Sentil::cpp)
+```
+
+`Sentil::cpp` is an interface target: it requires `cxx_std_17`, adds the C++ include path, and links `Sentil::sentil`, which brings the C header and the library itself. A project using only the C header can instead call `find_package(Sentil CONFIG)` and link `Sentil::sentil` directly.
+
+Without CMake, pkg-config resolves the C library as `sentil` and the link flag is `-lsentil`:
+
+```bash
+c++ -std=c++17 my_app.cpp $(pkg-config --cflags --libs sentil) -o my_app
+```
+
+That covers the C half. `sentil/sentil.hpp` has to be on the include path as well, which it is after a vcpkg or Conan install; when it came from a checkout instead, add `-I path/to/SENTIL/sentil-cpp/include`. Windows has no pkg-config, so take the CMake path there.
+
+</Step>
+<Step>
+
+Check the link with a version print.
+
+```cpp title="check_install.cpp"
+#include <sentil/sentil.hpp>
+#include <cstdio>
+
+int main() {
+    sentil::Version v = sentil::version();
+    std::printf("sentil %u.%u.%u\n", v.major, v.minor, v.patch);
+    return 0;
+}
+```
+
+Build it with the wiring from the previous step, then run it:
+
+```bash
+./check_install
+```
+
+```text
+sentil 0.3.0
+```
+
+</Step>
+</Steps>
+
+### From a GitHub release
+
+<Steps>
+<Step>
+
+Download the bundle for your platform from the [releases page](https://github.com/sedislab/SENTIL/releases) and unpack it. Four are published: `sentil-0.3.0-linux-x86_64.tar.gz`, `sentil-0.3.0-macos-x86_64.tar.gz`, `sentil-0.3.0-macos-arm64.tar.gz`, and `sentil-0.3.0-windows-x86_64.tar.gz`. Each unpacks into a prefix holding `include/sentil.h`, the libraries under `lib/`, `lib/pkgconfig/sentil.pc`, and `lib/cmake/Sentil/`.
+
+```bash
+tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
+```
+
+`tar` ships with Windows 10 and later, so the same line works from PowerShell. On Debian, Ubuntu, Fedora, and RHEL the C half can come from the distro packages on that same page, `libsentil-dev` or `libsentil-devel`, which the [C page](/docs/languages/c) covers.
+
+</Step>
+<Step>
+
+Take the C++ headers from a checkout. No release asset carries them: `sentil/sentil.hpp` and the two headers it includes live under `sentil-cpp/include` in the repository, and otherwise arrive only through vcpkg or Conan.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+```
+
+</Step>
+<Step>
+
+Point the compiler at both directories and build the same `check_install.cpp` as above. The bundled `sentil.pc` records `prefix=/usr/local`, the path a system install would use, so override that prefix on the command line or pkg-config answers with `-L/usr/local/lib` and loses the extracted copy entirely. `-Wl,-rpath` records where the loader should look for the shared library at run time, a job `LD_LIBRARY_PATH`, or `DYLD_LIBRARY_PATH` on macOS, does instead.
+
+```bash
+prefix=$PWD/sentil-0.3.0-linux-x86_64
+export PKG_CONFIG_PATH=$prefix/lib/pkgconfig:$PKG_CONFIG_PATH
+c++ -std=c++17 check_install.cpp -I SENTIL/sentil-cpp/include \
+    $(pkg-config --define-variable=prefix=$prefix --cflags --libs sentil) \
+    -Wl,-rpath,$prefix/lib -o check_install
+./check_install
+```
+
+```text
+sentil 0.3.0
+```
+
+Windows has no pkg-config: point `-DCMAKE_PREFIX_PATH` at the extracted bundle so `find_package(Sentil CONFIG)` resolves, and add the C++ include directory to your target.
+
+</Step>
+</Steps>
+
+### From source
+
+You need CMake 3.16 or newer, a C++17 compiler, and a Rust toolchain from [rustup.rs](https://rustup.rs) for the core. Where the compiler and CMake come from differs by system.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The distribution's own packages: `build-essential` and `cmake` on Debian and Ubuntu, `gcc-c++` and `cmake` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply clang and the linker; CMake comes from Homebrew or the installer on cmake.org.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Install the Visual Studio Build Tools with the "Desktop development with C++" workload, which supplies MSVC and CMake. Rust links through MSVC too, so this is the same prerequisite the core has.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone and build. `sentil-cpp` is a CMake project in its own right, and configuring it as the top-level project turns on the tests, the four examples under `examples/`, and a `cargo build --release -p sentil-ffi` step that runs first so nothing links a stale core.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+cmake -S sentil-cpp -B sentil-cpp/build
+cmake --build sentil-cpp/build
+```
+
+Cache variables move those pieces around. `-DSENTIL_CPP_BUILD_CORE=OFF` skips the cargo step when a library already exists, `-DSENTIL_LIB_DIR=` and `-DSENTIL_INCLUDE_DIR=` say where that library and `sentil.h` are, and `-DSENTIL_ROOT=` points at the monorepo root, which otherwise defaults to the parent of `sentil-cpp`. An installed `Sentil` package wins over the build tree, since the configure step tries `find_package(Sentil CONFIG)` before falling back to `SENTIL_LIB_DIR`. `SENTIL_CPP_BUILD_TESTS` and `SENTIL_CPP_BUILD_EXAMPLES` switch off what you do not need.
+
+</Step>
+<Step>
+
+Run the suite.
+
+```bash
+ctest --test-dir sentil-cpp/build
+```
+
+```text
+100% tests passed, 0 tests failed out of 10
+```
+
+`test_gpu` is one of the ten and passes by skipping itself on a machine with no device. With valgrind installed, `cmake --build sentil-cpp/build --target leakcheck` runs the other nine under it, leaving the GPU test out because the graphics driver leaks on its own.
+
+</Step>
+<Step>
+
+Compile your own program against the tree by naming the two include directories and the freshly built library.
+
+```bash
+c++ -std=c++17 check_install.cpp -I sentil-cpp/include -I sentil-ffi/include \
+    -L target/release -lsentil -Wl,-rpath,$PWD/target/release -o check_install
+./check_install
+```
+
+```text
+sentil 0.3.0
+```
+
+</Step>
+</Steps>
+
+The shared entry point for building the whole workspace is [install from source](/docs/start/install#from-source); on a Raspberry Pi the ARM archives and the board mapping are on the [CLI page](/docs/languages/cli#on-a-raspberry-pi).
+
+Including `<sentil/sentil.hpp>` brings in the whole surface; it is split internally into `sentil/types.hpp` (enums and value structs) and `sentil/errors.hpp` (the exception hierarchy), which you can include alone.
+
+## First monitor
+
+The first program reads two things off one formula: the robustness and the spans where it fails.
+
+```cpp title="first_monitor.cpp"
+#include <sentil/sentil.hpp>
+#include <iostream>
+
+int main() {
+    sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12.0, 9.0, 7.0, 4.0, 6.0});
+    sentil::Formula phi = sentil::Formula::parse("G (speed > 5)");
+
+    std::cout << "robustness: " << phi.robustness(trace) << "\n";
+    for (const sentil::Interval& v : phi.violations(trace)) {
+        std::cout << "violation [" << v.start << ", " << v.end << "]\n";
+    }
+    return 0;
+}
+```
+
+```text
+robustness: -1
+violation [0, 3]
+```
+
+The dip to 4 at `t = 3` decides the result: `G`, read always, takes the minimum margin, and the minimum is -1. How to read robustness is covered once in [what STL is](/docs/monitoring/concepts/what-is-stl); this page sticks to the API. `robustness_signal(trace)` returns the value at every sample, `robustness_dense(trace)` evaluates between samples too, and `violations(trace)` returns the spans where the property fails, here every evaluation time from 0 through 3 because each of those windows contains the dip.
+
+## Traces
+
+Signals in a `Trace` share one strictly increasing time vector and match its length. Build one inline as above, from CSV or TSV text, or from a file whose format is chosen by extension.
+
+```cpp
+sentil::Trace trace = sentil::Trace::from_csv("time,speed\n0,12\n1,9\n2,7\n3,4\n4,6");
+trace.size();               // 5
+trace["speed"][3];          // 4.0
+trace.signal("altitude");   // std::nullopt
+
+sentil::Trace half = trace.resample({0.0, 0.5, 1.0, 1.5, 2.0});
+half["speed"][1];           // 10.5, linear between 12 and 9
+```
+
+`trace[name]` copies a signal out and throws `std::out_of_range` for a name the trace does not carry; `signal(name)` is the non-throwing sibling returning an `optional`, and `contains(name)` asks without copying. `from_path` reads csv, tsv, and txt everywhere and MATLAB `.mat` files in the default build; parquet, arrow, sqlite, hdf5, and mcap follow the Cargo features the linked core was built with, sqlite being on by default. The format details live in [trace formats](/docs/reference/methods/trace-formats). For repeated resampling, `prepare(interp)` fixes the interpolation coefficients once and returns a `PreparedTrace`.
+
+## Streaming
+
+`sentil::OnlineMonitor` is built for the control loop: an `update` is O(1) amortized, and state never outgrows the largest temporal window no matter how long the run. Both bounds come from the [monotonic deque](/docs/monitoring/concepts/monotonic-deque).
+
+```cpp title="stream.cpp"
+#include <sentil/sentil.hpp>
+#include <cmath>
+#include <cstdio>
+
+int main() {
+    sentil::OnlineMonitor monitor("G[0, 10] (x > -0.9)");
+    for (int t = 0; t < 60; ++t) {
+        double x = std::sin(t * 0.3);
+        sentil::Robustness verdict = monitor.update(static_cast<double>(t), {{"x", x}});
+        if (verdict.resolved && !verdict.satisfied) {
+            std::printf("violated at t=%d, robustness=%.3f\n", t, verdict.value);
+            return 0;
+        }
+    }
+    std::printf("held over the whole stream\n");
+    return 0;
+}
+```
+
+```text
+violated at t=15, robustness=-0.078
+```
+
+The sine wave first drops below -0.9 at `t = 15`, which lands inside the window of the evaluation time being decided, so the verdict resolves negative on that very update. Until a window has fully passed, `resolved` stays false and `value` sits halfway between `lower` and `upper`.
+
+The map form hashes every name on every call. `symbol_index(name)` maps each variable to its packed slot once, and `update_packed(time, values)` then crosses the FFI boundary with a plain array. Packed order is sorted by variable name, not appearance order, so always ask.
+
+```cpp
+sentil::OnlineMonitor monitor("G[0, 10] (speed > 5 & accel < 3)");
+std::size_t i_accel = *monitor.symbol_index("accel");   // 0
+std::size_t i_speed = *monitor.symbol_index("speed");   // 1
+
+std::vector<double> packed(monitor.variable_count());
+packed[i_speed] = 12.0;
+packed[i_accel] = 1.0;
+monitor.update_packed(0.0, packed);
+```
+
+`reset()` clears the streaming state for a fresh run, and `run(trace)` replays a whole recorded trace through the same engine, returning the per-sample verdicts. To drive many formulas under one clock, use `MultiMonitor`, whose table is in the reference below.
+
+Nothing restricts streaming to deterministic formulas. `OnlineMonitor::with_lifting` lifts each incoming reading into a particle ensemble through a `LiftingRegistry`, and `last_probability()` exposes the running satisfaction estimate next to the verdict:
+
+```cpp title="live_probability.cpp"
+sentil::Formula phi = sentil::Formula::parse("P>=0.9 (G[0, 5] (x > 0))");
+sentil::LiftingRegistry lifting;
+lifting.register_noise("x", sentil::NoiseModel::gaussian(0.0, 0.3));
+
+sentil::OnlineMonitor monitor = sentil::OnlineMonitor::with_lifting(phi, lifting);
+for (int t = 0; t < 20; ++t) {
+    double x = 0.4 + 0.05 * t;
+    monitor.update(static_cast<double>(t), {{"x", x}});
+    if (t % 6 == 5) {
+        std::printf("t=%d  P=%.4f\n", t, *monitor.last_probability());
+    }
+}
+```
+
+```text
+t=5  P=0.7526
+t=11  P=0.9752
+t=17  P=0.9990
+```
+
+The signal ramps away from the threshold, so the estimated probability of holding the 5-sample window climbs with it. `last_probability()` returns `std::nullopt` for a deterministic formula or before the first update, and the same accessor exists on `Monitor` and per id on `MultiMonitor`.
+
+## Probabilistic checking
+
+The workflow is a registry of per-variable noise models, then one `check` call; the operator itself is taught in [what PrSTL is](/docs/probabilistic/concepts/what-is-prstl).
+
+```cpp title="prstl.cpp"
+#include <sentil/sentil.hpp>
+#include <cstdio>
+#include <vector>
+
+int main() {
+    std::vector<double> times, values;
+    for (int i = 0; i < 20; ++i) {
+        times.push_back(i);
+        values.push_back(0.4 + 0.05 * i);
+    }
+    sentil::Trace trace(times, "x", values);
+
+    sentil::LiftingRegistry lifting;
+    lifting.register_noise("x", sentil::NoiseModel::gaussian(0.0, 0.3));
+
+    sentil::Formula phi = sentil::Formula::parse("P>=0.9 (G (x > 0))");
+    sentil::SmcConfig config;
+    config.samples = 5000;
+    sentil::SmcResult result = phi.check(trace, lifting, config);
+    std::printf("probability %.4f, interval [%.4f, %.4f], holds %s\n", result.probability,
+                result.interval.lower, result.interval.upper, result.holds ? "true" : "false");
+    return 0;
+}
+```
+
+```text
+probability 0.7332, interval [0.7208, 0.7453], holds false
+```
+
+With noise of standard deviation 0.3 on a signal that starts only 0.4 above the threshold, about a quarter of the sampled realizations dip below zero somewhere, so the estimate misses the 0.9 the formula demands and `holds` is false. The interval is a Wilson score interval at the 0.95 level by default; how to read it, and when to prefer another method, is on [confidence intervals](/docs/probabilistic/concepts/confidence-intervals). `register_noise` consumes the model it is given, defaults the interaction to additive, and is so named because `register` is a reserved word. Seventeen noise families and the fitting constructors are enumerated in the reference below.
+
+Three variations on the same call. `check_conservative` always reports the exact Clopper-Pearson interval, `[0.7207, 0.7454]` on the run above, slightly wider than Wilson. `check_distribution` additionally returns a `RobustnessDistribution` summarizing robustness across the ensemble, which tells you how close the misses were, here mean 0.1037 with minimum -0.7163. And `Monitor::check` runs the check with whatever SMC settings the monitor carries, which matters when the monitor came preloaded from the [specifications library](/docs/reference/specifications/catalog).
+
+For a sequential decision instead of a fixed budget, `check_sequential` runs Wald's SPRT and `check_bayesian` runs a Bayesian test with a Beta prior; both stop as soon as the evidence is decisive. `SprtConfig` requires `p0` and `p1`, the two hypothesis probabilities, and `BayesConfig` requires `threshold`. On the trace above, SPRT between `p0 = 0.85` and `p1 = 0.95` accepts H0 after 32 samples, and the Bayesian test at threshold 0.9 returns `BayesVerdict::Fails` after 60 samples with posterior 0.0008.
+
+When the probability you are after is far below what a Monte Carlo budget can see, `check_rare_event` estimates it by adaptive multilevel splitting over a `StochasticSystem`, a model the engine can sample. The declarative way to build one is `SimExpr` update terms in a `SimModel`:
+
+```cpp title="rare.cpp"
+using sentil::SimExpr;
+std::vector<SimExpr> init;
+init.push_back(SimExpr::constant(0.0));
+std::vector<SimExpr> advance;
+advance.push_back(SimExpr::prev(0) * 0.8 + SimExpr::noise(0));
+std::vector<sentil::NoiseModel> noise;
+noise.push_back(sentil::NoiseModel::gaussian(0.0, 1.0));
+sentil::SimModel model({"x"}, 1.0, 50, std::move(init), std::move(advance), std::move(noise));
+
+sentil::Formula phi = sentil::Formula::parse("P>=0.9999 (G[0, 50] (x < 6.5))");
+sentil::RareEventResult result = phi.check_rare_event(model.to_stochastic_system());
+std::printf("violation probability %.3e over %llu simulations, holds %s\n",
+            result.violation_probability, (unsigned long long)result.simulations,
+            result.holds ? "true" : "false");
+```
+
+```text
+violation probability 1.614e-03 over 746930 simulations, holds false
+```
+
+The AR(1) state rarely wanders past 6.5, and the splitter resolves that tail instead of returning zero; `probability` and `violation_probability` sum to one. Systems with arbitrary host dynamics come from `StochasticSystem::custom`, whose callbacks may run on several threads and must be thread-safe. On a machine with a GPU, `Formula::check_rare_event_gpu` runs fixed-effort splitting on the device for `P >= p (G[0, b] psi)` formulas over a `SimModel`; `sentil::gpu::is_available()` reports whether a device is usable, and without one the call throws a typed error (`GPU run failed: no compatible GPU adapter for the splitting path`) rather than falling back silently. The method itself is described in [rare events](/docs/probabilistic/concepts/rare-events).
+
+## Synthesis
+
+The example is a single integrator, `x' = x + u` from `x0 = 1`, with three inputs bounded to `[-1, 1]` and a spec that `x` stay positive.
+
+```cpp title="synth.cpp"
+#include <sentil/sentil.hpp>
+#include <cstdio>
+
+int main() {
+    sentil::SystemModel model = sentil::SystemModel::linear({{1.0}}, {{1.0}}, {1.0}, {"x"}, 1.0, 3);
+    sentil::Formula spec = sentil::Formula::parse("G (x > 0)");
+    sentil::Bounds bounds({-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0});
+
+    sentil::SynthesisResult result = sentil::synthesis::synthesize(model, spec, &bounds);
+    std::printf("robustness %.1f, holds %s, input [%.0f, %.0f, %.0f]\n", result.robustness,
+                result.holds ? "true" : "false", result.input[0], result.input[1], result.input[2]);
+    return 0;
+}
+```
+
+```text
+robustness 1.0, holds true, input [1, -1, 0]
+```
+
+`synthesize` borrows the model and spec, takes the bounds and smoothing config as optional pointers, and reports in `result.backend` which optimizer actually ran; on this affine model the `Auto` choice is the complete MILP encoding, so `backend` comes back `Backend::Milp`. The backend choices and when each wins are on [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+The rest of the subsystem follows the same shapes. `Controller` re-solves a short-horizon problem at every step against a hard nanosecond deadline and `control(state)` returns the next input. `SafetyFilter` is a control-barrier shield that projects a nominal input to the nearest safe one. `ChanceConstraint` demands a spec hold with a target probability and `validate` measures it by sampling a `StochasticSystem`. Going the other way, `phi.falsify(model, bounds)` and `phi.find_counterexample(model, bounds)` search for a violating trajectory and return a `Witness` whose negative robustness certifies the counterexample; on the model above with four free steps, falsification drives `x` to -3. And `mine_tightest_parameter` binary-searches a spec parameter for the tightest value that still holds on a set of traces: mining `G (speed > c)` over the first-monitor trace returns `c = 4`, the trace minimum.
+
+## Errors
+
+Everything that can fail throws a subclass of `sentil::SentilError`, which derives from `std::exception`. Catch the base to handle everything, or a subclass to separate the kinds. `what()` carries the core's own message, down to the construct and position that caused it, and `code()` is the stable C status behind it, one of the values on the [error codes](/docs/reference/methods/error-codes) page.
+
+```cpp title="errors.cpp"
+try {
+    sentil::Formula phi = sentil::Formula::parse("G (speed >");
+    (void)phi;
+} catch (const sentil::ParseError& e) {
+    std::cerr << "could not parse: " << e.what() << "\n";
+}
+```
+
+```text
+could not parse: parse error at line 1, column 11: expected a value or `(`, found end of input
+```
+
+| Exception | Thrown for |
+|---|---|
+| `SentilError` | The base; carries `code()` and `what()` |
+| `ParseError` | A malformed formula; the message points at the column |
+| `SemanticError` | An unknown variable, a non-probabilistic formula where one was needed, or an unsupported construct |
+| `EvaluationError` | Every other failure: evaluation, data, fit, config, or numeric |
+
+Evaluating a formula against a trace missing one of its variables, for instance, throws a `SemanticError` reading ``no value available for variable `speed`; add a signal named `speed` to the trace, or include it in the streaming update``. Two accessors step outside this hierarchy by design: `trace[name]` and `RingBuffer::operator[]` throw `std::out_of_range`, matching what C++ eyes expect from an index operator, and each has an `optional`-returning sibling (`signal`, `get`) when you would rather test than catch. If you mix in raw C ABI calls, the free function `ensure(code)` converts a non-OK status into the matching thrown subclass. Host callbacks, in `StochasticSystem::custom`, `SystemModel::custom`, `stats::sequential_test`, `adaptive_multilevel_splitting`, and `mine_tightest_parameter`, must not unwind through the engine, so an exception a callback throws is captured and rethrown after the call returns.
+
+### What consumes what
+
+The wrappers are move-only owners, and several operations consume their operands, meaning the moved-from object must not be used again. The temporal and boolean member combinators on `Formula` are `&&`-qualified, so they chain on temporaries and a named formula must be `std::move`d into them; the free-function spellings below do the moving for you. The `Expr` and `SimExpr` arithmetic operators consume both operands, so write an expression as one inline chain:
+
+```cpp
+using sentil::Expr;
+Expr margin = Expr::var("altitude") - Expr::var("floor_limit");
+sentil::Formula phi = sentil::always(std::move(margin) > 100.0);   // robustness 200 on {900, 800} vs {500, 500}
+```
+
+Also consuming: `LiftingRegistry::register_noise` takes its `NoiseModel`, `NoiseModel::mixture` takes its components, the `SimModel` constructor takes its expressions and noise models, `Monitor` construction takes its `Formula`, `Controller` takes its model and spec, `SafetyFilter` takes its bounds, `ChanceConstraint` takes its spec, and the `SpecBuilder` chain methods consume the builder even when the variant or parameter is rejected. `OnlineMonitor(const Formula&)`, `MultiMonitor::add`, `FormulaBank::add`, and `synthesis::synthesize` borrow instead.
+
+## Reference
+
+The complete surface of `sentil.hpp`, `types.hpp`, and `errors.hpp`. Signatures elide `std::` and trailing `const` for width; the headers carry the exact declarations. `detail::` is internal and not listed.
+
+### Version
+
+| Item | Signature | What it is |
+|---|---|---|
+| `Version` | `struct { uint32_t major, minor, patch }` | The core's semantic version |
+| `version` | `version() -> Version` | Reads the version of the linked `libsentil`, 0.3.0 here |
+
+### Enums
+
+All scoped enums convert to their C constants by exact cast.
+
+| Enum | Variants | Meaning |
+|---|---|---|
+| `TimeMode` | `Discrete`, `Dense` | Read the sample grid, or catch crossings between samples |
+| `Interpolation` | `Linear`, `ZeroOrderHold`, `CubicSpline` | How resampling fills between samples |
+| `IntervalMethod` | `Wilson`, `ClopperPearson`, `Jeffreys`, `AgrestiCoull` | The binomial confidence interval estimator |
+| `NoiseInteraction` | `Additive`, `Multiplicative` | Residual `y - g` or `y / g` |
+| `SprtVerdict` | `AcceptH0`, `AcceptH1`, `Inconclusive` | Outcome of a sequential probability ratio test |
+| `BayesVerdict` | `Holds`, `Fails`, `Inconclusive` | Outcome of a Bayesian sequential test |
+| `SoftKind` | `LogSumExp`, `ArithmeticGeometricMean` | The soft min and max behind smooth robustness |
+| `Backend` | `Auto`, `Gradient`, `CmaEs`, `Milp` | The synthesis optimizer, chosen or forced |
+| `ComparisonOp` | `Lt`, `Le`, `Gt`, `Ge`, `Eq`, `Ne` | The comparison in a predicate |
+| `BinaryOp` | `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow` | Arithmetic inside an expression |
+| `ProbabilityOp` | `Ge`, `Gt`, `Le`, `Lt` | The threshold direction of `P~p` |
+
+### Configuration structs
+
+Plain aggregates with the core's defaults; set only what you change. `SprtConfig::p0`/`p1` and `BayesConfig::threshold` have no default and must be set.
+
+| Struct | Fields and defaults | Feeds |
+|---|---|---|
+| `SmcConfig` | `samples = 10000`, `confidence = 0.95`, `seed = 42`, `method = IntervalMethod::Wilson` | `check`, `check_conservative`, `check_distribution`, `with_lifting`, `add_probabilistic` |
+| `SprtConfig` | `p0`, `p1` (required), `alpha = 0.05`, `beta = 0.05`, `max_samples = 100000`, `seed = 42` | `check_sequential`, `stats::sequential_test` |
+| `BayesConfig` | `threshold` (required), `bayes_factor = 100.0`, `max_samples = 100000`, `seed = 42` | `check_bayesian`, `stats::bayes_sequential_test` |
+| `RareEventConfig` | `particles = 4096`, `margin = 0.0`, `seed = 42` | `check_rare_event`, `check_rare_event_gpu` |
+| `SmoothConfig` | `temperature = 10.0`, `kind = SoftKind::LogSumExp` | The smooth-robustness family and the synthesis calls |
+| `CmaConfig` | `population = 0` (auto-sized), `max_generations = 300`, `initial_step = 0.3`, `tol_step = 1e-11`, `seed = 42` | `falsify`, `cma_es`, `cma_es_batched` |
+
+### Result structs
+
+| Struct | Fields | Produced by |
+|---|---|---|
+| `Robustness` | `resolved`, `satisfied`, `value`, `lower`, `upper` | Every streaming `update`; unresolved `value` is the midpoint of `[lower, upper]` |
+| `Interval` | `start`, `end` | `violations`, `violation_intervals` |
+| `Sample` | `found`, `time`, `value` | `RingBuffer` queries |
+| `ConfidenceInterval` | `lower`, `upper`, `level`, and `width()` | `SmcResult::interval`, the `stats` functions |
+| `SmcResult` | `probability`, `interval`, `satisfactions`, `samples`, `holds` | `check` and its variants |
+| `RobustnessDistribution` | `count`, `mean`, `variance`, `std_dev`, `min`, `max` | `check_distribution` |
+| `SprtResult` | `verdict`, `samples`, `log_likelihood` | `check_sequential`, `stats::sequential_test` |
+| `BayesResult` | `verdict`, `samples`, `posterior` | `check_bayesian`, `stats::bayes_sequential_test` |
+| `RareEventResult` | `probability`, `violation_probability`, `holds`, `simulations` | `check_rare_event`, `Monitor::check_rare` |
+| `ChanceReport` | `estimate`, `lower_bound`, `samples`, `holds` | `ChanceConstraint::validate` |
+| `GpuSplittingEstimate` | `violation_probability`, `particles`, `levels` | `check_rare_event_gpu` |
+| `SynthesisResult` | `input`, `robustness`, `holds`, `backend` | `synthesis::synthesize` |
+| `Witness` | `input`, `robustness`, `trace` | `falsify`, `find_counterexample` |
+| `RareEventEstimate` | `probability`, `simulations` | `adaptive_multilevel_splitting` |
+
+### Formula
+
+A move-only owner of a parsed PrSTL tree. Build from text or JSON, inspect it, evaluate it, check it.
+
+| Member | Signature | What it does |
+|---|---|---|
+| `parse` | `static parse(const string&) -> Formula` | Parse PrSTL text; the [grammar](/docs/reference/language/grammar) has the syntax |
+| `from_json` | `static from_json(const string&) -> Formula` | Rebuild from the `to_json` form |
+| `to_json` | `to_json() -> string` | The tree as JSON, the inverse of `from_json` |
+| `depth` | `depth() -> size_t` | Nesting depth; a predicate is 1 |
+| `is_temporal` | `is_temporal() -> bool` | Whether any temporal operator appears |
+| `variables` | `variables() -> vector<string>` | The variable names read, sorted and unique |
+| `robustness` | `robustness(const Trace&) -> double` | Discrete-time robustness |
+| `robustness_dense` | `robustness_dense(const Trace&) -> double` | Dense-time robustness, catching crossings between samples |
+| `robustness_signal` | `robustness_signal(const Trace&) -> vector<double>` | Robustness at every sample |
+| `robustness_dense_signal` | `robustness_dense_signal(const Trace&) -> vector<double>` | The dense-time counterpart |
+| `violations` | `violations(const Trace&) -> vector<Interval>` | Spans where the formula fails |
+| `smooth_robustness` | `smooth_robustness(const Trace&, const SmoothConfig& = {}) -> double` | The differentiable surrogate; higher temperature tracks the exact value closer |
+| `smooth_value_and_gradient` | `smooth_value_and_gradient(const Trace&, const SmoothConfig& = {}) -> pair<double, vector<vector<double>>>` | Value plus gradient per signal per sample, `[variable][sample]` in sorted variable order |
+| `smooth_gradient` | `smooth_gradient(const SystemModel&, const vector<double>& initial, const vector<double>& input, const SmoothConfig& = {}) -> pair<double, vector<double>>` | Value plus gradient per input coordinate through a model rollout |
+| `check` | `check(const Trace&, const LiftingRegistry&, const SmcConfig& = {}) -> SmcResult` | Estimate a `P~p` formula's satisfaction probability |
+| `check_conservative` | same shape as `check` | Always reports the Clopper-Pearson interval |
+| `check_distribution` | `check_distribution(...) -> pair<SmcResult, RobustnessDistribution>` | `check` plus ensemble robustness statistics |
+| `check_sequential` | `check_sequential(const Trace&, const LiftingRegistry&, const SprtConfig&) -> SprtResult` | Wald's SPRT |
+| `check_bayesian` | `check_bayesian(const Trace&, const LiftingRegistry&, const BayesConfig&) -> BayesResult` | Bayesian sequential test |
+| `check_rare_event` | `check_rare_event(const StochasticSystem&, const RareEventConfig& = {}) -> RareEventResult` | Adaptive multilevel splitting on CPU |
+| `check_rare_event_gpu` | `check_rare_event_gpu(const SimModel&, const RareEventConfig& = {}) -> GpuSplittingEstimate` | Fixed-effort splitting on the GPU; throws without a device |
+| `find_counterexample` | `find_counterexample(const SystemModel&, const Bounds&, size_t max_iters = 200, const SmoothConfig* = nullptr) -> Witness` | Gradient descent toward a violation |
+| `falsify` | `falsify(const SystemModel&, const Bounds&, const CmaConfig& = {}, size_t restarts = 1) -> Witness` | Global falsification with restarted CMA-ES |
+
+The combinator members `implies`, `next`, `always`, `eventually`, `historically`, `once`, `until`, `since`, and `probability` are `&&`-qualified and consume their operands; their free-function spellings below are the usual way to write them.
+
+### Expr and the operator DSL
+
+Formulas can be built in C++ instead of parsed. `Expr::var(name)` and `Expr::constant(value)` make terms, arithmetic combines them, and comparing two terms yields a `Formula`; doubles convert wherever a term is expected.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Expr::var` | `static var(const string&) -> Expr` | A term reading the named variable |
+| `Expr::constant` | `static constant(double) -> Expr` | A constant term |
+| arithmetic | `+`, `-`, `*`, `/`, `%` on `(Expr, Expr)` and mixed with `double`; unary `-` | `%` is remainder; all consume their operands |
+| functions | `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `floor`, `ceil` each `(Expr) -> Expr`; `min`, `max`, `pow` each `(Expr, Expr) -> Expr` with mixed-double overloads | The complete set; `log` is log10 and `ln` is natural |
+| comparisons | `>`, `>=`, `<`, `<=`, `==`, `!=` on `(Expr, Expr)` and mixed with `double`, each `-> Formula` | A predicate; robustness is the signed margin |
+| boolean | `operator!(Formula)`, `operator&&(Formula, Formula)`, `operator\|\|(Formula, Formula)` | Negation, conjunction (min), disjunction (max) |
+| `implies` | `implies(Formula antecedent, Formula consequent) -> Formula` | Implication |
+| `next` | `next(Formula) -> Formula` | Holds at the next sample |
+| `always` / `eventually` | `always(Formula, double lower = 0, optional<double> upper = nullopt) -> Formula` | Future window; `nullopt` upper means unbounded |
+| `historically` / `once` | same shape | The past-window duals |
+| `until` / `since` | `until(Formula left, Formula right, double lower = 0, optional<double> upper = nullopt) -> Formula` | The binary temporal operators |
+| `probability` | `probability(Formula, ProbabilityOp, double threshold) -> Formula` | Wrap in `P~p`; threshold in `[0, 1]` |
+| `violation_intervals` | `violation_intervals(const vector<double>& times, const vector<double>& signal) -> vector<Interval>` | Spans where an already-computed robustness signal is negative |
+
+The operator semantics themselves are on the [operators reference](/docs/reference/language/operators).
+
+### Trace and PreparedTrace
+
+| Member | Signature | What it does |
+|---|---|---|
+| constructors | `Trace(times)`, `Trace(times, name, values)`, `Trace(times, map<string, vector<double>> signals)` | Times strictly increasing; every signal the same length |
+| `indexed` | `static indexed(size_t len) -> Trace` | Times 0 through len - 1, no signals yet |
+| `from_csv` / `from_tsv` | `static from_csv(const string& text) -> Trace` | Parse in-memory text; header row, time column auto-detected |
+| `from_path` | `static from_path(const string&) -> Trace` | Read a file, format by extension |
+| `add_signal` | `add_signal(const string&, const vector<double>&)` | Add or replace one signal |
+| `add_signals` | `add_signals(const map<string, vector<double>>&)` | Add or replace several |
+| `size` / `empty` | `size() -> size_t`, `empty() -> bool` | Number of time points |
+| `times` | `times() -> vector<double>` | The time vector |
+| `variables` | `variables() -> vector<string>` | Signal names, sorted |
+| `signal` | `signal(const string&) -> optional<vector<double>>` | A signal's values, or `nullopt` |
+| `contains` | `contains(const string&) -> bool` | Whether the signal exists |
+| `operator[]` | `operator[](const string&) -> vector<double>` | A signal's values; throws `std::out_of_range` when absent |
+| `resample` | `resample(const vector<double>& times, Interpolation = Linear) -> Trace` | New grid; endpoints outside the range are held |
+| `prepare` | `prepare(Interpolation) -> PreparedTrace` | Fix interpolation coefficients for reuse |
+| `PreparedTrace::resample` | `resample(const vector<double>& times) -> Trace` | Resample without recomputing coefficients |
+
+### RingBuffer
+
+A fixed-capacity rolling window over timed samples with running statistics. Pushing past capacity evicts the oldest.
+
+```cpp
+sentil::RingBuffer window(3);
+window.push(0.0, 12.0);
+window.push(1.0, 9.0);
+window.push(2.0, 7.0);
+window.push(3.0, 4.0);   // returns the evicted Sample at t=0
+*window.mean();          // 6.667 over {9, 7, 4}
+```
+
+| Member | Signature | What it does |
+|---|---|---|
+| constructor | `RingBuffer(size_t capacity)` | Holds at most `capacity` samples |
+| `push` | `push(double time, double value) -> optional<Sample>` | Append; returns the evicted oldest, times must not go backward |
+| `size` / `capacity` / `empty` / `is_full` | `size() -> size_t`, `capacity() -> size_t`, `empty() -> bool`, `is_full() -> bool` | Occupancy and the limit |
+| `clear` | `clear()` | Drop every sample |
+| `front` / `back` | each `() -> optional<Sample>` | Oldest and newest |
+| `get` / `operator[]` | `get(size_t) -> optional<Sample>`; `operator[](size_t) -> Sample` | By index from the oldest; `[]` throws `std::out_of_range` |
+| `pop_front` / `pop_back` | each `() -> optional<Sample>` | Remove from either end |
+| `closest_to_time` | `closest_to_time(double) -> optional<Sample>` | Nearest sample by time |
+| `at_time` | `at_time(double) -> optional<double>` | Value recorded at that time, within a small tolerance |
+| `time_range` | `time_range() -> optional<pair<double, double>>` | Earliest and latest times held |
+| `between` | `between(double start, double end) -> vector<Sample>` | Samples in `[start, end]`, oldest first |
+| `mean` / `variance` / `std_dev` / `min` / `max` | each `() -> optional<double>` | Running statistics; `nullopt` when empty, or below two samples for variance |
+| `recompute_statistics` | `recompute_statistics()` | Rebuild the running mean and variance from scratch |
+
+### Monitors
+
+Four monitor shapes share the verdict and update vocabulary. `Config` holds the evaluation settings: `Config(TimeMode::Dense)` switches a `Monitor` to dense time, and `time()` reads the mode back.
+
+| `Monitor` member | Signature | What it does |
+|---|---|---|
+| constructors | `Monitor(Formula)`, `Monitor(Formula, const Config&)`, `Monitor(const string&)`, `Monitor(const string&, const Config&)` | From a formula (consumed) or text, with an optional config |
+| `formula` / `config` | `formula() -> Formula`, `config() -> Config` | Copies of what the monitor holds |
+| `robustness` | `robustness(const Trace&) -> double` | Whole-trace robustness honoring the time mode |
+| `robustness_signal` | `robustness_signal(const Trace&) -> vector<double>` | Per-sample robustness |
+| `violations` | `violations(const Trace&) -> vector<Interval>` | Failing spans |
+| `symbol_index` | `symbol_index(const string&) -> optional<size_t>` | Packed slot of a variable, or `nullopt` when unread |
+| `update` / `update_packed` | `update(double, const map<string, double>&) -> Robustness`; `update_packed(double, const vector<double>&) -> Robustness` | Fold one sample, by name or by packed slot |
+| `reset` | `reset()` | Clear streaming state |
+| `last_probability` | `last_probability() -> optional<double>` | Running `P~p` estimate, `nullopt` when deterministic |
+| `check` | `check(const Trace&, const LiftingRegistry&) -> SmcResult` | SMC with the monitor's carried settings |
+| `check_sequential` | `check_sequential(const Trace&, const LiftingRegistry&, const SprtConfig&) -> SprtResult` | SPRT through the monitor |
+| `check_rare` | `check_rare(const StochasticSystem&) -> RareEventResult` | Rare-event splitting through the monitor |
+
+| `OnlineMonitor` member | Signature | What it does |
+|---|---|---|
+| constructors | `OnlineMonitor(const string&)`, `OnlineMonitor(const Formula&)` | The streaming monitor; the formula is borrowed |
+| `with_lifting` | `static with_lifting(const Formula&, const LiftingRegistry&, const SmcConfig& = {}) -> OnlineMonitor` | Track a `P~p` formula online over a particle ensemble |
+| `variable_count` | `variable_count() -> size_t` | How many variables the formula reads |
+| `symbol_index` / `update` / `update_packed` / `reset` / `last_probability` | as on `Monitor` | The shared streaming vocabulary |
+| `run` | `run(const Trace&) -> vector<Robustness>` | Replay a whole trace, one verdict per sample |
+
+| `MultiMonitor` member | Signature | What it does |
+|---|---|---|
+| `add` | `add(const string& id, const string& formula)`; overload `add(id, const Formula&)` borrowed | Register a formula under an id |
+| `add_probabilistic` | `add_probabilistic(const string& id, const Formula&, const LiftingRegistry&, const SmcConfig& = {})` | Register a `P~p` formula tracked online |
+| `remove` | `remove(const string& id) -> bool` | Drop by id; false when unknown |
+| `update` | `update(double, const map<string, double>&) -> map<string, Robustness>` | Advance every formula at one sample |
+| `probability` / `probabilities` | `probability(const string& id) -> optional<double>`; `probabilities() -> vector<pair<string, optional<double>>>` | Running estimates by id, `nullopt` for deterministic entries |
+| `reset` / `size` / `empty` / `ids` | `reset()`, `size() -> size_t`, `empty() -> bool`, `ids() -> vector<string>` | Bookkeeping; ids in insertion order |
+
+`FormulaBank` scores a named set over a full trace in one call: `add(id, formula)` in both spellings, `ids`, `size`, and `empty` as above, and `robustness(const Trace&)` or `robustness_dense(const Trace&)` returning a `map<string, double>` keyed by id.
+
+### Noise models and lifting
+
+`NoiseModel` is a distribution for stochastic signal lifting, built from a named family, fitted from calibration residuals, or combined into a mixture. All 17 families:
+
+| Constructor | Signature |
+|---|---|
+| `dirac` | `(double value)` |
+| `gaussian` | `(double mean, double std_dev)` |
+| `uniform` | `(double low, double high)` |
+| `log_normal` | `(double mu, double sigma)` |
+| `exponential` | `(double rate)` |
+| `gamma` | `(double shape, double scale)` |
+| `beta` | `(double alpha, double beta)` |
+| `weibull` | `(double shape, double scale)` |
+| `rayleigh` | `(double scale)` |
+| `gumbel` | `(double location, double scale)` |
+| `cauchy` | `(double location, double scale)` |
+| `student_t` | `(double df, double location, double scale)` |
+| `truncated_normal` | `(double mean, double std_dev, double lower, double upper)` |
+| `poisson` | `(double rate)` |
+| `binomial` | `(uint64_t n, double p)` |
+| `bootstrap` | `(const vector<double>& residuals)` |
+| `mixture` | `(const vector<double>& weights, vector<NoiseModel> models)`; also variadic `mixture(weights, m1, m2, ...)`; components consumed |
+
+Fitting starts from residuals: `NoiseModel::residuals(ground_truth, sensor, interaction)` differences paired readings under the chosen `NoiseInteraction`, then `fit_gaussian(samples)` fits by maximum likelihood, `fit_bootstrap(samples)` keeps the empirical distribution, `fit_bootstrap_reservoir(samples, max_samples)` caps its memory, and `fit_gaussian_mixture(samples, components, max_iters)` runs expectation-maximization. On a model, `mean()` and `variance()` return the analytic moments as `optional` (Cauchy has neither), and `to_json()`, `from_json(json)`, and `from_file(path)` round-trip the model for storage. Guidance on choosing a family is on [noise models](/docs/reference/methods/noise-models).
+
+`LiftingRegistry` maps variables to models: `register_noise(variable, model, interaction = Additive)` consumes the model, `variables()` lists the registered names, `empty()` tests for none, and `lift(trace, seed = 42)` draws one seeded noisy realization of a trace.
+
+### The stats namespace
+
+The statistical primitives under the model checker, callable directly.
+
+| Function | Signature | What it does |
+|---|---|---|
+| `wilson_interval` | `(uint64_t successes, uint64_t trials, double level) -> ConfidenceInterval` | The default interval; `wilson_interval(50, 100, 0.95)` is `[0.4038, 0.5962]` |
+| `clopper_pearson` | same shape | The exact, conservative interval; `[0.3983, 0.6017]` on the same input |
+| `jeffreys_interval` | same shape | Bayesian credible interval |
+| `agresti_coull` | same shape | The Agresti-Coull approximation |
+| `interval` | `(successes, trials, level, IntervalMethod = Wilson) -> ConfidenceInterval` | Dispatch by method |
+| `z_score` | `(double level) -> double` | Two-sided critical value; `z_score(0.95)` is 1.959964 |
+| `chernoff_hoeffding_samples` | `(double epsilon, double delta) -> uint64_t` | A priori sample count; `(0.1, 0.05)` needs 185 |
+| `wilson_samples` | `(double epsilon, double level) -> uint64_t` | Samples for a target half-width; `(0.01, 0.95)` needs 9604 |
+| `BernoulliSource` | `function<bool()>` | The draw the sequential tests consume |
+| `sequential_test` | `(const SprtConfig&, BernoulliSource) -> SprtResult` | SPRT over your own Bernoulli source |
+| `bayes_sequential_test` | `(const BayesConfig&, BernoulliSource) -> BayesResult` | The Bayesian counterpart |
+
+The derivations behind these live in [statistical methods](/docs/reference/methods/statistical-methods).
+
+### Stochastic simulators and rare events
+
+A `SimExpr` is one update term: `SimExpr::prev(i)` for variable `i` at the previous step, `SimExpr::time()` for the clock, `SimExpr::constant(v)` for a literal, and `SimExpr::noise(j)` for a draw from noise source `j`. The arithmetic operators `+ - * /` (with mixed-double overloads and unary `-`) and the functions `abs`, `sin`, `cos`, `tan`, `sqrt`, `exp`, `log`, `ln`, `floor`, `ceil`, `min`, and `max` combine them, consuming operands like `Expr`.
+
+| Item | Signature | What it does |
+|---|---|---|
+| `SimModel` | `SimModel(variables, double dt, size_t horizon, vector<SimExpr> init, vector<SimExpr> advance, vector<NoiseModel> noise)` | One init and one advance term per variable; the handles are consumed |
+| `SimModel::simulate` | `simulate(uint64_t seed = 42) -> Trace` | One full-horizon trajectory |
+| `SimModel::to_stochastic_system` | `to_stochastic_system() -> StochasticSystem` | The sampling-ready form |
+| `SimModel` accessors | `variables() -> vector<string>`, `dt() -> double`, `horizon() -> size_t` | Model shape |
+| `StochasticSystem::custom` | `static custom(variables, dt, horizon, init_fn, step_fn) -> StochasticSystem` | Host-callback dynamics; callbacks must be thread-safe |
+| `StochasticSystem::simulate` | `simulate(uint64_t seed = 42) -> Trace` | One trajectory; also `variables`, `dt`, `horizon` accessors |
+| `StochasticSystem::rethrow_callback_error` | `rethrow_callback_error()` | Resurface an exception a callback recorded |
+| `AmsSimulator<State>` | fields `initial_state(seed)`, `step(state, seed)`, `is_terminal(state, bool& in_rare_event)`, `score(state)` | Your own simulator for the splitter; `State` must be trivially copyable because particles clone by bytes |
+| `adaptive_multilevel_splitting<State>` | `(const AmsSimulator<State>&, size_t particles, double target_score, uint64_t max_steps, uint64_t seed) -> RareEventEstimate` | Run the splitter over it |
+| `gpu::is_available` | `() -> bool` | Whether a usable GPU device is present; the CPU paths never depend on it |
+
+### Synthesis toolkit
+
+| Item | Signature | What it does |
+|---|---|---|
+| `Bounds` | `Bounds(const vector<double>& lower, const vector<double>& upper)`; `static unbounded(size_t dimension)` | Per-coordinate box; equal lengths, each lower at most its upper |
+| `Bounds` accessors | `dimension() -> size_t`, `lower() -> vector<double>`, `upper() -> vector<double>`, `clamp(vector<double>) -> vector<double>` | Read the box or project a point into it |
+| `SystemModel::linear` | `static linear(a, b, x0, variables, double dt, size_t horizon) -> SystemModel` | `x' = Ax + Bu` with `a` n-by-n and `b` n-by-m as nested vectors |
+| `SystemModel::custom` | `static custom(variables, dt, horizon, initial_state, input_dimension, rollout_fn) -> SystemModel` | Host rollout returning horizon + 1 samples per variable; thread-safe |
+| `SystemModel::input_dimension` | `input_dimension() -> size_t` | Total input length: per-step width times horizon |
+| `SystemModel::rethrow_callback_error` / `share_state` | `rethrow_callback_error()`; `share_state()` | Resurface a rollout exception; share the rollout state with a consuming `Controller` |
+| `synthesis::synthesize` | `(const SystemModel&, const Formula&, const Bounds* = nullptr, const SmoothConfig* = nullptr, Backend = Auto, size_t max_iters = 0, size_t population = 0) -> SynthesisResult` | Open-loop synthesis; model and spec borrowed; zeros take the defaults |
+| `synthesis::soft_min` / `soft_max` | `(const vector<double>& values, double temperature) -> double` | The smooth extrema primitives |
+| `synthesis::maximize` | `(GradientObjective, const vector<double>& start, const Bounds* = nullptr, size_t max_iters = 0) -> pair<vector<double>, double>` | Projected gradient ascent on your own objective |
+| `synthesis::cma_es` | `(Objective, start, const Bounds* = nullptr, const CmaConfig& = {}) -> pair<vector<double>, double>` | Gradient-free search |
+| `synthesis::cma_es_batched` | `(BatchObjective, start, bounds, config)` same return | Scores a whole population per call; the objective must be thread-safe |
+| `synthesis::solve_qp` | `(P, q, G, h, size_t max_iters = 200) -> vector<double>` | Minimize `1/2 u'Pu + q'u` subject to `Gu <= h` |
+| `synthesis::solve_spd` | `(matrix, rhs) -> vector<double>` | Solve `Ax = b` for symmetric positive-definite `A` |
+| `synthesis::symmetric_eigen` | `(matrix) -> pair<vector<double>, vector<vector<double>>>` | Eigenvalues and eigenvectors (as rows) of a symmetric matrix |
+| `Controller` | `Controller(SystemModel model, Formula spec, size_t input_width, uint64_t budget_ns, const Bounds* = nullptr, const SmoothConfig* = nullptr)`; `control(const vector<double>& state) -> vector<double>` | Receding horizon under a hard deadline; model and spec consumed |
+| `SafetyFilter` | `SafetyFilter(Bounds)`; `filter(const vector<double>& nominal, const vector<pair<vector<double>, double>>& barriers = {}) -> vector<double>` | Least-restrictive shield over bounds and barrier half-spaces |
+| `ChanceConstraint` | `ChanceConstraint(Formula spec, double probability, double confidence = 0.0, double tightening = 0.0)`; `validate(const StochasticSystem&, uint64_t samples = 1000, uint64_t seed = 42) -> ChanceReport` | A probabilistic requirement, validated by sampling |
+| `SpecMaker` | `function<Formula(double)>` | Builds a formula from a candidate parameter |
+| `mine_tightest_parameter` | `(SpecMaker, const vector<Trace>& traces, double lower, double upper) -> double` | The tightest parameter in the range that holds on every trace |
+
+The objective aliases: `GradientObjective` returns a value and its gradient, `Objective` a value, and `BatchObjective` a vector of values for a population of points.
+
+### The specifications library
+
+The embedded registry ships 54 cited PrSTL specifications in 0.3.0, browsable under [specifications](/docs/reference/specifications/catalog); `SpecBuilder` resolves one by name.
+
+```cpp title="specs.cpp"
+std::printf("%zu specifications\n", sentil::SpecBuilder::available().size());
+
+sentil::SpecBuilder builder("controls/overshoot");
+for (const std::string& v : builder.available_variants()) {
+    std::printf("variant: %s\n", v.c_str());
+}
+std::printf("%s\n", builder.build_deterministic().c_str());
+
+sentil::Formula phi =
+    std::move(builder).with_param("max_overshoot", 0.1).build_formula();
+```
+
+```text
+54 specifications
+variant: bidirectional
+variant: step_down
+variant: step_up
+always[0, 30.0](output - reference < 0.05 * 1.0)
+```
+
+Each spec documents its parameters and their valid ranges; `parameters_json()` shows the resolved values, and a parameter outside its range, or one the spec does not define, throws. `with_variant`, `with_param`, and `build_monitor` consume the builder even when they reject the input, so chain them on a temporary or a moved builder and rebuild from the name to retry.
+
+| Member | Signature | What it does |
+|---|---|---|
+| constructor | `SpecBuilder(const string& name)` | Load from the embedded registry |
+| `available` | `static available() -> vector<string>` | Every embedded spec name, sorted |
+| `from_file` | `static from_file(const string& path) -> SpecBuilder` | Load a spec template file of your own |
+| `with_variant` | `with_variant(const string&) && -> SpecBuilder` | Select a named variant |
+| `with_param` | `with_param(const string&, double) && -> SpecBuilder` | Override a parameter |
+| `available_variants` | `available_variants() -> vector<string>` | The variant names, sorted |
+| `build_deterministic` / `build_probabilistic` | each `() -> string` | The formula text with parameters filled in |
+| `build_formula` / `build_probabilistic_formula` | each `() -> Formula` | The same, parsed |
+| `build_lifting_registry` | `build_lifting_registry() -> LiftingRegistry` | The spec's recommended noise models |
+| `parameters_json` | `parameters_json() -> string` | The resolved parameters as JSON |
+| `build_monitor` | `build_monitor() && -> Monitor` | A monitor preloaded with the spec's recommended settings |
+| `smc_settings` / `sprt_settings` / `ams_settings` | each `() -> optional<Spec*Settings>` | Recommended verification settings, or `nullopt` when the spec carries none |
+
+The settings structs are `SpecSmcSettings { confidence, sample_budget }`, `SpecSprtSettings { p0, p1, alpha, beta, max_samples }`, and `SpecAmsSettings { num_particles, max_steps }`.
+
+### Raw handles
+
+Every wrapper class also carries an interop trio for mixing with the C ABI: an `explicit Class(raw_handle*)` constructor that takes ownership of a C handle, `get()` returning the raw handle while the wrapper keeps ownership, and, on the eight classes whose handles a C call can consume (`Formula`, `Expr`, `Trace`, `NoiseModel`, `SimExpr`, `Bounds`, `SystemModel`, `SpecBuilder`), `release()` which gives ownership up. Pair them with `ensure` from the errors section and the two layers compose cleanly.
+
+## Related pages
+
+<Cards>
+  <Card title="C ABI" href="/docs/languages/c" description="The stable sentil_* layer this header wraps, with the raw status codes and ownership rules." />
+  <Card title="Rust" href="/docs/languages/rust" description="The core surface these wrappers mirror one to one." />
+  <Card title="Error codes" href="/docs/reference/methods/error-codes" description="Every status code behind SentilError::code() and the failure it names." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="How Auto chooses between gradient, CMA-ES, and MILP, and when to force one." />
+</Cards>
