@@ -284,9 +284,11 @@ def smc_circadian(records):
     if not s or not p:
         return
     bars = [("SENTIL", s, style.TOOL["sentil"]), ("PRISM", p, style.TOOL["prism"])]
-    m = pick("modest")
-    if m:
-        bars.append(("Modest", m, style.TOOL["modest"]))
+    for tool, label in (("modest", "Modest"), ("uppaal", "UPPAAL-SMC")):
+        r = pick(tool)
+        if r:
+            bars.append((label, r, style.TOOL[tool]))
+    bars.sort(key=lambda b: b[1]["time_ms"])
     fig, ax = plt.subplots(figsize=(5.8, 4.8))
     tools = [label for label, _, _ in bars]
     secs = [r["time_ms"] / 1000.0 for _, r, _ in bars]
