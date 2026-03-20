@@ -1,0 +1,23 @@
+// Circadian Rhythm Gene Regulatory Network from Barkai & Leibler's model
+ctmc
+
+const int N = 1000;
+
+module circadian
+    // Species populations
+    a  : [0..N] init 10; // Activator protein
+    r  : [0..N] init 10; // Repressor protein
+    ma : [0..N] init 5;  // Activator mRNA
+    mr : [0..N] init 5;  // Repressor mRNA
+    
+    // Transitions matching the Rust implementation rates
+    [] a < N  -> 1.0 * (1 + a) : (ma' = min(ma + 1, N)); // Transcription A
+    [] ma > 0 -> 0.5 * ma      : (a' = min(a + 1, N));   // Translation A
+    [] a > 0  -> 0.2 * a       : (a' = a - 1);           // Degradation A
+    
+    [] r < N  -> 1.0 * (1 + a) : (mr' = min(mr + 1, N)); // Transcription R
+    [] mr > 0 -> 0.5 * mr      : (r' = min(r + 1, N));   // Translation R
+    [] r > 0  -> 0.2 * r       : (r' = r - 1);           // Degradation R
+    
+    [] a > 0 & r > 0 -> 10.0 * a * r : (a' = a - 1) & (r' = r - 1); // Complex formation
+endmodule
