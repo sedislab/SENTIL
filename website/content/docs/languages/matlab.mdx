@@ -1,0 +1,791 @@
+---
+title: "MATLAB"
+description: "Install the SENTIL toolbox, monitor recorded traces and live streams, check probabilistic specifications, synthesize controllers, and run the Simulink block."
+---
+
+The MATLAB toolbox is self-contained: the compiled core ships inside the `.mltbx`, so there is nothing else to install. The `sentil` package is the programmatic API, and the `SENTIL Monitor` block runs the streaming monitor inside a Simulink model, so a controller is checked against its specification as the simulation steps. A formula parsed here returns the same robustness as the same formula in Rust or Python, because every class calls the same engine through one MEX gateway.
+
+Native-backed classes such as `sentil.Trace`, `sentil.Formula`, and `sentil.OnlineMonitor` are handle objects that free their engine memory in `delete`; touching one after it has been closed or consumed raises `sentil:handle`. The configuration types, `sentil.SmcConfig` through `sentil.SmoothConfig`, are value classes with validated, defaulted properties: set a field, pass the object, nothing to free.
+
+## Install
+
+Two routes hand you the same file, and the third builds it. `Sentil.mltbx` from the File Exchange is the one to reach for: a single package carries the compiled gateway for Linux, macOS, and Windows, so no Rust toolchain and no compiler enter the picture. The same package is attached to each GitHub release, which is the route to a specific tag rather than whatever the listing currently serves. Build from source when you are changing the binding, or when you want the gateway compiled against a core you built yourself.
+
+On macOS the published package carries only the Apple silicon `.mexmaca64`, an extension that did not exist before R2023b, so it needs R2023b or newer there and holds nothing an Intel Mac can load. Build from source on one.
+
+### From the File Exchange
+
+<Steps>
+<Step>
+
+Find SENTIL on the [MATLAB File Exchange](https://www.mathworks.com/matlabcentral/fileexchange) and download `Sentil.mltbx`. The file name carries no version; the version rides inside the package.
+
+</Step>
+<Step>
+
+Install it by opening the file in MATLAB, or from the command window. R2021b is the floor the package declares.
+
+```matlab
+matlab.addons.toolbox.installToolbox('Sentil.mltbx')
+```
+
+</Step>
+<Step>
+
+Confirm the engine loads.
+
+```matlab
+v = sentil.version()   % struct: major 0, minor 3, patch 0
+```
+
+</Step>
+</Steps>
+
+### From a GitHub release
+
+<Steps>
+<Step>
+
+Open the [releases page](https://github.com/sedislab/SENTIL/releases), pick a tag, and download `Sentil.mltbx` from its assets. The release workflow assembles it from a Linux, a Windows, and an Apple silicon build, so it is the same multi-platform package the File Exchange carries.
+
+</Step>
+<Step>
+
+Install it the same way.
+
+```matlab
+matlab.addons.toolbox.installToolbox('Sentil.mltbx')
+```
+
+</Step>
+<Step>
+
+Score a formula, which runs the parser and the engine through the gateway.
+
+```matlab
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+sentil.Formula.parse('G (speed > 5)').robustness(trace)   % -1
+```
+
+</Step>
+</Steps>
+
+### From source
+
+You need a Rust toolchain from [rustup.rs](https://rustup.rs) and a compiler `mex` accepts, which comes from a different place on each system. `build_sentil` compiles the Simulink S-Function alongside the gateway, so Simulink has to be installed; the CI job that runs the build installs that product first.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The gateway and the S-Function are C++ sources, so `mex` wants a C++ compiler: `build-essential` on Debian and Ubuntu, `gcc-c++` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply the compiler.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Both `mex` and Rust link through MSVC, so the Visual Studio Build Tools with the "Desktop development with C++" workload cover the two together. `build_sentil` links the DLL by naming its import library, `sentil.dll.lib`, which cargo writes under `target/release` or `target/release/deps`; there is nothing for you to place by hand.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone the repository and start MATLAB in the binding's directory.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL/sentil-matlab
+```
+
+</Step>
+<Step>
+
+Run the build. It calls cargo for `libsentil` when the library is not already under `target/release` in the checkout, compiles the MEX gateway and the S-Function against the C ABI header in `sentil-ffi/include`, and copies the library beside each artifact. On Linux and macOS a loader-relative rpath finds it there; on Windows the loader searches the MEX's own folder, where the copied `sentil.dll` sits. It raises `sentil:build` when the C ABI headers are missing, when cargo fails, or when the Windows import library is nowhere under `target/release`.
+
+```matlab
+build_sentil
+% +sentil/private/sentil_mex.mexa64   the gateway; .mexmaca64 on Apple silicon, .mexw64 on Windows
+% blocks/sentil_s_function.mexa64     the Simulink S-Function
+% a copy of libsentil.so lands beside each one
+```
+
+To compile against a core you already have, put it at `target/release/libsentil.so` in the checkout (`libsentil.dylib` on macOS, `sentil.dll` on Windows) and the cargo step is skipped. No environment variable overrides that path.
+
+</Step>
+<Step>
+
+`build_sentil` puts the package and the block folder on the path for the current session. In a fresh one, `addpath(pwd)` from this directory brings the package back; the Simulink library needs `addpath(fullfile(pwd, 'blocks'))` too. Then run the tests and the version check.
+
+```matlab
+addpath(pwd)
+runtests('tests')   % test_sentil, plus test_oracle against the shared deterministic oracle
+sentil.version()    % major 0, minor 3, patch 0
+```
+
+</Step>
+</Steps>
+
+The clone-and-build step every binding shares is on [install from source](/docs/start/install#from-source). `package_sentil` turns the built tree into a distributable `Sentil.mltbx` and needs R2023a or newer for the ToolboxOptions API; it is listed with the other [toolbox functions](#toolbox-functions).
+
+## Your first monitor
+
+```matlab title="first_monitor.m"
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('G (speed > 5)');
+phi.robustness(trace)   % -1.0
+```
+
+Robustness is `-1.0` because the worst sample, the `4` at `t = 3`, misses the bound by one; negative says violated, and the size says by how much. [What robustness means](/docs/monitoring/concepts/what-is-stl) has the full account. `robustness_signal` gives the value at every sample, `violations` gives the failing `[start, end]` spans, and `robustness_dense` evaluates between samples by interpolation, which [discrete versus dense](/docs/monitoring/guides/discrete-vs-dense) covers.
+
+## Loading traces
+
+The constructor takes a strictly increasing time vector, optionally with one named signal; `add_signal` attaches more on the same grid.
+
+```matlab
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+trace.add_signal('altitude', [100 120 140 130 90]);
+
+flight = sentil.Trace.from_path('flight.csv');   % csv or tsv, by extension
+```
+
+`from_path` reads CSV and TSV. For `.mat`, Parquet, and the rest, read the data with MATLAB's own loaders and hand the arrays to the constructor; the engine-level format list is on [trace formats](/docs/reference/methods/trace-formats). `resample` reads a trace onto a new grid through a `sentil.Interpolation`, and `prepare` returns a `sentil.PreparedTrace` that makes repeated resampling cheap. The full surface is in [the reference](#traces).
+
+## Streaming
+
+`sentil.OnlineMonitor` is the streaming half of the toolbox. Each `update` folds in a single reading at O(1) amortized cost, and the [monotonic deque](/docs/monitoring/concepts/monotonic-deque) underneath caps memory at the widest window, so a monitor can sit in a control loop indefinitely.
+
+```matlab title="streaming.m"
+monitor = sentil.OnlineMonitor('G[0, 10] (x > -0.9)');
+for t = 0:59
+    verdict = monitor.update(t, struct('x', sin(t * 0.3)));
+    if verdict.resolved && ~verdict.satisfied
+        fprintf('violated at t=%d, robustness=%.3f\n', t, verdict.value);
+        break
+    end
+end
+```
+
+`update` returns a struct with five fields: `resolved`, `satisfied`, `value`, `lower`, and `upper`. A future-bounded operator cannot settle until its window has passed, so an early verdict is an interval: `lower` and `upper` bracket the eventual robustness, `value` sits midway between them, and `resolved` stays false until the window closes, which is why the `[0, 10]` bound above matters on a live stream. `satisfied` reads `value >= 0`, so consult it only after `resolved` turns true.
+
+A sample can be a struct or a `containers.Map`; anything else raises `sentil:sample`. A MATLAB call into the gateway costs about 6.49 microseconds, the highest per-call overhead of the bindings, so in a tight loop look up each variable's position once with `symbol_index` and feed `update_packed(time, values)` a row vector in that order.
+
+### Live probability
+
+Probabilistic streaming goes through `OnlineMonitor.with_lifting`, which tracks a `P`-wrapped formula with a particle ensemble lifted through a noise registry. The formula is borrowed, not consumed.
+
+```matlab title="live_probability.m"
+phi = sentil.Formula.parse('P>=0.9 (G[0, 10] (x > 0))');
+lifting = sentil.LiftingRegistry();
+lifting.register('x', sentil.NoiseModel.gaussian(0.0, 0.3));
+
+m = sentil.OnlineMonitor.with_lifting(phi, lifting);
+for t = 0:19
+    r = m.update(t, struct('x', 0.4 + 0.05 * t));
+end
+p = m.last_probability()   % the running satisfaction estimate
+```
+
+On a probabilistic monitor the verdict's `lower` and `upper` carry the confidence bounds, and `last_probability` reads the live estimate directly; it returns `NaN` on a deterministic monitor or before the first update. To advance many formulas, deterministic and probabilistic side by side, on one clock, use `sentil.MultiMonitor` from [the reference](#many-formulas-on-one-clock).
+
+## Probabilistic monitoring
+
+A `P~p` operator sets a floor, or a ceiling, on the probability that a formula holds over noisy readings ([what PrSTL is](/docs/probabilistic/concepts/what-is-prstl)). Register a noise model per variable, then `check` estimates the satisfaction probability with a confidence interval.
+
+```matlab title="probabilistic.m"
+times = 0:19;
+trace = sentil.Trace(times, 'x', 0.4 + 0.05 * times);
+
+lifting = sentil.LiftingRegistry();
+lifting.register('x', sentil.NoiseModel.gaussian(0.0, 0.3));
+
+phi = sentil.Formula.parse('P>=0.9 (G (x > 0))');
+config = sentil.SmcConfig;
+config.samples = 5000;
+
+result = phi.check(trace, lifting, config);
+% result.probability, result.interval.lower / .upper / .level,
+% result.satisfactions, result.samples, result.holds
+```
+
+`register` consumes the noise model: the registry owns it afterward, and reusing the original raises `sentil:handle`. Its optional fourth argument is a `sentil.NoiseInteraction`, `Additive` by default, `Multiplicative` for noise that scales with the reading. The 17 families, the fitters, and the registry surface are in [the reference](#noise-models-and-lifting); choosing and fitting a model is covered in [noise models](/docs/probabilistic/concepts/noise-models).
+
+`check` uses the Wilson interval unless `config.method` says otherwise. `check_conservative` swaps in Clopper-Pearson, and `check_distribution` also returns the robustness distribution the estimate saw. The choice of interval is a real decision; [confidence intervals](/docs/probabilistic/concepts/confidence-intervals) walks it.
+
+### Sequential and Bayesian tests
+
+A fixed sample budget wastes draws on an easy instance; the sequential tests quit the moment the hypothesis is settled.
+
+```matlab
+sprt = sentil.SprtConfig(0.85, 0.95);
+r = phi.check_sequential(trace, lifting, sprt);
+% r.verdict is a sentil.SprtVerdict; also r.samples, r.log_likelihood
+
+bayes = sentil.BayesConfig(0.9);
+r = phi.check_bayesian(trace, lifting, bayes);
+% r.verdict is a sentil.BayesVerdict; also r.samples, r.posterior
+```
+
+Both configs are required arguments here; their remaining properties and defaults are in the [config table](#statistics-and-configs).
+
+### Rare events
+
+Below the probabilities plain Monte Carlo resolves, `check_rare_event` runs adaptive multilevel splitting over a `sentil.StochasticSystem`, a system the engine can simulate from a seed. The custom form takes MATLAB callbacks for the dynamics.
+
+```matlab
+sys = sentil.StochasticSystem.custom({'x'}, 1.0, 8, ...
+    @(seed) 0.0, @(prev, t, seed) prev + (2 * mod(double(seed), 2) - 1) * 0.6);
+r = phi.check_rare_event(sys);
+% r.probability, r.violation_probability, r.holds, r.simulations
+```
+
+The GPU path takes a declarative `sentil.SimModel` instead of callbacks, because the model must run on the device, and it throws when no GPU is present. Gate it on the capability check; the CPU path stays available regardless.
+
+```matlab
+if sentil.Gpu.is_available()
+    est = phi.check_rare_event_gpu(model);   % model is a sentil.SimModel
+    % est.violation_probability, est.particles, est.levels
+end
+```
+
+[Rare events](/docs/probabilistic/concepts/rare-events) explains the splitting method; both system classes are documented [below](#stochastic-systems-and-simulation-models).
+
+## Synthesis
+
+`sentil.Synthesis.synthesize` searches for a control input sequence that satisfies a specification on a model. The smallest case: `x` starts at one, each step adds the input, and the spec keeps `x` positive for three steps under inputs bounded by one.
+
+```matlab title="synthesis.m"
+model = sentil.SystemModel.linear(1, 1, 1, {'x'}, 1.0, 3);
+spec = sentil.Formula.parse('G (x > 0)');
+bounds = sentil.Bounds([-1 -1 -1], [1 1 1]);
+
+result = sentil.Synthesis.synthesize(model, spec, bounds);
+% result.input, result.robustness, result.holds,
+% result.backend (a sentil.Backend naming the solver that ran)
+```
+
+The backend defaults to `Auto`, which picks by the problem's structure; the choices and their tradeoffs are on [synthesis backends](/docs/reference/methods/synthesis-backends). For closed-loop control, `sentil.Controller` replans a short horizon each step inside a hard time budget, and `sentil.SafetyFilter` shields any nominal input:
+
+```matlab
+c = sentil.Controller(model, spec, 1, 1e6, sentil.Bounds(-3, 3));   % consumes model and spec
+u = c.control(0.0);   % the input for the current state, within 1 ms
+
+shield = sentil.SafetyFilter(sentil.Bounds([-1 -1 -1], [1 1 1]));
+shield.filter([2.0 0.5 -3.0])   % [1 0.5 -1], clamped into the box
+```
+
+Going the other way, `phi.falsify` and `phi.find_counterexample` search for an input that breaks a spec, and `Synthesis.mine_tightest_parameter` finds the tightest parameter a family of formulas can hold at. The full surface, including the optimizers, the chance-constraint validator, and the convex solvers, is in [the reference](#synthesis-classes).
+
+## The Simulink block
+
+The toolbox ships one masked Level-2 S-Function block, `SENTIL Monitor`, wrapping the same streaming engine as `sentil.OnlineMonitor`. One input port carries the formula's variables; one output port carries the verdict.
+
+<Steps>
+<Step>
+Build the block library once. From a source build, run `build_sentil` first so the S-Function MEX exists.
+
+```matlab
+create_sentil_library("sentil_lib");   % writes sentil_lib.slx
+```
+</Step>
+<Step>
+Drop the block into your model and configure its mask:
+
+```matlab
+add_block('sentil_lib/SENTIL Monitor', 'my_model/Monitor');
+set_param('my_model/Monitor', ...
+    'formula_str', 'G (speed < 120)', ...
+    'var_names_str', 'speed', ...
+    'mode_sel', 'Deterministic');
+```
+</Step>
+<Step>
+Wire the monitored signals to the input port in the order named in `var_names_str` and run the model.
+</Step>
+</Steps>
+
+The mask carries six parameters; the last three appear only when the mode is `Probabilistic/SMC`.
+
+| Parameter | Control | Default | Meaning |
+|---|---|---|---|
+| `formula_str` | edit | `always[0, 5](x > 0)` | the formula to monitor |
+| `var_names_str` | edit | `x` | comma-separated input variables, in port order |
+| `mode_sel` | popup | `Deterministic` | `Deterministic` or `Probabilistic/SMC` |
+| `samples_int` | edit | `10000` | Monte Carlo samples per step |
+| `noise_var_dbl` | edit | `0.1` | variance of the zero-mean Gaussian lifted onto every input |
+| `noise_file_str` | edit | empty | a noise model file applied to every input instead of the Gaussian |
+
+In deterministic mode the output port carries the running robustness at each solver step. In probabilistic mode it is three wide, labeled `[value, lower, upper]`: the running satisfaction estimate bracketed by its interval, so the model can react to a probability as it simulates.
+
+<Callout type="info">
+Probabilistic mode runs Monte Carlo sampling at every step. When the model steps quickly, drive the block through a rate transition or lower `samples_int`.
+</Callout>
+
+A worked model is in the [Simulink block recipe](/docs/examples/recipes/simulink-block), and the [insulin pump case study](/docs/start/case-studies/insulin-pump) monitors a full closed loop this way.
+
+## Errors
+
+Failures throw `MException`s under the `sentil:` namespace. The message text comes from the engine and names the construct at fault and where it sits.
+
+```matlab
+try
+    phi = sentil.Formula.parse('G (speed >');
+catch err
+    fprintf('%s: %s\n', err.identifier, err.message);   % sentil:parse: ...
+end
+```
+
+| Identifier | Raised for |
+|---|---|
+| `sentil:parse` | a malformed formula; the message names the line and column |
+| `sentil:semantic` | an unknown variable, a non-probabilistic formula checked statistically, or an unsupported construct |
+| `sentil:evaluation` | a runtime failure: an invalid configuration, a fit that did not converge, a missing GPU |
+| `sentil:handle` | using a handle after it was closed or consumed |
+| `sentil:trace` | a misused `sentil.Trace` constructor |
+| `sentil:monitor` | a misused `Monitor` or `OnlineMonitor` constructor |
+| `sentil:sample` | a streaming sample that is not a struct or a `containers.Map` |
+| `sentil:mex` | a malformed gateway call, such as a wrong argument count or shape |
+| `sentil:callback` | the fallback identifier when an error raised inside one of your callbacks carries none; a callback error otherwise resurfaces under its own identifier |
+| `sentil:build` | `build_sentil` could not find or build a required piece |
+| `sentil:packaging` | `package_sentil` on a release without the ToolboxOptions API |
+
+The `sentil:handle` you are most likely to meet comes from a consumed handle rather than a deleted one. These calls take ownership of their arguments: every `Formula` combinator plus `Formula.predicate` and `Formula.probability`; the `Formula` given to `sentil.Monitor`; the `NoiseModel` given to `register` and the components given to `NoiseModel.mixture`; the expression and noise arrays given to `SimModel.create`; the operands of `Expr.binary`, `Expr.call`, and the arithmetic shorthands on `Expr` and `SimExpr`; a `SpecBuilder` passed through `with_variant`, `with_param`, or `into_monitor`; the model and spec given to `Controller`; the `Bounds` given to `SafetyFilter`; and the spec given to `ChanceConstraint`. After such a call the argument object is closed, so rebuild it if you need it again. By contrast, `OnlineMonitor.from_formula`, `OnlineMonitor.with_lifting`, `MultiMonitor.add`, and `FormulaBank.add` borrow.
+
+How the identifiers map to engine status codes, and how the other bindings surface the same failures, is on [error codes](/docs/reference/methods/error-codes) and [handling errors across bindings](/docs/languages/across/handle-errors).
+
+## Reference
+
+Signatures use the call form you write; statics carry the full package path.
+
+### Traces
+
+`sentil.Trace` carries signals sampled on one strictly increasing time grid; `sentil.PreparedTrace` precomputes interpolation for repeated resampling.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `Trace` | `sentil.Trace(times)` or `sentil.Trace(times, name, values)` | a trace, empty or with one signal; any other arity raises `sentil:trace` |
+| `from_csv` | `t = sentil.Trace.from_csv(text)` | parse comma-separated text with a header row |
+| `from_tsv` | `t = sentil.Trace.from_tsv(text)` | parse tab-separated text with a header row |
+| `from_path` | `t = sentil.Trace.from_path(path)` | load a CSV or TSV file, chosen by extension |
+| `add_signal` | `trace.add_signal(name, values)` | attach a signal sampled on the time grid |
+| `length` | `n = trace.length()` | the number of samples |
+| `is_empty` | `tf = trace.is_empty()` | whether there are no samples |
+| `times` | `t = trace.times()` | the time grid, a row vector |
+| `variables` | `v = trace.variables()` | the signal names, sorted |
+| `signal` | `s = trace.signal(name)` | the named signal, or `[]` if absent |
+| `resample` | `t2 = trace.resample(newTimes, interp)` | a copy read onto a new grid; `interp` is a `sentil.Interpolation`, default `Linear` |
+| `prepare` | `p = trace.prepare(interp)` | a `sentil.PreparedTrace`, default `Linear` |
+| `PreparedTrace.resample` | `t2 = p.resample(times)` | the prepared trace read onto a new grid, cheap to repeat |
+
+### Formulas
+
+`sentil.Formula.parse` builds most formulas; the statics build them programmatically. Every builder consumes the pieces it is given.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `parse` | `phi = sentil.Formula.parse(text)` | parse text; failure raises `sentil:parse` with the column |
+| `from_json` | `phi = sentil.Formula.from_json(json)` | rebuild a formula serialized by `to_json` |
+| `predicate` | `phi = sentil.Formula.predicate(lhs, op, rhs)` | a predicate from two `sentil.Expr` (consumed) and a `sentil.ComparisonOp` |
+| `probability` | `phi = sentil.Formula.probability(op, threshold, child)` | wrap a child (consumed) in `P~p` with a `sentil.ProbabilityOp` |
+| `variables` | `v = phi.variables()` | the variables read, sorted and unique |
+| `to_json` | `s = phi.to_json()` | the parsed tree as JSON |
+
+Evaluation over a trace:
+
+| Name | Signature | What it does |
+|---|---|---|
+| `robustness` | `r = phi.robustness(trace)` | the margin at the start time; negative is a violation |
+| `robustness_signal` | `r = phi.robustness_signal(trace)` | robustness at every sample, a row vector |
+| `robustness_dense` | `r = phi.robustness_dense(trace)` | dense time, catching inter-sample crossings |
+| `robustness_dense_signal` | `r = phi.robustness_dense_signal(trace)` | dense robustness at every sample |
+| `violations` | `v = phi.violations(trace)` | the n-by-2 `[start, end]` rows where it fails |
+
+Probabilistic checks, each over a `P`-wrapped formula:
+
+| Name | Signature | What it does |
+|---|---|---|
+| `check` | `r = phi.check(trace, lifting, config)` | SMC estimate; `config` an optional `sentil.SmcConfig` |
+| `check_conservative` | `r = phi.check_conservative(trace, lifting, config)` | the same estimate with the Clopper-Pearson interval |
+| `check_distribution` | `[r, d] = phi.check_distribution(trace, lifting, config)` | the estimate plus the robustness distribution: `count`, `mean`, `variance`, `std_dev`, `min`, `max` |
+| `check_sequential` | `r = phi.check_sequential(trace, lifting, sprt)` | Wald's SPRT; `sprt` a `sentil.SprtConfig`, verdict a `sentil.SprtVerdict` |
+| `check_bayesian` | `r = phi.check_bayesian(trace, lifting, bayes)` | Bayesian sequential test; `bayes` a `sentil.BayesConfig`, verdict a `sentil.BayesVerdict` |
+| `check_rare_event` | `r = phi.check_rare_event(system, config)` | splitting over a `sentil.StochasticSystem`; `config` an optional `sentil.RareEventConfig` |
+| `check_rare_event_gpu` | `e = phi.check_rare_event_gpu(model, config)` | splitting on the GPU over a `sentil.SimModel`, for a `P >= p (G[0, b] psi)` specification; throws without a device |
+
+Search and gradients:
+
+| Name | Signature | What it does |
+|---|---|---|
+| `find_counterexample` | `w = phi.find_counterexample(model, bounds, maxIters, smooth)` | descend smooth robustness to a witnessing input; returns `input`, `robustness`, `trace` |
+| `falsify` | `w = phi.falsify(model, bounds, config, restarts)` | restarted CMA-ES falsification; `config` a `sentil.CmaConfig`, `restarts` default 1 |
+| `smooth_gradient` | `g = phi.smooth_gradient(model, initial, input, smooth)` | smooth robustness of the rolled-out trace with a gradient per input coordinate |
+| `smooth_value_and_gradient` | `g = phi.smooth_value_and_gradient(trace, smooth)` | smooth robustness over a trace, gradient an n_vars-by-n_samples matrix |
+
+The combinators, each consuming the formulas it is given:
+
+| Name | Signature | What it does |
+|---|---|---|
+| `negate` | `f = phi.negate()` | logical negation |
+| `conjunction` | `f = phi.conjunction(other)` | this formula and another |
+| `disjunction` | `f = phi.disjunction(other)` | this formula or another |
+| `implies` | `f = phi.implies(other)` | implication |
+| `next` | `f = phi.next()` | the next-step operator |
+| `always`, `eventually` | `f = phi.always(lower, upper)` | bounded with `(lower, upper)`, unbounded with no arguments |
+| `historically`, `once` | `f = phi.historically(lower, upper)` | the past-time duals, same bound convention |
+| `until`, `since` | `f = phi.until(other, lower, upper)` | binary temporal operators; bounds optional |
+
+### Predicate expressions
+
+`sentil.Expr` builds the arithmetic inside a predicate when you construct formulas programmatically rather than parsing. The combinators consume their operands, like the formula builders.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `var` | `e = sentil.Expr.var(name)` | a variable term |
+| `literal` | `e = sentil.Expr.literal(value)` | a constant term |
+| `binary` | `e = sentil.Expr.binary(op, left, right)` | combine two expressions by a `sentil.BinaryOp`; operands consumed |
+| `call` | `e = sentil.Expr.call(name, args)` | a named function of argument expressions (consumed); the function set is the grammar's 12 |
+| `add`, `sub`, `mul`, `div`, `mod`, `pow` | `e = a.add(b)` and so on | shorthand for `binary`; both operands consumed |
+
+```matlab
+lhs = sentil.Expr.var('x').mul(sentil.Expr.literal(2));
+phi = sentil.Formula.predicate(lhs, sentil.ComparisonOp.Gt, sentil.Expr.literal(5));
+% the same formula as sentil.Formula.parse('x * 2 > 5')
+```
+
+### Monitors
+
+Three classes. `sentil.OnlineMonitor` is the pure streaming monitor from the guide above. `sentil.Monitor` evaluates offline and incrementally while honoring a `sentil.Config` time mode, and it is what the specification library's `into_monitor` returns, carrying a spec's recommended settings. `sentil.Config` holds the time mode.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `Monitor` | `m = sentil.Monitor(spec, config)` | from a string or a `sentil.Formula` (consumed); `config` an optional `sentil.Config` |
+| `robustness` | `r = m.robustness(trace)` | robustness honoring the config's time mode |
+| `robustness_signal` | `r = m.robustness_signal(trace)` | robustness at every sample |
+| `violations` | `v = m.violations(trace)` | the failing `[start, end]` spans |
+| `symbol_index` | `idx = m.symbol_index(name)` | the 1-based packed position, or `[]` if unused |
+| `update` | `r = m.update(time, sample)` | fold one sample incrementally |
+| `update_packed` | `r = m.update_packed(time, values)` | fold one sample, values in `symbol_index` order |
+| `reset` | `m.reset()` | clear the streaming state |
+| `last_probability` | `p = m.last_probability()` | the live estimate, `NaN` when deterministic |
+| `formula` | `f = m.formula()` | a copy of the monitored formula |
+| `config` | `c = m.config()` | a copy of its config |
+| `check` | `r = m.check(trace, lifting)` | SMC with the monitor's own settings |
+| `check_sequential` | `r = m.check_sequential(trace, lifting, sprt)` | SPRT with a `sentil.SprtConfig` |
+| `check_rare` | `r = m.check_rare(system)` | splitting over a `sentil.StochasticSystem` |
+| `Config` | `cfg = sentil.Config(mode)` | `mode` an optional `sentil.TimeMode`, default `Discrete` |
+| `set_time` | `cfg.set_time(mode)` | set the time mode |
+| `time_mode` | `md = cfg.time_mode()` | read it back |
+
+| Name | Signature | What it does |
+|---|---|---|
+| `OnlineMonitor` | `m = sentil.OnlineMonitor(text)` | a streaming monitor from a formula string |
+| `from_formula` | `m = sentil.OnlineMonitor.from_formula(phi)` | from a `sentil.Formula`, borrowed |
+| `with_lifting` | `m = sentil.OnlineMonitor.with_lifting(phi, lifting, config)` | probabilistic streaming; formula borrowed, `config` an optional `sentil.SmcConfig` |
+| `variable_count` | `n = m.variable_count()` | how many variables the formula reads |
+| `symbol_index` | `idx = m.symbol_index(name)` | the 1-based packed position, or `[]` |
+| `update` | `r = m.update(time, sample)` | fold a struct or `containers.Map` sample |
+| `update_packed` | `r = m.update_packed(time, values)` | the allocation-free hot path |
+| `run` | `r = m.run(trace)` | replay a whole trace; a struct array of per-sample verdicts |
+| `reset` | `m.reset()` | clear the streaming state |
+| `last_probability` | `p = m.last_probability()` | the live estimate, or `NaN` |
+
+### Many formulas on one clock
+
+`sentil.MultiMonitor` advances any number of named streaming monitors with one update; `sentil.FormulaBank` is its offline counterpart for batch evaluation.
+
+```matlab
+m = sentil.MultiMonitor();
+m.add('floor', 'x > 0');
+m.add('ceiling', 'x < 10');
+r = m.update(0, struct('x', 3));
+% r('floor').value is 3, r('ceiling').value is 7
+```
+
+| Name | Signature | What it does |
+|---|---|---|
+| `MultiMonitor` | `m = sentil.MultiMonitor()` | an empty set of monitors |
+| `add` | `m.add(id, spec)` | register a formula under an id, from a string or a `sentil.Formula` (borrowed) |
+| `add_probabilistic` | `m.add_probabilistic(id, phi, lifting, config)` | a `P`-wrapped formula tracked with an ensemble; formula borrowed, `config` optional |
+| `remove` | `tf = m.remove(id)` | drop by id; whether it was present |
+| `reset` | `m.reset()` | clear every monitor's state |
+| `length` | `n = m.length()` | the number registered |
+| `is_empty` | `tf = m.is_empty()` | whether none are registered |
+| `ids` | `v = m.ids()` | the ids, in insertion order |
+| `update` | `verdicts = m.update(time, sample)` | a `containers.Map` from id to a five-field verdict |
+| `probability` | `p = m.probability(id)` | the last estimate; `NaN` for deterministic or unknown ids |
+| `probabilities` | `p = m.probabilities()` | a `containers.Map` from id to estimate |
+| `FormulaBank` | `b = sentil.FormulaBank()` | an empty bank |
+| `add` | `b.add(id, spec)` | register a formula, string or `sentil.Formula` (borrowed) |
+| `ids` | `v = b.ids()` | the ids, in insertion order |
+| `length` | `n = b.length()` | the number of formulas |
+| `is_empty` | `tf = b.is_empty()` | whether none are registered |
+| `robustness` | `r = b.robustness(trace)` | a `containers.Map` from id to value; one failing formula throws naming its id |
+| `robustness_dense` | `r = b.robustness_dense(trace)` | the dense-time counterpart |
+
+### Ring buffer
+
+Derived features often need a bounded slice of recent history; `sentil.RingBuffer` holds one, at most `capacity` samples with running statistics maintained as samples arrive. Pushing past capacity evicts the oldest sample, and queries with no answer return `[]`.
+
+```matlab
+b = sentil.RingBuffer(3);
+b.push(0, 10); b.push(1, 20); b.push(2, 30);
+b.mean()        % 20
+b.push(3, 40);  % returns the evicted sample from t = 0
+b.mean()        % 30
+```
+
+| Name | Signature | What it does |
+|---|---|---|
+| `RingBuffer` | `b = sentil.RingBuffer(capacity)` | a window holding at most `capacity` samples |
+| `push` | `evicted = b.push(time, value)` | append a sample; the evicted one, or `[]` |
+| `clear` | `b.clear()` | drop every sample |
+| `length` | `n = b.length()` | the number held |
+| `capacity` | `c = b.capacity()` | the maximum |
+| `is_empty` | `tf = b.is_empty()` | whether none are held |
+| `is_full` | `tf = b.is_full()` | whether at capacity |
+| `front` | `s = b.front()` | the oldest sample, or `[]` |
+| `back` | `s = b.back()` | the newest sample, or `[]` |
+| `get` | `s = b.get(index)` | the 1-based i-th sample from the front, or `[]` |
+| `pop_front` | `s = b.pop_front()` | remove and return the oldest, or `[]` |
+| `pop_back` | `s = b.pop_back()` | remove and return the newest, or `[]` |
+| `closest_to_time` | `s = b.closest_to_time(time)` | the held sample nearest a time, or `[]` |
+| `at_time` | `v = b.at_time(time)` | the value at an exact held time, or `[]` |
+| `between` | `s = b.between(startTime, endTime)` | the samples in `[start, end]`, a struct array |
+| `time_range` | `r = b.time_range()` | the `[start, end]` times spanned, or `[]` |
+| `mean` | `m = b.mean()` | the mean of the held values, or `[]` when empty |
+| `variance` | `v = b.variance()` | their variance |
+| `std_dev` | `s = b.std_dev()` | their standard deviation |
+| `min` | `m = b.min()` | the smallest held value |
+| `max` | `m = b.max()` | the largest held value |
+| `recompute_statistics` | `b.recompute_statistics()` | rebuild the running statistics from scratch |
+
+### Noise models and lifting
+
+`sentil.NoiseModel` is one noise distribution, named directly or fitted from calibration data. `sentil.LiftingRegistry` maps variables to models so a clean trace lifts into noisy realizations.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `dirac` | `n = sentil.NoiseModel.dirac(value)` | a point mass |
+| `gaussian` | `n = sentil.NoiseModel.gaussian(mean, stdDev)` | a normal distribution |
+| `uniform` | `n = sentil.NoiseModel.uniform(low, high)` | uniform on an interval |
+| `log_normal` | `n = sentil.NoiseModel.log_normal(mu, sigma)` | positive noise whose logarithm is Gaussian |
+| `exponential` | `n = sentil.NoiseModel.exponential(lambda)` | positive noise, densest at zero |
+| `gamma` | `n = sentil.NoiseModel.gamma(shape, scale)` | right-skewed positive noise |
+| `beta` | `n = sentil.NoiseModel.beta(alpha, betaParam)` | noise on the unit interval |
+| `weibull` | `n = sentil.NoiseModel.weibull(shape, scale)` | positive noise with a shape-controlled tail |
+| `rayleigh` | `n = sentil.NoiseModel.rayleigh(scale)` | nonnegative magnitude noise |
+| `gumbel` | `n = sentil.NoiseModel.gumbel(location, scale)` | extreme-value noise, models maxima |
+| `cauchy` | `n = sentil.NoiseModel.cauchy(location, scale)` | heavy-tailed, no finite mean |
+| `student_t` | `n = sentil.NoiseModel.student_t(df, location, scale)` | Gaussian-like with heavy tails |
+| `truncated_normal` | `n = sentil.NoiseModel.truncated_normal(mean, stdDev, lower, upper)` | a Gaussian clipped to an interval |
+| `poisson` | `n = sentil.NoiseModel.poisson(lambda)` | counts on the nonnegative integers |
+| `binomial` | `n = sentil.NoiseModel.binomial(trials, p)` | success counts over `trials` draws |
+| `bootstrap` | `n = sentil.NoiseModel.bootstrap(residuals)` | the empirical distribution, resampled |
+| `mixture` | `n = sentil.NoiseModel.mixture(weights, models)` | a weighted mixture; the component models are consumed |
+
+Fitting, serialization, and moments:
+
+| Name | Signature | What it does |
+|---|---|---|
+| `fit_gaussian` | `n = sentil.NoiseModel.fit_gaussian(samples)` | maximum-likelihood Gaussian fit |
+| `fit_bootstrap` | `n = sentil.NoiseModel.fit_bootstrap(samples)` | an empirical model from the samples |
+| `fit_bootstrap_reservoir` | `n = sentil.NoiseModel.fit_bootstrap_reservoir(samples, maxSamples)` | bootstrap with reservoir subsampling |
+| `fit_gaussian_mixture` | `n = sentil.NoiseModel.fit_gaussian_mixture(samples, components, maxIters)` | a mixture fit by expectation-maximization |
+| `residuals` | `r = sentil.NoiseModel.residuals(groundTruth, sensor, interaction)` | the fitting input from paired readings; `interaction` defaults to `Additive` |
+| `from_json` | `n = sentil.NoiseModel.from_json(json)` | rebuild a serialized model |
+| `from_file` | `n = sentil.NoiseModel.from_file(path)` | load a model file |
+| `to_json` | `s = n.to_json()` | the model as JSON |
+| `mean` | `m = n.mean()` | the analytic mean, or `[]` where undefined, as for Cauchy |
+| `variance` | `v = n.variance()` | the analytic variance, or `[]` where undefined |
+
+| Name | Signature | What it does |
+|---|---|---|
+| `LiftingRegistry` | `reg = sentil.LiftingRegistry()` | an empty registry |
+| `register` | `reg.register(variable, model, interaction)` | attach a model (consumed); `interaction` a `sentil.NoiseInteraction`, default `Additive` |
+| `variables` | `v = reg.variables()` | the variables carrying a model, sorted |
+| `is_empty` | `tf = reg.is_empty()` | whether none carry a model |
+| `lift` | `t = reg.lift(trace, seed)` | one seeded noisy realization of the trace |
+
+### Statistics and configs
+
+`sentil.Stats` exposes the interval estimators, the sample-size rules, and the sequential tests directly; each interval returns a struct with `lower`, `upper`, and `level`, and `level` defaults to 0.95 throughout.
+
+```matlab
+ci = sentil.Stats.wilson(50, 100);                    % lower 0.403831, upper 0.596169
+sentil.Stats.z_score(0.95)                            % 1.959964
+sentil.Stats.chernoff_hoeffding_samples(0.1, 0.05)    % 185
+sentil.Stats.wilson_samples(0.01, 0.95)               % 9604
+```
+
+| Name | Signature | What it does |
+|---|---|---|
+| `wilson` | `ci = sentil.Stats.wilson(successes, trials, level)` | the Wilson score interval, the default everywhere |
+| `clopper_pearson` | `ci = sentil.Stats.clopper_pearson(successes, trials, level)` | the exact, conservative interval |
+| `jeffreys` | `ci = sentil.Stats.jeffreys(successes, trials, level)` | the Jeffreys-prior interval |
+| `agresti_coull` | `ci = sentil.Stats.agresti_coull(successes, trials, level)` | the adjusted Wald interval |
+| `interval` | `ci = sentil.Stats.interval(method, successes, trials, level)` | any of the four by a `sentil.IntervalMethod` |
+| `z_score` | `z = sentil.Stats.z_score(level)` | the two-sided critical value |
+| `chernoff_hoeffding_samples` | `n = sentil.Stats.chernoff_hoeffding_samples(epsilon, delta)` | a priori samples for a target error and confidence |
+| `wilson_samples` | `n = sentil.Stats.wilson_samples(epsilon, level)` | samples for a target Wilson half-width |
+| `sequential_test` | `r = sentil.Stats.sequential_test(source, config)` | SPRT over a Bernoulli source, a function returning a logical per draw |
+| `bayes_sequential_test` | `r = sentil.Stats.bayes_sequential_test(source, config)` | the Bayesian sequential test over the same kind of source |
+
+`sentil.Gpu.is_available()` reports whether a usable GPU device is present; it is the check to run before `check_rare_event_gpu`.
+
+The six configuration types are value classes whose properties validate on assignment. Their defaults:
+
+| Class | Constructor | Properties and defaults | Used by |
+|---|---|---|---|
+| `sentil.SmcConfig` | `sentil.SmcConfig` | `samples` 10000, `confidence` 0.95, `seed` 42, `method` `Wilson` | `check`, `with_lifting`, `add_probabilistic` |
+| `sentil.SprtConfig` | `sentil.SprtConfig(p0, p1)` | `p0`, `p1`, `alpha` 0.05, `beta` 0.05, `max_samples` 100000, `seed` 42 | `check_sequential`, `sequential_test` |
+| `sentil.BayesConfig` | `sentil.BayesConfig(threshold)` | `threshold`, `bayes_factor` 100, `max_samples` 100000, `seed` 42 | `check_bayesian`, `bayes_sequential_test` |
+| `sentil.RareEventConfig` | `sentil.RareEventConfig` | `particles` 4096, `margin` 0, `seed` 42 | `check_rare_event`, `check_rare_event_gpu` |
+| `sentil.CmaConfig` | `sentil.CmaConfig` | `population` 0 (auto from dimension), `max_generations` 300, `initial_step` 0.3, `tol_step` 1e-11, `seed` 42 | `falsify`, `cma_es`, `cma_es_batched` |
+| `sentil.SmoothConfig` | `sentil.SmoothConfig` | `temperature` 10, `kind` `LogSumExp` | `synthesize`, the smooth gradients, `Controller` |
+
+### Stochastic systems and simulation models
+
+Rare-event estimation and chance-constraint validation need a system the engine can simulate from a seed. `sentil.StochasticSystem.custom` wraps MATLAB callbacks; `sentil.SimModel` declares the dynamics as engine-side expressions, which is what the GPU path requires.
+
+The callback contract: `init(seed)` returns the initial state row and `step(prev, time, seed)` returns the next one. Each must return its row; an error raised inside either surfaces as your own MATLAB error, or as `sentil:callback` if it carries no identifier.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `custom` | `s = sentil.StochasticSystem.custom(variables, dt, horizon, init, step)` | a system driven by MATLAB functions |
+| `simulate` | `t = s.simulate(seed)` | one full-horizon trajectory, a `sentil.Trace` |
+| `variables` | `v = s.variables()` | the variable names |
+| `dt` | `d = s.dt()` | the time step |
+| `horizon` | `h = s.horizon()` | the trajectory length, in steps |
+
+`sentil.SimExpr` builds the declarative update rules; positions are 1-based, and the arithmetic combinators consume their operands.
+
+```matlab
+x0 = sentil.SimExpr.constant(0);
+step = sentil.SimExpr.prev(1).add(sentil.SimExpr.noise(1));
+model = sentil.SimModel.create({'x'}, 1.0, 10, x0, step, sentil.NoiseModel.gaussian(0, 1));
+t = model.simulate(42);   % a random walk, as a sentil.Trace
+```
+
+| Name | Signature | What it does |
+|---|---|---|
+| `create` | `m = sentil.SimModel.create(variables, dt, horizon, init, advance, noise)` | `init` and `advance` are `sentil.SimExpr` arrays, one per variable, `noise` a `sentil.NoiseModel` array; all consumed |
+| `simulate` | `t = m.simulate(seed)` | one full-horizon trajectory |
+| `variables` | `v = m.variables()` | the variable names |
+| `dt` | `d = m.dt()` | the time step |
+| `horizon` | `h = m.horizon()` | the trajectory length, in steps |
+| `to_stochastic_system` | `s = m.to_stochastic_system()` | a sampling-ready system for the CPU rare-event path |
+| `SimExpr.prev` | `e = sentil.SimExpr.prev(variable)` | a variable's previous value, by position |
+| `SimExpr.time` | `e = sentil.SimExpr.time()` | the current time |
+| `SimExpr.constant` | `e = sentil.SimExpr.constant(value)` | a constant |
+| `SimExpr.noise` | `e = sentil.SimExpr.noise(source)` | a draw from a noise source, by position |
+| `SimExpr.call` | `e = sentil.SimExpr.call(name, args)` | a named function of argument expressions (consumed) |
+| `add`, `sub`, `mul`, `div` | `e = a.add(b)` and so on | arithmetic; both operands consumed |
+
+### Synthesis classes
+
+`sentil.Synthesis` holds the entry points, `sentil.SystemModel` the dynamics, `sentil.Bounds` the box constraints. The remaining classes close the loop: online control, shielding, and risk validation.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `synthesize` | `r = sentil.Synthesis.synthesize(model, spec, bounds, backend, maxIters, population, smooth)` | find an input sequence; `bounds` optional (unbounded), `backend` default `Auto`, `maxIters` and `population` 0 for the engine defaults |
+| `soft_min` | `v = sentil.Synthesis.soft_min(values, temperature)` | a smooth lower bound on the minimum; `temperature` default 10 |
+| `soft_max` | `v = sentil.Synthesis.soft_max(values, temperature)` | the smooth counterpart for the maximum |
+| `maximize` | `[point, value] = sentil.Synthesis.maximize(objective, start, bounds, maxIters)` | projected gradient ascent; `objective` returns `[value, gradient]` |
+| `cma_es` | `[point, value] = sentil.Synthesis.cma_es(objective, start, bounds, config)` | gradient-free search; `objective` returns a scalar, `config` a `sentil.CmaConfig` |
+| `cma_es_batched` | `[point, value] = sentil.Synthesis.cma_es_batched(objective, start, bounds, config)` | the objective scores a population-by-dimension matrix, returning a column of scores |
+| `mine_tightest_parameter` | `p = sentil.Synthesis.mine_tightest_parameter(make, traces, lower, upper)` | the tightest parameter in `[lower, upper]` for which `make(param)` holds on every trace |
+| `SystemModel.linear` | `m = sentil.SystemModel.linear(A, B, x0, variables, dt, horizon)` | a linear model `x[t+1] = A x[t] + B u[t]`; `A` n-by-n, `B` n-by-b |
+| `SystemModel.custom` | `m = sentil.SystemModel.custom(variables, dt, horizon, initialState, inputDimension, rollout)` | nonlinear or black-box dynamics; `rollout(initial, input)` returns a variables-by-(horizon+1) matrix |
+| `input_dimension` | `d = m.input_dimension()` | the optimized input length: per-step width times horizon |
+| `Bounds` | `b = sentil.Bounds(lower, upper)` | per-coordinate box bounds |
+| `Bounds.unbounded` | `b = sentil.Bounds.unbounded(dimension)` | bounds that constrain nothing |
+| `clamp` | `p = b.clamp(point)` | project a point into the box |
+| `dimension` | `d = b.dimension()` | the number of coordinates |
+| `lower` | `l = b.lower()` | the lower limits |
+| `upper` | `u = b.upper()` | the upper limits |
+| `Controller` | `c = sentil.Controller(model, spec, inputWidth, budgetNs, bounds, smooth)` | a receding-horizon controller; model and spec consumed, `budgetNs` the per-step budget in nanoseconds |
+| `control` | `u = c.control(state)` | plan from the current state and return an input within the budget |
+| `SafetyFilter` | `sf = sentil.SafetyFilter(bounds)` | a least-restrictive shield; the bounds are consumed |
+| `filter` | `u = sf.filter(nominal, barrierA, barrierB)` | the input nearest `nominal` satisfying the bounds and each barrier row `a_i * u >= b_i`; omit the barriers for box-only clamping |
+| `ChanceConstraint` | `cc = sentil.ChanceConstraint(spec, probability, confidence, tightening)` | the spec (consumed) must hold with at least `probability`; `confidence` 0 means 0.95, `tightening` adds a conservative margin |
+| `validate` | `r = cc.validate(system, samples, seed)` | estimate over a `sentil.StochasticSystem`; defaults 1000 and 42; returns `estimate`, `lower_bound`, `samples`, `holds` |
+| `Numerics.solve_qp` | `u = sentil.Numerics.solve_qp(P, q, G, h, maxIters)` | minimize `0.5 * u'*P*u + q'*u` subject to `G*u <= h`; `maxIters` default 1000 |
+| `Numerics.solve_spd` | `x = sentil.Numerics.solve_spd(A, b)` | solve `A*x = b` for symmetric positive-definite `A` |
+| `Numerics.symmetric_eigen` | `e = sentil.Numerics.symmetric_eigen(M)` | eigendecomposition of a symmetric matrix; a struct with `values` and `vectors` as rows |
+
+### Specifications library
+
+`sentil.SpecBuilder` loads a spec by name from the embedded [specifications library](/docs/reference/specifications/catalog), so a property can start from a cited standard rather than from scratch. `with_variant`, `with_param`, and `into_monitor` consume the builder, so keep the returned one and rebuild from the name to retry.
+
+```matlab
+names = sentil.SpecBuilder.available();          % every embedded spec, sorted
+b = sentil.SpecBuilder('aerospace/airspeed_envelope');
+b = b.with_param('V_stall', 110);                % consumes; keep the return value
+phi = b.build_probabilistic_formula();
+reg = b.build_lifting_registry();                % the spec's own noise models
+```
+
+| Name | Signature | What it does |
+|---|---|---|
+| `available` | `names = sentil.SpecBuilder.available()` | every embedded specification name, sorted |
+| `SpecBuilder` | `b = sentil.SpecBuilder(name)` | a builder for the named spec |
+| `from_file` | `b = sentil.SpecBuilder.from_file(path)` | a builder from a spec template file |
+| `with_variant` | `b = b.with_variant(variant)` | select a named variant; consumes the builder |
+| `with_param` | `b = b.with_param(name, value)` | override a parameter; consumes the builder |
+| `available_variants` | `v = b.available_variants()` | the variant names, sorted |
+| `build_deterministic` | `s = b.build_deterministic()` | the deterministic formula text, parameters filled in |
+| `build_probabilistic` | `s = b.build_probabilistic()` | the probabilistic formula text |
+| `build_formula` | `phi = b.build_formula()` | the deterministic formula, parsed |
+| `build_probabilistic_formula` | `phi = b.build_probabilistic_formula()` | the probabilistic formula, parsed |
+| `build_lifting_registry` | `reg = b.build_lifting_registry()` | a registry from the spec's resolved noise models |
+| `parameters_json` | `s = b.parameters_json()` | the resolved parameters as JSON |
+| `into_monitor` | `m = b.into_monitor()` | a `sentil.Monitor` with the spec's recommended settings; consumes the builder |
+| `smc_settings` | `s = b.smc_settings()` | the recommended SMC settings, or `[]` |
+| `sprt_settings` | `s = b.sprt_settings()` | the recommended SPRT settings, or `[]` |
+| `ams_settings` | `s = b.ams_settings()` | the recommended rare-event settings, or `[]` |
+
+### Enums
+
+Each enum is an `int32`-backed MATLAB enumeration class matching the C ABI constant.
+
+| Enum | Members | Where it is used |
+|---|---|---|
+| `sentil.TimeMode` | `Discrete`, `Dense` | `Config.set_time` |
+| `sentil.Interpolation` | `Linear`, `Hold`, `Cubic` | `resample` and `prepare`; `Hold` is the engine's zero-order hold, `Cubic` its cubic spline |
+| `sentil.IntervalMethod` | `Wilson`, `ClopperPearson`, `Jeffreys`, `AgrestiCoull` | `SmcConfig.method`, `Stats.interval` |
+| `sentil.NoiseInteraction` | `Additive`, `Multiplicative` | `register`'s fourth argument, `NoiseModel.residuals` |
+| `sentil.ComparisonOp` | `Lt`, `Le`, `Gt`, `Ge`, `Eq`, `Ne` | `Formula.predicate` |
+| `sentil.BinaryOp` | `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow` | `Expr.binary` |
+| `sentil.ProbabilityOp` | `Ge`, `Gt`, `Le`, `Lt` | `Formula.probability` |
+| `sentil.SprtVerdict` | `AcceptH0`, `AcceptH1`, `Inconclusive` | `check_sequential` results |
+| `sentil.BayesVerdict` | `Holds`, `Fails`, `Inconclusive` | `check_bayesian` results |
+| `sentil.SoftKind` | `LogSumExp`, `ArithmeticGeometricMean` | `SmoothConfig.kind` |
+| `sentil.Backend` | `Auto`, `Gradient`, `CmaEs`, `Milp` | `synthesize`'s backend argument and result |
+
+### Toolbox functions
+
+The functions that live beside the package rather than in it.
+
+| Name | Signature | What it does |
+|---|---|---|
+| `sentil.version` | `v = sentil.version()` | the linked engine version, a struct with `major`, `minor`, `patch` |
+| `build_sentil` | `build_sentil()` | build `libsentil` with cargo if missing, compile the MEX gateway and the S-Function, copy the library beside each |
+| `create_sentil_library` | `create_sentil_library(libName, overwrite)` | write the Simulink block library; defaults `"sentil_lib"` and `false`, so an existing file is loaded rather than overwritten |
+| `package_sentil` | `out = package_sentil(outputFile)` | build the distributable toolbox, default `"Sentil.mltbx"`; needs R2023a or newer for the ToolboxOptions API |
+
+## Related pages
+
+<Cards>
+<Card title="Formula grammar" href="/docs/reference/language/grammar" description="The operators, aliases, functions, and windows a formula string accepts." />
+<Card title="Handling errors across bindings" href="/docs/languages/across/handle-errors" description="How the sentil identifiers map to the same failures in every other language." />
+<Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="What Auto picks, and when gradient, CMA-ES, or MILP is the right call." />
+<Card title="Insulin pump case study" href="/docs/start/case-studies/insulin-pump" description="A Simulink closed loop monitored with the SENTIL Monitor block." />
+</Cards>
