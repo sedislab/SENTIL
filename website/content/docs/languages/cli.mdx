@@ -1,0 +1,932 @@
+---
+title: "Command line"
+description: "Install the sentil binary, run checks, live monitors, statistical estimates, and synthesis from a shell, and look up every verb, flag, exit code, and output field in one place."
+---
+
+The `sentil` binary runs the engine with no code to write. It is built for a pipe: data on stdout, progress and errors on stderr, a verdict in the exit code, and a stable JSON contract for scripts. Use it for batch checks, CI gates, live monitoring, and the ad-hoc questions that do not justify a program.
+
+## Install
+
+Five package managers carry the CLI: Homebrew on macOS and Linux, Scoop and winget on Windows, the AUR on Arch, and `cargo install` wherever a Rust toolchain lives. Reach for the one your machine already has. Where none fits, every release attaches a prebuilt archive per platform, and a source build covers an unreleased change or a target the release matrix misses. ARM Linux has three archives of its own, described under [on a Raspberry Pi](#on-a-raspberry-pi).
+
+### From a package manager
+
+<Tabs groupId="cli-install" persist items={["Homebrew", "Scoop", "Winget", "AUR", "Cargo"]}>
+<Tab value="Homebrew">
+```bash
+brew install sedislab/sentil/sentil
+```
+
+The formula lives in the `sedislab/sentil` tap and pulls the archive for your platform: macOS on Apple silicon or Intel, Linux on x86_64. It links `sentil` into the Homebrew prefix and installs the man page and the bash, zsh, and fish completions where each shell looks for them.
+</Tab>
+<Tab value="Scoop">
+```powershell
+scoop bucket add sedislab https://github.com/sedislab/scoop-sentil
+scoop install sentil
+```
+
+Windows x64. Scoop unpacks the release zip and shims `bin\sentil.exe` into its own shims directory, which is already on your PATH.
+</Tab>
+<Tab value="Winget">
+```powershell
+winget install SEDIS.SENTIL
+```
+
+Windows x64. Winget installs the release zip as a portable package with `sentil` as its command alias. Open a new terminal afterwards so the PATH entry is picked up.
+</Tab>
+<Tab value="AUR">
+```bash
+yay -S sentil
+```
+
+Or without a helper:
+
+```bash
+git clone https://aur.archlinux.org/sentil.git
+cd sentil && makepkg -si
+```
+
+The package is `sentil`, x86_64, and it unpacks the published archives rather than compiling. It carries the CLI and the C library both: `/usr/bin/sentil`, the man page and all three completion scripts, plus `/usr/lib/libsentil.so`, `/usr/include/sentil.h`, and the pkg-config and CMake files.
+</Tab>
+<Tab value="Cargo">
+```bash
+cargo install sentil-cli
+```
+
+The crate is `sentil-cli`; the binary it builds is named `sentil` and lands in `~/.cargo/bin`, which rustup already put on your PATH. Add `--features formats` if the binary should read Parquet, Arrow, and SQLite traces; the default build reads the text formats and MATLAB `.mat`.
+</Tab>
+</Tabs>
+
+All five leave the binary on your PATH, so one check covers them:
+
+```bash
+sentil --version
+```
+
+The first line reads `sentil 0.3.0`, and the commit hash and commit date the binary was built from follow it.
+
+### From a GitHub release
+
+Each tagged release attaches one archive per platform. Inside is `bin/sentil`, or `bin\sentil.exe` on Windows, the four completion scripts under `completions/`, the man page at `man/sentil.1`, both licenses, and the package README.
+
+| Platform | Asset |
+| --- | --- |
+| Linux x86_64 | `sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS Apple silicon | `sentil-0.3.0-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `sentil-0.3.0-x86_64-apple-darwin.tar.gz` |
+| Windows x86_64 | `sentil-0.3.0-x86_64-pc-windows-msvc.zip` |
+| ARM Linux, Raspberry Pi included | three archives, [below](#on-a-raspberry-pi) |
+
+No checksum file is published beside the archives. The Homebrew formula, the Scoop manifest, the winget manifest, and the AUR PKGBUILD each pin the SHA-256 of the exact file they fetch, so a package-manager install verifies itself and a hand download does not.
+
+<Steps>
+<Step>
+
+Download the archive for your platform and unpack it. It expands into a directory named after itself, `sentil-0.3.0-<target>`.
+
+<OsTabs>
+<OsTab value="Linux">
+
+```bash
+curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz
+tar xzf sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz
+cd sentil-0.3.0-x86_64-unknown-linux-gnu
+```
+
+</OsTab>
+<OsTab value="macOS">
+
+```bash
+curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-apple-darwin.tar.gz
+tar xzf sentil-0.3.0-aarch64-apple-darwin.tar.gz
+cd sentil-0.3.0-aarch64-apple-darwin
+```
+
+On an Intel Mac, swap `aarch64-apple-darwin` for `x86_64-apple-darwin` in all three lines.
+
+</OsTab>
+<OsTab value="Windows">
+
+```powershell
+$url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-pc-windows-msvc.zip"
+Invoke-WebRequest -Uri $url -OutFile sentil.zip
+Expand-Archive sentil.zip -DestinationPath .
+```
+
+</OsTab>
+</OsTabs>
+
+</Step>
+<Step>
+
+Put the binary where your shell will find it, and the completions and man page where their readers look.
+
+<OsTabs>
+<OsTab value="Linux">
+
+```bash
+sudo cp bin/sentil /usr/local/bin/
+sudo cp completions/sentil.bash /usr/share/bash-completion/completions/sentil
+sudo cp completions/_sentil /usr/share/zsh/site-functions/_sentil
+sudo cp completions/sentil.fish /usr/share/fish/vendor_completions.d/sentil.fish
+sudo cp man/sentil.1 /usr/local/share/man/man1/
+```
+
+`/usr/local/bin` is on the default PATH on a stock Linux install. Copy only the completion file for the shell you use, and `mkdir -p` its directory first if the distribution has not created it.
+
+</OsTab>
+<OsTab value="macOS">
+
+```bash
+sudo cp bin/sentil /usr/local/bin/
+sudo cp man/sentil.1 /usr/local/share/man/man1/
+```
+
+`/usr/local/bin` is on the default PATH on both Apple silicon and Intel. Completion placement has no single convention on macOS: put `completions/_sentil` in a directory on your `fpath` for zsh, or `completions/sentil.bash` wherever your bash-completion install reads from. Homebrew does that placement for you, which is the reason to prefer it here.
+
+</OsTab>
+<OsTab value="Windows">
+
+Move the unpacked folder somewhere permanent first, then add its `bin` to your user PATH:
+
+```powershell
+$bin = "$PWD\sentil-0.3.0-x86_64-pc-windows-msvc\bin"
+$user = [Environment]::GetEnvironmentVariable('Path', 'User')
+[Environment]::SetEnvironmentVariable('Path', "$user;$bin", 'User')
+```
+
+The change reaches a new terminal, not the one you typed it in. For PowerShell completion, dot-source `completions\_sentil.ps1` from your profile by adding `. <folder>\completions\_sentil.ps1` to the file `$PROFILE` names. Windows has no man reader; `sentil <verb> --help` prints the same content.
+
+</OsTab>
+</OsTabs>
+
+</Step>
+<Step>
+
+Check it.
+
+```bash
+sentil --version
+```
+
+The first line reads `sentil 0.3.0`. If the shell reports that the command is not found, the binary is not on your PATH yet, and on Windows that usually means the terminal predates the PATH edit.
+
+</Step>
+</Steps>
+
+### From source
+
+A source build needs a Rust toolchain from [rustup.rs](https://rustup.rs) and a linker, which comes from a different place on each system. Nothing else: the CLI links the engine statically, so there is no shared library to find and no environment variable to set.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The distribution's compiler package supplies the linker: `build-essential` on Debian and Ubuntu, `gcc` and `glibc-devel` on Fedora and RHEL.
+
+</OsTab>
+<OsTab value="macOS">
+
+The Command Line Tools supply the linker.
+
+```bash
+xcode-select --install
+```
+
+</OsTab>
+<OsTab value="Windows">
+
+Rust links through MSVC, so install the Visual Studio Build Tools with the "Desktop development with C++" workload. The rustup installer prompts for this and can trigger it for you.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Clone the repository.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+```
+
+</Step>
+<Step>
+
+Install the binary onto your PATH, or build it in place if you are working on the engine.
+
+```bash
+cargo install --path sentil-cli
+# or build in place; the binary lands at target/release/sentil
+cargo build --release -p sentil-cli
+```
+
+Append `--features formats` for the Parquet, Arrow, and SQLite readers, or `--features gpu` to build the linked engine with its GPU path. The CLI takes `sentil-core` as a path dependency, so an edit under `sentil-core/` lands in the next build with no library to relink. Drop `--release` from the `cargo build` line for a faster compile and a slower monitor; `cargo install` optimizes either way.
+
+</Step>
+<Step>
+
+A source build installs no completions and no man page, so generate them from the binary itself and place them as in [from a GitHub release](#from-a-github-release) above.
+
+```bash
+sentil completion bash > sentil.bash
+sentil man > sentil.1
+```
+
+`completion` also writes `elvish`, `fish`, `powershell`, and `zsh` scripts, and `man` writes roff to stdout.
+
+</Step>
+<Step>
+
+Run the CLI's tests, then the same version check as the other routes.
+
+```bash
+cargo test -p sentil-cli
+sentil --version
+```
+
+The test run ends in `test result: ok`, and the version line reads `sentil 0.3.0`.
+
+</Step>
+</Steps>
+
+The same checkout builds every other binding against that core; [installing from source](/docs/start/install#from-source) is the shared entry point.
+
+## On a Raspberry Pi
+
+The same release page carries the Pi archives. The gnu builds bundle more than the CLI: `libsentil`, the C header, and the pkg-config and CMake files ride along. Pick by board and OS:
+
+| Board and OS | Archive |
+| --- | --- |
+| 64-bit Pi OS on a Pi 3, 4, 5, or Zero 2 W | `sentil-0.3.0-aarch64-unknown-linux-gnu.tar.gz` |
+| Any 64-bit ARM, static single-file CLI only | `sentil-0.3.0-aarch64-unknown-linux-musl.tar.gz` |
+| 32-bit Pi OS | `sentil-0.3.0-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+The static musl build is one file with no library dependencies, the right shape for a sensor loop you copy onto a board and forget. From inside the extracted archive:
+
+<Steps>
+<Step>
+Install the CLI and confirm it runs:
+
+```bash
+sudo cp bin/sentil /usr/local/bin/
+sentil --version
+```
+
+Completions and the man page install the same way: `sudo cp completions/sentil.bash /usr/share/bash-completion/completions/sentil` and `sudo cp man/sentil.1 /usr/local/share/man/man1/`.
+</Step>
+<Step>
+From the gnu archive, install the library as well. Stock Pi OS has no `/usr/local/lib/pkgconfig`, so create it first:
+
+```bash
+sudo cp lib/libsentil.so lib/libsentil.a /usr/local/lib/
+sudo cp include/sentil.h /usr/local/include/
+sudo mkdir -p /usr/local/lib/pkgconfig
+sudo cp lib/pkgconfig/sentil.pc /usr/local/lib/pkgconfig/
+sudo cp -r lib/cmake /usr/local/lib/
+sudo ldconfig
+```
+</Step>
+<Step>
+Verify both halves: `pkg-config --modversion sentil` prints `0.3.0`, and CMake finds the library through `find_package(Sentil CONFIG)`.
+</Step>
+<Step>
+Point a sensor at a live monitor. The sensor process emits one JSON object per line, such as `{"time": 0, "temperature": 79.5}`:
+
+```bash
+sensor | sentil monitor -f 'G (temperature < 80)'
+```
+
+The per-sample cost is flat, so the loop keeps up at sensor rates; measured Pi 4 latencies are in the [Raspberry Pi case study](/docs/start/case-studies/raspberry-pi).
+</Step>
+<Step>
+Python on a Pi is `pip install sentil`. Wheels cover 64-bit Pi OS; 32-bit builds from source and needs a Rust toolchain.
+</Step>
+</Steps>
+
+## Your first check
+
+`check` evaluates a formula over a recorded trace. This five-sample trace is the one every SENTIL guide starts from:
+
+```text title="speeds.csv"
+time,speed
+0,12
+1,9
+2,7
+3,4
+4,6
+```
+
+```bash
+sentil check -f 'G (speed > 5)' -t speeds.csv
+```
+
+```text
+check
+  formula     G (speed > 5)
+  trace       speeds.csv
+  semantics   dense
+  verdict     violated
+  robustness  -1.000000
+```
+
+The worst reading is the 4 at t=3, one short of the bound, so the robustness is -1.0: the same signed margin every binding computes, negative by exactly the amount the trace missed. [What is STL](/docs/monitoring/concepts/what-is-stl) covers how that number is built. The exit code of this run is 10, the violation verdict, so `sentil check ... && deploy` deploys only when the spec holds.
+
+For a machine reader, `-o json` writes one self-describing object:
+
+```bash
+sentil check -f 'G (speed > 5)' -t speeds.csv -o json
+```
+
+```text
+{"backend":"cpu","elapsed_ms":0.0098,"formula":"G (speed > 5)","robustness":-1.0,"schema_version":"1.0","semantics":"dense","trace":"speeds.csv","verb":"check","verdict":"violated"}
+```
+
+Every JSON record the tool writes carries `"schema_version": "1.0"`; each verb's fields are tabulated under [JSON output](#json-output), and the `elapsed_ms` value varies run to run, shortened here.
+
+Two flags widen the answer. `--signal` prints the robustness at every sample rather than the one value at the start, and `--violations` prints the intervals where the formula fails, `[0.000, 3.000]` on this trace. Dense semantics are the default and read the signal between samples to catch an inter-sample crossing; `--semantics discrete` evaluates only at the sample points and is the mode the next-step operator `X` needs.
+
+## Traces
+
+A trace file pairs a time column with a column per signal. `-t` accepts csv, tsv, txt, json, and ndjson, sniffing the format from the content, so an extensionless file works; a `.tsv` extension forces tab splitting, and MATLAB `.mat` files read in the default build too. `-` reads the trace from stdin, which is how a pipeline hands one forward:
+
+```bash
+cat speeds.csv | sentil check -f 'G (speed > 5)' -t -
+```
+
+When a formula variable and a column differ in name, bind them with `--map variable=column`, repeatable once per variable. Parquet, Arrow, and SQLite need a binary built with `--features formats`; the release archives are default builds, and handing them such a file fails with a help line naming that flag. The [trace formats reference](/docs/reference/methods/trace-formats) has the column conventions per format.
+
+## Monitoring a live stream
+
+`monitor`, alias `stream`, turns stdin into verdicts as each sample lands, so a live sensor pipes straight in and an alerter consumes the other end:
+
+```bash
+sensor | sentil monitor -f 'G[0,2] (speed > 5)' -o ndjson | alerter
+```
+
+Each input line is one JSON object with a `time` field and a numeric field per signal, like `{"time": 3, "speed": 4}`; `--map variable=field` bridges differing names. Several formulas run at once when seperated by semicolons, and each gets an id in order: `f0`, `f1`, and so on. Save the five samples from above as JSON lines and the ndjson stream is:
+
+```text title="samples.ndjson"
+{"time": 0, "speed": 12}
+{"time": 1, "speed": 9}
+{"time": 2, "speed": 7}
+{"time": 3, "speed": 4}
+{"time": 4, "speed": 6}
+```
+
+```bash
+sentil monitor -f 'G[0,2] (speed > 5)' -o ndjson < samples.ndjson
+```
+
+```text
+{"event":"formulas","formulas":{"f0":"G[0,2] (speed > 5)"},"schema_version":"1.0"}
+{"event":"sample","results":{"f0":{"resolved":false,"robustness":"-inf","satisfied":false}},"schema_version":"1.0","time":0.0}
+{"event":"sample","results":{"f0":{"resolved":false,"robustness":"-inf","satisfied":false}},"schema_version":"1.0","time":1.0}
+{"event":"sample","results":{"f0":{"resolved":true,"robustness":2.0,"satisfied":true}},"schema_version":"1.0","time":2.0}
+{"event":"sample","results":{"f0":{"resolved":true,"robustness":-1.0,"satisfied":false}},"schema_version":"1.0","time":3.0}
+{"event":"sample","results":{"f0":{"resolved":true,"robustness":-1.0,"satisfied":false}},"schema_version":"1.0","time":4.0}
+{"event":"summary","samples":5,"schema_version":"1.0"}
+```
+
+Three record kinds make up the stream. A `formulas` record opens it, naming each id. One `sample` record follows per input line, its `results` mapping each id to `{robustness, satisfied, resolved, probability?}`. A `summary` record closes it with the total count when stdin ends. `resolved` turns true once the window a verdict depends on has fully passed; until then `robustness` is the string `"-inf"` or `"inf"` and `satisfied` is not yet meaningful. Here the first window `[0,2]` completes at t=2 with robustness 2.0, the tightest of the margins 7, 4, and 2, and each later sample completes the next window, so the dip drags the verdict to -1.0 at t=3. Text mode prints the same result one line per sample, colored on a terminal.
+
+To monitor a probabilistic formula online, give each noisy signal a model with `--noise` and set the per-step particle count with `--particles` (default 1000). The estimate rides along the stream: text mode appends `P=` to each line, colored by whether the bound holds, and ndjson adds a `probability` field to each result. This is the CLI face of the live probability accessor every binding exposes.
+
+```bash
+sentil monitor -f 'P>=0.9(G[0,2] (speed > 5))' --noise 'speed=gaussian:0,0.3' --particles 500 < samples.ndjson
+```
+
+```text
+[t=0.000]  f0 viol P=0.0000
+[t=1.000]  f0 viol P=0.0000
+[t=2.000]  f0 sat P=1.0000
+[t=3.000]  f0 viol P=0.0000
+[t=4.000]  f0 viol P=0.0000
+```
+
+The window completing at t=2 has margin 2.0 against gaussian noise of standard deviation 0.3, better than six sigma of headroom, so every particle clears it and P=1.0000. The window at t=3 carries the dip, more than three sigma below the bound, and the estimate collapses to zero. Before t=2 no window has resolved yet.
+
+## Estimating a probabilistic specification
+
+`smc`, alias `prob`, decides a `P~p` formula offline by simulation. It lifts the base trace into an ensemble under the noise models, evaluates the inner formula on every member, and reports the satisfaction probability with a confidence interval; [what is PrSTL](/docs/probabilistic/concepts/what-is-prstl) explains the operator.
+
+```bash
+sentil smc -f 'P>=0.9(G (speed > 3))' -t speeds.csv --noise 'speed=gaussian:0,0.5' --samples 10000
+```
+
+```text
+smc
+  formula     P>=0.9(G (speed > 3))
+  algorithm   smc
+  samples     10000
+  satisfied   9763
+  probability 0.976300
+  interval    [0.973131, 0.979103] at 95%
+  verdict     holds
+```
+
+You can check that estimate by hand. The trace's closest call is the dip to 4, one unit above this bound, which is two standard deviations under noise of 0.5, so about 2.3 percent of realizations cross and the true probability sits near 0.977. The estimate lands on 0.9763 with a Wilson interval around it, and the verdict compares the result against the 0.9 threshold. The exit code follows the verdict: 0 for holds, 10 for does not hold.
+
+`--samples` takes scientific notation such as `1e6`, `--seed` (default 42) makes a run reproduce exactly, `--confidence` sets the interval level, and `--interval` chooses `wilson` or `clopper-pearson`; [choosing an interval](/docs/probabilistic/concepts/confidence-intervals) weighs them. `--algo` picks the decision procedure:
+
+| `--algo` | What runs |
+| --- | --- |
+| `smc` (default) | Monte Carlo estimation with the reported confidence interval |
+| `sprt` | Wald's sequential test; draws until it can accept, with `--indifference` setting the band around the threshold |
+| `chernoff` | sizes the sample count a priori from `--epsilon`, then runs Monte Carlo |
+| `bayes` | Bayesian sequential test; stops on a Bayes-factor cutoff |
+
+The sequential tests answer with a decision rather than an interval, and on an easy instance they answer fast:
+
+```bash
+sentil smc -f 'P>=0.9(G (speed > 3))' -t speeds.csv --noise 'speed=gaussian:0,0.5' --algo sprt
+```
+
+```text
+smc
+  formula     P>=0.9(G (speed > 3))
+  algorithm   sprt
+  samples     27
+  decision    accept_h1
+  verdict     holds
+```
+
+Twenty-seven draws instead of ten thousand, because a true probability near 0.977 is far from the 0.9 threshold and the evidence is decisive early. The [statistical methods reference](/docs/reference/methods/statistical-methods) covers all four procedures. Rare-event splitting is a library capability rather than a CLI verb; [rare events](/docs/probabilistic/concepts/rare-events) shows where it lives.
+
+When the noise should come from data instead of a guess, `fit` reads paired ground-truth and sensor columns and prints the fitted model:
+
+```bash
+sentil fit -t calib.csv --truth temp_true --sensor temp_meas --model gaussian
+```
+
+```text
+fit
+  truth       temp_true
+  sensor      temp_meas
+  interaction additive
+  model       gaussian
+  residuals   200
+  mean        0.003460
+  std         0.298769
+```
+
+That calibration file was 200 rows of a sensor wandering around the truth with noise of standard deviation 0.3, and the fit recovers 0.2988 from the residuals. `--model` fits `gaussian`, `bootstrap` (the empirical distribution), or `mixture` (fit by EM, with `--components` setting how many, default 2), and `--interaction` chooses `additive` residuals `y - g` or `multiplicative` residuals `y / g`.
+
+`lift` applies noise models to a trace and writes the lifted result as CSV on stdout, which is how you inspect what `smc` samples from:
+
+```bash
+sentil lift --noise 'speed=gaussian:0,0.5' -t speeds.csv --members 2 > lifted.csv
+```
+
+`--members` above one writes several realizations distinguished by a leading `member` column, and `--seed` (default 42) makes the draw reproducible. The full `--noise` grammar, all fifteen families with their aliases and the interaction suffix, is [below](#noise-model-grammar).
+
+## Synthesis and falsification
+
+`synth` reads an affine model from JSON and searches for the control-input sequence that best satisfies a spec on it. The model names its dynamics `a` and `b`, the start state `x0`, the `variables`, `dt`, `horizon`, and optionally `bounds`:
+
+```json title="system.json"
+{"a": [[1.0]], "b": [[1.0]], "x0": [0.0], "variables": ["x"], "dt": 1.0, "horizon": 10, "bounds": {"lower": [-1.0], "upper": [1.0]}}
+```
+
+```bash
+sentil synth -f 'F[0,10] (x > 4)' --model system.json
+```
+
+```text
+synth
+  spec        F[0,10] (x > 4)
+  method      gradient
+  result      feasible
+  robustness  6.000000
+  input       [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000]
+```
+
+This integrator gains at most 1 per step, so full push for ten steps reaches x=10 and clears the target of 4 by exactly the reported 6.0. `--method` is `gradient` by default, projected gradient ascent on the smooth robustness; `cmaes` switches to black-box search and `milp` to the complete mixed-integer encoding, a built-in branch and bound that works in the default build. An infeasible spec returns the minimally violating input rather than nothing, with exit code 10. The [synthesis backends reference](/docs/reference/methods/synthesis-backends) says when each fits.
+
+`falsify` searches the same model shape for an input that violates the spec, and its exit code 10 means a counterexample was found, so 10 reads as "the spec fails" on every verb:
+
+```bash
+sentil falsify -f 'G[0,10] (x < 5)' --model system.json
+```
+
+```text
+falsify
+  spec        G[0,10] (x < 5)
+  method      cmaes
+  result      counterexample found
+  robustness  -5.000000
+  input       [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000]
+```
+
+Its `--method` accepts `gradient` and `cmaes` only; asking for `milp` is refused at runtime with "falsify searches with gradient or cmaes, not milp". `--restarts` (default 1) reruns `cmaes` from fresh starting points.
+
+`mine` goes the other way: given a trace and a spec with a numeric parameter, it finds the tightest value that still holds. On a step response peaking at 1.08 against a reference of 1:
+
+```bash
+sentil mine --spec controls/overshoot --parameter max_overshoot -t step.csv
+```
+
+```text
+mine
+  spec        controls/overshoot
+  parameter   max_overshoot
+  range       [0, 1]
+  tightest    0.080000
+```
+
+The step overshoots by 0.08, and that is the answer. `--range LO,HI` overrides the parameter's declared range.
+
+## Specifications
+
+The premade library replaces a hand-written formula. `sentil specs` lists the catalog, `sentil specs <name>` prints one in full with its formula, parameters, variants, and references, and `--spec <name>` stands in for `-f` on any verb that takes a formula. Override a parameter with `-p key=value`, repeatable, and select a variant with `--variant`:
+
+```bash
+sentil specs --filter overshoot
+sentil specs controls/overshoot
+sentil check --spec controls/overshoot -p max_overshoot=0.1 -t step.csv
+```
+
+On the step trace above that check passes with robustness 0.02, the room between the 1.08 peak and the loosened bound of 1.1. The catalog is on the [specifications reference](/docs/reference/specifications/catalog).
+
+## Errors and exit codes
+
+Data goes to stdout; progress, logs, and errors go to stderr, and the spinner appears only on a terminal text run, so redirects stay clean. Color follows `--color`: `auto` colors a terminal, drops color in a pipe, and honors the `NO_COLOR` and `CLICOLOR_FORCE` conventions. The default SIGPIPE handler is restored at startup, so `sentil specs | head` ends the way Unix tools do. Run with no arguments, `sentil` prints the help and exits 2; it never prompts, and `init`, the one interactive verb, refuses to start without a terminal or under `--no-input`.
+
+Failures render as diagnostics with a stable code, and a parse error underlines the offending token:
+
+```text
+sentil::parse
+
+  × could not parse the formula
+   ╭────
+ 1 │ G (speed >> 5)
+   ·           ┬
+   ·           ╰── expected a value or `(`, found `>`
+   ╰────
+```
+
+| Diagnostic code | Exit | Raised for |
+| --- | --- | --- |
+| `sentil::parse` | 65 | a formula that does not parse; the span points at the token |
+| `sentil::input` | 65 | a bad argument or value, an unknown verb, or a refused method |
+| `sentil::engine` | 65 | an evaluation error from the core |
+| `sentil::not_found` | 66 | a named file that cannot be read; the help says to check the path or pass `-` for stdin |
+| `sentil::backend` | 69 | a backend that is not available |
+| `sentil::internal` | 70 | an internal failure |
+| `sentil::interrupted` | 130 | Ctrl-C; prints nothing |
+
+The exit code is the scripting contract:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | success: the spec held, the search found nothing, or the command ran |
+| 10 | a negative verdict, not an error: `check` violated, `smc` does not hold, `synth` infeasible, `falsify` found a counterexample |
+| 2 | command-line usage error, including a bare `sentil` |
+| 65 | bad input data |
+| 66 | an input file was not found |
+| 69 | a requested backend is unavailable |
+| 70 | an internal error |
+| 130 | interrupted |
+
+`monitor`, `fit`, `mine`, and `lift` exit 0 on any successful run; the verdict codes come from `check`, `smc`, `synth`, and `falsify`. `sentil explain exit-codes` prints this table in the terminal.
+
+## Reference
+
+The tables below cover every verb, flag, exit code, and output field the binary has; `sentil <verb> --help` renders the same flags inline.
+
+### The verbs
+
+| Verb | Synopsis | What it does |
+| --- | --- | --- |
+| `check` | `sentil check (-f FORMULA \| --spec NAME) -t FILE` | offline robustness over a trace; exit 0 or 10 by verdict |
+| `monitor` | `sentil monitor (-f \| --spec)` | online monitor, stdin JSON lines to stdout; alias `stream` |
+| `smc` | `sentil smc (-f \| --spec) -t FILE` | statistical model checking; alias `prob`; exit 0 or 10 by verdict |
+| `synth` | `sentil synth (-f \| --spec) --model FILE` | open-loop synthesis; exit 0 feasible, 10 infeasible |
+| `falsify` | `sentil falsify (-f \| --spec) --model FILE` | counterexample search; exit 10 when one is found |
+| `fit` | `sentil fit -t FILE --truth COL --sensor COL` | fit a noise model from paired columns |
+| `mine` | `sentil mine --spec NAME --parameter NAME -t FILE` | the tightest parameter value that still holds |
+| `lift` | `sentil lift (--spec \| --noise ...) -t FILE` | write the lifted trace as CSV on stdout |
+| `specs` | `sentil specs [NAME] [--filter TEXT]` | list or inspect the premade specifications |
+| `explain` | `sentil explain [TOPIC] [--fields]` | operator semantics, the exit codes, or a verb's JSON fields |
+| `init` | `sentil init` | interactive check builder; needs a terminal |
+| `config` | `sentil config` | show the config files consulted and the values in effect |
+| `completion` | `sentil completion <SHELL>` | print a completion script |
+| `man` | `sentil man` | print the man page, in roff, to stdout |
+| anything else | `sentil <name> ...` | expanded as a config alias, else run as `sentil-<name>` from `PATH` |
+
+### Global options
+
+Every verb takes these, placed before or after its name.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `-o`, `--output` | `text` \| `json` \| `ndjson`, default `text` | output format; reads `SENTIL_OUTPUT` when the flag is absent. `--json` is a hidden shorthand for `-o json`. |
+| `--color` | `auto` \| `always` \| `never`, default `auto` | when to colorize; reads `SENTIL_COLOR` |
+| `-q`, `--quiet` | flag | suppress progress and logs; results and errors only |
+| `--config` | `FILE` | read configuration from this file alone, replacing the search chain |
+| `--no-input` | flag | never prompt; fail instead. Set it in CI. |
+| `--help` | flag | usage for the tool, or for a verb after its name |
+| `--version` | flag | the version, then the commit hash and commit date the binary was built from |
+
+### check
+
+Evaluate a formula over a recorded trace.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `-f`, `--formula` | `FORMULA` | the formula; this or `--spec` is required |
+| `--spec` | `NAME` | a premade specification in place of a formula |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | override a spec parameter; the value must be a number |
+| `-t`, `--trace` | `FILE` or `-` | the trace, `-` for stdin |
+| `--map` | `VAR=COLUMN`, repeatable | bind a formula variable to a column |
+| `--semantics` | `dense` (default) \| `discrete` | between samples, or only at them |
+| `--signal` | flag | robustness at every sample |
+| `--violations` | flag | the violated time intervals |
+| `--backend` | `cpu` (default) | `gpu` parses but is always refused here: deterministic robustness runs on the CPU |
+
+### monitor
+
+Stream stdin to verdicts; the flags mirror `check` minus the trace, plus the online noise pair.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `-f`, `--formula` | `FORMULA[; FORMULA]` | one or more formulas, semicolon-separated; this or `--spec` |
+| `--spec` | `NAME` | a premade specification |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | override a spec parameter |
+| `--map` | `VAR=FIELD`, repeatable | bind a formula variable to an input field |
+| `--noise` | `VAR=DIST:PARAMS`, repeatable | noise model per signal; required to monitor a `P~p` formula online |
+| `--particles` | `N`, default `1000` | particles per step for the probability estimate |
+
+### smc
+
+Estimate a probabilistic specification offline.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--algo` | `smc` (default) \| `sprt` \| `chernoff` \| `bayes` | the decision procedure |
+| `--samples` | `N`, default `10000` | the sample budget; scientific notation accepted |
+| `--confidence` | `FLOAT`, default `0.95` | level for the reported interval |
+| `--interval` | `wilson` (default) \| `clopper-pearson` | which confidence interval to report |
+| `--epsilon` | `FLOAT`, default `0.05` | half-width target `chernoff` sizes the count for |
+| `--indifference` | `FLOAT`, default `0.05` | half-width of the `sprt` band around the threshold |
+| `--seed` | `N`, default `42` | base seed, so a run reproduces exactly |
+| `-f`, `--formula` | `FORMULA` | the probabilistic formula; this or `--spec` |
+| `--spec` | `NAME` | a premade specification |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | override a spec parameter |
+| `--noise` | `SIGNAL=DIST:PARAMS`, repeatable | noise per signal; overrides a spec's registered models |
+| `-t`, `--trace` | `FILE` or `-` | the base trace to lift |
+| `--map` | `VAR=COLUMN`, repeatable | bind a formula variable to a column |
+
+### synth
+
+Synthesize a control-input sequence against a model.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--method` | `gradient` (default) \| `cmaes` \| `milp` | the optimizer; `cmaes` may also be spelled `cma-es` |
+| `--model` | `FILE` | JSON with `a`, `b`, `x0`, `variables`, `dt`, `horizon`, optional `bounds` |
+| `-f`, `--formula` | `FORMULA` | the spec to satisfy; this or `--spec` |
+| `--spec` | `NAME` | a premade specification |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | override a spec parameter |
+| `--horizon` | `N` | override the model's horizon |
+| `--budget` | `N`, default `200` | the optimizer's iteration budget |
+
+### fit
+
+Fit a noise model from paired ground-truth and sensor columns.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `-t`, `--trace` | `FILE` or `-` | the calibration dataset |
+| `--truth` | `COLUMN` | the ground-truth column; required |
+| `--sensor` | `COLUMN` | the sensor-reading column; required |
+| `--interaction` | `additive` (default) \| `multiplicative` | how the noise couples to the signal |
+| `--model` | `gaussian` (default) \| `bootstrap` \| `mixture` | the model class to fit |
+| `--components` | `N`, default `2` | mixture components, for the mixture model |
+| `--map` | `VAR=COLUMN`, repeatable | bind the truth or sensor name to a column |
+
+### mine
+
+Find the tightest value of a spec parameter that still holds on a trace. There is no `-f` here; mining needs a spec's declared parameters.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--spec` | `NAME` | the specification to mine; required |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | fix another spec parameter |
+| `--parameter` | `NAME` | the parameter to mine |
+| `--range` | `LO,HI` | the search range; defaults to the parameter's declared range |
+| `-t`, `--trace` | `FILE` or `-` | the trace |
+| `--map` | `VAR=COLUMN`, repeatable | bind a formula variable to a column |
+
+### falsify
+
+Search a model's input space for a spec violation.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--method` | `cmaes` (default) \| `gradient` | the search method; `milp` is refused at runtime |
+| `--model` | `FILE` | JSON model with a `bounds` block to search within |
+| `-f`, `--formula` | `FORMULA` | the spec to try to violate; this or `--spec` |
+| `--spec` | `NAME` | a premade specification |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | override a spec parameter |
+| `--horizon` | `N` | override the model's horizon |
+| `--budget` | `N`, default `200` | the search iteration budget |
+| `--restarts` | `N`, default `1` | fresh `cmaes` starts |
+
+### lift
+
+Apply noise models to a trace and write the result as CSV on stdout.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--spec` | `NAME` | a specification whose noise models to apply |
+| `--variant` | `NAME` | a spec variant to apply |
+| `-p`, `--param` | `KEY=VALUE`, repeatable | override a spec parameter |
+| `--noise` | `SIGNAL=DIST:PARAMS`, repeatable | a noise model per signal |
+| `-t`, `--trace` | `FILE` or `-` | the trace to lift |
+| `--map` | `VAR=COLUMN`, repeatable | bind a formula variable to a column |
+| `--members` | `N`, default `1` | realizations to write; above one adds a `member` column |
+| `--seed` | `N`, default `42` | base seed, so a lift reproduces exactly |
+
+### specs, explain, and completion
+
+| Argument or flag | Shape | Meaning |
+| --- | --- | --- |
+| `specs [NAME]` | positional | inspect one specification; omit to list everything |
+| `specs --filter TEXT` | flag | list only names containing the text |
+| `explain [TOPIC]` | positional | an operator, `exit-codes`, or a verb together with `--fields`; omit to list the topics |
+| `explain --fields` | flag | describe the named verb's JSON fields |
+| `completion SHELL` | positional | `bash`, `elvish`, `fish`, `powershell`, or `zsh` |
+
+The operator topics are `predicate`, `not`, `and`, `or`, `implies`, `always`, `eventually`, `until`, `historically`, `once`, `since`, `next`, and `probabilistic`; `exit-codes` prints the exit table; and `--fields` covers `check`, `monitor`, `smc`, `synth`, `falsify`, `fit`, `mine`, `lift`, and `specs`, with `lift` describing its CSV shape since lift does not write JSON. Each operator answer pairs the grammar with the robustness rule:
+
+```bash
+sentil explain always
+```
+
+```text
+always
+  grammar    always[a, b] phi  (unbounded as always phi)
+  robustness the infimum of robustness over [t+a, t+b]; the property holds throughout the window
+```
+
+### Noise model grammar
+
+A `--noise` value reads `signal=distribution:params[:additive|:multiplicative]`, parameters comma-separated. The optional third component sets how the noise couples to the signal and defaults to `additive`; `speed=gaussian:0,0.3` adds zero-mean noise, while `gain=dirac:0.5:multiplicative` halves the signal deterministically.
+
+| Distribution | Parameters | Also spelled |
+| --- | --- | --- |
+| `gaussian` | mean, std | `normal` |
+| `uniform` | low, high | |
+| `lognormal` | mu, sigma | `log_normal` |
+| `exponential` | lambda | `exp` |
+| `gamma` | shape, scale | |
+| `beta` | alpha, beta | |
+| `dirac` | value | `constant` |
+| `weibull` | shape, scale | |
+| `rayleigh` | scale | |
+| `gumbel` | location, scale | |
+| `cauchy` | location, scale | |
+| `student_t` | df, location, scale | `studentt` |
+| `truncated_normal` | mean, std, lower, upper | `truncnormal` |
+| `poisson` | lambda | |
+| `binomial` | n, p | |
+
+The binomial trial count must be a whole number between 1 and 1,000,000. An unknown name errors with this list. `bootstrap` and `mixture` models cannot be written inline; they come from `fit` or from a spec's registered models. What each family is good for is on the [noise models reference](/docs/reference/methods/noise-models).
+
+### JSON output
+
+`-o json` writes one object on stdout; `-o ndjson` writes one object per line and is `monitor`'s natural mode. `sentil explain <verb> --fields` prints these tables in the terminal.
+
+#### check
+
+| Field | Meaning |
+| --- | --- |
+| `verb` | always `"check"` |
+| `formula` | the formula evaluated |
+| `trace` | the trace path, or `-` |
+| `semantics` | `dense` or `discrete` |
+| `verdict` | `satisfied` or `violated` |
+| `robustness` | the signed robustness |
+| `backend` | `cpu` |
+| `elapsed_ms` | wall-clock evaluation time |
+| `violations` | `[[start, end], ...]`, present with `--violations` |
+
+#### monitor
+
+| Field | Meaning |
+| --- | --- |
+| `event` | `formulas` first, then `sample` per line, then `summary` |
+| `formulas` | `{id: formula}` naming each result id (formulas record) |
+| `time` | the sample timestamp (sample records) |
+| `results` | `{id: {robustness, satisfied, resolved, probability?}}` (sample records) |
+| `satisfied` | true while the formula holds so far |
+| `robustness` | the signed robustness, or the string `"inf"`/`"-inf"`, or `"nan"` when nothing is determined yet |
+| `probability` | the running estimate, present for a `P~p` formula |
+| `samples` | the total sample count (summary record) |
+
+#### smc
+
+| Field | Meaning |
+| --- | --- |
+| `verb` | always `"smc"` |
+| `algorithm` | `smc`, `sprt`, `chernoff`, or `bayes` |
+| `samples` | the realizations drawn |
+| `satisfactions` | how many satisfied the formula (smc, chernoff) |
+| `probability` | the point estimate (smc, chernoff) |
+| `interval` | `{method, confidence, low, high}` (smc, chernoff) |
+| `decision` | `accept_h0`/`accept_h1`/`inconclusive` for sprt; `holds`/`fails`/`inconclusive` for bayes |
+| `holds` | whether the formula's probability bound is met |
+| `elapsed_ms` | wall-clock simulation time |
+
+#### synth and falsify
+
+| Field | Meaning |
+| --- | --- |
+| `verb` | `"synth"` or `"falsify"` |
+| `spec` | the formula worked against |
+| `method` | `gradient`, `cmaes`, or `milp` for synth; `gradient` or `cmaes` for falsify |
+| `feasible` / `found` | synth: whether the spec was satisfied; falsify: whether a counterexample was found |
+| `robustness` | the achieved robustness, or the best trajectory's |
+| `input` | the control-input sequence |
+
+#### fit
+
+| Field | Meaning |
+| --- | --- |
+| `verb` | always `"fit"` |
+| `truth`, `sensor` | the two columns read |
+| `interaction` | `additive` or `multiplicative` |
+| `model` | `gaussian`, `bootstrap`, or `mixture` |
+| `residuals` | the residual sample count |
+| `noise` | the fitted noise model |
+
+#### mine
+
+| Field | Meaning |
+| --- | --- |
+| `verb` | always `"mine"` |
+| `spec` | the specification mined |
+| `parameter` | the parameter mined |
+| `range` | `[lower, upper]` searched |
+| `tightest` | the tightest value that still holds |
+
+#### specs
+
+| Field | Meaning |
+| --- | --- |
+| `verb` | always `"specs"` |
+| `specs` | `[{name, domain, short}]` when listing |
+| `name`, `domain`, `description` | the inspected specification's identity |
+| `formula` | `{deterministic, probabilistic}` in SENTIL syntax |
+| `parameters` | `{name: {value, unit, range, description}}` |
+| `variants` | the named variants the template defines |
+| `references` | the citations backing it |
+
+`lift` writes CSV rather than JSON: a `time` column, one column per signal, and a leading `member` column when `--members` exceeds one.
+
+### Configuration
+
+Configuration merges from several sources so a team sets defaults once. Highest to lowest: a command-line flag, a `SENTIL_OUTPUT` or `SENTIL_COLOR` environment variable, `./sentil.toml`, the user config (`~/.config/sentil/config.toml` on Linux), `/etc/sentil/config.toml`, then the built-in default. An explicit `--config FILE` replaces the whole chain. `sentil config` shows which files exist and the values in effect, and an invalid value in a file warns rather than fails.
+
+A file sets `output` and `color`, and defines aliases that expand when the name is not a built-in verb:
+
+```toml title="sentil.toml"
+output = "json"
+color = "never"
+
+[alias]
+overshoot = "check --spec controls/overshoot"
+```
+
+With that file, `sentil overshoot -t step.csv` expands to the full check, quoting preserved, and answers in JSON. An alias body can also be an argument list, `overshoot = ["check", "--spec", "controls/overshoot"]`, for when a token would confuse whitespace splitting. An alias must expand to a real verb, and aliases do not chain.
+
+### Plugins
+
+A verb that is neither built in nor an alias runs as an external command: `sentil foo` executes `sentil-foo` found on `PATH` (with `.exe` appended on Windows), passing the remaining arguments through and forwarding the child's exit code, or 70 when that code cannot be read. This is how a team grows subcommands without changing the binary. When no executable matches either, the error suggests both mechanisms.
+
+### Build features
+
+`cargo install sentil-cli` builds with an empty default feature set, lean enough for the ARM and musl cross-builds. Two features widen it:
+
+| Feature | Adds |
+| --- | --- |
+| `formats` | Parquet, Arrow, and SQLite trace reading (`sentil/parquet`, `sentil/arrow`, `sentil/sqlite`) |
+| `gpu` | builds the linked engine with its GPU feature (`sentil/gpu`) |
+
+The CLI links the core directly rather than through the C ABI, so it runs at native engine speed.
+
+## Related pages
+
+<Cards>
+<Card title="Formula grammar" href="/docs/reference/language/grammar" description="The operators, aliases, functions, and windows a formula string accepts." />
+<Card title="Trace formats" href="/docs/reference/methods/trace-formats" description="What -t reads, and how columns map to variables." />
+<Card title="Specifications" href="/docs/reference/specifications/catalog" description="The premade catalog behind --spec." />
+<Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="When gradient, CMA-ES, and MILP each fit." />
+</Cards>
