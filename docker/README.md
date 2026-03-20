@@ -43,6 +43,16 @@ docker run --gpus all ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
 
 The GPU stage is verified on a machine with a GPU, not in continuous integration, because the hosted runners have no device.
 
+## The UPPAAL-SMC baseline
+
+UPPAAL is licensed for academic use and may not be redistributed either, so mount a local install the same way:
+
+1. Request a license and download the Linux build from [uppaal.org](uppaal.org).
+2. Unpack it. The binary is <uppaal-dir>/bin-Linux/verifyta.
+3. Make it executable if needed, and check with <uppaal-dir>/bin-Linux/verifyta -v.
+4. UPPAAL_HOME=<uppaal-dir>/bin-Linux/verifyta.
+5. Run `UPPAAL_HOME=/path/to/uppaal docker compose -f docker/docker-compose.yml run --rm sentil-uppaal`.
+
 ### Modest
 
 1. Download the Linux build from [modestchecker.net](modestchecker.net).

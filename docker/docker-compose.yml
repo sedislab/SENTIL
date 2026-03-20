@@ -17,6 +17,17 @@ services:
       - ../benchmarks/results:/sentil/benchmarks/results
     command: make bench-modest MODEST=/opt/modest/modest
 
+  sentil-uppaal:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: base
+    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    volumes:
+      - ${UPPAAL_HOME:-.}:/opt/uppaal:ro
+      - ../benchmarks/results:/sentil/benchmarks/results
+    command: make bench-uppaal VERIFYTA=/opt/uppaal/bin-Linux/verifyta
+
   sentil-gpu:
     build:
       context: ..
