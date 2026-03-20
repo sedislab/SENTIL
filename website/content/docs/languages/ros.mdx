@@ -1,0 +1,517 @@
+---
+title: "ROS 2"
+description: "Run SENTIL as ROS 2 lifecycle nodes: bind formula variables to topics and fields in YAML, stream verdicts and live probabilities, and synthesize control."
+---
+
+The `sentil_ros` package ships two managed lifecycle nodes for the SENTIL engine. `sentil_monitor` watches topics against a specification and reports how close the system is to breaking it. `sentil_control` runs the synthesis subsystem the other way around, turning a specification into a control input and actuating it on a topic. Both are composable components, so you can load them into the same process as the nodes they watch. The package builds against Humble, Jazzy, and Rolling.
+
+You describe a monitor in a YAML parameters file. Name the formulas, bind each variable to a topic and a message field, and pick deterministic or probabilistic checking. Messages of any type resolve through introspection at runtime, so you watch topics you already publish without changing their types.
+
+## Install
+
+Two routes. The distribution package from apt is the short one and needs no toolchain. A colcon build from a checkout is what you want for the repository tip or for a core you have changed. There is no third route: the releases page holds no ROS asset, because `sentil_ros` reaches users through rosdistro and the release workflow only confirms that `bloom-release` will succeed rather than publishing an archive.
+
+### From apt
+
+<Steps>
+<Step>
+
+Install the package for your distribution: `ros-humble-sentil-ros`, `ros-jazzy-sentil-ros`, or `ros-rolling-sentil-ros`. rosdistro publishes Debian packages, so this route is Ubuntu and Debian only.
+
+```bash
+sudo apt install ros-humble-sentil-ros
+```
+
+</Step>
+<Step>
+
+Check it, with your distro's `setup.bash` sourced.
+
+```bash
+ros2 pkg xml sentil_ros | head -5
+```
+
+The last two lines are `<name>sentil_ros</name>` and `<version>0.3.0</version>`.
+
+</Step>
+</Steps>
+
+### From source
+
+`sentil_ros` links the SENTIL C++ package on top of the compiled core, so the build needs a prefix holding `libsentil`, `sentil.h`, and the `SentilCpp` CMake config. The steps below build that prefix from the same checkout, which wants a Rust toolchain from [rustup.rs](https://rustup.rs); the [C++ page](/docs/languages/cpp) covers the other ways to fill a prefix. CMake must be 3.16 or newer, and colcon and rosdep come with the ROS 2 development tools rather than with `ros-base`.
+
+<OsTabs>
+<OsTab value="Linux">
+
+The covered combination. Continuous integration runs this same colcon build on every push in the `ros:humble-ros-base-jammy`, `ros:jazzy-ros-base-noble`, and `ros:rolling-ros-base-noble` containers. ROS 2 and the compiler come from your distribution's repositories.
+
+</OsTab>
+<OsTab value="macOS">
+
+Bring your own ROS 2 install. The commands below are the same shape, with these differences: the core builds as `libsentil.dylib` rather than `libsentil.so`, the loader reads `DYLD_LIBRARY_PATH` rather than `LD_LIBRARY_PATH`, and the three `install -D` lines are GNU coreutils, so copy those files into the prefix by hand instead. No workflow in the repository builds on macOS, so treat this path as untested rather than supported.
+
+</OsTab>
+<OsTab value="Windows">
+
+Run the build from a command prompt with ROS 2's `local_setup.bat` called. Substitute `set SENTIL_PREFIX=` for the `export`, `%SENTIL_PREFIX%` for `"$SENTIL_PREFIX"`, a writable directory for `/tmp/cpp-build`, and `call install\setup.bat` for `source install/setup.bash`. The core builds as `sentil.dll`, which the loader picks up from `PATH` rather than from `LD_LIBRARY_PATH`, and `install -D` does not exist here, so copy those three files into the prefix yourself. For a tagged release, `curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.zip` and `tar xf sentil.zip` replace the clone. Nothing in the repository is built or tested on Windows, so this path is unverified.
+
+</OsTab>
+</OsTabs>
+
+<Steps>
+<Step>
+
+Put the source in a colcon workspace, conventionally `~/ros2_ws`.
+
+```bash
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws/src
+git clone https://github.com/sedislab/SENTIL
+```
+
+For a tagged release rather than the tip, extract the source archive in place of cloning: `curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz | tar xz`. That unpacks into `SENTIL-0.3.0`, so read that name for `SENTIL` in the next step.
+
+</Step>
+<Step>
+
+Build the core and install the C++ package onto the prefix.
+
+```bash
+export SENTIL_PREFIX="$HOME/sentil-prefix"
+cd ~/ros2_ws/src/SENTIL
+cargo build --release -p sentil-ffi
+cmake -S sentil-cpp -B /tmp/cpp-build -DCMAKE_INSTALL_PREFIX="$SENTIL_PREFIX" -DBUILD_TESTING=OFF
+cmake --build /tmp/cpp-build --target install
+install -D sentil-ffi/include/sentil.h "$SENTIL_PREFIX/include/sentil.h"
+install -D target/release/libsentil.so "$SENTIL_PREFIX/lib/libsentil.so"
+install -D sentil-ffi/cmake/SentilConfig.cmake.in "$SENTIL_PREFIX/lib/cmake/Sentil/SentilConfig.cmake"
+```
+
+</Step>
+<Step>
+
+Source your distro's underlay, pull the ROS dependencies, then build against the prefix and source the overlay. `SentilCpp` is skipped because it comes from that prefix rather than from rosdep, and `rosdep update` wants a one-time `sudo rosdep init` on a machine where rosdep has never run. Keep `libsentil` on the loader path or the nodes will fail to start.
+
+```bash
+source /opt/ros/humble/setup.bash
+export LD_LIBRARY_PATH="$SENTIL_PREFIX/lib:$LD_LIBRARY_PATH"
+cd ~/ros2_ws
+rosdep update
+rosdep install --from-paths src --ignore-src -y --skip-keys SentilCpp
+colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
+source install/setup.bash
+```
+
+</Step>
+<Step>
+
+Run the package's tests, then the same check as the apt route.
+
+```bash
+colcon test --packages-select sentil_ros --return-code-on-test-failure
+colcon test-result --verbose
+ros2 pkg xml sentil_ros | head -5
+```
+
+The gtest gate is the field extractor: it reads `linear.x` off a `geometry_msgs/Twist` as 1.23, `ranges[1]` off a `sensor_msgs/LaserScan` as 2.5, and asserts that `ranges[100]` throws `FieldExtractorError`. `ros2 pkg xml` prints the same two lines as before.
+
+</Step>
+</Steps>
+
+## Your first monitor
+
+A monitor is a YAML file and a launch command. This one holds a vehicle under 30 m/s over a trailing ten-second window, reading speed from the linear-x field of an odometry message.
+
+```yaml title="speed.yaml"
+sentil_monitor:
+  ros__parameters:
+    formulas: ["speed_limit"]
+    formulas.speed_limit:
+      formula: "G[0,10] (speed < 30.0)"
+      verification:
+        method: "robustness"
+      signal_names: ["speed"]
+      variables:
+        speed:
+          topic: "/vehicle/odom"
+          field: "twist.twist.linear.x"
+```
+
+```bash
+ros2 launch sentil_ros sentil_monitor.launch.py params_file:=speed.yaml
+```
+
+The node subscribes to `/vehicle/odom`, pulls `twist.twist.linear.x` out of each message, and publishes a `sentil_ros/msg/Robustness` on `~/speed_limit/robustness`. Echo it:
+
+```bash
+ros2 topic echo /sentil_monitor/speed_limit/robustness
+```
+
+The `robustness` field is the signed margin over the window: a steady 27 m/s reads `3.0`, and a single reading of 32 makes that sample's margin `-2.0` and holds the window there for the next ten seconds. While the first window is still filling, `is_concrete` is false and the eventual value sits between `robustness_min` and `robustness_max`. The sign convention is the standard quantitative STL semantics, covered under [what STL is](/docs/monitoring/concepts/what-is-stl).
+
+<Callout type="info">
+The field path is a dotted, optionally indexed accessor: `pose.pose.position.x`, `ranges[0]`. It resolves against each message at runtime, so a wrong path does not fail at configure. The node logs a throttled warning, drops the affected samples, and the formula sits `STALE` in diagnostics naming the variable it is waiting for. Watch `/diagnostics` after launch to catch a mistyped path.
+</Callout>
+
+## Replaying a recorded bag
+
+`replay.launch.py` brings up the same monitor with `use_sim_time` forced on, so verdicts are stamped on the bag's clock rather than the wall clock. Play the bag with the clock wired up:
+
+```bash
+ros2 launch sentil_ros replay.launch.py params_file:=speed.yaml
+ros2 bag play --clock your_bag
+```
+
+## How verdicts stream
+
+`sentil_monitor` is a managed lifecycle node: the launch file configures and activates it, publishers emit only while active, and `autostart:=false` hands you the transitions:
+
+```bash
+ros2 launch sentil_ros sentil_monitor.launch.py params_file:=speed.yaml autostart:=false
+ros2 lifecycle set /sentil_monitor configure
+ros2 lifecycle set /sentil_monitor activate
+```
+
+The node opens one generic subscription per distinct variable. Its QoS starts from sensor-data with a queue of 10, then copies the reliability and durability of the first publisher it finds, so a best-effort sensor stream or a latched topic is not silently dropped.
+
+Verdicts begin once every variable has produced at least one value. Until then the formula publishes nothing and its diagnostic reads `STALE`, with `waiting for:` naming the missing variables, so a mistyped topic surfaces instead of stalling silently.
+
+Each arriving message stores its variable's latest value and advances every formula one step, stamped from the node clock. Stamps must strictly increase: under a stalled or rewound clock, a paused bag for instance, the sample is skipped with a throttled warning rather than fed to the streaming engine out of order.
+
+## Probabilistic monitoring
+
+The `P>=0.95` wrapper moves the verdict from a margin to a probability over the lifted ensemble ([what PrSTL is](/docs/probabilistic/concepts/what-is-prstl)). Give the variable a noise model and set the method to `smc`, or leave the method `automatic`, which turns probabilistic the moment any variable carries noise. The node lifts each reading into an ensemble of `config.particles` candidate trajectories and evaluates the formula across all of them.
+
+```yaml title="gap.yaml"
+sentil_monitor:
+  ros__parameters:
+    formulas: ["following_distance"]
+    formulas.following_distance:
+      formula: "P>=0.95(G[0,10] (gap > 5.0))"
+      verification:
+        method: "smc"
+      signal_names: ["gap"]
+      variables:
+        gap:
+          topic: "/perception/lead_vehicle"
+          field: "range"
+          noise:
+            type: "gaussian"
+            mean: 0.0
+            std_dev: 0.2
+      config:
+        particles: 1000
+        confidence: 0.95
+```
+
+Alongside the per-formula `Robustness`, this publishes the live probability on `~/following_distance/probability`: `estimate` is the running satisfaction probability the streaming engine maintains, banded by a Wilson interval from `ci_lower` to `ci_upper` at `ci_confidence`. With these defaults, an estimate of 0.97 over 1000 particles carries the band [0.957, 0.979], so the whole interval clears the 0.95 threshold; [confidence intervals](/docs/probabilistic/concepts/confidence-intervals) explains how to read the band and when to prefer a conservative one.
+
+The `noise` block here is Gaussian; five more families and `none` are [listed below](#noise-families) with their parameters and defaults.
+
+## Premade specifications
+
+The specification library is part of the engine, so a config can name a spec instead of writing a formula. `spec:` takes a library name in place of `formula:`, `variant:` picks a named variant, and `spec_params` overrides parameters as parallel `names` and `values` arrays.
+
+```yaml title="overshoot.yaml"
+sentil_monitor:
+  ros__parameters:
+    formulas: ["overshoot"]
+    formulas.overshoot:
+      spec: "controls/overshoot"
+      spec_params:
+        names: ["max_overshoot", "T"]
+        values: [0.02, 20.0]
+      signal_names: ["output", "reference"]
+      variables:
+        output:
+          topic: "/plant/output"
+          field: "data"
+          type: "std_msgs/msg/Float64"
+        reference:
+          topic: "/plant/reference"
+          field: "data"
+          type: "std_msgs/msg/Float64"
+```
+
+`controls/overshoot` bounds a step response: the output must not exceed the reference by more than `max_overshoot` of the step amplitude. This spec ships its own lifting registry, Gaussian noise on `output`, so with the method left `automatic` the monitor builds the probabilistic form and publishes a probability alongside the robustness. Set `verification.method: "robustness"` to pin the deterministic form.
+
+To inspect a spec at runtime, call the `~/get_spec_info` service with a `spec_name`, or a `spec_file` path for a spec outside the library:
+
+```bash
+ros2 service call /sentil_monitor/get_spec_info sentil_ros/srv/GetSpecInfo "{spec_name: 'controls/overshoot'}"
+```
+
+Browse the library on the [specifications reference](/docs/reference/specifications/catalog).
+
+## Watching a CARLA ego vehicle
+
+`examples/carla_monitor.launch.py` checks a CARLA ego vehicle against `config/carla_verification.yaml`, which binds four formulas to the standard `carla_ros_bridge` topics: a speed limit on `/carla/hero/odometry`, a following distance and a pedestrian clearance on `sensor_msgs/Range` topics, and a probabilistic collision-risk bound under Gaussian sensor noise. Start CARLA and the bridge however you run them, then launch the monitor:
+
+```bash
+ros2 launch sentil_ros carla_monitor.launch.py
+```
+
+Or have the launch file start the bridge for you, aimed at the server and a map of your choice:
+
+```bash
+ros2 launch sentil_ros carla_monitor.launch.py launch_bridge:=true carla_host:=192.168.1.50 carla_port:=2000 town:=Town05
+```
+
+The [CARLA and Apollo case study](/docs/start/case-studies/carla-apollo) runs this setup end to end.
+
+## Synthesizing control
+
+`sentil_control` runs the synthesis subsystem as a node. The `mode` parameter picks the problem: an online receding-horizon controller, offline open-loop synthesis, a control-barrier safety filter, a counterexample search, or a chance-constraint check. The [modes table](#control-modes) below carries the full contract for each; the machinery behind them is covered under [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+The shipped `config/control_params.yaml` is a double integrator, position and velocity with acceleration as the input, driven to stay inside a band:
+
+```yaml title="control_params.yaml"
+sentil_control:
+  ros__parameters:
+    mode: "receding_horizon"
+    spec:
+      formula: "G[0,20] (pos > 1.0 & pos < 9.0)"
+    model:
+      state_dim: 2
+      a: [1.0, 0.1, 0.0, 1.0]
+      b: [0.005, 0.1]
+      x0: [0.0, 0.0]
+      variables: ["pos", "vel"]
+      dt: 0.1
+      horizon: 20
+    input_width: 1
+    budget_ms: 20.0
+    bounds:
+      lower: [-3.0]
+      upper: [3.0]
+    state_topic: "/system/state"
+    control_topic: "/system/command"
+    rate_hz: 10.0
+```
+
+The model is `x+ = A x + B u` with the matrices flattened row-major; with `dt = 0.1`, `A = [[1, 0.1], [0, 1]]` and `B = [[0.005], [0.1]]`. On every state message the controller plans over the 20-step horizon and emits the first input within the 20 ms budget.
+
+```bash
+ros2 launch sentil_ros sentil_control.launch.py
+```
+
+`examples/control_loop.py` closes the loop: it plays the plant, publishing `/system/state`, applying each command from `/system/command`, and integrating forward. The position starts at 0 and the spec asks for the band [1, 9]; the controller drives it into the band and holds it there. The state arrives as a `std_msgs/Float64MultiArray` and the command goes out as a `sentil_ros/msg/Control`, with a plain `Float64MultiArray` on `<control_topic>/array` for actuators that consume raw arrays.
+
+## Errors
+
+The package has no exception surface of its own; errors arrive where a ROS operator looks for them. A bad configuration fails the configure transition: the node logs `configuration failed:` with a reason naming the formula and parameter, tears down whatever it built, and stays unconfigured. The messages are specific. An unknown noise family lists the accepted set, `witness` mode without bounds asks for `bounds.lower` and `bounds.upper`, a variable bound under `variables` but missing from `signal_names` is named with the parameter to fix, and a `verification.method` of `sprt` is refused, naming its replacements.
+
+At runtime nothing a message does can crash the node. Deserialization and field-extraction failures warn (throttled to once a second) and drop the sample, and an engine error during an update or a control tick is warned and that step skipped. The diagnostics stream is the persistent signal: a formula stuck `STALE` with `waiting for: gap` says its topic or field path never produced a value.
+
+## Reference
+
+Everything below is the complete public surface of the package: nodes, parameters, topics, messages, the service, launch files, shipped configs, and the installed header.
+
+### Nodes and components
+
+| Executable | Component plugin | Shared library |
+| --- | --- | --- |
+| `sentil_monitor` | `sentil_ros::MonitorNode` | `sentil_monitor_node` |
+| `sentil_control` | `sentil_ros::ControlNode` | `sentil_control_node` |
+
+Both are `rclcpp_lifecycle` nodes. `on_configure` reads the parameters and builds the subscriptions, publishers, service, and diagnostics; a configuration error logs its reason, tears the partial setup down, and fails the transition. `on_activate` starts publishing, and on the control node it also arms the mode's timer or one-shot report, per the [modes table](#control-modes). `on_deactivate` stops publishing; `on_cleanup` and `on_shutdown` tear down.
+
+To run several monitors in one process, load the plugin classes into a component container. The parameter file's top-level key must match the component's node name, so a renamed monitor needs its YAML key renamed to match.
+
+```python title="monitors.launch.py"
+from launch import LaunchDescription
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
+
+def generate_launch_description():
+    container = ComposableNodeContainer(
+        name="verification",
+        namespace="",
+        package="rclcpp_components",
+        executable="component_container",
+        composable_node_descriptions=[
+            ComposableNode(
+                package="sentil_ros",
+                plugin="sentil_ros::MonitorNode",
+                name="sentil_monitor",
+                parameters=["speed.yaml"],
+            ),
+            ComposableNode(
+                package="sentil_ros",
+                plugin="sentil_ros::ControlNode",
+                name="sentil_control",
+                parameters=["control.yaml"],
+            ),
+        ],
+    )
+    return LaunchDescription([container])
+```
+
+A plain container does not drive lifecycle transitions, so configure and activate each component after loading, the same `ros2 lifecycle set` pair the launch files run for you.
+
+### sentil_monitor parameters
+
+Parameters arrive from a `params_file` under the node's `ros__parameters`. The `formulas` array lists the formula ids; each id then carries its own block under `formulas.<id>`.
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `formulas` | string[] | The formula ids to monitor; an empty list fails configure |
+| `formulas.<id>.formula` | string | The formula text, for example `G[0,10] (speed < 30.0)` |
+| `formulas.<id>.spec` | string | A specification-library name, used instead of `formula` |
+| `formulas.<id>.variant` | string | The spec variant to build |
+| `formulas.<id>.spec_params.names` | string[] | Spec parameter names to override, parallel to `values`; a length mismatch fails configure |
+| `formulas.<id>.spec_params.values` | double[] | The values for `names` |
+| `formulas.<id>.verification.method` | string | `robustness`, `smc`, or `automatic` (the default); see below |
+| `formulas.<id>.signal_names` | string[] | Every variable the formula reads; a variable configured under `variables` but missing here fails configure, named |
+| `formulas.<id>.variables.<v>.topic` | string | The topic to subscribe for this variable; required |
+| `formulas.<id>.variables.<v>.field` | string | The dotted field path, `[i]` indexing allowed; required |
+| `formulas.<id>.variables.<v>.type` | string | The message type, for example `nav_msgs/msg/Odometry`; empty resolves from the first advertised type, and no publisher plus no type fails configure |
+| `formulas.<id>.variables.<v>.noise.type` | string | The noise family, default `none`; see the noise table |
+| `formulas.<id>.config.particles` | int | Ensemble size for probabilistic checking (default 1000) |
+| `formulas.<id>.config.confidence` | double | Level of the Wilson interval (default 0.95) |
+
+`verification.method` defaults to `automatic`, which turns probabilistic when any variable carries a noise model or the named spec's lifting registry is non-empty; the formula text plays no role in the decision. `robustness` stays deterministic and ignores any configured noise. `smc` forces the probabilistic path. `sprt` is rejected at configure with an error pointing at `smc` or `automatic`, since the streaming monitor estimates the probability continuously instead of running a stopped sequential test. When a spec is named, the monitor builds its probabilistic formula on the probabilistic path and its deterministic formula otherwise.
+
+### Noise families
+
+The YAML `noise` block accepts these families; an unknown one fails configure listing this set. A premade spec's lifting registry can carry any core family, but the YAML surface itself is limited to these seven. The full catalogue lives under [noise models](/docs/reference/methods/noise-models).
+
+| `noise.type` | Parameters (defaults) |
+| --- | --- |
+| `gaussian` | `mean` (0.0), `std_dev` (1.0) |
+| `uniform` | `low` (-1.0), `high` (1.0) |
+| `log_normal` | `mu` (0.0), `sigma` (1.0) |
+| `exponential` | `rate` (1.0) |
+| `gamma` | `shape` (1.0), `scale` (1.0) |
+| `beta` | `alpha` (1.0), `beta` (1.0) |
+| `none` | no parameters; the default, deterministic |
+
+### Monitor topics, service, and diagnostics
+
+| Interface | Type | Notes |
+| --- | --- | --- |
+| one subscription per variable | the configured or discovered type | generic subscription through introspection; sensor-data QoS with a queue of 10, reliability and durability copied from the first publisher |
+| `~/<id>/robustness` | `sentil_ros/msg/Robustness` | one per formula, queue 10 |
+| `~/<id>/probability` | `sentil_ros/msg/Probability` | probabilistic formulas only, queue 10, published alongside each robustness update once the engine has an estimate |
+| `/diagnostics` | standard diagnostics | one status per formula id under hardware id `sentil`, the last robustness attached as a `robustness` key |
+| `~/get_spec_info` | `sentil_ros/srv/GetSpecInfo` | resolves a spec by `spec_name` or `spec_file` |
+
+The diagnostic level maps the verdict. `OK` is satisfied, `ERROR` is violated, `WARN` is a verdict not yet resolved, which covers a temporal window still filling as well as an undecided probabilistic check, and `STALE` is no verdict yet, its message naming the variables still waiting for data.
+
+### sentil_control parameters
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `mode` | string | `receding_horizon` (the default), `open_loop`, `safety_filter`, `witness`, or `chance` |
+| `spec.formula` | string | The specification text; setting neither this nor `spec.name` fails configure |
+| `spec.name` | string | A specification-library name, used instead of `spec.formula` |
+| `spec.variant` | string | The spec variant to build |
+| `model.state_dim` | int | The state dimension `n`; must be set and equal the length of `model.variables` in every mode except `safety_filter` (default 0) |
+| `model.a` | double[] | The `n`-by-`n` state matrix `A`, row-major, size-checked |
+| `model.b` | double[] | The `n`-by-`input_width` input matrix `B`, row-major, size-checked |
+| `model.x0` | double[] | The initial state |
+| `model.variables` | string[] | The `n` state names in order, matched against the spec |
+| `model.dt` | double | The time step (default 0.1) |
+| `model.horizon` | int | The planning horizon in steps (default 20) |
+| `input_width` | int | The control input dimension (default 1) |
+| `budget_ms` | double | The per-step planning deadline for `receding_horizon` (default 20.0) |
+| `bounds.lower` / `bounds.upper` | double[] | Per-input box bounds; the arrays must be the same length, empty means unbounded, and `open_loop` and `witness` tile them across the horizon (default empty) |
+| `chance.probability` | double | Target probability for `chance` mode (default 0.95) |
+| `chance.confidence` | double | Confidence for the chance estimate (default 0.95) |
+| `chance.process_std` | double | Standard deviation of the Gaussian process noise `chance` mode samples over; must be greater than zero or configure fails, so the default 0.0 must be overridden |
+| `state_topic` | string | The `std_msgs/Float64MultiArray` state input (default `~/state`) |
+| `nominal_topic` | string | The nominal command input for `safety_filter` (default `~/nominal`) |
+| `control_topic` | string | The command output (default `~/command`) |
+| `rate_hz` | double | The rate of the wall timer that steps out `open_loop` and `witness` plans; must be at least 0.001 (default 10.0). The other modes respond to incoming messages, not a timer |
+
+### Control modes
+
+| Mode | What it does | `robustness` / `holds` in the Control message |
+| --- | --- | --- |
+| `receding_horizon` | plans over `model.horizon` on each state message and emits the first input within `budget_ms` | NaN / false; `feasible` true marks that an input was produced |
+| `open_loop` | synthesizes the whole input sequence at configure and steps it out on the `rate_hz` timer; re-activation replays from the first step | the synthesized robustness / whether the sequence satisfies the spec |
+| `safety_filter` | filters each command from `nominal_topic` to the closest input inside the bounds and barriers; needs no model and no spec | NaN / false |
+| `witness` | searches for an input sequence that violates the spec and replays it on the timer; requires `bounds.lower` and `bounds.upper` | the violation's robustness / false |
+| `chance` | validates the chance constraint over the model's autonomous dynamics `x+ = A x + w`, `w` Gaussian with `chance.process_std`, from `x0` over the horizon; publishes once on activate | the probability estimate / whether the constraint holds, with `input` carrying `[estimate, lower_bound]` |
+
+Every mode publishes on `control_topic` as a `sentil_ros/msg/Control`, with the raw input mirrored on `<control_topic>/array`. `receding_horizon` and `safety_filter` subscribe to `state_topic`; `safety_filter` also subscribes to `nominal_topic`. All queues are 10, and the publishers emit only while active.
+
+### Messages and service
+
+`sentil_ros/msg/Robustness`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | Stamp and frame |
+| `formula_id` | string | The formula this verdict is for |
+| `robustness` | float64 | The signed margin; positive holds, negative fails |
+| `is_concrete` | bool | Whether the value is final or an interval while the window fills |
+| `robustness_min` / `robustness_max` | float64 | The interval bounds while `is_concrete` is false |
+
+`sentil_ros/msg/Probability`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | Stamp and frame |
+| `formula_id` | string | The formula this estimate is for |
+| `estimate` | float64 | The running satisfaction probability |
+| `samples` | uint64 | The ensemble size evaluated |
+| `satisfactions` | uint64 | The satisfying count over the ensemble |
+| `ci_lower` / `ci_upper` | float64 | The Wilson interval at `ci_confidence` |
+| `ci_confidence` | float64 | The confidence level |
+
+`sentil_ros/msg/Control`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | Stamp and frame |
+| `mode` | string | The mode that produced this command |
+| `input` | float64[] | The control input |
+| `robustness` | float64 | Per the modes table: synthesized, NaN online, or the chance estimate |
+| `holds` | bool | Whether the sequence satisfies the spec; false online and for a witness |
+| `feasible` | bool | Whether an input was produced |
+
+`sentil_ros/srv/GetSpecInfo` takes a `spec_name` (a library name) or a `spec_file` path and returns `success`, an `error_message`, the resolved `deterministic_formula` and `probabilistic_formula`, the `parameters_json`, and the `available_variants`. A spec may carry only one of the two formula forms; `success` is true when at least one was built.
+
+### Launch files
+
+| Launch file | Arguments (defaults) | Brings up |
+| --- | --- | --- |
+| `sentil_monitor.launch.py` | `params_file` (`config/example_params.yaml`), `use_sim_time` (`false`), `autostart` (`true`) | The monitor, configured and activated when `autostart` is true |
+| `sentil_control.launch.py` | `params_file` (`config/control_params.yaml`), `autostart` (`true`) | The control node, same autostart behavior |
+| `replay.launch.py` | `params_file` (`config/example_params.yaml`) | The monitor with `use_sim_time` forced on, for bag replay |
+| `examples/carla_monitor.launch.py` | `launch_bridge` (`false`), `carla_host` (`localhost`), `carla_port` (`2000`), `town` (`Town03`) | The monitor against a CARLA ego vehicle, optionally starting the bridge |
+
+### Shipped configs and examples
+
+The `config/` directory carries runnable examples: `example_params.yaml` (a speed limit and a probabilistic follow distance), `control_params.yaml` (the double-integrator receding-horizon controller above), `arm_control.yaml` (a 6-state robot-arm end effector with `input_width` 3), `robot_nav.yaml` (a mobile robot checking geofence containment, obstacle clearance, a speed limit, and collision risk), and `carla_verification.yaml` (four formulas bound to the standard `carla_ros_bridge` topics). `examples/control_loop.py` is the Python plant that closes the loop on the control node.
+
+### The installed C++ header
+
+The package installs one public header, `sentil_ros/field_extractor.hpp`, the same extractor the monitor runs on every message.
+
+```cpp
+namespace sentil_ros
+{
+class FieldExtractorError : public std::runtime_error;
+
+namespace introspection
+{
+double extract_double_from_field(
+  const void * msg_data,
+  const rosidl_message_type_support_t * type_support,
+  const std::string & field_name);
+}
+}
+```
+
+`extract_double_from_field` reads a dotted, optionally indexed path such as `pose.position.x` or `ranges[1]` out of a deserialized message through its introspection typesupport and returns the value as a double. It throws `FieldExtractorError` on a missing field, an index out of bounds, a non-numeric leaf, or a malformed path. Depend on `sentil_ros` the usual ament way to reuse it in any node that reads fields from messages whose type is not known at compile time.
+
+## Related
+
+<Cards>
+  <Card title="What STL is" href="/docs/monitoring/concepts/what-is-stl" description="The robustness semantics behind every verdict the monitor publishes." />
+  <Card title="Noise models" href="/docs/reference/methods/noise-models" description="Every noise family the engine can lift a reading through." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="The machinery behind sentil_control: planning, receding-horizon control, filtering, and falsification." />
+  <Card title="Specifications" href="/docs/reference/specifications/catalog" description="The premade specification library a config can name instead of a formula." />
+</Cards>
