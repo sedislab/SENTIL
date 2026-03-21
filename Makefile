@@ -1,8 +1,9 @@
 # Convenience wrapper; the C ABI recipes live in sentil-ffi/Makefile and the
 # embedded host tests in sentil-embedded/Makefile.
-.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-py clean test-embedded verify bench-modest bench-uppaal
+.PHONY: build test-ffi test-ffi-gpu leakcheck bench-c bench-py clean test-embedded verify bench-modest bench-uppaal bench-prism
 
 MODEST ?= modest
+PRISM ?= prism
 VERIFYTA ?= verifyta
 
 build test-ffi test-ffi-gpu leakcheck bench-c bench-py clean:
@@ -29,3 +30,9 @@ bench-uppaal:
 	VERIFYTA="$(VERIFYTA)" bash benchmarks/runners/uppaal_runner.sh \
 	  benchmarks/baselines/uppaal/circadian.xml >>"$$tmp" || exit 1; \
 	if [ -s "$$tmp" ]; then cp "$$tmp" benchmarks/results/uppaal_smc.jsonl; fi
+
+bench-prism:
+	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	PRISM="$(PRISM)" bash benchmarks/runners/prism_runner.sh \
+	  benchmarks/baselines/prism/circadian.nm >>"$$tmp" || exit 1; \
+	if [ -s "$$tmp" ]; then cp "$$tmp" benchmarks/results/prism_smc_circadian.jsonl; fi
