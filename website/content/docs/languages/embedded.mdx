@@ -1,0 +1,825 @@
+---
+title: "Embedded"
+description: "The sentil-embedded target: the streaming STL monitor and on-board synthesis built no_std for 32-bit ARM and RISC-V microcontrollers, with the complete C ABI reference."
+---
+
+The `sentil-embedded` target builds the SENTIL engine `no_std` for a microcontroller. You hand it a fixed block of memory once, feed it one sample per loop, and read back the robustness. The surface is a small C ABI declared in `Sentil.h` with a sketch-friendly `SentilMonitor` C++ class over it, and every packaging ships a precompiled `libsentil_embedded.a` per core at version 0.3.0; Rust enters only when you rebuild an archive yourself.
+
+## Scope
+
+A microcontroller cannot host statistical model checking or the GPU paths, so the `no_std` build leaves them out, along with the MILP synthesis backend. Everything else runs on the chip: the streaming STL monitor, the multi-formula monitor, the ring buffer, offline robustness over a captured trace, the formula bank, open-loop planning by gradient or CMA-ES, the receding-horizon controller, and the safety filter. A `P~p` formula is refused with `SENTIL_EMBEDDED_UNSUPPORTED`, since deciding one needs the statistical layer; [Probabilistic formulas](#probabilistic-formulas) shows what that looks like.
+
+Two hardware limits sit alongside. The engine needs a 32-bit ARM or RISC-V core with a heap, so an 8-bit AVR such as the classic Uno or Nano has no room for it. And the bundled allocator guard covers a single core: on a dual-core part such as the RP2040, keep every SENTIL call on one core, or rebuild the archive without the bundled critical-section and link a multicore one from your board HAL.
+
+<Callout type="info">
+This page is the microcontroller target. A Linux single-board computer such as a Raspberry Pi runs the full engine, statistical layer included, through the [CLI](/docs/languages/cli) or the [C++ package](/docs/languages/cpp).
+</Callout>
+
+## Install
+
+Three registries carry the library: the Arduino Library Manager, the PlatformIO registry, and the ESP Component Registry. Reach for the one your toolchain already uses. Zephyr and bare metal have no registry, so those two install from a tarball on the [releases page](https://github.com/sedislab/SENTIL/releases), which also carries a bundle for each of the other three and the raw per-core archives. Every route ships the same pieces, `Sentil.h`, the `Sentil.cpp` wrapper, and the precompiled archives, so a Rust toolchain matters only when you rebuild one.
+
+Whichever route you take, the board's core decides which archive you need, and the same core name is the folder name inside every bundle.
+
+| Core | Boards | Release archive | Folder in a bundle |
+| --- | --- | --- | --- |
+| Cortex-M0+ | RP2040, SAMD21 | `sentil-archive-cortex-m0plus.a` | `cortex-m0plus` |
+| Cortex-M3 | Cortex-M3 parts | `sentil-archive-cortex-m3.a` | `cortex-m3` |
+| Cortex-M4F | SAMD51, STM32F4, Teensy 3.x | `sentil-archive-cortex-m4.a` | `cortex-m4` |
+| Cortex-M7 | STM32H7, Teensy 4.x | `sentil-archive-cortex-m7.a` | `cortex-m7` |
+| RISC-V rv32imc | ESP32-C3 | `sentil-archive-esp32c3.a` | `esp32c3` |
+| RISC-V rv32imac | ESP32-C6, some RP2350 builds | `sentil-archive-riscv32imac.a` | `riscv32imac` |
+
+The Cortex-M7 archive is the Cortex-M4 build, which runs on both. There is no prebuilt archive for the Xtensa ESP32 and ESP32-S3, whose Rust target comes from the Espressif fork rather than a stock one; both build [from source](#from-source).
+
+### From a package manager
+
+<Tabs groupId="mcu-registry" persist items={["Arduino", "PlatformIO", "ESP-IDF"]}>
+<Tab value="Arduino">
+
+<Steps>
+<Step>
+
+Install it. In the IDE, open Tools, Manage Libraries (the Library Manager icon in the side bar on IDE 2.x), search for Sentil, and click Install. From a terminal the same install is:
+
+```bash
+arduino-cli lib install Sentil
+```
+
+</Step>
+<Step>
+
+Check it. Four sketches appear under File, Examples, Sentil: `BasicMonitor`, `StreamingThreshold`, `Controller`, and `Benchmark`. Flash `BasicMonitor` and open the Serial Monitor at 115200 baud; over its readings 3.0, 1.5, 2.0, -0.5, 4.0 it prints the robustness of `H (x > 0)` as 3.00, 1.50, 1.50, -0.50, -0.50, holding until the dip and failing from there on.
+
+</Step>
+</Steps>
+
+The library declares the `samd`, `mbed_rp2040`, `rp2040`, `esp32`, and `stm32` architectures and ships precompiled, so the build picks the `src/<mcu>` folder whose name matches the board's `build.mcu`. A board whose `build.mcu` is none of the folder names above, the Xtensa `esp32` and `esp32s3` among them, needs an archive built [from source](#from-source).
+
+</Tab>
+<Tab value="PlatformIO">
+
+<Steps>
+<Step>
+
+Declare the dependency and a link flag naming the archive folder for the board's core. This env is a Raspberry Pi Pico on the earlephilhower core:
+
+```ini title="platformio.ini"
+[env:pico]
+platform = https://github.com/maxgerhardt/platform-raspberrypi.git
+board = pico
+framework = arduino
+board_build.core = earlephilhower
+lib_deps = sentil/Sentil@^0.3.0
+build_flags = -L${PROJECT_DIR}/.pio/libdeps/pico/Sentil/src/cortex-m0plus -lsentil_embedded
+```
+
+</Step>
+<Step>
+
+Adjust the two moving parts of the `-L` path. `pico` is whatever you named the `[env:...]`, and `cortex-m0plus` is the `src/<mcu>` folder from the table above.
+
+</Step>
+<Step>
+
+Build the project. PlatformIO fetches the library, compiles `Sentil.cpp` out of it, and links the archive `-lsentil_embedded` names. A link that fails on undefined `sentil_embedded_*` symbols is pointing `-L` at the wrong folder.
+
+</Step>
+</Steps>
+
+The library declares the `arduino` and `espidf` frameworks and the `raspberrypi`, `espressif32`, `ststm32`, and `atmelsam` platforms, so the same env shape works under `espidf` on an ESP32. It carries the same four example sketches as the Arduino package, under `examples/`.
+
+</Tab>
+<Tab value="ESP-IDF">
+
+<Steps>
+<Step>
+
+Add the component from the project directory. An entry for `sedislab/sentil` under `dependencies` in the project's own `idf_component.yml` does the same thing.
+
+```bash
+idf.py add-dependency "sedislab/sentil"
+```
+
+</Step>
+<Step>
+
+Build. The manager fetches the component into `managed_components/`, and the build compiles the wrapper and links the per-chip archive it finds at `prebuilt/<idf_target>/libsentil_embedded.a`, or whatever `SENTIL_ARCHIVE` names instead. A completed build is the check.
+
+```bash
+idf.py build
+```
+
+</Step>
+</Steps>
+
+The component declares `esp32`, `esp32s3`, `esp32c3`, and `esp32c6` as its targets and carries two archives, under `prebuilt/esp32c3` and `prebuilt/riscv32imac`. An `esp32c3` build finds its archive at the default path; an `esp32c6` build does not, since that folder is named for the core rather than the chip, so point `SENTIL_ARCHIVE` at the `riscv32imac` archive there. The Xtensa `esp32` and `esp32s3` have no prebuilt archive and build [from source](#from-source).
+
+</Tab>
+</Tabs>
+
+### From a GitHub release
+
+The embedded assets carry no version in their names, so `https://github.com/sedislab/SENTIL/releases/latest/download/<asset>` always fetches the current build of one.
+
+<Tabs groupId="mcu-bundle" persist items={["Arduino", "PlatformIO", "ESP-IDF", "Zephyr", "Bare metal"]}>
+<Tab value="Arduino">
+
+<Steps>
+<Step>
+
+Download [`sentil-arduino.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-arduino.zip). It is the `Sentil` library folder: `library.properties`, both licenses, `src/Sentil.h`, `src/Sentil.cpp`, the four example sketches, and `src/<mcu>/libsentil_embedded.a` per core.
+
+</Step>
+<Step>
+
+Add it with Sketch, Include Library, Add .ZIP Library, and pick the file. From a terminal:
+
+```bash
+arduino-cli lib install --zip-path sentil-arduino.zip
+```
+
+</Step>
+<Step>
+
+Check it the same way as the Library Manager route: the sketches appear under File, Examples, Sentil, and `BasicMonitor` prints its robustness over serial at 115200 baud.
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="PlatformIO">
+
+<Steps>
+<Step>
+
+Download [`sentil-platformio.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-platformio.zip) and unzip it into `lib/Sentil` in your project, so the header, the wrapper, the manifest, and the per-core archives sit under that one folder.
+
+</Step>
+<Step>
+
+Drop the `lib_deps` line and aim `-L` at the vendored copy:
+
+```ini title="platformio.ini"
+build_flags = -L${PROJECT_DIR}/lib/Sentil/src/cortex-m0plus -lsentil_embedded
+```
+
+</Step>
+<Step>
+
+Build the project. Nothing is fetched now, and an undefined `sentil_embedded_*` symbol still means the `-L` folder does not match the board's core.
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="ESP-IDF">
+
+<Steps>
+<Step>
+
+Download [`sentil-esp-idf.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-esp-idf.zip) and unpack it into your project's `components/`, where its top-level `sentil` folder becomes the component. It holds the component's `CMakeLists.txt` and `idf_component.yml`, `include/Sentil.h`, `Sentil.cpp`, and the archives under `prebuilt/esp32c3` and `prebuilt/riscv32imac`.
+
+</Step>
+<Step>
+
+Leave the archive where the component looks for it, `prebuilt/<idf_target>/libsentil_embedded.a`, which is where an `esp32c3` build finds it, or define `SENTIL_ARCHIVE` and the component links that path instead, which is what an `esp32c6` build does with the `riscv32imac` archive. Then build, and a completed build is the check.
+
+```bash
+idf.py build
+```
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="Zephyr">
+
+<Steps>
+<Step>
+
+Download [`sentil-zephyr.tar.gz`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-zephyr.tar.gz) and unpack it into your source tree. It expands into `sentil-zephyr-module`, which is the module directory: `zephyr/module.yml`, the Kconfig and CMake glue, the header and wrapper, and `lib/<mcu>/libsentil_embedded.a` per core.
+
+</Step>
+<Step>
+
+Enable the module and the runtime it needs in `prj.conf`. The wrapper is C++ and the engine calls into libm, so the full C library comes along:
+
+```text title="prj.conf"
+CONFIG_SENTIL=y
+CONFIG_CPP=y
+CONFIG_REQUIRES_FULL_LIBC=y
+```
+
+</Step>
+<Step>
+
+Build, registering the module with `ZEPHYR_EXTRA_MODULES` and naming the archive for the board's core with `SENTIL_ARCHIVE`:
+
+```bash
+west build -b nucleo_f401re my_app \
+  -- -DZEPHYR_EXTRA_MODULES=$PWD/sentil-zephyr-module \
+     -DSENTIL_ARCHIVE=$PWD/sentil-zephyr-module/lib/cortex-m4/libsentil_embedded.a
+```
+
+A completed `west build` is the check: `CONFIG_SENTIL=y` adds the include path, compiles the wrapper into the image, and links the archive. Configuring stops with a fatal error when `SENTIL_ARCHIVE` is unset, so there is no silent link against the wrong core.
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="Bare metal">
+
+For firmware with no operating system, or a soft core on an FPGA, link the pieces directly.
+
+<Steps>
+<Step>
+
+Download [`sentil-bare-metal.tar.gz`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-bare-metal.tar.gz) and unpack it. It holds `include/Sentil.h`, the `src/Sentil.cpp` wrapper, a `CMakeLists.txt`, and `lib/<mcu>/libsentil_embedded.a` for every core in the table above.
+
+</Step>
+<Step>
+
+Compile your firmware, the wrapper, and the archive in one line:
+
+```bash
+arm-none-eabi-g++ -mcpu=cortex-m4 main.cpp src/Sentil.cpp lib/cortex-m4/libsentil_embedded.a -I include -o firmware.elf
+```
+
+A pure C firmware drops `src/Sentil.cpp` and compiles with `arm-none-eabi-gcc`. A `firmware.elf` out of that line is the check.
+
+</Step>
+<Step>
+
+Provide the runtime symbols the archive expects: `memcpy`, `memset`, and the `libm` math functions, which any board support package already supplies. With newlib the link also references the `__retarget_lock_*` stubs and the `__lock___*_mutex` objects; a single-threaded firmware stubs those as no-ops, and an RTOS build maps them to its mutexes.
+
+</Step>
+</Steps>
+
+From a checkout of the repository, CMake wires the same pieces: set `SENTIL_ARCHIVE`, add the `packaging/bare-metal` directory, and link the `sentil_embedded` target. That build also stops with a fatal error when `SENTIL_ARCHIVE` is unset.
+
+```cmake
+set(SENTIL_ARCHIVE ${CMAKE_SOURCE_DIR}/lib/cortex-m4/libsentil_embedded.a)
+add_subdirectory(third_party/sentil/packaging/bare-metal sentil)
+target_link_libraries(my_firmware PRIVATE sentil_embedded)
+```
+
+</Tab>
+</Tabs>
+
+The release also attaches each archive on its own as `sentil-archive-<mcu>.a`, outside any bundle. Those suit a build that already has its own layout, since `SENTIL_ARCHIVE` and a compiler command line both take the archive by path; you still need `Sentil.h` and, for the C++ class, `Sentil.cpp` from one of the bundles or from a checkout.
+
+### From source
+
+You build an archive yourself to bring up a core the release does not cover, or to pick up a change to the engine before it ships. This is the only route that needs Rust; [the shared setup](/docs/start/install#from-source) installs a toolchain.
+
+<Steps>
+<Step>
+
+Clone the repository and enter the embedded crate. It is its own Cargo workspace, so build from inside it or pass `--manifest-path` to every command.
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL/sentil-embedded/rust
+```
+
+</Step>
+<Step>
+
+Install the target for the board's core and build with the fixed-heap allocator on. The archive lands at `target/<triple>/release/libsentil_embedded.a`.
+
+```bash
+rustup target add thumbv7em-none-eabihf
+cargo build --release --features mcu --target thumbv7em-none-eabihf
+```
+
+| Core | Rust target |
+| --- | --- |
+| Cortex-M0+ | `thumbv6m-none-eabi` |
+| Cortex-M3 | `thumbv7m-none-eabi` |
+| Cortex-M4F and M7 | `thumbv7em-none-eabihf` |
+| ESP32-C3 | `riscv32imc-unknown-none-elf` |
+| RV32 with atomics | `riscv32imac-unknown-none-elf` |
+| Xtensa ESP32 and S3 | `xtensa-esp32-none-elf`, `xtensa-esp32s3-none-elf` |
+
+The two Xtensa targets come from the Espressif Rust fork rather than a stock toolchain: install it with `espup` and build with `cargo +esp`. Everything else builds on stable.
+
+</Step>
+<Step>
+
+On a core short of flash, drop the parser and synthesis and load a formula compiled on a workstation instead (see [compiling a formula on a workstation](#compiling-a-formula-on-a-workstation)).
+
+```bash
+cargo build --release --no-default-features --features mcu --target thumbv6m-none-eabi
+```
+
+</Step>
+<Step>
+
+Put the archive where your packaging expects it, under the folder name in the archive table at the top of this section, or leave it where it is and aim `SENTIL_ARCHIVE` or `-L` at that path. `extras/cross_compile.md` carries the same recipe, but its folder table names `src/esp32c6` for the rv32imac archive and `src/esp32` for an Xtensa build, and no bundle contains either; the shipped names are the ones above.
+
+</Step>
+<Step>
+
+Check the engine behind the archive. From the repository root, `make -C sentil-embedded test` builds it for the host and runs the C ABI suite against `benchmarks/deterministic/oracle.json`, printing `all embedded host tests passed` when every case reproduces bit for bit. `make -C sentil-embedded leakcheck` runs the same suite under valgrind and accepts zero definite or indirect leaks.
+
+```bash
+make -C sentil-embedded test
+```
+
+</Step>
+</Steps>
+
+## Your first monitor
+
+Include `Sentil.h`, hand the engine a fixed region of memory once in `setup()`, then update the monitor each loop. This sketch replays the trace every SENTIL binding's first example uses: speed readings 12, 9, 7, 4, 6 against the property that speed stays above 5.
+
+```cpp title="FirstMonitor.ino"
+#include <Sentil.h>
+
+static SentilMonitor monitor;
+static uint8_t sentil_heap[4096];
+
+static const double speed[] = {12, 9, 7, 4, 6};
+static unsigned long step = 0;
+
+void setup() {
+  Serial.begin(115200);
+  sentil_embedded_init(sentil_heap, sizeof(sentil_heap));
+  monitor.begin("H (speed > 5)");
+}
+
+void loop() {
+  if (step < 5) {
+    double packed[1] = {speed[step]};
+    sentil_embedded_robustness_t r;
+    if (monitor.update((double)step, packed, 1, r) == SENTIL_EMBEDDED_OK) {
+      Serial.print("speed=");
+      Serial.print(packed[0]);
+      Serial.print("  robustness=");
+      Serial.print(r.value);
+      Serial.println(r.satisfied ? "  (holds)" : "  (violated)");
+    }
+    step++;
+  }
+  delay(500);
+}
+```
+
+Over serial at 115200 baud:
+
+```text
+speed=12.00  robustness=7.00  (holds)
+speed=9.00  robustness=4.00  (holds)
+speed=7.00  robustness=2.00  (holds)
+speed=4.00  robustness=-1.00  (violated)
+speed=6.00  robustness=-1.00  (violated)
+```
+
+The predicate scores `speed - 5` at each sample, and `H`, read historically, keeps the running infimum of those margins: 7, then 4, then 2, then -1 when the trace dips to 4, where it stays. The final -1.0 is the same robustness the offline `G (speed > 5)` gives this trace in every other binding. The sketch uses the past-time operator because a stream cannot see the future: `H` settles at every step, a bounded window such as `G[0, 10]` resolves once its window has passed, and an unbounded future `G`, read always, never resolves on a stream, reporting an unresolved negative-infinity value for as long as the stream lives, since a later dip can never be ruled out. [What STL measures](/docs/monitoring/concepts/what-is-stl) is the deeper story on reading robustness values; the O(1) window machinery underneath is the [monotonic deque](/docs/monitoring/concepts/monotonic-deque).
+
+<Callout type="warn">
+Exhausting the heap halts the board, not an error code, so size the region passed to `sentil_embedded_init` for the worst-case window and leave headroom. The shipped sketches reserve 4 KB for a monitor and 8 KB when synthesis runs. The region must outlive every monitor allocated from it.
+</Callout>
+
+## Offline traces
+
+When a whole trace is already buffered there is no need to stream it: build a `sentil_embedded_trace_t` and evaluate a parsed formula over it in one call, in discrete or dense time, with the per-sample signal and the violation intervals available from the same pair of handles.
+
+```c
+const double times[] = {0, 1, 2, 3, 4};
+const double speed[] = {12, 9, 7, 4, 6};
+sentil_embedded_trace_t *trace = NULL;
+sentil_embedded_trace_create(times, 5, &trace);
+sentil_embedded_trace_add_signal(trace, "speed", speed, 5);
+
+sentil_embedded_formula_t *phi = NULL;
+sentil_embedded_formula_create("G (speed > 5)", &phi);
+
+double rho;
+sentil_embedded_robustness(phi, trace, &rho);          /* -1.0 */
+
+double starts[4], ends[4];
+size_t count;
+sentil_embedded_violation_intervals(phi, trace, starts, ends, 4, &count);
+/* count = 1, the interval [0.0, 3.0] */
+
+sentil_embedded_trace_destroy(trace);
+sentil_embedded_formula_destroy(phi);
+```
+
+The violation interval runs from 0.0 to 3.0 because the per-sample robustness of `G (speed > 5)` is -1 at every start time whose window still contains the dip, and turns positive only at the last sample, where the remaining suffix is the single reading 6. `sentil_embedded_robustness_signal` hands you that whole signal, -1, -1, -1, -1, 1 here, and a [formula bank](#formula-bank) evaluates many formulas over one trace in a single call.
+
+## Streaming
+
+The shipped `StreamingThreshold` sketch is the shape of a real deployment: a bounded past window over a live analog reading, driving a pin.
+
+```cpp title="StreamingThreshold.ino"
+#include <Sentil.h>
+
+static SentilMonitor monitor;
+static uint8_t sentil_heap[4096];
+static unsigned long step = 0;
+
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  sentil_embedded_init(sentil_heap, sizeof(sentil_heap));
+  // analogRead returns 0..1023; alarm if the recent window approached the rail.
+  monitor.begin("H[0, 8](level < 900)");
+}
+
+void loop() {
+  double level = (double)analogRead(A0);
+  double packed[1] = {level};
+  sentil_embedded_robustness_t robustness;
+  if (monitor.update((double)step, packed, 1, robustness) == SENTIL_EMBEDDED_OK) {
+    digitalWrite(LED_BUILTIN, robustness.satisfied ? LOW : HIGH);
+  }
+  step++;
+  delay(50);
+}
+```
+
+The window makes one noisy spike insufficient to trip the alarm: `H[0, 8]` asks that the reading stayed below 900 over the last eight time units, so a stray sample pulls the margin down for eight steps and then ages out.
+
+Three disciplines keep a stream healthy. Timestamps must strictly increase across `update` calls, which is why the sketches count steps rather than read a wall clock; `millis() / 1000.0` hands the monitor the same value for every loop pass inside a second, and `update` refuses a time that does not move forward. Interval bounds share whatever unit your timestamps use, so with a step counter `[0, 8]` spans eight steps. And the packed `values` array is ordered by sorted variable name, not by appearance in the formula: for `G (speed > 5 & brake < 1)`, `brake` takes slot 0 and `speed` slot 1. Ask `sentil_embedded_symbol_index` at runtime, or read the packed order the [compile tool](#compiling-a-formula-on-a-workstation) prints:
+
+```c
+size_t idx;
+bool found;
+sentil_embedded_symbol_index(monitor, "speed", &idx, &found);  /* idx = 1, found = true */
+```
+
+To reuse a monitor on a fresh stream, `sentil_embedded_reset` clears its state without reparsing, and the [multi-formula monitor](#multi-formula-monitor) folds one sample into a whole set of properties at once. The [ring buffer](#ring-buffer) smooths or thresholds a raw signal before the monitor sees it.
+
+## Probabilistic formulas
+
+A [`P~p` formula](/docs/probabilistic/concepts/what-is-prstl) asks for a satisfaction probability, and estimating one takes the noise models and the statistical layer the `no_std` build leaves out. The board refuses rather than approximates:
+
+```c
+sentil_embedded_monitor_t *m = NULL;
+sentil_embedded_status_t status = sentil_embedded_create("P>=0.95 (G (speed > 5))", &m);
+/* status = SENTIL_EMBEDDED_UNSUPPORTED:
+   "the formula uses an operator the streaming monitor cannot run online" */
+```
+
+`sentil_embedded_formula_is_probabilistic` screens a formula before it ships, and the compile tool builds a specification's deterministic form, refusing any spec that resolves to a probabilistic formula with a message telling you to pick a deterministic variant. The deterministic robustness the board does compute is the same quantity the statistical layer samples on a bigger machine, so a common split runs the streaming monitor on the microcontroller and the probabilistic check on the Linux side of the system, over the [CLI](/docs/languages/cli) or any full binding.
+
+## Synthesis
+
+The synthesis surface plans inputs against a spec, runs a controller online, and shields a nominal input, all on the chip. Build a linear model `x_{t+1} = A x_t + B u_t`, parse a spec, bound the inputs, and plan:
+
+```c
+double a[1] = {1.0}, b[1] = {1.0}, x0[1] = {2.0};
+const char *vars[1] = {"x"};
+sentil_embedded_model_t *model = NULL;
+sentil_embedded_linear_model_create(a, 1, b, 1, x0, vars, 1.0, 5, &model);
+
+sentil_embedded_formula_t *spec = NULL;
+sentil_embedded_formula_create("G (x > 0)", &spec);
+
+double lo[5] = {-1, -1, -1, -1, -1}, hi[5] = {1, 1, 1, 1, 1};
+sentil_embedded_bounds_t *bounds = NULL;
+sentil_embedded_bounds_create(lo, hi, 5, &bounds);
+
+double u[5], rho;
+bool holds;
+sentil_embedded_synthesize(model, spec, bounds, 0, 150, u, &rho, &holds);
+/* rho = 2.0, holds = true */
+```
+
+The planned robustness is 2.0, a number you can check by hand: the state starts at 2.0, no admissible input drives the trajectory's worst margin above its starting point, and the planner finds inputs that never dip below it. `out_input` must hold `sentil_embedded_model_input_dimension(model)` doubles, the horizon times the input columns, 5 here. The backend argument is 0 for auto, 1 for gradient, 2 for CMA-ES; auto plans by gradient on a board, and the [backends page](/docs/reference/methods/synthesis-backends) covers when each wins.
+
+The receding-horizon controller replans from the live state on every call, inside a step budget:
+
+```c
+sentil_embedded_controller_t *controller = NULL;
+sentil_embedded_controller_create(model, spec, 1, 150, bounds, &controller);
+sentil_embedded_bounds_destroy(bounds);   /* bounds are borrowed, still yours */
+
+double state[1] = {2.0}, input[1];
+sentil_embedded_controller_control(controller, state, 1, input);
+```
+
+`sentil_embedded_controller_create` consumes the model and the spec, even when it fails, so free neither afterward; the bounds stay yours. `max_iters` is a gradient-step budget, not a clock, because a board has none, so pick it for the per-step time the chip can spare; each `control` call returns the best input its budget found. The `Controller` example sketch runs this loop on hardware. The safety filter shields a nominal input: given box bounds and optional linear barriers, it returns the closest admissible input, so a filter built on bounds of `[-1, 1]` clamps a nominal 2.5 to 1.0. Synthesis needs more heap than the bare monitor; the shipped example reserves 8 KB.
+
+## Errors
+
+Bad input comes back as a status code, never a crash and never an exception, since Arduino builds compile with exceptions off. Every fallible call returns a `sentil_embedded_status_t`, zero is `SENTIL_EMBEDDED_OK`, and `sentil_embedded_status_message` turns any code into a short static string you never free:
+
+```c
+sentil_embedded_monitor_t *m = NULL;
+sentil_embedded_status_t status = sentil_embedded_create("G (speed >", &m);
+if (status != SENTIL_EMBEDDED_OK) {
+  Serial.println(sentil_embedded_status_message(status));  /* "could not parse the formula" */
+}
+```
+
+The three codes a working sketch actually meets: `SENTIL_EMBEDDED_PARSE` for a malformed formula, `SENTIL_EMBEDDED_PACKED_LENGTH` when an update passes fewer values than the formula has variables, and `SENTIL_EMBEDDED_UNKNOWN_VARIABLE` when a multi-monitor update leaves out a variable some formula needs. The full table is [below](#status-codes).
+
+## Reference
+
+The signature column drops the `sentil_embedded_` prefix from type names, so `status_t` stands for `sentil_embedded_status_t` and `monitor_t` for `sentil_embedded_monitor_t`; function names are spelled in full, exactly as `Sentil.h` declares them.
+
+### Handles and ownership
+
+Ten opaque handle types, two plain structs, and the status enum. Every `destroy` accepts NULL as a no-op. Two creates consume an argument: `sentil_embedded_controller_create` takes ownership of its model and spec even on failure, and `sentil_embedded_safety_filter_create` takes ownership of its bounds. Everything else you free.
+
+| Type | What it is | Freed by |
+| --- | --- | --- |
+| `sentil_embedded_monitor_t` | A streaming monitor | `sentil_embedded_destroy` |
+| `sentil_embedded_formula_t` | A parsed formula | `sentil_embedded_formula_destroy` |
+| `sentil_embedded_trace_t` | A captured trace | `sentil_embedded_trace_destroy` |
+| `sentil_embedded_ring_buffer_t` | A rolling sample window | `sentil_embedded_ring_buffer_destroy` |
+| `sentil_embedded_multi_monitor_t` | A set of streaming monitors | `sentil_embedded_multi_destroy` |
+| `sentil_embedded_bank_t` | A set of formulas for offline runs | `sentil_embedded_bank_destroy` |
+| `sentil_embedded_bounds_t` | Box input bounds | `sentil_embedded_bounds_destroy` |
+| `sentil_embedded_model_t` | A linear system model | `sentil_embedded_model_destroy` |
+| `sentil_embedded_controller_t` | A receding-horizon controller | `sentil_embedded_controller_destroy` |
+| `sentil_embedded_safety_filter_t` | A least-restrictive input filter | `sentil_embedded_safety_filter_destroy` |
+| `sentil_embedded_robustness_t` | The per-update result struct | Plain value, nothing to free |
+| `sentil_embedded_sample_t` | A `{time, value}` pair from the ring buffer | Plain value, nothing to free |
+| `sentil_embedded_status_t` | The status enum every fallible call returns | Plain value, nothing to free |
+
+### Lifecycle and the streaming monitor
+
+One allocator call, then create, update, and destroy.
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_init` | `void (uint8_t *heap, size_t size)` | Hand over the fixed allocation region, once, before any create; host builds have a system allocator and ignore it |
+| `sentil_embedded_create` | `status_t (const char *formula, monitor_t **out)` | Monitor from a formula string; parser archives only |
+| `sentil_embedded_create_compiled` | `status_t (const uint8_t *bytes, size_t len, monitor_t **out)` | Monitor from a host-compiled blob; in every archive |
+| `sentil_embedded_update` | `status_t (monitor_t *, double time, const double *values, size_t n, robustness_t *out)` | Fold one sample; values in symbol-index order, times strictly increasing |
+| `sentil_embedded_variable_count` | `size_t (const monitor_t *)` | How many variables the formula reads, the length `values` must reach; zero for NULL |
+| `sentil_embedded_symbol_index` | `status_t (const monitor_t *, const char *name, size_t *out_index, bool *out_found)` | The packed slot of a named variable; `out_found` is false when the formula does not use it |
+| `sentil_embedded_reset` | `void (monitor_t *)` | Clear state for a fresh stream; NULL is a no-op |
+| `sentil_embedded_destroy` | `void (monitor_t *)` | Free the monitor |
+| `sentil_embedded_status_message` | `const char *(int status)` | A static message for any code; never free it |
+| `sentil_embedded_version` | `void (uint32_t *major, uint32_t *minor, uint32_t *patch)` | The library version; writes 0, 3, and 0 for this release, skipping NULL out-pointers |
+
+### The robustness struct
+
+Each update writes a `sentil_embedded_robustness_t`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `resolved` | `bool` | Whether the verdict has settled or still depends on later samples |
+| `satisfied` | `bool` | `value >= 0` |
+| `value` | `double` | The margin, or the interval midpoint while a temporal window is still open |
+| `lower`, `upper` | `double` | The interval bounds while a window is open |
+
+### The SentilMonitor class
+
+The C++ class owns the handle and frees it in its destructor, so a monitor in a global or static needs no cleanup. It is default-constructible, non-copyable, and exception-free; every call returns a status.
+
+| Method | Signature | Meaning |
+| --- | --- | --- |
+| `begin` | `status_t (const char *formula)` | Build from a formula string, replacing any current one |
+| `beginCompiled` | `status_t (const uint8_t *bytes, size_t len)` | Build from a host-compiled blob |
+| `ready` | `bool () const` | Whether a formula is loaded |
+| `update` | `status_t (double time, const double *values, size_t n, robustness_t &out)` | Fold one sample |
+| `variableCount` | `size_t () const` | The number of variables |
+| `symbolIndex` | `bool (const char *name, size_t &index) const` | The packed position of a variable, written when found |
+| `reset` | `void ()` | Clear state |
+
+### Formula introspection
+
+A parsed formula backs the offline calls, the bank, and synthesis. Build one from text or a blob, inspect it, free it.
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_formula_create` | `status_t (const char *formula, formula_t **out)` | Parse a formula; parser archives only |
+| `sentil_embedded_formula_create_compiled` | `status_t (const uint8_t *bytes, size_t len, formula_t **out)` | Rebuild from a blob |
+| `sentil_embedded_formula_destroy` | `void (formula_t *)` | Free a formula not consumed by a controller |
+| `sentil_embedded_formula_depth` | `size_t (const formula_t *)` | Nesting depth; a predicate is 1 |
+| `sentil_embedded_formula_has_temporal` | `bool (const formula_t *)` | Whether a temporal operator appears |
+| `sentil_embedded_formula_is_probabilistic` | `bool (const formula_t *)` | Whether it is wrapped in `P~p`, which a board cannot decide |
+| `sentil_embedded_formula_variable_count` | `size_t (const formula_t *)` | The number of distinct variables |
+| `sentil_embedded_formula_variable` | `size_t (const formula_t *, size_t index, char *buf, size_t buf_len)` | Copy the variable at `index`, sorted and unique; returns the length needed including the terminator, so a NULL `buf` queries the size |
+
+`sentil_embedded_formula_variable` is the two-call pattern: ask with a NULL buffer, allocate, ask again. For `G (speed > 5 & brake < 1)` the variable at index 0 is `brake` and needs 6 bytes.
+
+### Synthesis calls
+
+Present in archives built with the `synthesis` feature, the default. Matrices are row-major throughout.
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_bounds_create` | `status_t (const double *lower, const double *upper, size_t n, bounds_t **out)` | Box bounds per coordinate |
+| `sentil_embedded_bounds_unbounded` | `status_t (size_t dimension, bounds_t **out)` | An unbounded box, for a barrier-only filter |
+| `sentil_embedded_bounds_destroy` | `void (bounds_t *)` | Free bounds not consumed by a safety filter |
+| `sentil_embedded_linear_model_create` | `status_t (const double *a, size_t n, const double *b, size_t b_cols, const double *x0, const char *const *variables, double dt, size_t horizon, model_t **out)` | The model `x_{t+1} = A x_t + B u_t`; `A` is `n`-by-`n`, `B` is `n`-by-`b_cols`, and `variables` names each state to match the spec |
+| `sentil_embedded_model_input_dimension` | `size_t (const model_t *)` | Horizon times input columns, the length `out_input` must hold |
+| `sentil_embedded_model_destroy` | `void (model_t *)` | Free a model not consumed by a controller |
+| `sentil_embedded_synthesize` | `status_t (const model_t *, const formula_t *spec, const bounds_t *bounds, int backend, size_t max_iters, double *out_input, double *out_robustness, bool *out_holds)` | Plan an open-loop input; backend 0 auto, 1 gradient, 2 CMA-ES; model and spec are borrowed, bounds may be NULL, `max_iters` 0 takes the default |
+| `sentil_embedded_controller_create` | `status_t (model_t *, formula_t *spec, size_t input_width, size_t max_iters, const bounds_t *, controller_t **out)` | An online receding-horizon controller; consumes model and spec even on failure, borrows bounds |
+| `sentil_embedded_controller_control` | `status_t (controller_t *, const double *state, size_t n, double *out)` | Replan from the current state, writing `input_width` values |
+| `sentil_embedded_controller_destroy` | `void (controller_t *)` | Free the controller and the model and spec it owns |
+| `sentil_embedded_safety_filter_create` | `status_t (bounds_t *, safety_filter_t **out)` | A least-restrictive filter; consumes the bounds |
+| `sentil_embedded_safety_filter_filter` | `status_t (const safety_filter_t *, const double *nominal, size_t n, const double *barrier_a, const double *barrier_b, size_t m, double *out)` | The input closest to `nominal` keeping each barrier `a_i . u >= b_i` and the bounds; `m` of 0 is a bounds-only clamp |
+| `sentil_embedded_safety_filter_destroy` | `void (safety_filter_t *)` | Free the filter |
+| `sentil_embedded_solve_spd` | `status_t (const double *matrix, size_t n, const double *rhs, double *out)` | Solve a symmetric positive-definite system |
+| `sentil_embedded_symmetric_eigen` | `status_t (const double *matrix, size_t n, double *out_values, double *out_vectors)` | Eigendecomposition of a symmetric matrix |
+| `sentil_embedded_solve_qp` | `status_t (const double *p, size_t n, const double *q, const double *g, const double *h, size_t m, double *out)` | Solve a small quadratic program |
+| `sentil_embedded_soft_min` | `double (const double *values, size_t n, double temperature)` | Smooth lower bound on the minimum |
+| `sentil_embedded_soft_max` | `double (const double *values, size_t n, double temperature)` | Smooth upper bound on the maximum |
+
+The last five are the dense numerics underneath the planner, callable directly from a control loop's own math.
+
+### Ring buffer
+
+The ring buffer holds the newest `capacity` timed samples and keeps their statistics current in O(1) per push; use it to condition a raw reading before a monitor sees it. It allocates once at create and never grows. Pushing into a full buffer evicts the oldest sample. Every statistic returns NaN on an empty buffer.
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_ring_buffer_create` | `status_t (size_t capacity, ring_buffer_t **out)` | A buffer holding the most recent `capacity` samples |
+| `sentil_embedded_ring_buffer_push` | `status_t (ring_buffer_t *, double time, double value, sample_t *out_evicted, bool *out_did_evict)` | Append a sample; the out parameters, if non-NULL, receive the evicted sample and whether one was evicted |
+| `sentil_embedded_ring_buffer_len` | `size_t (const ring_buffer_t *)` | Samples currently held |
+| `sentil_embedded_ring_buffer_capacity` | `size_t (const ring_buffer_t *)` | The fixed capacity |
+| `sentil_embedded_ring_buffer_is_empty` | `bool (const ring_buffer_t *)` | Whether it holds nothing |
+| `sentil_embedded_ring_buffer_is_full` | `bool (const ring_buffer_t *)` | Whether the next push evicts |
+| `sentil_embedded_ring_buffer_mean` | `double (const ring_buffer_t *)` | Mean of the held values |
+| `sentil_embedded_ring_buffer_variance` | `double (const ring_buffer_t *)` | Sample variance of the held values |
+| `sentil_embedded_ring_buffer_std_dev` | `double (const ring_buffer_t *)` | Square root of the sample variance |
+| `sentil_embedded_ring_buffer_min` | `double (const ring_buffer_t *)` | Smallest held value |
+| `sentil_embedded_ring_buffer_max` | `double (const ring_buffer_t *)` | Largest held value |
+| `sentil_embedded_ring_buffer_get` | `bool (const ring_buffer_t *, size_t index, sample_t *out)` | The sample at `index` from the oldest; false when out of range or empty |
+| `sentil_embedded_ring_buffer_front` | `bool (const ring_buffer_t *, sample_t *out)` | The oldest sample |
+| `sentil_embedded_ring_buffer_back` | `bool (const ring_buffer_t *, sample_t *out)` | The newest sample |
+| `sentil_embedded_ring_buffer_at_time` | `double (const ring_buffer_t *, double time)` | The value of the sample stored at `time`, matched within a small tolerance; NaN when no sample sits there |
+| `sentil_embedded_ring_buffer_closest_to_time` | `bool (const ring_buffer_t *, double time, sample_t *out)` | The sample nearest to `time`; a tie resolves to the earlier one |
+| `sentil_embedded_ring_buffer_clear` | `void (ring_buffer_t *)` | Drop every sample, keeping the capacity |
+| `sentil_embedded_ring_buffer_destroy` | `void (ring_buffer_t *)` | Free the buffer |
+
+Concretely: push samples at times 0 through 5 with values 10 through 15 into a buffer of capacity 4, and it holds the last four, mean 13.5, min 12, max 15. `at_time(3.0)` returns 13.0, `at_time(3.5)` returns NaN because no sample carries that timestamp, and `closest_to_time(3.4)` returns the sample at time 3.0.
+
+### Multi-formula monitor
+
+One sample fans out to a whole set of streaming formulas, each keyed by an id. Its update takes parallel `names` and `values` arrays, a different convention from the single monitor's packed order, so one call can serve formulas over different variables.
+
+```c
+sentil_embedded_multi_monitor_t *multi = NULL;
+sentil_embedded_multi_create(&multi);
+sentil_embedded_multi_add(multi, "speed-floor", "H (speed > 5)");
+sentil_embedded_multi_add(multi, "temp-cap", "H (temp < 90)");
+
+const char *names[] = {"speed", "temp"};
+double values[] = {12.0, 71.5};
+sentil_embedded_multi_update(multi, 0.0, names, values, 2);
+
+sentil_embedded_robustness_t r;
+sentil_embedded_multi_result(multi, 0, &r);  /* speed-floor: 7.0, holds */
+sentil_embedded_multi_result(multi, 1, &r);  /* temp-cap: 18.5, holds */
+```
+
+Leaving `temp` out of that update returns `SENTIL_EMBEDDED_UNKNOWN_VARIABLE`, since a formula in the set needs it.
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_multi_create` | `status_t (multi_monitor_t **out)` | An empty set |
+| `sentil_embedded_multi_add` | `status_t (multi_monitor_t *, const char *id, const char *formula)` | Add a formula under `id`; parser archives only |
+| `sentil_embedded_multi_add_compiled` | `status_t (multi_monitor_t *, const char *id, const uint8_t *bytes, size_t len)` | Add from a host-compiled blob |
+| `sentil_embedded_multi_update` | `status_t (multi_monitor_t *, double time, const char *const *names, const double *values, size_t n)` | Fold one sample given as parallel name and value arrays |
+| `sentil_embedded_multi_count` | `size_t (const multi_monitor_t *)` | Results available from the last update |
+| `sentil_embedded_multi_result` | `status_t (const multi_monitor_t *, size_t index, robustness_t *out)` | The robustness at `index`; past `count` returns `SENTIL_EMBEDDED_INDEX_OUT_OF_RANGE` |
+| `sentil_embedded_multi_id` | `size_t (const multi_monitor_t *, size_t index, char *buf, size_t buf_len)` | Copy the id at `index`; NULL `buf` queries the needed length |
+| `sentil_embedded_multi_len` | `size_t (const multi_monitor_t *)` | Formulas held |
+| `sentil_embedded_multi_remove` | `bool (multi_monitor_t *, const char *id)` | Drop a formula by id; false when absent |
+| `sentil_embedded_multi_reset` | `void (multi_monitor_t *)` | Clear every formula's stream state |
+| `sentil_embedded_multi_destroy` | `void (multi_monitor_t *)` | Free the set |
+
+### Offline robustness
+
+The trace calls behind the [worked example above](#offline-traces).
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_trace_create` | `status_t (const double *times, size_t n, trace_t **out)` | A trace over explicit timestamps |
+| `sentil_embedded_trace_create_indexed` | `status_t (size_t len, trace_t **out)` | A trace whose timestamps are 0, 1, ..., `len - 1` |
+| `sentil_embedded_trace_add_signal` | `status_t (trace_t *, const char *name, const double *values, size_t n)` | Attach a named signal; `n` must match the trace length |
+| `sentil_embedded_trace_len` | `size_t (const trace_t *)` | Samples per signal |
+| `sentil_embedded_trace_destroy` | `void (trace_t *)` | Free the trace |
+| `sentil_embedded_robustness` | `status_t (const formula_t *, const trace_t *, double *out)` | Discrete-time scalar robustness |
+| `sentil_embedded_robustness_dense` | `status_t (const formula_t *, const trace_t *, double *out)` | Dense-time scalar robustness under linear interpolation |
+| `sentil_embedded_robustness_signal` | `status_t (const formula_t *, const trace_t *, double *out, size_t cap, size_t *written)` | The discrete per-sample signal; writes up to `cap` values and the full length into `written`, so truncation is detectable |
+| `sentil_embedded_robustness_dense_signal` | `status_t (const formula_t *, const trace_t *, double *out, size_t cap, size_t *written)` | The dense per-sample signal, same contract |
+| `sentil_embedded_violation_intervals` | `status_t (const formula_t *, const trace_t *, double *starts, double *ends, size_t cap, size_t *count)` | Violation intervals as parallel arrays; NULL arrays with `cap` 0 counts first |
+
+### Formula bank
+
+The offline counterpart of the multi-monitor: one trace, many formulas, one evaluation call, results read back by index.
+
+| Function | Signature | Meaning |
+| --- | --- | --- |
+| `sentil_embedded_bank_create` | `status_t (bank_t **out)` | An empty bank |
+| `sentil_embedded_bank_add` | `status_t (bank_t *, const char *id, const char *formula)` | Add a formula under `id`; parser archives only |
+| `sentil_embedded_bank_add_compiled` | `status_t (bank_t *, const char *id, const uint8_t *bytes, size_t len)` | Add from a host-compiled blob |
+| `sentil_embedded_bank_robustness` | `status_t (bank_t *, const trace_t *)` | Evaluate every formula in discrete time, storing the results |
+| `sentil_embedded_bank_robustness_dense` | `status_t (bank_t *, const trace_t *)` | The same in dense time |
+| `sentil_embedded_bank_count` | `size_t (const bank_t *)` | Results stored by the last evaluation |
+| `sentil_embedded_bank_result` | `status_t (const bank_t *, size_t index, double *out)` | The robustness at `index`, or that formula's own error status; past `count` returns `SENTIL_EMBEDDED_INDEX_OUT_OF_RANGE` |
+| `sentil_embedded_bank_id` | `size_t (const bank_t *, size_t index, char *buf, size_t buf_len)` | Copy the id at `index`; NULL `buf` queries the needed length |
+| `sentil_embedded_bank_len` | `size_t (const bank_t *)` | Formulas held |
+| `sentil_embedded_bank_destroy` | `void (bank_t *)` | Free the bank |
+
+On the trace from the offline example, a bank holding `G (speed > 5)` and `F (speed > 10)` reports -1.0 and 2.0.
+
+### Status codes
+
+Zero is success; the rest name their failure.
+
+| Code | Value | Meaning |
+| --- | --- | --- |
+| `SENTIL_EMBEDDED_OK` | 0 | Success |
+| `SENTIL_EMBEDDED_NULL_POINTER` | 1 | A required pointer was NULL |
+| `SENTIL_EMBEDDED_PARSE` | 2 | The formula could not be parsed |
+| `SENTIL_EMBEDDED_UNKNOWN_VARIABLE` | 3 | An update left out a variable the formula needs |
+| `SENTIL_EMBEDDED_PACKED_LENGTH` | 4 | Fewer values than the formula has variables |
+| `SENTIL_EMBEDDED_UNSUPPORTED` | 5 | The formula uses an operator the streaming monitor cannot run online, the probabilistic operator being the case a board meets |
+| `SENTIL_EMBEDDED_DECODE` | 6 | A malformed compiled blob |
+| `SENTIL_EMBEDDED_INTERNAL` | 7 | An internal invariant failed |
+| `SENTIL_EMBEDDED_INVALID_CONFIG` | 8 | An ill-formed model or bounds: a non-square matrix, a dimension mismatch, bounds not covering the inputs |
+| `SENTIL_EMBEDDED_INDEX_OUT_OF_RANGE` | 9 | A result read past the last index |
+
+`SENTIL_EMBEDDED_UNKNOWN_VARIABLE` points in the direction people do not expect: not a stray name in the formula, but a required variable missing from a multi-monitor update. `sentil_embedded_symbol_index` also returns it for a name that is not valid UTF-8.
+
+### Cargo features
+
+The Rust crate's features decide what an archive carries.
+
+| Feature | In default | What it carries |
+| --- | --- | --- |
+| `parser` | yes | The text formula parser behind `sentil_embedded_create`, `sentil_embedded_formula_create`, `sentil_embedded_multi_add`, and `sentil_embedded_bank_add`; drop it on the smallest boards and load compiled blobs |
+| `synthesis` | yes | The numerics, the planner, the controller, and the safety filter |
+| `std` | no | Host builds for the oracle tests and the compile tool; never set on a board |
+| `specs` | no | The premade specification library for the host compile tool; implies `std`, never enters a board |
+| `mcu` | no | The fixed-heap allocator and abort-on-panic for a bare-metal target; set on every board build |
+
+So `default = ["parser", "synthesis"]`, a board build adds `--features mcu`, and the smallest build is `--no-default-features --features mcu`.
+
+### The Rust crate
+
+The library is the `sentil-embedded` crate under `sentil-embedded/rust`, lib name `sentil_embedded`, built as a static archive for boards. Its C ABI is the surface documented above; a handful of Rust-only items are public for the host tool and for Rust firmware that links the crate directly.
+
+| Item | What it is |
+| --- | --- |
+| `Status` | The `#[repr(i32)]` enum behind `sentil_embedded_status_t` |
+| `EmbeddedRobustness` | The `#[repr(C)]` struct behind `sentil_embedded_robustness_t` |
+| `Sample` | The struct behind `sentil_embedded_sample_t` |
+| `codec::encode` | `fn (&Formula) -> Vec<u8>`, produces the compiled-formula blob the host tool emits |
+| `codec::decode` | `fn (&[u8]) -> Result<Formula, Malformed>`, what every `*_create_compiled` call runs |
+| `codec::Malformed` | The decode error, surfaced over the ABI as `SENTIL_EMBEDDED_DECODE` |
+| `multi::EmbeddedMultiMonitor` | The handle struct behind the `sentil_embedded_multi_*` calls |
+| `bank::EmbeddedBank` | The handle struct behind the `sentil_embedded_bank_*` calls |
+
+### Compiling a formula on a workstation
+
+A board short on flash drops the parser and loads a formula compiled ahead of time. The `sentil-compile-formula` tool ships in the repository, not in the packagings, so clone `github.com/sedislab/SENTIL` and run it from `sentil-embedded/rust`:
+
+```bash
+cargo run --features std --bin sentil-compile-formula -- "G (speed > 5 & brake < 1)"
+```
+
+```text
+packed order (2 variables):
+  [0] brake
+  [1] speed
+static const unsigned char SENTIL_FORMULA[] = {
+    0x53, 0x45, 0x4e, 0x31, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x02, 0x00, 0x03, 0x05, 0x00, 0x00, 0x00, 0x73, 0x70, 0x65,
+    0x65, 0x64, 0x02, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40,
+    0x00, 0x03, 0x05, 0x00, 0x00, 0x00, 0x62, 0x72, 0x61, 0x6b, 0x65, 0x00,
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+};
+static const unsigned int SENTIL_FORMULA_LEN = 57;
+```
+
+Paste the array into the sketch and load it with `beginCompiled(SENTIL_FORMULA, SENTIL_FORMULA_LEN)` or `sentil_embedded_create_compiled`. The `packed order` lines go to stderr, one `[index] name` per variable, and they are the packed layout your updates must follow, the same sorted order `sentil_embedded_symbol_index` reports at runtime.
+
+| Flag | Meaning |
+| --- | --- |
+| `"<formula>"` | The formula to compile, as the positional argument |
+| `-o`, `--output <file>` | Write the raw bytes to a file instead of printing the C array |
+| `--spec <name>` | Build from a premade specification instead of a formula |
+| `--variant <v>` | Pick a named variant of the spec |
+| `--param k=v` | Set a spec parameter; repeatable |
+| `--list-specs` | List the available specification names |
+
+The spec flags need a build with the spec library on, `--features "std specs"`. This reaches the whole [specification library](/docs/reference/specifications/catalog), so a board gets a vetted property while only the one formula ships in flash:
+
+```bash
+cargo run --features "std specs" --bin sentil-compile-formula -- --list-specs
+cargo run --features "std specs" --bin sentil-compile-formula -- --spec controls/overshoot --variant step_down --param max_overshoot=0.2 -o overshoot.bin
+```
+
+A spec resolving to a probabilistic formula is refused, as [above](#probabilistic-formulas); pick a deterministic variant.
+
+## Related
+
+<Cards>
+  <Card title="What STL measures" href="/docs/monitoring/concepts/what-is-stl" description="Robustness, why the sign is the verdict, and what the magnitude buys you." />
+  <Card title="The monotonic deque" href="/docs/monitoring/concepts/monotonic-deque" description="The O(1) sliding-window extremum behind every bounded operator, proven in Lean." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="Gradient, CMA-ES, and MILP: what each solves and when each wins." />
+  <Card title="The specification library" href="/docs/reference/specifications/catalog" description="Premade, standards-derived properties the compile tool can put on a board." />
+</Cards>

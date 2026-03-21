@@ -1,1 +1,1 @@
-{ "root": true, "title": "Languages", "icon": "Braces", "pages": ["---[Braces]Languages---", "[Overview](/docs/languages)", "across", "apollo", "autosar", "c", "cli", "cpp", "java", "julia", "matlab", "python", "ros", "rust"] }
+{ "root": true, "title": "Languages", "icon": "Braces", "pages": ["---[Braces]Languages---", "[Overview](/docs/languages)", "across", "apollo", "autosar", "c", "cli", "cpp", "embedded", "java", "julia", "matlab", "python", "ros", "rust"] }
