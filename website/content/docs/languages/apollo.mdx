@@ -1,0 +1,467 @@
+---
+title: "Apollo"
+description: "Run SENTIL inside Baidu Apollo as a Cyber RT module: STL and PrSTL monitoring over Apollo channels, a shield or a synthesized controller, and the Bazel reference."
+---
+
+The `sentil-apollo` module drops into an Apollo workspace as `modules/sentil` and runs the SENTIL engine as Cyber RT components. A monitor watches Apollo channels against STL and probabilistic STL specifications and publishes a verdict per formula. A control component shields Apollo's nominal command inside a specification's bounds, or synthesizes its own command from the specification. Everything is configured in protobuf text, so a deployment is a config file plus a launch command, with no glue code. The build links the staged core through the `@sentil_cpp` Bazel external repository; once the tree is staged, Bazel never touches Rust. Cyber RT runs on Linux only.
+
+## Install
+
+Apollo has no package registry, and the [releases page](https://github.com/sedislab/SENTIL/releases) carries no Apollo asset. One route exists: the module is source, copied into an Apollo workspace as `modules/sentil` and built there by Apollo's `buildtool` on top of Bazel. The operating system to think about is the dev container's rather than the host's, and since Cyber RT is Linux only there is no macOS or Windows workspace to drop into. Apollo 9.0 and newer build modules with the package method these steps use.
+
+### From source
+
+<Steps>
+<Step>
+
+Start the dev container and run every command below inside it, where `buildtool` and Bazel live. The third step builds the core with cargo, so a Rust toolchain has to be on hand once; install one from [rustup.rs](https://rustup.rs) if the container has none.
+
+```bash
+aem start
+```
+
+</Step>
+<Step>
+
+Get the SENTIL source. A clone leaves you on the default branch until you check out a tag; the archive is the 0.3.0 tree and needs no git.
+
+<Tabs items={["Clone","Tag archive"]}>
+<Tab value="Clone">
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+```
+
+</Tab>
+<Tab value="Tag archive">
+
+```bash
+curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -o sentil.tar.gz
+tar -xzf sentil.tar.gz
+cd SENTIL-0.3.0
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+Build the core once and stage an install tree. This is the shared [from source](/docs/start/install#from-source) build followed by a copy of the headers, the shared library, and the deterministic oracle into one prefix. Any prefix works, and `/opt/sentil` is the one CI uses; whichever you pick is the `path` that `@sentil_cpp` takes two steps down.
+
+```bash
+cargo build --release -p sentil-ffi
+install -d /opt/sentil/include/sentil /opt/sentil/lib /opt/sentil/share/sentil
+cp sentil-cpp/include/sentil/*.hpp /opt/sentil/include/sentil/
+install -m644 sentil-ffi/include/sentil.h /opt/sentil/include/sentil.h
+install -m644 target/release/libsentil.so /opt/sentil/lib/libsentil.so
+install -m644 benchmarks/deterministic/oracle.json /opt/sentil/share/sentil/oracle.json
+```
+
+The staged tree is the C header, the C++ surface, the shared library, and the oracle `oracle_parity_test` replays:
+
+```text
+/opt/sentil
+├── include
+│   ├── sentil.h
+│   └── sentil
+│       ├── sentil.hpp
+│       ├── types.hpp
+│       └── errors.hpp
+├── lib
+│   └── libsentil.so
+└── share
+    └── sentil
+        └── oracle.json
+```
+
+The oracle rides in the install tree because an Apollo workspace has no other way to reach the SENTIL checkout, and a released binary bundle already ships it in this layout. A tree staged without it still builds; the parity test then fails with the path it looked for.
+
+Confirm it links before Bazel starts depending on it. The module's symbol reference names every engine call the components make, so it compiles against the staged tree alone and needs no Apollo workspace:
+
+```bash
+g++ -std=c++17 -I/opt/sentil/include sentil-apollo/tests/symbol_reference.cc \
+  -L/opt/sentil/lib -lsentil -o symbol_reference
+LD_LIBRARY_PATH=/opt/sentil/lib ./symbol_reference
+```
+
+It prints nothing and exits 0. A missing or stale core fails at the link, naming the symbol it wanted, instead of surfacing halfway through a module build.
+
+</Step>
+<Step>
+
+Copy the module into the Apollo workspace as `modules/sentil`. The name is not yours to choose: `cyberfile.xml` declares `//modules/sentil` as its `src_path`.
+
+```bash
+cd /path/to/apollo-workspace
+cp -r /path/to/SENTIL/sentil-apollo modules/sentil
+```
+
+</Step>
+<Step>
+
+Declare `@sentil_cpp` in the workspace, pointing at the staged tree with `bzl/sentil_cpp.BUILD` as its build file. Every target in the module depends on `@sentil_cpp//:sentil_cpp`, which is the only door the engine comes through.
+
+```python title="WORKSPACE"
+new_local_repository(
+    name = "sentil_cpp",
+    path = "/opt/sentil",
+    build_file = "//modules/sentil:bzl/sentil_cpp.BUILD",
+)
+```
+
+`bzl/` carries no BUILD file of its own, so the build file is addressed as a path inside the `//modules/sentil` package rather than as `//modules/sentil/bzl:sentil_cpp.BUILD`, which would ask Bazel for a package that is not there.
+
+</Step>
+<Step>
+
+Build the module, install it, and run its tests. The `sentil` in both `buildtool` commands is the name `cyberfile.xml` declares, alongside version 0.3.0, type `module`, and the Apollo dependencies `cyber` and `common-msgs`.
+
+```bash
+buildtool build -p sentil
+buildtool install sentil
+bazel test //modules/sentil/tests/...
+```
+
+Six test targets sit under `tests/`: `field_extractor_test` over protobuf reflection, `oracle_parity_test` for the deterministic oracle through the linked core, `synthesizer_test` for the synthesis bridge, `example_synthesis_test` and `synthesize_then_monitor_example_test` for the two shipped synthesis examples, and `symbol_reference`, which pins every engine call so a header drift breaks the build instead of a drive. None of the six needs a Cyber RT runtime, so a failure here points at the module or the staged core and not at a missing runtime. One of them reaches outside the module: `oracle_parity_test` takes `@sentil_cpp//:deterministic_oracle` as data, which is the `share/sentil/oracle.json` you staged in the first step.
+
+</Step>
+</Steps>
+
+## Your first monitor
+
+Write a formula and a field mapping into the config the monitor dag points at, then launch. This is the shipped `examples/ego_speed_monitor.pb.txt` shape: the ego speed must stay under 20 m/s over any five second window.
+
+```protobuf title="modules/sentil/monitor/conf/sentil_monitor.pb.txt"
+formulas {
+  id: 1
+  expression: "G[0, 5.0] (ego_speed < 20.0)"
+}
+input_channels {
+  channel: "/apollo/canbus/chassis"
+  message_type: "apollo.canbus.Chassis"
+  fields {
+    variable: "ego_speed"
+    field_path: "speed_mps"
+  }
+}
+output_channel: "/apollo/sentil/status"
+```
+
+```bash
+cyber_launch start modules/sentil/monitor/launch/sentil_monitor.launch
+cyber_monitor -c /apollo/sentil/status
+```
+
+The predicate `ego_speed < 20.0` scores `20 - ego_speed`, so a chassis reading of 17.2 m/s carries a margin of 2.8 and a reading of 21.0 scores -1.0; `G`, read always, keeps the worst margin in the window, so one bad second decides the verdict. That worst margin is the [robustness](/docs/monitoring/concepts/what-is-stl) each `FormulaResult` on the status carries, alongside a satisfied flag, a severity, and an `all_satisfied` flag across the set. The engine folds each message at O(1) amortized cost per sample through the [monotonic deque](/docs/monitoring/concepts/monotonic-deque), so the monitor holds a real-time loop.
+
+## Channels as signals
+
+Each `input_channels` entry names a channel, its fully qualified `message_type`, and the fields to read. A field binds a formula variable to either a `field_path` or a `builtin`.
+
+A `field_path` is a dotted, optionally indexed path into the message: `speed_mps`, `pose.position.x`, `perception_obstacle[0].position.x`. Paths resolve against the message descriptor when the component initializes, so a typo fails at startup instead of reading as a silent zero mid-drive.
+
+A `builtin` reduces the whole obstacle list to one number. A fixed index like `perception_obstacle[0]` names whichever obstacle perception listed first, not the nearest, so the reductions a safety formula actually wants are built in:
+
+| Builtin | Meaning |
+| --- | --- |
+| `NEAREST_OBSTACLE_DISTANCE` | The smallest planar range to any obstacle |
+| `MIN_TTC` | The smallest range over closing speed, over obstacles closing ahead |
+| `FRONT_GAP` | The smallest forward range to an obstacle within the ego lane corridor |
+
+<Callout type="warn">
+The builtins read the standard perception obstacle list and treat each obstacle's position and velocity as ego relative. An upstream adapter must transform Apollo's world-frame perception into the ego frame before the monitor reads it.
+</Callout>
+
+Where the readers come from differs by shell. The fused monitor's readers are declared in its dag file. The timed monitor creates its own readers, matching each mapping to a reader by `message_type` and taking the mapping's `channel`, with the standard perception, localization, and chassis channels as the fallback.
+
+## Streaming and the two monitor shells
+
+`SentilMonitorComponent`, the default, is a fused component triggered by perception with localization and chassis as co-channels, so each verdict reflects one consistent message set. `SentilTimedMonitorComponent` reads the same channels through pull readers and evaluates on a timer, every 100 ms as shipped in its dag; reach for it when a steady verdict cadence matters more than reacting to each perception frame.
+
+Both shells share one engine and one readiness discipline. Each tick is stamped with the perception header time, falling back to the Cyber RT clock, and a stalled or rewound stamp skips the tick rather than feeding the engine a non-monotonic time. No status is published until every variable a formula binds has been seen at least once. While a bounded window is still open the verdict is unresolved: the status reports the robustness as a `min` and `max` bound with `is_concrete` false and the severity WARN, and it tightens to a concrete value once the window closes.
+
+For a `P` formula the status also carries the live probability on every tick: `prob_result` holds the running estimate with its Wilson interval at the configured `confidence`, which is the same live-probability accessor the other bindings expose, delivered as a message field.
+
+Downstream, planning subscribes to `/apollo/sentil/status` and falls back when `all_satisfied` goes false or a probabilistic interval drops below its floor. `examples/safety_planner_subscriber.cc` is the small standalone version of that contract; it tests `interval().lower()` against the floor, the pessimistic end, since waiting for the upper end would fall back only after even the optimistic estimate had failed.
+
+## Probabilistic monitoring
+
+A formula selects the probabilistic path with its leading `P` and nothing else; the [P operator](/docs/probabilistic/concepts/what-is-prstl) is the whole switch. For each such formula the monitor builds a probabilistic monitor from `lifting_registry`, lifts each reading into a `sample_budget` ensemble, and reports the satisfaction estimate with a [Wilson interval](/docs/probabilistic/concepts/confidence-intervals) at `confidence`. The shipped `examples/follow_distance_prstl.pb.txt` holds a follow distance under Gaussian perception noise:
+
+```protobuf title="follow_distance_prstl.pb.txt"
+formulas {
+  id: 1
+  expression: "P>=0.99(G[0, 2.0] (front_gap > 5.0))"
+}
+input_channels {
+  channel: "/apollo/perception/obstacles"
+  message_type: "apollo.perception.PerceptionObstacles"
+  fields {
+    variable: "front_gap"
+    builtin: "FRONT_GAP"
+  }
+}
+output_channel: "/apollo/sentil/status"
+lifting_registry {
+  variable: "front_gap"
+  noise {
+    gaussian {
+      mean: 0.0
+      std_dev: 0.25
+    }
+  }
+  interaction: ADDITIVE
+}
+sample_budget: 1000
+confidence: 0.99
+```
+
+The `noise` oneof accepts eight families, listed with their parameters in the [monitor config reference](#monitor-config-sentilconfig) below, and `interaction` is `ADDITIVE` or `MULTIPLICATIVE`. The full theory behind the families lives in [noise models](/docs/reference/methods/noise-models).
+
+<Callout type="info">
+`algorithm`, `semantics`, and `sprt_config` configure only the offline `sentil_record_analyzer`. The live monitor ignores `algorithm` entirely: the leading `P` alone builds the probabilistic path, from `lifting_registry`, `sample_budget`, and `confidence`.
+</Callout>
+
+For the heavier statistics a per-tick budget cannot afford, `sentil_record_analyzer` replays a recorded drive over the same config:
+
+```bash
+sentil_record_analyzer --config=modules/sentil/monitor/conf/sentil_monitor.pb.txt --record=drive.record
+```
+
+The analyzer reads the record into a trace by sample and hold: each message updates its variables, and a row is appended once every configured variable has been seen, on a strictly increasing time axis. It then runs the configured `algorithm` per formula. `DETERMINISTIC` computes the robustness, dense or discrete per `semantics`. `SMC` estimates the probability with its interval. `SPRT` runs [Wald's sequential test](/docs/probabilistic/concepts/sprt) between `p0` and `p1`; the `sprt_config` defaults are `p0` 0.90, `p1` 0.95, `alpha` and `beta` 0.05, and `sample_budget` caps the sample count, so an undecided run reports inconclusive when the budget runs out. `AMS` is rejected with an error: rare-event splitting runs over a stochastic model, not a recorded trace, so reach for the [rare events](/docs/probabilistic/concepts/rare-events) path in the library or the CLI.
+
+## Synthesis and control
+
+`SentilControlComponent` turns a specification into a `ControlCommand`, in one of three modes set in `control/conf/sentil_control.pb.txt`.
+
+`SHIELD`, the default, guards Apollo's own controller. Each tick it takes the latest nominal command off `nominal_channel`, reads the actuation fields named by `control_outputs`, projects them into `bounds` through the safety filter, and writes the projected command with the rest of the nominal command intact. Until a nominal command has been observed it publishes nothing; the timer fires, the tick passes, no command is written.
+
+`SYNTHESIZE` makes SENTIL the controller. Each tick it builds the state vector, plans over the model's horizon inside a hard budget of `deadline_fraction * control_period_ms`, and writes this step's synthesized input onto the command through `control_outputs`. The controller is anytime, emitting the best feasible input found within the budget. When the state cannot be built yet, because a variable has not been seen, the tick is skipped without publishing.
+
+`ADVISORY` plans exactly as `SYNTHESIZE` but publishes to `/apollo/sentil/control_advice` with no actuation authority, so a synthesized controller can be judged against a live drive before it is trusted. In this mode the fixed advice channel overrides `output_channel`.
+
+Two contracts here differ from the monitor. First, the state readers are hardcoded to `/apollo/localization/pose` and `/apollo/canbus/chassis`; a `state_inputs` entry selects what to extract through its `message_type` and `fields`, and its `channel` value is not used to place a reader. Second, a `ControlOutput.field_path` must name a top-level float or double field of `ControlCommand`, such as `throttle`, `brake`, `steering_target`, or `acceleration`; unlike the monitor's `field_path` it accepts no dotted or indexed paths, and an entry whose `index` reaches `input_width` or whose field is not floating point fails at startup. `bounds` is optional and an omitted `bounds` means unbounded inputs. The shipped dag ticks every 10 ms to match the default `control_period_ms`; if you change the period, change the dag interval with it. The launch file sets `exception_handler: respawn`, so a crashed control process restarts rather than staying dead.
+
+The design-time half is `sentil_synthesizer`, which reads a `SYNTHESIZE`-shaped config carrying a `model` and needs no Cyber RT runtime:
+
+```bash
+sentil_synthesizer --config=examples/synthesize_control.pb.txt --op=plan
+```
+
+`--op=plan` synthesizes the open-loop input sequence over the horizon, reporting its robustness and whether it holds, so an infeasible spec comes back as the closest plan with `holds false` rather than nothing. `--op=witness` searches for a counterexample input that violates the spec, and requires `bounds` to search over. `--op=chance` perturbs the model's autonomous dynamics with Gaussian process noise of `--process_std` and checks that the spec holds with probability at least `--probability` at confidence `--confidence`. The shipped `examples/synthesize_control.pb.txt` is a runnable double integrator held between 1 and 9 metres; `examples/synthesize_then_monitor.cc` is the same loop as a standalone program, synthesizing offline and then checking the plan with the engine the monitor runs online. Backend selection and the smooth semantics behind all of this are covered in [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+## Errors
+
+The module fails loudly at startup and stays quiet at runtime. `Init()` returns false, and the component does not start, on a config that does not parse, on a `FieldResolutionError` from a path or builtin that does not resolve against its message type, or on a `std::invalid_argument` from a bad `control_outputs` entry, so a misconfiguration surfaces at `cyber_launch` rather than on the road. At runtime the monitor catches an evaluation exception, logs it, and skips the tick; the process never crashes on input. A control tick that throws logs the failure, and the launch file's respawn brings the process back. The offline tools exit 1 on an engine error and `sentil_synthesizer` exits 2 on a usage error: a missing config, an unknown `--op`, or `witness` without bounds.
+
+## Components and runtime files
+
+The three components, their shells, and their cadence:
+
+| Component | Base | DAG | Cadence |
+| --- | --- | --- | --- |
+| `SentilMonitorComponent` | `cyber::Component<PerceptionObstacles, LocalizationEstimate, Chassis>` | `monitor/dag/sentil_monitor.dag` | Each perception frame |
+| `SentilTimedMonitorComponent` | `cyber::TimerComponent` | `monitor/dag/sentil_timed_monitor.dag` | Timer, 100 ms as shipped |
+| `SentilControlComponent` | `cyber::TimerComponent` | `control/dag/sentil_control.dag` | Timer, 10 ms as shipped, kept equal to `control_period_ms` |
+
+| File | Role |
+| --- | --- |
+| `monitor/dag/sentil_monitor.dag` | Fused topology: perception trigger (qos depth 10, pending queue 10), localization and chassis co-channels |
+| `monitor/dag/sentil_timed_monitor.dag` | Timer topology, `interval: 100` |
+| `control/dag/sentil_control.dag` | Timer topology, `interval: 10` |
+| `monitor/launch/sentil_monitor.launch` | Module `sentil_safety_monitor`, process `sentil_monitor` |
+| `control/launch/sentil_control.launch` | Module `sentil_control`, process `sentil_control`, `exception_handler: respawn` |
+| `cyberfile.xml` | Package manifest: name `sentil`, version 0.3.0, type `module`, depends on `cyber` and `common-msgs` |
+
+## Channels
+
+| Channel | Direction | Message | Note |
+| --- | --- | --- | --- |
+| `/apollo/perception/obstacles` | Read (monitor) | `apollo.perception.PerceptionObstacles` | Trigger of the fused monitor |
+| `/apollo/localization/pose` | Read (monitor, control) | `apollo.localization.LocalizationEstimate` | Hardcoded reader in the control component |
+| `/apollo/canbus/chassis` | Read (monitor, control) | `apollo.canbus.Chassis` | Hardcoded reader in the control component |
+| `/apollo/sentil/status` | Published (monitor) | `SentilStatus` | Default of `output_channel` |
+| `/apollo/control/nominal` | Read (control, `SHIELD`) | `apollo.control.ControlCommand` | Default of `nominal_channel` |
+| `/apollo/control` | Published (control) | `apollo.control.ControlCommand` | Default of `output_channel` |
+| `/apollo/sentil/control_advice` | Published (control, `ADVISORY`) | `apollo.control.ControlCommand` | Fixed; overrides `output_channel` in `ADVISORY` |
+
+## Monitor config (SentilConfig)
+
+The monitor reads a `SentilConfig` in protobuf text (`proto/sentil_config.proto`), default `monitor/conf/sentil_monitor.pb.txt`. The read-by column is honest: two fields in the schema have no consumer anywhere in the module.
+
+| Field | Type | Read by | Meaning |
+| --- | --- | --- | --- |
+| `formulas` | repeated `Formula` | Monitor and analyzer | The specifications to check |
+| `input_channels` | repeated `ChannelMapping` | Monitor and analyzer | The channel-to-variable mapping |
+| `output_channel` | string | Monitor | The status channel, default `/apollo/sentil/status` |
+| `semantics` | `TimeSemantics` | Analyzer only | `DENSE` (default) or `DISCRETE`, picking dense or discrete robustness on replay |
+| `interpolation` | `InterpolationMode` | Nothing | `LINEAR` (default), `CONSTANT`, or `SPLINE`; accepted and unread today |
+| `backend` | `ExecutionBackend` | Nothing | `CPU` (default) or `GPU`; accepted and unread today |
+| `algorithm` | `ProbAlgo` | Analyzer only | `DETERMINISTIC` (default), `SMC`, `SPRT`, or `AMS` (rejected with an error) |
+| `sample_budget` | uint64 | Monitor and analyzer | The SMC ensemble size, default 1000; also caps SPRT samples on replay |
+| `confidence` | double | Monitor and analyzer | The interval level, default 0.95 |
+| `sprt_config` | `SprtConfig` | Analyzer only | The SPRT hypotheses and error rates |
+| `lifting_registry` | repeated `LiftingEntry` | Monitor and analyzer | A noise model and interaction per variable |
+
+The nested messages:
+
+| Message | Fields |
+| --- | --- |
+| `Formula` | `id` (uint64), `expression` (string) |
+| `ChannelMapping` | `channel`, `message_type` (fully qualified, e.g. `apollo.canbus.Chassis`), `fields` |
+| `FieldMapping` | `variable`, then one of `field_path` or `builtin` |
+| `LiftingEntry` | `variable`, `noise`, `interaction` (a `NoiseInteraction`: `ADDITIVE` default, or `MULTIPLICATIVE`) |
+| `SprtConfig` | `p0` (default 0.90), `p1` (0.95), `alpha` (0.05), `beta` (0.05) |
+
+The `NoiseModel` oneof carries eight families:
+
+| Case | Parameters and defaults |
+| --- | --- |
+| `dirac` | A single double, the deterministic value |
+| `gaussian` | `mean` (0.0), `std_dev` (1.0) |
+| `uniform` | `low` (0.0), `high` (1.0) |
+| `log_normal` | `mu` (0.0), `sigma` (1.0) |
+| `exponential` | `rate` (1.0) |
+| `gamma` | `shape` (1.0), `scale` (1.0) |
+| `beta` | `alpha` (1.0), `beta` (1.0) |
+| `truncated_normal` | `mean` (0.0), `std_dev` (1.0), `lower`, `upper` |
+
+## Status message (SentilStatus)
+
+Published on `output_channel`, defined in `proto/sentil_status.proto`.
+
+| Message | Field | Meaning |
+| --- | --- | --- |
+| `SentilStatus` | `header` | Apollo header, stamped with the evaluation time |
+|  | `results` | One `FormulaResult` per formula |
+|  | `computation_time_ms` | The evaluation time for this tick |
+|  | `all_satisfied` | True when every formula holds |
+| `FormulaResult` | `id`, `expression` | The formula |
+|  | `robustness` | A `Robustness`: `is_concrete`, `min`, `max`, equal once concrete |
+|  | `satisfied` | Whether the formula holds |
+|  | `severity` | A `Severity`: `OK` satisfied, `WARN` unresolved, `ERROR` violated; `FATAL` is in the enum and never emitted |
+|  | `prob_result` | A `ProbabilisticResult`, present for a `P` formula |
+| `ProbabilisticResult` | `samples` | The ensemble size, equal to `sample_budget` |
+|  | `satisfactions` | The estimate rounded onto the ensemble |
+|  | `probability` | The running estimate |
+|  | `interval` | A `ConfidenceInterval`: `lower`, `upper`, `confidence_level` |
+
+## Control config (SentilControlConfig)
+
+The control component reads a `SentilControlConfig` (`proto/sentil_control_config.proto`), default `control/conf/sentil_control.pb.txt`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `mode` | `ControlMode` | `SHIELD` (default), `SYNTHESIZE`, or `ADVISORY` |
+| `spec` | `Spec` | The specification; unused by `SHIELD` |
+| `model` | `LinearModel` | The plant; unused by `SHIELD` |
+| `input_width` | uint32 | The control input dimension, default 1 |
+| `control_period_ms` | double | The tick period, default 10.0 |
+| `deadline_fraction` | double | The fraction of the period to plan within, default 0.8 |
+| `state_inputs` | repeated `ChannelMapping` | What to extract from localization and chassis; the `channel` value is unused |
+| `bounds` | `Bounds` | Per-input `lower` and `upper`; optional, omitted means unbounded |
+| `nominal_channel` | string | The `SHIELD` input, default `/apollo/control/nominal` |
+| `output_channel` | string | The command output, default `/apollo/control` |
+| `control_outputs` | repeated `ControlOutput` | Input `index` to a top-level `ControlCommand` field |
+| `smooth` | `SmoothConfig` | The soft min and max temperature for planning; unused by `SHIELD` |
+
+| Message | Fields |
+| --- | --- |
+| `LinearModel` | `a` (row-major n by n), `b` (row-major n by `input_width`), `x0`, `variables`, `dt` (default 0.1), `horizon` (default 20) |
+| `Spec` | `expression`, or a premade specification `name` with an optional `variant` |
+| `Bounds` | `lower`, `upper` |
+| `ControlOutput` | `index` (must be below `input_width`), `field_path` (a top-level float or double `ControlCommand` field) |
+| `SmoothConfig` | `temperature` (default 10.0) |
+
+## Bazel targets
+
+Everything the module builds. The components and libraries are public, so an extension component can depend on them.
+
+| Target | Kind | What it is |
+| --- | --- | --- |
+| `//modules/sentil/monitor:libsentil_monitor_component.so` | component | The fused monitor |
+| `//modules/sentil/monitor:libsentil_timed_monitor_component.so` | component | The timer monitor |
+| `//modules/sentil/monitor:monitor_engine` | library | The shared monitoring engine behind both shells |
+| `//modules/sentil/control:libsentil_control_component.so` | component | The control component |
+| `//modules/sentil/common:engine_config` | library | The proto-to-engine bridge |
+| `//modules/sentil/common:field_extractor` | library | Field path and builtin resolution |
+| `//modules/sentil/proto:sentil_config_proto` | proto | The monitor config |
+| `//modules/sentil/proto:sentil_status_proto` | proto | The status message |
+| `//modules/sentil/proto:sentil_control_config_proto` | proto | The control config |
+| `//modules/sentil/tools:sentil_record_analyzer` | binary | Offline record replay |
+| `//modules/sentil/tools:sentil_synthesizer` | binary | Offline plan, witness, and chance check |
+| `//modules/sentil/examples:libsafety_planner_subscriber.so` | component | The verdict-subscriber example |
+| `//modules/sentil/examples:synthesize_then_monitor` | binary | The standalone synthesize-then-check example |
+| `//modules/sentil/tests:field_extractor_test` | test | Extraction and builtins, no Cyber RT needed |
+| `//modules/sentil/tests:oracle_parity_test` | test | The deterministic oracle through the linked core |
+| `//modules/sentil/tests:synthesizer_test` | test | The synthesis bridge |
+| `//modules/sentil/tests:symbol_reference` | test | Names every engine symbol so a header drift breaks the build |
+| `@sentil_cpp//:sentil_cpp` | external | The staged core: `include/sentil/*.hpp`, `include/sentil.h`, `lib/libsentil.so` |
+| `bzl/sentil_cpp.BUILD` | build file | The BUILD file for the `@sentil_cpp` repository |
+
+## Offline tool flags
+
+`sentil_record_analyzer` takes two flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--config` | The `SentilConfig` text proto |
+| `--record` | The cyber `.record` file to analyze |
+
+`sentil_synthesizer` takes five; the last three apply to `--op=chance`:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--config` | | The `SentilControlConfig` text proto |
+| `--op` | `plan` | `plan`, `witness`, or `chance` |
+| `--probability` | 0.95 | The target satisfaction probability |
+| `--confidence` | 0.95 | The confidence level of the bound |
+| `--process_std` | 0.0 | The Gaussian process-noise standard deviation |
+
+## The C++ bridge
+
+The engine bridge and the extractor are ordinary Bazel-public libraries, so a custom component can link them and reuse the module's plumbing. The headers are `monitor/monitor_engine.h`, `common/field_extractor.h`, and `common/engine_config.h`.
+
+| Name | Signature | One line |
+| --- | --- | --- |
+| `MonitorEngine::Build` | `void Build(const SentilConfig&)` | Build the monitors and extractor; a bad config throws here |
+| `MonitorEngine::Evaluate` | `bool Evaluate(const PerceptionObstacles&, const LocalizationEstimate&, const Chassis&, SentilStatus*)` | Fold one message set; false means skip the tick, nothing written |
+| `FieldExtractor::add_channel` | `void add_channel(const std::string& message_type, const std::vector<FieldMapping>&)` | Resolve a channel's fields; throws on a bad type or path |
+| `FieldExtractor::extract_into` | `void extract_into(const std::string& message_type, const Message&, std::vector<std::string>*, std::vector<double>*) const` | Append the channel's variables and values |
+| `ResolvedField` | `ResolvedField(const Descriptor*, const FieldMapping&)` | One resolved path or builtin; throws `FieldResolutionError` |
+| `ResolvedField::variable` | `const std::string& variable() const` | The variable this field feeds |
+| `ResolvedField::extract` | `double extract(const Message&) const` | Read the scalar, no string parsing on the hot path |
+| `FieldResolutionError` | `: public std::runtime_error` | The startup fail-loud type for unresolvable paths |
+| `Builtin` | `enum class` | `kNearestObstacleDistance`, `kMinTimeToCollision`, `kFrontGap` |
+| `noise_from_proto` | `::sentil::NoiseModel noise_from_proto(const NoiseModel&)` | One noise model; throws on an empty oneof |
+| `lifting_from_proto` | `::sentil::LiftingRegistry lifting_from_proto(const SentilConfig&)` | The whole lifting registry |
+| `smc_from_proto` | `::sentil::SmcConfig smc_from_proto(const SentilConfig&)` | Sample budget and confidence, engine defaults elsewhere |
+| `bounds_from_proto` | `::sentil::Bounds bounds_from_proto(const Bounds&)` | Per-input bounds; throws on mismatched lengths |
+| `model_from_proto` | `::sentil::SystemModel model_from_proto(const LinearModel&, std::size_t input_width)` | The linear plant; throws on bad matrix shapes |
+| `formula_from_spec` | `::sentil::Formula formula_from_spec(const Spec&)` | A raw expression or a named library specification |
+| `tile_bounds` | `::sentil::Bounds tile_bounds(const Bounds&, std::size_t input_width, std::size_t horizon)` | Per-step bounds tiled across the horizon |
+| `chance_system_from_model` | `::sentil::StochasticSystem chance_system_from_model(const LinearModel&, double process_std)` | The perturbed autonomous system a chance check samples |
+
+The types under these signatures are the module's protos and the engine surface from `sentil.hpp`, documented on the [C++ page](/docs/languages/cpp).
+
+## Shipped examples
+
+| File | What it shows |
+| --- | --- |
+| `examples/ego_speed_monitor.pb.txt` | The config-only hello world, a speed limit off the chassis |
+| `examples/follow_distance_prstl.pb.txt` | The PrSTL follow distance through `FRONT_GAP` |
+| `examples/synthesize_control.pb.txt` | A runnable `SYNTHESIZE` config, the double integrator |
+| `examples/cbf_shield_control.pb.txt` | The recommended `SHIELD` deployment |
+| `examples/safety_planner_subscriber.cc` | Acting on the verdict: fallback on `all_satisfied` false or a low interval |
+| `examples/synthesize_then_monitor.cc` | Synthesize offline, then check the plan with the same engine, no Cyber RT |
+
+## Related
+
+<Cards>
+  <Card title="C++ binding" href="/docs/languages/cpp" description="The sentil.hpp surface the module links through @sentil_cpp." />
+  <Card title="Noise models" href="/docs/reference/methods/noise-models" description="Every family the lifting registry can lift a channel through." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="The machinery behind the control component and the offline synthesizer." />
+  <Card title="Apollo case study" href="/docs/start/case-studies/apollo-cyber" description="The module running against a recorded drive, end to end." />
+</Cards>

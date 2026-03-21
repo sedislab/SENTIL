@@ -1,0 +1,525 @@
+---
+title: "AUTOSAR Adaptive"
+description: "SENTIL on the AUTOSAR Adaptive Platform: two ara::com applications over SOME/IP, the transport-free MonitorApp and ControlApp classes, and the full build reference."
+---
+
+The `sentil-autosar-adaptive` package builds two Adaptive Applications from one CMake project. `sentil_monitor` subscribes to a stream of signal frames, evaluates STL and probabilistic STL, and offers a verdict over the bus. `sentil_control` shields a nominal command into its bounds or computes one from a specification. Both link the compiled core, `libsentil.so`, which the prebuilt packages install beside the apps.
+
+Behind the two executables sits a transport-free library, `sentil_apps`, with two C++ classes: `sentil_ap::MonitorApp` turns a frame into verdicts, and `sentil_ap::ControlApp` answers the synthesis surface. The app mains wire those classes to ara::com; an integrator on a vendor platform programs against the same classes and swaps the transport. Signal data arrives as a streamed `SignalFrame` event, the verdict is a notified `Verdict` field that late subscribers latch, and `SetSpecification` and `ComputeControl` are the only request-response calls.
+
+## Install
+
+Three ways in, and none of them is a package-manager registry. The `.deb` and `.rpm` on the releases page carry both applications already built against the open-source ara::com stub over vsomeip, so a plain Linux box runs them with no Adaptive Platform license. The AP deliverable archive is the service model, the manifests, and the app source, packed for import into a vendor AP project. A build from a checkout is the route for a change to the apps, a vendor platform, or an aarch64 ECU.
+
+### From the deb or rpm
+
+<Steps>
+<Step>
+
+Download the package for your distribution from the [releases page](https://github.com/sedislab/SENTIL/releases). Both are Linux x86_64 only, and both were built against vsomeip 3.7.3.
+
+</Step>
+<Step>
+
+Install it. The package name is `sentil-autosar-adaptive`.
+
+```bash
+sudo apt install ./sentil-autosar-adaptive_*.deb     # Debian, Ubuntu
+sudo dnf install ./sentil-autosar-adaptive-*.rpm     # Fedora, RHEL
+```
+
+Everything lands under `/opt/sentil`: `bin/sentil_monitor` and `bin/sentil_control`, `lib/libsentil.so` beside the vsomeip runtime, the five JSON manifests in `manifest/`, and the two vsomeip configs in `etc/vsomeip/`. One file lands outside it, the config `/etc/ld.so.conf.d/sentil-autosar.conf` naming `/opt/sentil/lib`, and the postinstall script runs `ldconfig`, so the loader finds the core with no `LD_LIBRARY_PATH` set.
+
+</Step>
+<Step>
+
+Start the monitor against its own config and watch it report Running.
+
+```bash
+VSOMEIP_CONFIGURATION=/opt/sentil/etc/vsomeip/sentil_monitor.json \
+  VSOMEIP_APPLICATION_NAME=sentil_monitor /opt/sentil/bin/sentil_monitor
+```
+
+Two lines of its own logging say it came up: `[ara::exec] execution state Running`, then `[sentil_monitor][info] offering the verdict service`. vsomeip logs to the same console at level `warning`, so anything else on stderr came from the transport. `VSOMEIP_CONFIGURATION` is needed on every launch, since without it the transport cannot resolve a service. The shipped launch lines set `VSOMEIP_APPLICATION_NAME` beside it, and that name has to match an `applications[].name` entry in the config, which here is `sentil_monitor`. The app serves until SIGINT or SIGTERM, so Ctrl-C ends it.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+The packages bundle the vsomeip runtime next to `libsentil.so` and declare no dependencies of their own, so Boost, which vsomeip links, has to come from your distribution: `libboost-all-dev` on Debian and Ubuntu, `boost-devel` on Fedora.
+</Callout>
+
+### From the AP deliverable archive
+
+<Steps>
+<Step>
+
+Download the archive.
+
+```bash
+curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-autosar-adaptive-0.3.0-ap-deliverable.tar.gz
+```
+
+</Step>
+<Step>
+
+List it before unpacking, which is also the check that the download arrived whole.
+
+```bash
+tar tzf sentil-autosar-adaptive-0.3.0-ap-deliverable.tar.gz
+```
+
+Every path sits under `sentil-autosar-adaptive-0.3.0-ap-deliverable/`, with `model/`, `manifest/`, `src/`, `cmake/`, `codegen/`, `CMakeLists.txt`, and `README.md` at its root.
+
+</Step>
+<Step>
+
+Unpack it, then know what you have.
+
+```bash
+tar xzf sentil-autosar-adaptive-0.3.0-ap-deliverable.tar.gz
+```
+
+`model/` holds the three ARXML service interfaces, `manifest/` the five deployment manifests and their vsomeip renderings, `src/` the two app mains alongside the transport-free `MonitorApp` and `ControlApp`, `cmake/` the toolchain files and `FindAraCom.cmake`, and `codegen/generate.sh` the hook that runs your vendor's ARXML generator. The archive ships no ara::com stub and no tests, so it is material for an AP project rather than a tree that builds where it stands. For a build you can run on a workstation, take the source route below.
+
+</Step>
+</Steps>
+
+### From source
+
+The stub build and the examples are Linux only; macOS and Windows are reached through a vendor Adaptive Platform and its toolchain. On Linux you need CMake 3.16 or newer, Ninja, a C++17 compiler, python3 for the ARXML check, and a Rust toolchain from [rustup.rs](https://rustup.rs) to build the core once. The stub links vsomeip, which is not bundled here: install Boost first (`libboost-all-dev` on Debian and Ubuntu, `boost-devel` on Fedora), then build and install vsomeip from the [COVESA source](https://github.com/COVESA/vsomeip), which places the `vsomeip3` CMake package the configure step resolves. The release build pins vsomeip 3.7.3.
+
+<Steps>
+<Step>
+
+Clone the repository. A source archive for the tag works the same way; the shared entry point is [building from source](/docs/start/install#from-source).
+
+```bash
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL
+```
+
+</Step>
+<Step>
+
+Build the core once and stage it into a prefix. `SENTIL_ROOT` names that prefix, and it has to hold `lib/libsentil.so`, `include/sentil.h`, and `include/sentil/*.hpp`; CMake stops at the generate step if the `include/` directory is missing, so create the tree before configuring. `/opt/sentil` is the one CI uses and the one the commands below carry; writing there needs root, and any prefix you own works the same if you substitute it everywhere `SENTIL_ROOT` appears.
+
+```bash
+cargo build --release -p sentil-ffi
+install -d /opt/sentil/include/sentil /opt/sentil/lib
+cp sentil-cpp/include/sentil/*.hpp /opt/sentil/include/sentil/
+install -m644 sentil-ffi/include/sentil.h /opt/sentil/include/sentil.h
+install -m644 target/release/libsentil.so /opt/sentil/lib/libsentil.so
+```
+
+The apps link that library, so the target needs no Rust toolchain of its own.
+
+</Step>
+<Step>
+
+Configure and build against the transport you have.
+
+<Tabs items={["Stub","Vendor platform","No transport"]}>
+<Tab value="Stub">
+
+This builds both apps, the demo publisher and planner, and the four tests. The toolchain path is relative, so run it from the package directory:
+
+```bash
+cd sentil-autosar-adaptive
+cmake -B build -G Ninja -DSENTIL_AP_VENDOR=stub \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86_64-stub.cmake \
+  -DSENTIL_ROOT=/opt/sentil
+ninja -C build
+```
+
+`find_package(vsomeip3 REQUIRED)` locates the transport. If vsomeip went into a private prefix, add `-DCMAKE_PREFIX_PATH=<that prefix>`.
+
+</Tab>
+<Tab value="Vendor platform">
+
+Copy `cmake/toolchains/vendor-template.cmake` under a name of your own and fill in its four commented lines: the vendor compiler, the sysroot, `SENTIL_AP_VENDOR` as `vector`, `eb`, or `apex`, and `ARA_COM_ROOT`. Everything the vendor build needs comes from that file, so the configure line carries only the toolchain and the core:
+
+```bash
+cd sentil-autosar-adaptive
+cp cmake/toolchains/vendor-template.cmake cmake/toolchains/my-ecu.cmake
+cmake -B build -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/my-ecu.cmake \
+  -DSENTIL_ROOT=/opt/sentil
+ninja -C build
+```
+
+With `SENTIL_AP_VENDOR` set to a vendor and `ARA_COM_ROOT` still commented out, configure stops with a message naming `ARA_COM_ROOT`. The app source does not change across vendors; what the generator and the binding lookup do with your ARXML is under [vendor platforms and safety](#vendor-platforms-and-safety). For an aarch64 ECU with no vendor stack, `cmake/toolchains/aarch64-linux-gnu.cmake` cross-compiles with `aarch64-linux-gnu-g++` against an aarch64 build of the core.
+
+</Tab>
+<Tab value="No transport">
+
+`SENTIL_AP_VENDOR=none` builds `sentil_apps` and the deterministic tests, with no ara::com and no vsomeip anywhere in the link. This is the tier CI runs and the quickest check on a change to `MonitorApp` or `ControlApp`. From the repository root:
+
+```bash
+cmake -S sentil-autosar-adaptive -B build -G Ninja \
+  -DSENTIL_AP_VENDOR=none -DSENTIL_ROOT=/opt/sentil
+cmake --build build -j"$(nproc)"
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+Run the tests.
+
+```bash
+ctest --test-dir build
+```
+
+`parity`, `synthesis`, `probabilistic`, and `arxml_validate` all run here. `parity` replays `benchmarks/deterministic/oracle.json` through the served verdict and demands bit-identical robustness, so a passing run means this build agrees with every other binding. `-DSENTIL_BUILD_LIFECYCLE_TEST=ON` adds a fifth test over the stub, which needs a running routing manager. The rest of the flags are under [CMake flags, toolchains, and codegen](#cmake-flags-toolchains-and-codegen).
+
+</Step>
+</Steps>
+
+A build that has a transport then installs with `cmake --install build --prefix <prefix>`, which places `bin/sentil_monitor`, `bin/sentil_control`, `lib/libsentil.so`, and `manifest/` wherever you point it, the layout the packages ship and the subject of [Packaging](#packaging). The `none` build has nothing to install, since it produces no application.
+
+## Your first monitor
+
+`MonitorApp` is the monitor without the bus, and it is the fastest way to see a verdict. Feed it the universal trace and formula:
+
+```cpp title="first_monitor.cpp"
+#include <cstdio>
+
+#include "monitor_app.hpp"
+#include "sentil_ap/payloads.h"
+
+int main() {
+  sentil_ap::MonitorApp app;
+  app.add("speed_floor", "G (speed > 5)");
+
+  const double times[] = {0, 1, 2, 3, 4};
+  const double speeds[] = {12, 9, 7, 4, 6};
+  for (int i = 0; i < 5; ++i) {
+    sentil_ap::SignalFrame frame;
+    frame.t = times[i];
+    frame.names = {"speed"};
+    frame.values = {speeds[i]};
+    const sentil_ap::Verdict v = app.on_frame(frame).at("speed_floor");
+    std::printf("t=%.0f upper=%g concrete=%d\n", v.timestamp, v.robustness_max,
+                v.is_concrete ? 1 : 0);
+  }
+  return 0;
+}
+```
+
+Compile it against the staged core from the package root and run it:
+
+```bash
+g++ -std=c++17 first_monitor.cpp src/monitor/monitor_app.cpp \
+  -Iara_stub/include -Iinclude -Isrc/monitor -I$SENTIL_ROOT/include \
+  -L$SENTIL_ROOT/lib -lsentil -Wl,-rpath,$SENTIL_ROOT/lib -o first_monitor
+./first_monitor
+```
+
+```text
+t=0 upper=7 concrete=0
+t=1 upper=4 concrete=0
+t=2 upper=2 concrete=0
+t=3 upper=-1 concrete=0
+t=4 upper=-1 concrete=0
+```
+
+Offline, `G (speed > 5)` on this trace scores -1.0, the dip to 4 at t=3. Online the monitor cannot see the future, so each verdict is an interval: `robustness_max` is the best the formula can still achieve, and it falls through 7, 4, 2 to -1 the moment the dip arrives. An unbounded `G`, read always, never resolves, `is_concrete` stays false because a later sample could sink lower, but once the upper bound goes negative the property is beyond saving. The demo below monitors a plain predicate, which resolves on every frame. Why the margin is the verdict is covered in [what STL robustness means](/docs/monitoring/concepts/what-is-stl).
+
+## Signal frames
+
+The monitor's input is `sentil_ap::SignalFrame`: a timestamp `t` and parallel `names` and `values` arrays, one frame of named scalar readings. Whatever produces the frame owns the field-to-variable mapping, an adapter or the perception service, so the monitor reads named scalars and never parses vendor message types. `MonitorApp::on_frame` folds one frame and returns one `Verdict` per registered formula; it throws when a frame omits a variable a formula needs.
+
+On the bus the frame travels as the `SignalFrame` event, encoded by the helpers in `ara_stub/include/sentil_ap/payloads.h`. Every payload struct, helper, and the byte-level encoding is under [Payloads and wire encoding](#payloads-and-wire-encoding).
+
+## The forward-collision demo
+
+The shipped example streams verdicts across a real SOME/IP bus between three processes on one box:
+
+```bash
+examples/adas_fca_monitor/run.sh
+```
+
+`run.sh` starts the monitor first, because it hosts the vsomeip routing manager, then a planner that subscribes to verdicts, then a perception publisher. It exports `VSOMEIP_CONFIGURATION=examples/adas_fca_monitor/vsomeip/demo.json`, the one config that names all three apps and their services. Any process launched by hand needs that variable too; without it the stub transport cannot resolve services.
+
+The publisher offers `SignalInterface` and pushes a `front_gap` that starts at 30 m and closes by 0.5 m every 0.1 s frame. The monitor checks `front_gap > 5.0` under the id `follow_distance` and notifies the `Verdict` field on every frame; the planner latches it and reacts to the `Violation` event:
+
+```text
+verdict t=0.0 robustness=25.000 satisfied=1
+verdict t=0.1 robustness=24.500 satisfied=1
+...
+VIOLATION at t=5.1, engaging fallback
+```
+
+The robustness starts at 25.0, the 30 m gap minus the 5 m bound, and falls with the gap. At t=5.1 the gap is 4.5 and the margin is -0.5, so the property fails. `Violation` fires exactly once, on the satisfied-to-violated transition of a concrete verdict, so the planner reacts to the onset instead of being flooded while the requirement stays violated; the latched `Verdict` field still carries the running margin on every read.
+
+The committed capture of this run is `experiments/autosar_fca_monitoring/results/verdicts.csv`: 600 verdicts over the 60 s scenario, satisfied for the first 5.1 s, robustness bottoming out at -4.0 once the gap floors at 1 m, and one `Violation` event in total.
+
+## Probabilistic monitoring
+
+`SENTIL_MONITOR_MODE=probabilistic` switches the shipped monitor to the PrSTL form without a rebuild:
+
+```bash
+VSOMEIP_CONFIGURATION=manifest/vsomeip/sentil_monitor.json \
+  SENTIL_MONITOR_MODE=probabilistic VSOMEIP_APPLICATION_NAME=sentil_monitor build/sentil_monitor
+```
+
+This registers `P>=0.95 (front_gap > 5.0)` and lifts `front_gap` under additive Gaussian sensor noise, `NoiseModel::gaussian(0.0, 0.5)`, with confidence 0.95 over 2000 samples per frame. Every `Verdict` then carries the live estimate: `probability` is the estimated satisfaction probability, `ci_lower` and `ci_upper` are its Wilson interval, and `satisfied` reflects whether the estimate clears the 0.95 threshold. What a `P` operator asserts is on [the PrSTL page](/docs/probabilistic/concepts/what-is-prstl), and how the interval is chosen on [confidence intervals](/docs/probabilistic/concepts/confidence-intervals).
+
+The programmatic path takes any noise family:
+
+```cpp
+app.add_probabilistic("follow_distance", "P>=0.95 (front_gap > 5.0)", "front_gap",
+                      sentil::NoiseModel::uniform(-0.5, 0.5),
+                      sentil::NoiseInteraction::Additive, 0.95, 2000);
+```
+
+`NoiseInteraction::Additive` lifts a reading as reading plus noise; `Multiplicative` scales it. The 17 families are on the [noise models reference](/docs/reference/methods/noise-models). The online path is the empirical estimator; the sequential, Bayesian, and rare-event checkers live on the C++ surface the apps already link, so an integrator reaches them in-process through [the C++ binding](/docs/languages/cpp).
+
+## Synthesis
+
+`sentil_control` defaults to a least-restrictive safety filter: `ControlApp::shield` wraps a `sentil::SafetyFilter` that clamps a nominal command into per-input bounds and reports through `ControllerStatus.cbf_active` whether it had to intervene. The shipped bounds are lower `{0.0, 0.0, -100.0}` and upper `{100.0, 100.0, 100.0}`.
+
+`SENTIL_CONTROL_MODE=synthesize` swaps in the receding-horizon controller over a double integrator: A `{{1, 0.1}, {0, 1}}`, B `{{0.005}, {0.1}}`, start `{0, 0}`, variables `pos` and `vel`, dt 0.1 s, horizon 20, spec `always[0, 20] (pos > 1.0 and pos < 9.0)`, input bounds `[-3, 3]`, and a hard per-step budget of 8000000 ns, 8 ms.
+
+```bash
+VSOMEIP_CONFIGURATION=manifest/vsomeip/sentil_control.json \
+  SENTIL_CONTROL_MODE=synthesize VSOMEIP_APPLICATION_NAME=sentil_control build/sentil_control
+```
+
+A client calls `ComputeControl` with the current state and a nominal command and gets the command back in the response; the app notifies `ControllerStatus` alongside it, and `ControlCommand` too when the command is feasible. Offline, the same `ControlApp` answers `plan()` for an open-loop input sequence over the whole horizon, `falsify()` for a counterexample input, and `validate_chance()` for a chance-constraint check under Gaussian process noise, so the plan validated at design time is the policy the controller runs online. The machinery behind these calls is on [synthesis backends](/docs/reference/methods/synthesis-backends).
+
+The controller is anytime: `ControllerStatus.feasible` reports a command returned inside the 8 ms budget, not a satisfied spec, and the online monitor is what confirms the property as the system runs, so the two apps are meant to run as a pair.
+
+## Vendor platforms and safety
+
+A vendor Adaptive Platform is a toolchain swap, not a code change. Copy `cmake/toolchains/vendor-template.cmake`, set the vendor compiler and sysroot, set `SENTIL_AP_VENDOR` to `vector`, `eb`, or `apex`, and point `ARA_COM_ROOT` at the vendor ara::com; `cmake/FindAraCom.cmake` locates the binding and `codegen/generate.sh` runs the vendor generator on `model/*.arxml`. The app source is unchanged.
+
+SENTIL is a verdict source and a synthesis engine, not the safety case: the core is a QM element, and the integrator owns the ISO 26262 argument. The package ships no Platform Health Management or Diagnostic Event Management code; those are vendor integration points, where an integrator registers the monitor as a supervised entity and forwards a sustained `Violation` into the platform's diagnostic machinery, the same step that swaps the `ara::exec` and `ara::log` shims for the vendor services. On a hard-real-time target, cap the statistical layer's worker pool with `RAYON_NUM_THREADS=1` for a tighter worst-case execution time.
+
+## Errors
+
+The engine's errors surface as C++ exceptions, and the two apps convert them into bus-visible outcomes instead of crashing. `MonitorApp::add` and `add_probabilistic` throw on a parse error. `on_frame` throws `sentil::SentilError` when a frame omits a variable a registered formula needs; the monitor main catches it, logs `frame failed` through `ara::log`, and keeps serving.
+
+`set_specification` does not throw. It validates the formula before touching anything and returns `false` with the parse diagnostic in its `error` out-parameter, leaving the running monitor untouched; over the bus, the `SetSpecification` response is one byte, `0x01` accepted or `0x00` rejected.
+
+`ControlApp::compute` throws on an engine failure, and `plan`, `falsify`, and `validate_chance` throw when the app is a pure shield with no synthesis problem. The control main answers a failed `ComputeControl` with an empty, infeasible `ControlResponse`. The payload parsers throw `std::runtime_error` reading `truncated SENTIL payload` on a short buffer rather than reading past it. The exception taxonomy of the underlying surface is on [the C++ binding](/docs/languages/cpp).
+
+## Reference
+
+### Applications
+
+| Application | Role |
+| --- | --- |
+| `sentil_monitor` | Subscribes `SignalFrame`, evaluates STL and PrSTL, offers the `Verdict` field, the `Violation` event, and the `SetSpecification` method |
+| `sentil_control` | Offers `ComputeControl`, the `ControlCommand` event and the `ControllerStatus` field, shielding a nominal command or computing one from a spec |
+
+Both report Running to Execution Management at startup and shut down cleanly on SIGINT or SIGTERM.
+
+### Services and SOME/IP ids
+
+Three service interfaces live in `model/` as ARXML; their deployment ids live in `manifest/`. Every service uses instance `0x0001` and every event sits in event group `0x0001`.
+
+| Interface | Service | Member | Id | Kind |
+| --- | --- | --- | --- | --- |
+| `SignalInterface` | `0x6000` | `SignalFrame` | `0x8000` | event |
+| `VerdictInterface` | `0x6001` | `Verdict` | `0x8001` | field, getter and notifier, no setter |
+| `VerdictInterface` | `0x6001` | `Violation` | `0x8002` | event |
+| `VerdictInterface` | `0x6001` | `SetSpecification` | `0x0001` | method |
+| `ControlInterface` | `0x6002` | `ControlCommand` | `0x8003` | event, notified on each feasible command |
+| `ControlInterface` | `0x6002` | `ControllerStatus` | `0x8004` | field, getter and notifier, no setter |
+| `ControlInterface` | `0x6002` | `ComputeControl` | `0x0001` | method |
+
+The monitor provides `VerdictInterface` and requires `SignalInterface`; the control app provides `ControlInterface` and requires `SignalInterface`. `Violation` fires once per satisfied-to-violated transition, and only on concrete verdicts, so an unresolved future-bounded verdict never triggers it. `ControlCommand` (`0x8003`) carries the command for a subscriber that follows the stream rather than calling `ComputeControl` itself; the app notifies it whenever a command comes back feasible, alongside the response and the `ControllerStatus` event. An infeasible cycle raises `ControllerStatus` alone, so a subscriber never reads a command the controller could not stand behind. `SetSpecification` takes a length-prefixed formula string (`formula`, String) and answers one byte (`accepted`, Boolean); `ComputeControl` takes `state` and `nominal` (Float64Vector) and answers `command` (Float64Vector) and `feasible` (Boolean).
+
+### Payloads and wire encoding
+
+The payload structs and their byte encoding live in `ara_stub/include/sentil_ap/payloads.h`, namespace `sentil_ap`, shared by the apps, the examples, and the tests. `sentil_ap::Bytes` is `std::vector<std::uint8_t>`. Lengths and counts are little-endian `u32`, strings are length-prefixed, bools are single bytes, and doubles travel in host byte order, so both ends agree on a same-endian bus and a cross-endian link would byte-swap the doubles.
+
+| Struct | Fields |
+| --- | --- |
+| `SignalFrame` | `t` (double), `names` (`std::vector<std::string>`), `values` (`std::vector<double>`, parallel to `names`) |
+| `Verdict` | `timestamp`, `robustness_min`, `robustness_max` (doubles), `satisfied`, `is_concrete` (bools), `probability`, `ci_lower`, `ci_upper` (doubles) |
+| `ControlRequest` | `state`, `nominal` (both `std::vector<double>`) |
+| `ControlResponse` | `command` (`std::vector<double>`), `feasible` (bool) |
+| `ControllerStatus` | `deadline_met`, `feasible`, `cbf_active` (bools; three bytes on the wire) |
+
+In a `Verdict`, `is_concrete` maps the engine's `resolved` flag: when true, `robustness_min` and `robustness_max` both carry the final value; when false they are the running interval. `satisfied` is the verdict, `probability` is 0.0 for a deterministic formula, and `ci_lower` and `ci_upper` are the Wilson interval. In a `ControllerStatus`, `feasible` means a command was produced, not that the spec holds, and `cbf_active` means the shield modified the nominal command.
+
+| Function | Signature | One line |
+| --- | --- | --- |
+| `serialize` | `Bytes serialize(const SignalFrame&)` | `t`, then the name count and length-prefixed names, then the value count and doubles |
+| `parse_signal_frame` | `SignalFrame parse_signal_frame(const Bytes&)` | Bounds-checked; throws on a truncated buffer |
+| `serialize` | `Bytes serialize(const Verdict&)` | The eight fields in declaration order, bools as single bytes |
+| `parse_verdict` | `Verdict parse_verdict(const Bytes&)` | The inverse, bounds-checked |
+| `serialize` | `Bytes serialize(const ControlRequest&)` | `state` then `nominal`, each count-prefixed |
+| `parse_control_request` | `ControlRequest parse_control_request(const Bytes&)` | The inverse |
+| `serialize` | `Bytes serialize(const ControlResponse&)` | `command` then the `feasible` byte |
+| `parse_control_response` | `ControlResponse parse_control_response(const Bytes&)` | The inverse |
+| `serialize` | `Bytes serialize(const ControllerStatus&)` | Three bytes: `deadline_met`, `feasible`, `cbf_active` |
+
+### The app classes
+
+The library target `sentil_apps` builds the two transport-free classes, the surface an integrator programs against on any platform. `sentil_ap::MonitorApp` owns a `sentil::MultiMonitor` and a `sentil::LiftingRegistry`; every method is serialized by an internal mutex, so ara::com dispatch threads and control-plane calls interleave safely.
+
+| Member | Signature | One line |
+| --- | --- | --- |
+| `MonitorApp` | `MonitorApp()` | An empty monitor with no formulas |
+| `add` | `void add(const std::string& id, const std::string& formula)` | Register a deterministic formula; throws on a parse error |
+| `add_probabilistic` | `void add_probabilistic(const std::string& id, const std::string& formula, const std::string& variable, sentil::NoiseModel noise, sentil::NoiseInteraction interaction, double confidence, std::uint64_t samples)` | Register a `P~p` formula over a variable lifted with any noise family, additive or multiplicative |
+| `set_specification` | `bool set_specification(const std::string& formula, std::string& error)` | Validate first; on success replace every formula with one deterministic spec under the id `spec` |
+| `on_frame` | `std::map<std::string, Verdict> on_frame(const SignalFrame& frame)` | Fold one frame, one verdict per formula; throws on a missing variable |
+| `ids` | `const std::vector<std::string>& ids() const` | Registered formula ids in insertion order |
+
+`sentil_ap::ControlApp` owns the controller and the safety filter; its constructors are the two static factories.
+
+| Member | Signature | One line |
+| --- | --- | --- |
+| `shield` | `static ControlApp shield(const std::vector<double>& lower, const std::vector<double>& upper)` | A least-restrictive shield over per-input bounds |
+| `synthesize` | `static ControlApp synthesize(const std::vector<std::vector<double>>& a, const std::vector<std::vector<double>>& b, const std::vector<double>& x0, const std::vector<std::string>& variables, double dt, std::size_t horizon, const std::string& spec, const std::vector<double>& lower, const std::vector<double>& upper, std::uint64_t budget_ns)` | A receding-horizon controller plus a synthesis problem over a linear model |
+| `compute` | `Outcome compute(const std::vector<double>& state, const std::vector<double>& nominal)` | One command: the shield reads `nominal`, the controller reads `state`; throws on an engine failure |
+| `plan` | `sentil::SynthesisResult plan() const` | An open-loop input sequence over the whole horizon |
+| `falsify` | `sentil::Witness falsify() const` | Search for an input that violates the spec |
+| `validate_chance` | `sentil::ChanceReport validate_chance(double probability, double confidence, double process_std) const` | Whether the spec holds with at least `probability` under Gaussian process noise of the given standard deviation |
+| `Outcome` | `struct Outcome { std::vector<double> command; ControllerStatus status; }` | What `compute` returns |
+
+`plan`, `falsify`, and `validate_chance` throw for a pure shield, which carries no synthesis problem.
+
+### The ara::com stub
+
+`ara_stub/` implements the slices of `ara::com`, `ara::exec`, and `ara::log` the SENTIL services use, over vsomeip. A vendor platform replaces it wholesale through the toolchain.
+
+| Item | Signature | One line |
+| --- | --- | --- |
+| `ara::com::Bytes` | `std::vector<std::uint8_t>` | A payload buffer |
+| `ara::com::ServiceId` | `struct { vsomeip::service_t service; vsomeip::instance_t instance; }` | One service instance on the bus |
+| `ara::com::Provider` | `Provider(const std::string& app_name, ServiceId id)` | Offers one service |
+| `Provider::offer_event` | `void offer_event(vsomeip::event_t event, vsomeip::eventgroup_t group)` | Declare an event or field notifier before offering |
+| `Provider::on_method` | `void on_method(vsomeip::method_t method, std::function<Bytes(const Bytes&)> handler)` | Register a request handler returning the response payload |
+| `Provider::offer` | `void offer()` | Start offering once events and methods are declared |
+| `Provider::notify` | `void notify(vsomeip::event_t event, const Bytes& payload)` | Push an event or field update to subscribers |
+| `ara::com::Consumer` | `Consumer(const std::string& app_name, ServiceId id)` | Finds and subscribes one service |
+| `Consumer::subscribe` | `void subscribe(vsomeip::event_t event, vsomeip::eventgroup_t group, std::function<void(const Bytes&)> handler)` | Deliver each event payload to the handler |
+| `Consumer::wait_available` | `bool wait_available(std::chrono::milliseconds timeout)` | Block until the service is found or the timeout passes |
+| `ara::exec::ExecutionClient` | `void ReportExecutionState(ExecutionState state)` | Report to Execution Management; the stub logs to stderr |
+| `ara::exec::ExecutionState` | `enum class ExecutionState { kRunning }` | The one state the apps report |
+| `ara::log::CreateLogger` | `Logger CreateLogger(const std::string& context)` | A context-tagged logger |
+| `ara::log::Logger` | `LogInfo()`, `LogWarn()`, `LogError()` | Each returns a `LogStream` |
+| `ara::log::LogStream` | streaming `operator<<` | Writes one stderr line, newline on destruction |
+
+The `Consumer` has no method-call API: it subscribes and waits, nothing more. No shipped client invokes `SetSpecification` or `ComputeControl` over the bus; the tests drive `MonitorApp` and `ControlApp` in-process, and the planner example only subscribes. A bus client for the two methods comes from a vendor ara::com proxy or a small client written directly on vsomeip.
+
+### Environment variables
+
+| Variable | Read by | Meaning |
+| --- | --- | --- |
+| `SENTIL_MONITOR_MODE` | `sentil_monitor` | Unset: the deterministic `front_gap > 5.0`. `probabilistic`: `P>=0.95 (front_gap > 5.0)` under `gaussian(0.0, 0.5)` additive, confidence 0.95, 2000 samples |
+| `SENTIL_CONTROL_MODE` | `sentil_control` | Unset: the shield. `synthesize`: the receding-horizon double integrator |
+| `VSOMEIP_APPLICATION_NAME` | vsomeip | Must match an `applications[].name` entry in the active vsomeip config |
+| `VSOMEIP_CONFIGURATION` | vsomeip | Path to the vsomeip JSON config; required for every launch, exported by `run.sh` for the demo |
+| `SENTIL_AP_MANIFEST` | vendor platform | Points a process at its config in the `/opt/sentil` layout; not read by the stub |
+| `SENTIL_AP_VENDOR` | `codegen/generate.sh` | Default `stub`, which generates nothing; any other value requires `SENTIL_AP_GENERATOR` |
+| `SENTIL_AP_GENERATOR` | `codegen/generate.sh` | The vendor ara::com generator, invoked on `model/*.arxml` |
+| `BUILD` | `run.sh` | Build directory override, default `../../build` relative to the demo |
+
+### CMake flags, toolchains, and codegen
+
+| Flag | Values | Meaning |
+| --- | --- | --- |
+| `SENTIL_AP_VENDOR` | `stub` (default), `vector`, `eb`, `apex`, `none` | Which ara::com binding to build against; `none` builds the library and the deterministic tests with no transport, the tier CI runs |
+| `SENTIL_ROOT` | a prefix | The staged core: `lib/libsentil.so` plus the C and C++ headers under `include/` |
+| `ARA_COM_ROOT` | a path | The vendor ara::com install; `cmake/FindAraCom.cmake` runs `find_library` for `ara_com` under its `lib/` |
+| `CMAKE_TOOLCHAIN_FILE` | a path | The target toolchain, below |
+| `SENTIL_BUILD_LIFECYCLE_TEST` | `ON`, `OFF` | Build `lifecycle_test`; also needs `SENTIL_AP_VENDOR=stub` |
+
+Toolchain files under `cmake/toolchains/`:
+
+| File | Target |
+| --- | --- |
+| `linux-x86_64-stub.cmake` | Native x86_64 against the stub; forces `SENTIL_AP_VENDOR=stub` |
+| `aarch64-linux-gnu.cmake` | Cross-compile for an aarch64 ECU with `aarch64-linux-gnu-gcc` and `-g++`; point `SENTIL_ROOT` at an aarch64 core build |
+| `vendor-template.cmake` | Copy and fill in: vendor compiler, sysroot, `SENTIL_AP_VENDOR`, `ARA_COM_ROOT` |
+
+The stub build resolves vsomeip through `find_package(vsomeip3 REQUIRED)`. `codegen/generate.sh` is a no-op under the stub, since the generic `Provider` and `Consumer` plus the manifest ids realize the interfaces; for a vendor it runs `$SENTIL_AP_GENERATOR --input model/*.arxml --output codegen/generated`.
+
+### Build and test targets
+
+| Target | Kind | What it is |
+| --- | --- | --- |
+| `sentil_apps` | library | `MonitorApp` and `ControlApp`, transport-free, links the imported `sentil::cpp` core |
+| `sentil_monitor` | executable | The monitor application; built unless `SENTIL_AP_VENDOR=none` |
+| `sentil_control` | executable | The control application; same gate |
+| `perception_publisher` | example executable, stub only | Offers `SignalInterface`, pushes the closing `front_gap` |
+| `planner_subscriber` | example executable, stub only | Subscribes `Verdict` and `Violation`, prints each, engages the fallback |
+| `parity_test` | ctest `parity` | The served verdict equals the engine on `benchmarks/deterministic/oracle.json`, including the wire round-trip |
+| `synthesis_test` | ctest `synthesis` | `compute`, `plan`, `falsify`, and `validate_chance` end to end |
+| `probabilistic_test` | ctest `probabilistic` | The PrSTL path with a non-Gaussian, uniform lifting |
+| `arxml_validate` | ctest, python3 | The model is well-formed and service-instance ids are unique across the manifests |
+| `lifecycle_test` | ctest `lifecycle`, gated | The service-discovery handshake and clean shutdown; needs a running routing manager |
+
+Installing places `bin/sentil_monitor`, `bin/sentil_control`, `lib/libsentil.so`, and the `manifest/` directory into the prefix.
+
+### Manifests
+
+The deployment is five JSON manifests in `manifest/`: one shared machine manifest plus an execution and a service-instance manifest per app. A vendor generator emits ARXML from the same fields.
+
+| File | What it declares |
+| --- | --- |
+| `machine.manifest.json` | Machine `sentil-ecu`, unicast `127.0.0.1`, service discovery on multicast `224.244.224.245` port `30490`, and the function groups |
+| `sentil_monitor.exec.manifest.json` | Executable `bin/sentil_monitor`, starts in `MachineState=Running` and `Driving=On`, `scheduling_policy` `FIFO`, `priority` 60 |
+| `sentil_control.exec.manifest.json` | Same shape, `priority` 70 |
+| `sentil_monitor.si.manifest.json` | Provides `VerdictInterface` `0x6001` (events `0x8001` and `0x8002`, method `0x0001`), requires `SignalInterface` `0x6000` |
+| `sentil_control.si.manifest.json` | Provides `ControlInterface` `0x6002` (events `0x8003` and `0x8004`, method `0x0001`), requires `SignalInterface` `0x6000` |
+
+The function groups are `MachineState` with states `Startup`, `Running`, and `Shutdown`, and `Driving` with states `Off` and `On`.
+
+An execution manifest carries `application`, `executable`, and a `startup` array whose entries hold `function_group_states` (pairs of `function_group` and `state`), `scheduling_policy`, `priority`, and `reporting_behavior`, which is `REPORTS_EXECUTION_STATE` for both apps. A service-instance manifest carries `application` and a `services` array whose entries hold `interface`, `role` (`provided` or `required`), `service`, `instance`, an `events` array of `name`, `event`, and `eventgroup`, and a `methods` array of `name` and `method`.
+
+### vsomeip configuration
+
+The service ids render into vsomeip JSON so the stub resolves them.
+
+| Config | Contents |
+| --- | --- |
+| `manifest/vsomeip/sentil_monitor.json` | App `sentil_monitor` id `0x1001`, service `0x6001` on UDP `30501`, `routing: sentil_monitor` |
+| `manifest/vsomeip/sentil_control.json` | App `sentil_control` id `0x1002`, service `0x6002` on UDP `30502` |
+| `examples/adas_fca_monitor/vsomeip/demo.json` | Apps `sentil_monitor` `0x1001`, `perception_publisher` `0x1003`, `planner_subscriber` `0x1004`; services `0x6000` on `30500` and `0x6001` on `30501`; `routing: sentil_monitor` |
+
+The `routing` key names the process that hosts the vsomeip routing manager; in both the production monitor config and the demo that is `sentil_monitor`, which is why `run.sh` starts it first. Ports are declared `unreliable`, so the transport is UDP: `30500` for signals, `30501` for verdicts, `30502` for control. Every config enables service discovery on multicast `224.244.224.245` port `30490` over `udp` and logs to the console at level `warning`.
+
+### Packaging
+
+`packaging/nfpm.yaml` builds the `sentil-autosar-adaptive` `.deb` and `.rpm` with nfpm; the release workflow stages the tree under `pkgroot/` and supplies the architecture and version through `NFPM_ARCH` and `SENTIL_VERSION`. The packages install under `/opt/sentil`:
+
+```text
+/opt/sentil/
+├── bin/{sentil_monitor, sentil_control}
+├── lib/libsentil.so
+├── manifest/*.json
+└── etc/vsomeip/{sentil_monitor.json, sentil_control.json}
+```
+
+A config file at `/etc/ld.so.conf.d/sentil-autosar.conf` makes `/opt/sentil/lib` resolvable, and the postinstall and postremove scripts run `ldconfig`. On a vendor platform each process is pointed at its config through `SENTIL_AP_MANIFEST`; in stub mode `VSOMEIP_CONFIGURATION` does that job. Beyond the packages, a release carries a zipped drop of the same tree, and the ARXML plus the manifest set is the AUTOSAR deliverable an integrator imports into their own AP project.
+
+### Demo defaults
+
+| Default | Value |
+| --- | --- |
+| Monitor spec | id `follow_distance`, `front_gap > 5.0` |
+| Probabilistic spec | `P>=0.95 (front_gap > 5.0)`, `gaussian(0.0, 0.5)` additive, confidence 0.95, 2000 samples |
+| Shield bounds | lower `{0.0, 0.0, -100.0}`, upper `{100.0, 100.0, 100.0}` |
+| Synthesis problem | A `{{1, 0.1}, {0, 1}}`, B `{{0.005}, {0.1}}`, start `{0, 0}`, variables `pos` and `vel`, dt 0.1, horizon 20, spec `always[0, 20] (pos > 1.0 and pos < 9.0)`, bounds `[-3, 3]`, budget 8 ms |
+| Publisher | `front_gap` from 30.0 down 0.5 per frame to a floor of 1.0, frame dt 0.1 s, one frame per 20 ms of wall time, 60 s of trace |
+| Planner | Subscribes `0x8001` and `0x8002`, waits up to 5 s for the monitor, prints the `VIOLATION` line on the event |
+| `run.sh` | Monitor (routing host), then planner, then publisher, one shared `demo.json` |
+
+## Related
+
+<Cards>
+  <Card title="C++ binding" href="/docs/languages/cpp" description="The sentil.hpp surface MonitorApp and ControlApp are built on." />
+  <Card title="What STL robustness means" href="/docs/monitoring/concepts/what-is-stl" description="Why the margin is the verdict and what the sign carries." />
+  <Card title="PrSTL" href="/docs/probabilistic/concepts/what-is-prstl" description="What a P operator asserts and how the estimate is checked." />
+  <Card title="Synthesis backends" href="/docs/reference/methods/synthesis-backends" description="The machinery behind plan, falsify, and the receding-horizon controller." />
+</Cards>
