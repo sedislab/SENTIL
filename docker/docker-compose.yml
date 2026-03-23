@@ -17,6 +17,17 @@ services:
       - ../benchmarks/results:/sentil/benchmarks/results
     command: make bench-modest MODEST=/opt/modest/modest
 
+  sentil-prism:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: base
+    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    volumes:
+      - ${PRISM_HOME:-.}:/opt/prism:ro
+      - ../benchmarks/results:/sentil/benchmarks/results
+    command: make bench-prism PRISM=/opt/prism/bin/prism
+
   sentil-uppaal:
     build:
       context: ..

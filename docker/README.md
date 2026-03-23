@@ -43,7 +43,15 @@ docker run --gpus all ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
 
 The GPU stage is verified on a machine with a GPU, not in continuous integration, because the hosted runners have no device.
 
-## The UPPAAL-SMC baseline
+## The PRISM baseline
+
+PRISM is a large external download, so mount a local install:
+
+1. Download the Linux release from [prismmodelchecker.org](prismmodelchecker.org).
+2. Unpack it, get into the directory and then run ./install.sh.
+3. The launcher is placed at <prism-dir>/bin/prism. Check it with <prism-dir>/bin/prism -version.
+4. PRISM_HOME=<prism-dir>/bin/prism.
+5. Run `PRISM_HOME=/path/to/prism docker compose -f docker/docker-compose.yml run --rm sentil-prism`.
 
 UPPAAL is licensed for academic use and may not be redistributed either, so mount a local install the same way:
 
