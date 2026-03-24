@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<nta>
+<declaration>
+// Tandem queueing network as a CTMC.
+const int C = 20;
+
+int[0,C] q1 = 0;
+int[0,C] q2 = 0;
+</declaration>
+
+<template>
+<name>Tandem</name>
+
+<location id="id0" x="0" y="0">
+    <name x="-10" y="-34">Run</name>
+    <label kind="exponentialrate">(q1 &lt; C ? 4.8 : 0.0) + (q1 &gt; 0 &amp;&amp; q2 &lt; C ? 5.0 : 0.0) + (q2 &gt; 0 ? 5.0 : 0.0)</label>
+</location>
+
+<branchpoint id="id1" x="160" y="0"/>
+
+<init ref="id0"/>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">q1 &lt; C ? 48 : 0</label>
+    <label kind="assignment">q1++</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">q1 &gt; 0 &amp;&amp; q2 &lt; C ? 50 : 0</label>
+    <label kind="assignment">q1--, q2++</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="probability">q2 &gt; 0 ? 50 : 0</label>
+    <label kind="assignment">q2--</label>
+</transition>
+
+</template>
+
+<system>
+queue = Tandem();
+system queue;
+</system>
+</nta>

@@ -14,6 +14,11 @@ if ! command -v "$VERIFYTA" >/dev/null 2>&1 && [ ! -x "$VERIFYTA" ]; then
 fi
 
 name=$(basename "$model" .xml)
+case "$name" in
+  circadian)    mdl=barkai_leibler_ctmc; prop='Pr[<=20] (<> A >= 100)' ;;
+  tandem_queue) mdl=tandem_queue;        prop='Pr[<=50] (<> (q1 == 20 || q2 == 20))' ;;
+  *) echo "no property registered for $name" >&2; exit 2 ;;
+esac
 start=$(date +%s%N)
 if ! out=$("$VERIFYTA" -s -q -E 0.004 -a 0.05 "$model" "$query" 2>&1); then
   echo "verifyta failed on $name: $out" >&2
@@ -30,6 +35,6 @@ if [ -z "$runs" ] || [ -z "$lo" ] || [ -z "$hi" ]; then
   exit 1
 fi
 
-awk -v lo="$lo" -v hi="$hi" -v n="$runs" -v ms="$ms" 'BEGIN {
-  printf "{\"tool\":\"uppaal\",\"version\":\"4.1.19\",\"benchmark\":\"smc/%s\",\"model\":\"barkai_leibler_ctmc\",\"property\":\"Pr[<=20] (<> A >= 100)\",\"probability\":%.6f,\"ci_half_width\":%.6f,\"samples\":%s,\"time_ms\":%.1f}\n", "circadian", (lo+hi)/2, (hi-lo)/2, n, ms
+awk -v lo="$lo" -v hi="$hi" -v n="$runs" -v ms="$ms" -v name="$name" -v mdl="$mdl" -v prop="$prop" 'BEGIN {
+  printf "{\"tool\":\"uppaal\",\"version\":\"4.1.19\",\"benchmark\":\"smc/%s\",\"model\":\"%s\",\"property\":\"%s\",\"probability\":%.6f,\"ci_half_width\":%.6f,\"samples\":%s,\"time_ms\":%.1f}\n", name, mdl, prop, (lo+hi)/2, (hi-lo)/2, n, ms
 }'
