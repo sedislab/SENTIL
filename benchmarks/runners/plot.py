@@ -277,9 +277,9 @@ def particles(records):
     ax.legend(loc="upper right")
     save(fig, "particles.png")
 
-def smc_circadian(records):
+def smc_model(records, benchmark, title, out):
     def pick(tool):
-        return next((r for r in records if r.get("benchmark") == "smc/circadian" and r.get("tool") == tool), None)
+        return next((r for r in records if r.get("benchmark") == benchmark and r.get("tool") == tool), None)
     s, p = pick("sentil"), pick("prism")
     if not s or not p:
         return
@@ -294,13 +294,19 @@ def smc_circadian(records):
     secs = [r["time_ms"] / 1000.0 for _, r, _ in bars]
     probs = [r["probability"] for _, r, _ in bars]
     rects = ax.bar(tools, secs, color=[c for _, _, c in bars], width=0.5, zorder=3)
-    ax.set_ylabel("seconds for 10,000 samples (lower is faster)")
-    ax.set_title("Statistical model checking the circadian CTMC")
+    ax.set_ylabel("seconds at about 10,000 samples (lower is faster)")
+    ax.set_title(title)
     ax.set_ylim(top=max(secs) * 1.25)
     for rect, sec, pr in zip(rects, secs, probs):
         ax.text(rect.get_x() + rect.get_width() / 2, sec + max(secs) * 0.02,
                 f"{sec:.1f} s\nP = {pr:.3f}", ha="center", va="bottom", fontsize=10, color=style.INK)
-    save(fig, "smc_circadian.png")
+    save(fig, out)
+
+def smc_circadian(records):
+    smc_model(records, "smc/circadian", "Statistical model checking the circadian CTMC", "smc_circadian.png")
+
+def smc_tandem_queue(records):
+    smc_model(records, "smc/tandem_queue", "Statistical model checking the tandem queue", "smc_tandem_queue.png")
 
 def synthesis(records):
     rows = [r for r in records if "mode" in r]
@@ -324,7 +330,7 @@ def main():
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online,
                    scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
-                   particles, synthesis):
+                   smc_tandem_queue, particles, synthesis):
         figure(records)
     for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
                         ("julia", "Julia"), ("java", "Java"), ("matlab", "MATLAB")):
