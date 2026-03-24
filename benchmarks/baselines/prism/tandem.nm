@@ -1,0 +1,18 @@
+// Scalable Tandem Queueing Network
+ctmc
+
+const int CAP = 20;
+
+module queue1
+    q1 : [0..CAP] init 0;
+    
+    [] q1 < CAP -> 4.8 : (q1' = q1 + 1); // Arrival
+    [serve1] q1 > 0 -> 5.0 : (q1' = q1 - 1); // Service
+endmodule
+
+module queue2
+    q2 : [0..CAP] init 0;
+    
+    [serve1] q2 < CAP -> 1.0 : (q2' = q2 + 1); // Arrival from Q1
+    [] q2 > 0 -> 5.0 : (q2' = q2 - 1); // Departure
+endmodule
