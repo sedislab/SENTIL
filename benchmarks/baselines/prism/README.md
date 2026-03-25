@@ -16,6 +16,4 @@ Set `PRISM` to the launcher. Then run the model:
 PRISM=<path>/prism bash benchmarks/runners/prism_runner.sh benchmarks/baselines/prism/circadian.nm
 ```
 
-The runner does 10,000 simulation runs. It writes one JSON record to standard output. You can also use `make bench-prism`, which writes `benchmarks/results/prism_smc_circadian.jsonl`.
-
-If you do not install PRISM, the runner prints a message and stops with success.
+You can also use `make bench-prism` to run everything. It writes `benchmarks/results/prism_smc.jsonl`.
