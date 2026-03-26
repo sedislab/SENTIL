@@ -1,0 +1,2 @@
+{"tool":"prism","version":"4.9","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"F<=20 (a>=100)","probability":0.0407,"ci_half_width":0.005089946555189676,"samples":10000,"time_ms":27575.0}
+{"tool":"prism","version":"4.9","benchmark":"smc/tandem_queue","model":"tandem_queue","property":"F<=50 (q1=20 | q2=20)","probability":0.7257,"ci_half_width":0.01149291674656739,"samples":10000,"time_ms":5214.0}

@@ -1,0 +1,2 @@
+{"tool":"sentil","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"eventually[0,20](a>=100)","probability":0.037800,"samples":10000,"time_ms":796.6,"peak_rss_bytes":4194304,"cpu":"AMD EPYC 7763 64-Core Processor"}
+{"tool":"sentil","benchmark":"smc/tandem_queue","model":"tandem_queue","property":"eventually[0,50](q1=20 or q2=20)","probability":0.715100,"samples":10000,"time_ms":302.7,"peak_rss_bytes":5242880,"cpu":"AMD EPYC 7763 64-Core Processor"}

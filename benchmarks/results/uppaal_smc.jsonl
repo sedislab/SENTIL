@@ -1,1 +1,2 @@
-{"tool":"uppaal","version":"4.1.19","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"Pr[<=20] (<> A >= 100)","probability":0.040092,"ci_half_width":0.004000,"samples":9462,"time_ms":20744.0}
+{"tool":"uppaal","version":"4.1.19","benchmark":"smc/circadian","model":"barkai_leibler_ctmc","property":"Pr[<=20] (<> A >= 100)","probability":0.034373,"ci_half_width":0.004000,"samples":8186,"time_ms":19103.0}
+{"tool":"uppaal","version":"4.1.19","benchmark":"smc/tandem_queue","model":"tandem_queue","property":"Pr[<=50] (<> (q1 == 20 || q2 == 20))","probability":0.719159,"ci_half_width":0.004000,"samples":48738,"time_ms":20568.0}
