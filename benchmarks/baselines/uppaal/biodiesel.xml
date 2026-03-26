@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<nta>
+<declaration>
+// Biodiesel reactor
+const double DT = 0.01;
+const double TARGET = 0.99;
+
+clock t;
+hybrid clock x_e = 0.0;      // ester fraction
+hybrid clock x_tg = 1.0;     // triglyceride fraction
+hybrid clock temp = 300.0;   // K
+hybrid clock heater = 1.0;   // 1.0 on, 0.0 off
+bool reached = false;
+
+double r1() { return 40000.0 * exp(-5000.0 / temp) * x_tg * (1.0 - x_e); }
+double r2() { return 2000.0 * exp(-5500.0 / temp) * x_tg * x_tg; }
+double heat() { return heater &gt; 0.5 ? 500.0 * (350.0 - temp) : 10.0 * (298.0 - temp); }
+
+void step() {
+    double dr1 = r1();
+    double dr2 = r2();
+    double dh = heat();
+    if (random(1.0) &lt; 0.0002) heater = 0.0;
+    temp = temp + (0.05 * dh + 10.0 * dr1) * DT;
+    x_tg = (x_tg + (-dr1 - dr2) * DT &lt; 0.0) ? 0.0 : x_tg + (-dr1 - dr2) * DT;
+    x_e = (x_e + 3.0 * dr1 * DT &lt; 0.0) ? 0.0 : x_e + 3.0 * dr1 * DT;
+    if (x_e &gt;= TARGET) reached = true;
+}
+</declaration>
+
+<template>
+<name>Reactor</name>
+
+<location id="id0" x="0" y="0">
+    <name x="-10" y="-34">Run</name>
+    <label kind="invariant">x_e' == 0 &amp;&amp; x_tg' == 0 &amp;&amp; temp' == 0 &amp;&amp; heater' == 0 &amp;&amp; t &lt;= DT</label>
+</location>
+<location id="id1" x="0" y="120">
+    <name x="-10" y="146">Stop</name>
+    <label kind="invariant">x_e' == 0 &amp;&amp; x_tg' == 0 &amp;&amp; temp' == 0 &amp;&amp; heater' == 0</label>
+</location>
+
+<init ref="id0"/>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id0"/>
+    <label kind="guard">t &gt;= DT &amp;&amp; !reached</label>
+    <label kind="assignment">step(), t = 0</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="guard">reached</label>
+</transition>
+
+</template>
+
+<system>
+reactor = Reactor();
+system reactor;
+</system>
+</nta>
