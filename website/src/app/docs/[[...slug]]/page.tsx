@@ -27,6 +27,46 @@ function parentSection(nodes: any[], url: string, name: ReactNode): ReactNode {
   return null;
 }
 
+function ancestry(
+  nodes: any[],
+  url: string,
+  path: { name: string; url?: string }[] = [],
+): { name: string; url?: string }[] | null {
+  for (const node of nodes) {
+    if (node.type === 'page' && node.url === url) return [...path, { name: String(node.name), url }];
+    if (node.type !== 'folder') continue;
+    const selfUrl: string | undefined =
+      node.index?.url ??
+      (node.children ?? []).find(
+        (child: any) => child.type === 'page' && (url === child.url || url.startsWith(`${child.url}/`)),
+      )?.url;
+    const here = [...path, { name: String(node.name), url: selfUrl }];
+    if (selfUrl === url) return here;
+    const found = ancestry(node.children ?? [], url, here);
+    if (found) return found;
+  }
+  return null;
+}
+
+function breadcrumbLd(page: { url: string; data: { title: string } }) {
+  const trail = ancestry(source.getPageTree().children, page.url) ?? [
+    { name: page.data.title, url: page.url },
+  ];
+  const items = [{ name: 'Documentation', url: '/docs' }, ...trail].filter(
+    (item, index, all) => item.url !== all[index - 1]?.url,
+  );
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      ...(item.url ? { item: `${SITE}${item.url}` } : {}),
+    })),
+  };
+}
+
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
   const page = source.getPage(params.slug);
@@ -38,6 +78,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const eyebrow = parentSection(source.getPageTree().children, page.url, null);
 
   const jsonLd = [
+    breadcrumbLd(page),
     {
       '@context': 'https://schema.org',
       '@type': 'TechArticle',
