@@ -1,8 +1,3 @@
-#!/usr/bin/env bash
-# UPPAAL-SMC statistical-model-checking baseline. The interval half-width of 0.004 lands
-# near the 10,000 samples the other runs use, though UPPAAL picks its own run count.
-# Emits the shared JSON record. The tool is not redistributable, so set VERIFYTA to a
-# local binary; without one the run skips rather than fails.
 set -uo pipefail
 VERIFYTA="${VERIFYTA:-verifyta}"
 model="${1:?usage: uppaal_runner.sh <path to a .xml model>}"
@@ -15,12 +10,14 @@ fi
 
 name=$(basename "$model" .xml)
 case "$name" in
-  circadian)    mdl=barkai_leibler_ctmc; prop='Pr[<=20] (<> A >= 100)' ;;
-  tandem_queue) mdl=tandem_queue;        prop='Pr[<=50] (<> (q1 == 20 || q2 == 20))' ;;
+  circadian)    mdl=barkai_leibler_ctmc; prop='Pr[<=20] (<> A >= 100)';                eps=0.004 ;;
+  tandem_queue) mdl=tandem_queue;        prop='Pr[<=50] (<> (q1 == 20 || q2 == 20))';  eps=0.004 ;;
+  biodiesel)    mdl=biodiesel_reactor;   prop='Pr[<=100] (<> reached)';                eps=0.008 ;;
+  powertrain)   mdl=powertrain_afr;      prop='Pr[<=50] ([] !failed)';                 eps=0.008 ;;
   *) echo "no property registered for $name" >&2; exit 2 ;;
 esac
 start=$(date +%s%N)
-if ! out=$("$VERIFYTA" -s -q -E 0.004 -a 0.05 "$model" "$query" 2>&1); then
+if ! out=$("$VERIFYTA" -s -q -E "$eps" -a 0.05 "$model" "$query" 2>&1); then
   echo "verifyta failed on $name: $out" >&2
   exit 1
 fi
