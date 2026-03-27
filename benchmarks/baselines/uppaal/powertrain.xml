@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<nta>
+<declaration>
+// Powertrain air-fuel-ratio control
+const double DT = 0.05;
+const double BOUND = 50.0;
+const double AFR_LOW = 14.3;
+const double AFR_HIGH = 15.1;
+const double AFR_TARGET = 14.7;
+
+clock t;
+hybrid clock afr = 14.7;
+hybrid clock throttle = 10.0;
+hybrid clock ceff = 0.8;
+bool started = false;
+bool failed = false;
+
+double dmin(double x, double y) { return x &lt; y ? x : y; }
+double demand(double tt) { return 40.0 + 25.0 * sin(tt * 0.6) + 10.0 * sin(tt * 1.5); }
+double margin(double v) { return dmin(v - AFR_LOW, AFR_HIGH - v); }
+
+void step() {
+    double dmd = demand(t);
+    double dmag = fabs((dmd - throttle) * DT * 12.0) * 0.4;
+    double dsign = random(1.0) &lt; 0.5 ? -1.0 : 1.0;
+    double noise = (random(1.0) - 0.5) * 0.15;
+    double spike = random(1.0) &lt; 0.01 ? (random(1.0) - 0.5) * 0.8 : 0.0;
+    double na = afr + (ceff * 2.5 * (AFR_TARGET - afr) + dmag * dsign + spike) * DT + noise * sqrt(DT);
+    double nr = margin(na);
+    throttle = throttle + (dmd - throttle) * DT * 12.0;
+    afr = afr + (ceff * 2.5 * (AFR_TARGET - afr) + dmag * dsign + spike) * DT + noise * sqrt(DT);
+    if (nr &lt; 0.0) failed = true;
+}
+</declaration>
+
+<template>
+<name>Powertrain</name>
+
+<location id="id0" x="0" y="0">
+    <name x="-10" y="-34">Run</name>
+    <label kind="invariant">afr' == 0 &amp;&amp; throttle' == 0 &amp;&amp; ceff' == 0 &amp;&amp; t &lt;= DT</label>
+</location>
+<location id="id1" x="0" y="120">
+    <name x="-10" y="146">Stop</name>
+    <label kind="invariant">afr' == 0 &amp;&amp; throttle' == 0 &amp;&amp; ceff' == 0</label>
+</location>
+
+<init ref="id0"/>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id0"/>
+    <label kind="guard">!started</label>
+    <label kind="assignment">ceff = 0.6 + random(0.4), started = true</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id0"/>
+    <label kind="guard">started &amp;&amp; t &gt;= DT &amp;&amp; !failed</label>
+    <label kind="assignment">step(), t = 0</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="guard">started &amp;&amp; failed</label>
+</transition>
+
+</template>
+
+<system>
+ctrl = Powertrain();
+system ctrl;
+</system>
+</nta>
