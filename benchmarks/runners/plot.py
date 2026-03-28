@@ -280,14 +280,10 @@ def particles(records):
 def smc_model(records, benchmark, title, out):
     def pick(tool):
         return next((r for r in records if r.get("benchmark") == benchmark and r.get("tool") == tool), None)
-    s, p = pick("sentil"), pick("prism")
-    if not s or not p:
+    order = [("sentil", "SENTIL"), ("prism", "PRISM"), ("modest", "Modest"), ("uppaal", "UPPAAL-SMC")]
+    bars = [(label, pick(tool), style.TOOL[tool]) for tool, label in order if pick(tool)]
+    if not pick("sentil") or len(bars) < 2:
         return
-    bars = [("SENTIL", s, style.TOOL["sentil"]), ("PRISM", p, style.TOOL["prism"])]
-    for tool, label in (("modest", "Modest"), ("uppaal", "UPPAAL-SMC")):
-        r = pick(tool)
-        if r:
-            bars.append((label, r, style.TOOL[tool]))
     bars.sort(key=lambda b: b[1]["time_ms"])
     fig, ax = plt.subplots(figsize=(5.8, 4.8))
     tools = [label for label, _, _ in bars]
@@ -302,11 +298,12 @@ def smc_model(records, benchmark, title, out):
                 f"{sec:.1f} s\nP = {pr:.3f}", ha="center", va="bottom", fontsize=10, color=style.INK)
     save(fig, out)
 
-def smc_circadian(records):
-    smc_model(records, "smc/circadian", "Statistical model checking the circadian CTMC", "smc_circadian.png")
-
-def smc_tandem_queue(records):
-    smc_model(records, "smc/tandem_queue", "Statistical model checking the tandem queue", "smc_tandem_queue.png")
+SMC_MODELS = (
+    ("smc/circadian", "Statistical model checking the circadian CTMC", "smc_circadian.png"),
+    ("smc/tandem_queue", "Statistical model checking the tandem queue", "smc_tandem_queue.png"),
+    ("smc/biodiesel", "Statistical model checking the biodiesel reactor", "smc_biodiesel.png"),
+    ("smc/powertrain", "Statistical model checking the powertrain controller", "smc_powertrain.png"),
+)
 
 def synthesis(records):
     rows = [r for r in records if "mode" in r]
@@ -330,7 +327,7 @@ def main():
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online,
                    scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
-                   smc_tandem_queue, particles, synthesis):
+                   smc_tandem_queue, smc_biodiesel, smc_powertrain, particles, synthesis):
         figure(records)
     for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
                         ("julia", "Julia"), ("java", "Java"), ("matlab", "MATLAB")):
