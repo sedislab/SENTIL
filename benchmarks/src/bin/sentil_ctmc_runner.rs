@@ -1,11 +1,4 @@
-//! SENTIL against PRISM, UPPAAL-SMC and Modest on the shared CTMC models.
-//!
-//! Each model is simulated exactly with Gillespie's direct method inside the system's
-//! step, and its satisfaction probability is estimated by direct Monte Carlo, which suits
-//! a discrete-state model where the splitter's level selection would bias on tied scores.
-//! Both models carry a latched indicator so the property sees a crossing that happens
-//! between grid points, the way a continuous time bound does.
-//! Run as `sentil_ctmc_runner [circadian|tandem_queue]`. Prints the shared JSON record.
+//! SENTIL vs PRISM, UPPAAL-SMC and Modest on the shared stochastic models
 
 use std::io::Write;
 use std::time::Instant;
@@ -22,6 +15,11 @@ const SAMPLES: u64 = 10_000;
 const CIRCADIAN_HORIZON: usize = 20;
 const QUEUE_CAP: f64 = 20.0;
 const TANDEM_HORIZON: usize = 50;
+
+const BIO_DT: f64 = 0.01;
+const BIO_HORIZON: usize = 10_000;
+const PT_DT: f64 = 0.05;
+const PT_HORIZON: usize = 1_000;
 
 fn fire(rates: &[f64], clock: &mut f64, rng: &mut dyn rand::RngCore) -> Option<usize> {
     let total: f64 = rates.iter().sum();
@@ -103,6 +101,39 @@ fn advance_tandem(state: &[f64], rng: &mut dyn rand::RngCore) -> Vec<f64> {
     vec![q1, q2, full]
 }
 
+fn advance_biodiesel(state: &[f64], rng: &mut dyn rand::RngCore) -> Vec<f64> {
+    let (mut x_e, mut x_tg, mut temp, mut heater, mut reached) =
+        (state[0], state[1], state[2], state[3], state[4]);
+    if reached >= 0.5 {
+        return vec![x_e, x_tg, temp, heater, reached];
+    }
+    let r1 = 40000.0 * (-5000.0 / temp).exp() * x_tg * (1.0 - x_e);
+    let r2 = 2000.0 * (-5500.0 / temp).exp() * x_tg * x_tg;
+    let heat = if heater > 0.5 { 500.0 * (350.0 - temp) } else { 10.0 * (298.0 - temp) };
+    if rng.random::<f64>() < 0.0002 {
+        heater = 0.0;
+    }
+    x_e = (x_e + 3.0 * r1 * BIO_DT).max(0.0);
+    x_tg = (x_tg + (-r1 - r2) * BIO_DT).max(0.0);
+    temp += (0.05 * heat + 10.0 * r1) * BIO_DT;
+    if x_e >= 0.99 {
+        reached = 1.0;
+    }
+    vec![x_e, x_tg, temp, heater, reached]
+}
+
+fn advance_powertrain(state: &[f64], t: f64, rng: &mut dyn rand::RngCore) -> Vec<f64> {
+    let (mut afr, mut throttle, ceff) = (state[0], state[1], state[2]);
+    let demand = 40.0 + 25.0 * (t * 0.6).sin() + 10.0 * (t * 1.5).sin();
+    let dist_mag = ((demand - throttle) * PT_DT * 12.0).abs() * 0.4;
+    let dist_sign = if rng.random::<f64>() < 0.5 { -1.0 } else { 1.0 };
+    let noise = (rng.random::<f64>() - 0.5) * 0.15;
+    let spike = if rng.random::<f64>() < 0.01 { (rng.random::<f64>() - 0.5) * 0.8 } else { 0.0 };
+    throttle += (demand - throttle) * PT_DT * 12.0;
+    afr += (ceff * 2.5 * (14.7 - afr) + dist_mag * dist_sign + spike) * PT_DT + noise * PT_DT.sqrt();
+    vec![afr, throttle, ceff]
+}
+
 fn main() {
     let model = std::env::args().nth(1).unwrap_or_else(|| "circadian".to_owned());
     let (benchmark, name, shown, system, formula) = match model.as_str() {
@@ -133,6 +164,34 @@ fn main() {
             )
             .expect("the tandem system is well formed"),
             "eventually[0, 50](full >= 1)",
+        ),
+        "biodiesel" => (
+            "smc/biodiesel",
+            "biodiesel_reactor",
+            "eventually[0,100](reached)",
+            StochasticSystem::new(
+                ["x_e", "x_tg", "temp", "heater", "reached"],
+                BIO_DT,
+                BIO_HORIZON,
+                |_rng| vec![0.0, 1.0, 300.0, 1.0, 0.0],
+                |prev, _t, rng| advance_biodiesel(prev, rng),
+            )
+            .expect("the biodiesel system is well formed"),
+            "eventually[0, 100](reached >= 0.5)",
+        ),
+        "powertrain" => (
+            "smc/powertrain",
+            "powertrain_afr",
+            "always[0,50](14.3 < afr < 15.1)",
+            StochasticSystem::new(
+                ["afr", "throttle", "ceff"],
+                PT_DT,
+                PT_HORIZON,
+                |rng| vec![14.7, 10.0, 0.6 + rng.random::<f64>() * 0.4],
+                |prev, t, rng| advance_powertrain(prev, t, rng),
+            )
+            .expect("the powertrain system is well formed"),
+            "always[0, 50]((afr > 14.3) and (afr < 15.1))",
         ),
         other => {
             eprintln!("no such model: {other}");
