@@ -101,7 +101,7 @@ const SHADER_PRELUDE: &str = r"struct Params {
     n_samples: u32,
     seed: u32,
     threshold: f32,
-    num_workgroups: u32,
+    sample_offset: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -343,7 +343,7 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     if (i >= params.n_samples) {{
         return;
     }}
-    var rng = init_rng(i, params.seed);
+    var rng = init_rng(i + params.sample_offset, params.seed);
     var state: array<f32, {array_size}>;
     for (var s = 0u; s < {state_size}u; s = s + 1u) {{
         let base = base_state[s];
@@ -377,7 +377,7 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     if (t >= params.n_samples) {{
         return;
     }}
-    var rng = init_rng(t, params.seed);
+    var rng = init_rng(t + params.sample_offset, params.seed);
     var trace: array<array<f32, {trace_len}>, {v}>;
     var times: array<f32, {trace_len}>;
     for (var i = 0u; i < {trace_len}u; i = i + 1u) {{
@@ -432,29 +432,32 @@ pub(crate) const MAX_DISPATCH_PER_DIM: u32 = 65535;
 /// The most samples one dispatch covers, one thread per sample.
 const MAX_GPU_SAMPLES: u64 = MAX_DISPATCH_PER_DIM as u64 * WORKGROUP_SIZE as u64;
 
-/// The largest integer f32 represents exactly. The partial counts return as f32,
-/// so a larger total would not round-trip; the CPU path, counting in u64, takes
-/// over past here.
+/// The largest integer f32 represents exactly.
 const MAX_F32_EXACT_INT: u64 = 1 << 24;
 
-/// The count-path sample cap: the smaller of the dispatch limit and the f32-exact
-/// limit, so both the dispatch and the partial-sum readback stay exact.
+/// The samples one dispatch covers, the smaller of the workgroup limit and the f32-exact limit.
 const MAX_COUNT_SAMPLES: u64 = if MAX_GPU_SAMPLES < MAX_F32_EXACT_INT {
     MAX_GPU_SAMPLES
 } else {
     MAX_F32_EXACT_INT
 };
 
+/// The largest total the tiled path addresses. Each tile shifts its RNG stream by
+/// a u32 offset, so the global sample index has to fit a u32. Past this the CPU
+/// path, counting in u64, takes over.
+const MAX_TILED_SAMPLES: u64 = 1 << 32;
+
 /// The uniform block the kernels read, matching the WGSL `Params`: four 4-byte
 /// fields, 16 bytes. `threshold` is always `0.0`, since the count is of
-/// realizations whose robustness is at or above zero.
+/// realizations whose robustness is at or above zero. `sample_offset` shifts a
+/// tile's RNG stream so successive dispatches draw fresh realizations.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Params {
     n_samples: u32,
     seed: u32,
     threshold: f32,
-    num_workgroups: u32,
+    sample_offset: u32,
 }
 
 /// A device and the two count pipelines.
@@ -567,11 +570,18 @@ impl GpuMcContext {
     ///
     /// # Errors
     ///
-    /// Returns [`GpuMcError::SampleCountOverflow`] when `n` is past the cap, and
-    /// [`GpuMcError::Readback`] when mapping or polling the result fails.
+    /// Runs in tiles of at most [`MAX_COUNT_SAMPLES`]. Each tile dispatches one
+    /// thread per sample and shifts its RNG stream by the tile's offset so the
+    /// draws stay independent across tiles, and the host sums the tile counts in
+    /// u64, so the total is exact for any `n` the global index can address.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuMcError::SampleCountOverflow`] when `n` is past the u32 index
+    /// ceiling, and [`GpuMcError::Readback`] when mapping or polling a tile fails.
     #[allow(
         clippy::cast_possible_truncation,
-        reason = "n is capped below 2^24, so it fits u32"
+        reason = "a tile is at most MAX_COUNT_SAMPLES and the offset stays below MAX_TILED_SAMPLES, both within u32"
     )]
     pub(crate) fn gpu_satisfaction_count(
         &self,
@@ -584,23 +594,29 @@ impl GpuMcContext {
         if n == 0 {
             return Ok(0);
         }
-        if n > MAX_COUNT_SAMPLES {
+        if n > MAX_TILED_SAMPLES {
             return Err(GpuMcError::SampleCountOverflow {
                 requested: n,
-                max: MAX_COUNT_SAMPLES,
+                max: MAX_TILED_SAMPLES,
             });
         }
-        let n32 = n as u32;
-        let num_workgroups = n32.div_ceil(WORKGROUP_SIZE);
-        let params = Params {
-            n_samples: n32,
-            seed,
-            threshold: 0.0,
-            num_workgroups,
-        };
-
-        let (submission, readback) = self.dispatch_count(&params, base_state, noise_params, times);
-        self.read_partial_counts(&readback, submission, num_workgroups as usize)
+        let mut total = 0u64;
+        let mut offset = 0u64;
+        while offset < n {
+            let chunk = (n - offset).min(MAX_COUNT_SAMPLES);
+            let params = Params {
+                n_samples: chunk as u32,
+                seed,
+                threshold: 0.0,
+                sample_offset: offset as u32,
+            };
+            let num_workgroups = params.n_samples.div_ceil(WORKGROUP_SIZE);
+            let (submission, readback) =
+                self.dispatch_count(&params, base_state, noise_params, times);
+            total += self.read_partial_counts(&readback, submission, num_workgroups as usize)?;
+            offset += chunk;
+        }
+        Ok(total)
     }
 
     fn dispatch_count(
@@ -610,6 +626,7 @@ impl GpuMcContext {
         noise_params: &[f32],
         times: Option<&[f32]>,
     ) -> (wgpu::SubmissionIndex, wgpu::Buffer) {
+        let num_workgroups = params.n_samples.div_ceil(WORKGROUP_SIZE);
         let params_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -634,7 +651,7 @@ impl GpuMcContext {
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
-        let reduction_bytes = u64::from(params.num_workgroups) * 4;
+        let reduction_bytes = u64::from(num_workgroups) * 4;
         let reduction_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("reduction"),
             size: reduction_bytes,
@@ -697,7 +714,7 @@ impl GpuMcContext {
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(params.num_workgroups, 1, 1);
+            pass.dispatch_workgroups(num_workgroups, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&reduction_buffer, 0, &readback_buffer, 0, reduction_bytes);
         let submission = self.queue.submit(Some(encoder.finish()));
@@ -897,6 +914,35 @@ mod tests {
             .unwrap();
         let p = count as f64 / n as f64;
         assert!((p - 0.5).abs() < 0.005, "expected about 0.5, got {p}");
+    }
+
+    #[test]
+    #[ignore = "needs a GPU; run with --ignored on a GPU node"]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "each tile counts below 2^24 and the total is far below 2^52"
+    )]
+    fn the_count_tiles_past_one_dispatch() {
+        // More samples than one dispatch holds, so the run splits into several tiles
+        // that each shift their RNG stream by the tile offset. The host sums the tile
+        // counts, and x > 0 under standard-normal noise still recovers one half.
+        let formula = Formula::parse("x > 0").unwrap();
+        let symbols = formula.variables();
+        let (shader, _) = build_count_shader(&formula, &symbols).unwrap();
+        let ctx = GpuMcContext::new(&shader, false).unwrap();
+        let base = [0.0f32];
+        let mut noise = [0.0f32; NOISE_RECORD];
+        noise[0] = 1.0; // Gaussian family
+        noise[3] = 1.0; // standard deviation 1, mean stays 0
+        let n = MAX_COUNT_SAMPLES * 2 + 1_000_000;
+        let count = ctx
+            .gpu_satisfaction_count(&base, &noise, None, n, 7)
+            .unwrap();
+        let p = count as f64 / n as f64;
+        assert!(
+            (p - 0.5).abs() < 0.001,
+            "expected about 0.5 over {n} tiled samples, got {p}"
+        );
     }
 
     #[test]
