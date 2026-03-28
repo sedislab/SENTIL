@@ -62,6 +62,7 @@ trait Node {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness>;
     fn reset(&mut self);
     /// The satisfaction probability estimated at the last update, for a `P~p` node.
+    #[cfg(feature = "statistical")]
     fn probability_estimate(&self) -> Option<f64> {
         None
     }
