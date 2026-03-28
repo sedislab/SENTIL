@@ -364,7 +364,7 @@ When a formula variable and a column differ in name, bind them with `--map varia
 sensor | sentil monitor -f 'G[0,2] (speed > 5)' -o ndjson | alerter
 ```
 
-Each input line is one JSON object with a `time` field and a numeric field per signal, like `{"time": 3, "speed": 4}`; `--map variable=field` bridges differing names. Several formulas run at once when seperated by semicolons, and each gets an id in order: `f0`, `f1`, and so on. Save the five samples from above as JSON lines and the ndjson stream is:
+Each input line is one JSON object with a `time` field and a numeric field per signal, like `{"time": 3, "speed": 4}`; `--map variable=field` bridges differing names. Several formulas run at once when separated by semicolons, and each gets an id in order: `f0`, `f1`, and so on. Save the five samples from above as JSON lines and the ndjson stream is:
 
 ```text title="samples.ndjson"
 {"time": 0, "speed": 12}
