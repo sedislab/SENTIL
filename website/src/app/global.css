@@ -625,6 +625,12 @@ body::before {
   box-shadow: none;
 }
 
+:focus-visible {
+  outline: 2px solid var(--color-fd-primary) !important;
+  outline-offset: 2px;
+  transition-property: color, background-color, border-color, box-shadow, transform !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
