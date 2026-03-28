@@ -473,15 +473,7 @@ impl GpuMcContext {
     ///
     /// Returns [`GpuMcError::AdapterNotFound`], [`GpuMcError::DeviceRequest`], or [`GpuMcError::InvalidWgsl`].
     pub(crate) fn new(shader_source: &str, temporal: bool) -> Result<Self, GpuMcError> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            })
-            .block_on()
-            .map_err(|_| GpuMcError::AdapterNotFound)?;
+        let adapter = super::request_device_adapter().ok_or(GpuMcError::AdapterNotFound)?;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("sentil gpu monte carlo"),
