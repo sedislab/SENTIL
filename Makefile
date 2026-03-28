@@ -37,10 +37,9 @@ bench-prism:
 	done; \
 	if [ -s "$$tmp" ]; then cp "$$tmp" benchmarks/results/prism_smc.jsonl; fi
 
-# SENTIL on the same shared CTMC models the baselines check
 bench-smc:
 	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
-	for m in circadian tandem_queue; do \
+	for m in circadian tandem_queue biodiesel powertrain; do \
 	  cargo run --release -q -p sentil-benchmarks --bin sentil_ctmc_runner -- $$m >>"$$tmp" || exit 1; \
 	done; \
 	if [ -s "$$tmp" ]; then cp "$$tmp" benchmarks/results/sentil_smc.jsonl; fi
