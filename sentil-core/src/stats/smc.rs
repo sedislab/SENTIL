@@ -232,7 +232,7 @@ fn try_gpu_check(
     lifting: &LiftingRegistry,
     config: &SmcConfig,
 ) -> Option<SmcResult> {
-    if config.samples < GPU_MIN_SAMPLES {
+    if config.samples < GPU_MIN_SAMPLES || !crate::gpu::is_available() {
         return None;
     }
     let symbols = inner.variables();
