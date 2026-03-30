@@ -1,8 +1,3 @@
-//! The SENTIL statistical-model-checking runner. Emits one JSON record per line to
-//! standard output. Run as `sentil_smc_runner <accuracy|throughput> [samples]`. Build
-//! with `--features gpu` and run on a GPU node to record the `device = gpu` numbers;
-//! the default build records `device = cpu`.
-
 use std::env;
 use std::process::ExitCode;
 
@@ -53,9 +48,12 @@ fn record(model: &SmcModel, samples: u64, runs: u64) -> SmcRecord {
 fn main() -> ExitCode {
     let suite = env::args().nth(1).unwrap_or_default();
     let samples_arg = env::args().nth(2).and_then(|s| s.parse::<u64>().ok());
+
+    let runs_arg = env::args().nth(3).and_then(|s| s.parse::<u64>().ok());
     let records: Vec<SmcRecord> = match suite.as_str() {
         "accuracy" => {
             let samples = samples_arg.unwrap_or(100_000);
+            let runs = runs_arg.unwrap_or(5);
             PROBABILISTIC
                 .iter()
                 .map(|case| {
@@ -66,16 +64,17 @@ fn main() -> ExitCode {
                         formula: case.formula,
                         ground_truth: Some(case.probability),
                     };
-                    record(&model, samples, 5)
+                    record(&model, samples, runs)
                 })
                 .collect()
         }
         "throughput" => {
             let samples = samples_arg.unwrap_or(1_000_000);
-            THROUGHPUT.iter().map(|m| record(m, samples, 3)).collect()
+            let runs = runs_arg.unwrap_or(3);
+            THROUGHPUT.iter().map(|m| record(m, samples, runs)).collect()
         }
         other => {
-            eprintln!("usage: sentil_smc_runner <accuracy|throughput> [samples] (got `{other}`)");
+            eprintln!("usage: sentil_smc_runner <accuracy|throughput> [samples] [runs] (got `{other}`)");
             return ExitCode::FAILURE;
         }
     };
