@@ -23,7 +23,7 @@ export default function Layout({ children }: LayoutProps<'/docs'>) {
         {...baseOptions()}
         tabMode="navbar"
         tabs={tabs}
-        sidebar={{ collapsible: false, defaultOpenLevel: 4 }}
+        sidebar={{ collapsible: false, defaultOpenLevel: 4, prefetch: false }}
         nav={{ ...baseOptions().nav, mode: 'top' }}
       >
         {children}
