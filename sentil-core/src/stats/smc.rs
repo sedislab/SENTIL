@@ -222,7 +222,7 @@ const GPU_MIN_SAMPLES: u64 = 100_000;
 #[cfg(feature = "gpu")]
 #[allow(
     clippy::cast_precision_loss,
-    reason = "samples and counts stay below 2^24"
+    reason = "realistic counts stay below 2^53, where u64 to f64 is exact"
 )]
 fn try_gpu_check(
     op: ProbabilityOp,

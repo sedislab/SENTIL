@@ -21,19 +21,8 @@ pub(crate) enum GpuMcError {
     DeviceRequest(String),
     Readback(String),
     InvalidWgsl(String),
-    /// More samples were requested than the f32-exact count path allows. The
-    /// CPU path, which counts in `u64`, handles larger runs.
-    SampleCountOverflow {
-        /// The requested sample count.
-        requested: u64,
-        /// The largest count the GPU path accepts.
-        max: u64,
-    },
-    /// A noise family has no closed-form GPU sampler. The caller runs on the CPU.
-    UnsupportedNoiseFamily {
-        /// The family that has no GPU sampler.
-        family: &'static str,
-    },
+    SampleCountOverflow { requested: u64, max: u64 },
+    UnsupportedNoiseFamily { family: &'static str },
 }
 
 impl core::fmt::Display for GpuMcError {
@@ -101,7 +90,7 @@ const SHADER_PRELUDE: &str = r"struct Params {
     n_samples: u32,
     seed: u32,
     threshold: f32,
-    sample_offset: u32,
+    tile_index: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -111,9 +100,7 @@ const SHADER_PRELUDE: &str = r"struct Params {
 @group(0) @binding(4) var<storage, read> noise_params: array<f32>;
 ";
 
-/// The counter-based PRNG the GPU kernels share: a thread's draws depend only on
-/// the index and seed it starts from, so the Monte Carlo, temporal, and rare-event
-/// splitting shaders all draw the same way from their own bindings.
+/// The counter-based PRNG the GPU kernels share.
 pub(crate) const PRNG_WGSL: &str = r"fn mul_hi(a: u32, b: u32) -> u32 {
     let a_lo = a & 0xFFFFu;
     let a_hi = a >> 16u;
@@ -139,10 +126,18 @@ fn philox2x32(ctr: vec2<u32>, key: u32) -> vec2<u32> {
     return c;
 }
 
-fn init_rng(global_id: u32, seed: u32) -> u32 {
-    let result = philox2x32(vec2<u32>(global_id, seed), seed ^ 0xDEADBEEFu);
+fn rng_from_counter(ctr: vec2<u32>, seed: u32) -> u32 {
+    let result = philox2x32(ctr, seed ^ 0xDEADBEEFu);
     let state = result.x ^ result.y;
     return select(state, 0x1u, state == 0u);
+}
+
+fn init_rng(global_id: u32, seed: u32) -> u32 {
+    return rng_from_counter(vec2<u32>(global_id, seed), seed);
+}
+
+fn init_rng_tiled(index: u32, tile: u32, seed: u32) -> u32 {
+    return rng_from_counter(vec2<u32>(index, tile ^ seed), seed);
 }
 
 fn xorshift32(state: ptr<function, u32>) -> u32 {
@@ -343,7 +338,7 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     if (i >= params.n_samples) {{
         return;
     }}
-    var rng = init_rng(i + params.sample_offset, params.seed);
+    var rng = init_rng_tiled(i, params.tile_index, params.seed);
     var state: array<f32, {array_size}>;
     for (var s = 0u; s < {state_size}u; s = s + 1u) {{
         let base = base_state[s];
@@ -377,7 +372,7 @@ fn simulation_kernel(@builtin(global_invocation_id) global_id: vec3<u32>) {{
     if (t >= params.n_samples) {{
         return;
     }}
-    var rng = init_rng(t + params.sample_offset, params.seed);
+    var rng = init_rng_tiled(t, params.tile_index, params.seed);
     var trace: array<array<f32, {trace_len}>, {v}>;
     var times: array<f32, {trace_len}>;
     for (var i = 0u; i < {trace_len}u; i = i + 1u) {{
@@ -442,22 +437,17 @@ const MAX_COUNT_SAMPLES: u64 = if MAX_GPU_SAMPLES < MAX_F32_EXACT_INT {
     MAX_F32_EXACT_INT
 };
 
-/// The largest total the tiled path addresses. Each tile shifts its RNG stream by
-/// a u32 offset, so the global sample index has to fit a u32. Past this the CPU
-/// path, counting in u64, takes over.
-const MAX_TILED_SAMPLES: u64 = 1 << 32;
+/// The largest total the tiled path addresses.
+const MAX_TILED_SAMPLES: u64 = MAX_COUNT_SAMPLES * u32::MAX as u64;
 
-/// The uniform block the kernels read, matching the WGSL `Params`: four 4-byte
-/// fields, 16 bytes. `threshold` is always `0.0`, since the count is of
-/// realizations whose robustness is at or above zero. `sample_offset` shifts a
-/// tile's RNG stream so successive dispatches draw fresh realizations.
+/// The uniform block the kernels read, matching the WGSL `Params`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Params {
     n_samples: u32,
     seed: u32,
     threshold: f32,
-    sample_offset: u32,
+    tile_index: u32,
 }
 
 /// A device and the two count pipelines.
@@ -560,28 +550,12 @@ impl GpuMcContext {
 
     /// Counts how many of `n` noisy realizations satisfy the formula.
     ///
-    /// Each thread reads the deterministic reading from `base_state`, draws a
-    /// residual per modeled variable from `noise_params`, scores the formula, and
-    /// the reduction tallies the realizations with robustness `>= 0`. The
-    /// per-workgroup partials come back as f32 and are summed on the host.
-    ///
-    /// `base_state` and `noise_params` must be non-empty; the caller routes the
-    /// no-variable case to the CPU before reaching here.
-    ///
     /// # Errors
     ///
-    /// Runs in tiles of at most [`MAX_COUNT_SAMPLES`]. Each tile dispatches one
-    /// thread per sample and shifts its RNG stream by the tile's offset so the
-    /// draws stay independent across tiles, and the host sums the tile counts in
-    /// u64, so the total is exact for any `n` the global index can address.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GpuMcError::SampleCountOverflow`] when `n` is past the u32 index
-    /// ceiling, and [`GpuMcError::Readback`] when mapping or polling a tile fails.
+    /// Returns [`GpuMcError::SampleCountOverflow`] when `n` is past the tile-index ceiling, and [`GpuMcError::Readback`] when mapping or polling fails.
     #[allow(
         clippy::cast_possible_truncation,
-        reason = "a tile is at most MAX_COUNT_SAMPLES and the offset stays below MAX_TILED_SAMPLES, both within u32"
+        reason = "a tile holds at most MAX_COUNT_SAMPLES, which fits a u32"
     )]
     pub(crate) fn gpu_satisfaction_count(
         &self,
@@ -602,19 +576,21 @@ impl GpuMcContext {
         }
         let mut total = 0u64;
         let mut offset = 0u64;
+        let mut tile = 0u32;
         while offset < n {
             let chunk = (n - offset).min(MAX_COUNT_SAMPLES);
             let params = Params {
                 n_samples: chunk as u32,
                 seed,
                 threshold: 0.0,
-                sample_offset: offset as u32,
+                tile_index: tile,
             };
             let num_workgroups = params.n_samples.div_ceil(WORKGROUP_SIZE);
             let (submission, readback) =
                 self.dispatch_count(&params, base_state, noise_params, times);
             total += self.read_partial_counts(&readback, submission, num_workgroups as usize)?;
             offset += chunk;
+            tile += 1;
         }
         Ok(total)
     }
@@ -923,9 +899,6 @@ mod tests {
         reason = "each tile counts below 2^24 and the total is far below 2^52"
     )]
     fn the_count_tiles_past_one_dispatch() {
-        // More samples than one dispatch holds, so the run splits into several tiles
-        // that each shift their RNG stream by the tile offset. The host sums the tile
-        // counts, and x > 0 under standard-normal noise still recovers one half.
         let formula = Formula::parse("x > 0").unwrap();
         let symbols = formula.variables();
         let (shader, _) = build_count_shader(&formula, &symbols).unwrap();
