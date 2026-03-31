@@ -54,6 +54,8 @@ export function PipelineDiagram() {
         <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
+        role="img"
+        aria-label="The probabilistic pipeline. Calibration pairs and a live reading feed lifting, which fits a noise model and draws N trajectories. Robustness evaluates the formula on each trajectory, taking the specification as its other input. Aggregation estimates the satisfaction probability and bounds the error. Lifting, robustness and aggregation all live inside sentil-core."
       >
         <defs>
           <marker id="pipeline-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">

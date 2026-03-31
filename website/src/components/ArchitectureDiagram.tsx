@@ -114,6 +114,8 @@ export function ArchitectureDiagram() {
         <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
+        role="img"
+        aria-label="SENTIL layering. One Rust core. sentil-py, sentil-cli and sentil-ffi link that core directly, and sentil-embedded is a no_std subset of it. C, C++, Java, Julia, MATLAB, ROS 2, Apollo Cyber RT and AUTOSAR Adaptive all reach the engine through the C ABI that sentil-ffi exports. The full build runs on Linux boards such as the Raspberry Pi; the no_std build runs on microcontrollers such as the Arduino."
       >
         {LINKED.map((n, i) => (
           <Elbow
