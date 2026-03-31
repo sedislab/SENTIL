@@ -41,19 +41,9 @@ struct Trajectory<S> {
 /// score of at least `target_score`, by the last-particle form of adaptive
 /// multilevel splitting.
 ///
-/// Each iteration drops the single worst trajectory and regenerates it by
-/// branching a survivor from where it first crossed the current level, so the
-/// level rises one trajectory at a time and the estimate stays unbiased far out in
-/// the tail where a fixed-fraction scheme would not. `particles` sets the
-/// population (larger is tighter), `max_steps` caps a trajectory's length, and
-/// `seed` makes the run reproducible.
-///
-/// The removal loop is sequential: each step's level depends on the whole current population.
-///
 /// # Errors
 ///
-/// Returns [`Error::InvalidConfig`] if `particles` is zero, and
-/// [`Error::Splitting`] if a trajectory's score becomes non-finite.
+/// Returns [`Error::InvalidConfig`] if `particles` is below two, and [`Error::Splitting`] if a trajectory's score becomes non-finite.
 #[allow(
     clippy::cast_precision_loss,
     reason = "particle counts are small positive integers, exact in f64"
@@ -65,15 +55,12 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
     max_steps: u64,
     seed: u64,
 ) -> Result<RareEventEstimate> {
-    // Bound the run so a target that can never be reached still terminates. Each
-    // removal multiplies the estimate by `ratio`, so after this many removals per
-    // particle the estimate has fallen to about `e^-MAX_LEVELS_PER_PARTICLE`, far
-    // below any probability worth resolving.
     const MAX_LEVELS_PER_PARTICLE: u64 = 28;
-    if particles == 0 {
+    if particles < 2 {
         return Err(Error::InvalidConfig {
             context: "adaptive splitting",
-            message: "particle count must be positive".to_owned(),
+            message: "particle count must be at least two, since a level branches a survivor"
+                .to_owned(),
         });
     }
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -92,9 +79,9 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
         )?);
     }
 
-    let ratio = 1.0 - 1.0 / particles as f64;
     let cap = (particles as u64).saturating_mul(MAX_LEVELS_PER_PARTICLE);
     let mut removed = 0u64;
+    let mut estimate = 1.0f64;
     while removed < cap {
         let level = population.iter().fold(f64::INFINITY, |m, t| m.min(t.z));
         if level >= target_score {
@@ -109,6 +96,7 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
                 simulations,
             });
         }
+        estimate *= survivors.len() as f64 / particles as f64;
         let doomed: Vec<usize> = (0..particles)
             .filter(|&i| population[i].z <= level)
             .collect();
@@ -132,7 +120,7 @@ pub fn adaptive_multilevel_splitting<S: RareEventSimulator>(
     }
 
     Ok(RareEventEstimate {
-        probability: ratio.powf(removed as f64),
+        probability: estimate,
         simulations,
     })
 }
@@ -287,6 +275,23 @@ mod tests {
     }
 
     #[test]
+    fn a_deep_discrete_rare_event_matches_the_gamblers_ruin_formula() {
+        let sim = GamblersRuin {
+            target: 25.0,
+            failure: -5.0,
+            step_prob: 0.4,
+        };
+        let r = 1.5_f64; // (1 - p) / p
+        let exact = (1.0 - r.powi(5)) / (1.0 - r.powi(30));
+        let est = adaptive_multilevel_splitting(&sim, 30_000, 25.0, 100_000, 7).unwrap();
+        assert!(
+            (est.probability - exact).abs() / exact < 0.3,
+            "deep discrete rare event {:.3e} should match the analytic {exact:.3e}",
+            est.probability
+        );
+    }
+
+    #[test]
     fn an_unreachable_event_has_probability_zero() {
         let sim = GamblersRuin {
             target: 10.0,
@@ -298,13 +303,14 @@ mod tests {
     }
 
     #[test]
-    fn zero_particles_is_rejected() {
+    fn too_few_particles_is_rejected() {
         let sim = GamblersRuin {
             target: 5.0,
             failure: -5.0,
             step_prob: 0.5,
         };
         assert!(adaptive_multilevel_splitting(&sim, 0, 5.0, 10, 1).is_err());
+        assert!(adaptive_multilevel_splitting(&sim, 1, 5.0, 10, 1).is_err());
     }
 
     struct RareFlagCleared<S>(S);
