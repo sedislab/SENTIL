@@ -1,0 +1,311 @@
+\chapter{Signal temporal logic, hands on}
+\label{ch:stl}
+
+In this chapter, we'll get our hands dirty understanding and writing Signal Temporal Logic (STL) formulas. We'll also look at how STL formulas are evaluated on traces so that by the end, you can write the property you actually mean to write.
+
+We'll import the package and the two main classes we'll use, \code{Formula} and \code{Trace}:
+
+\begin{lstlisting}[language=Python]
+import sentil
+from sentil import Formula, Trace
+\end{lstlisting}
+
+\section{Signals, traces, and robustness}
+
+A signal is a real-valued quantity over time; a trace is a finite sample of one or more signals. In \sentil{} a trace is a list of timestamps and a value per variable:
+
+\begin{lstlisting}[language=Python]
+trace = Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+\end{lstlisting}
+
+Every formula over that trace returns a \emph{robustness}: a signed number whose sign is the verdict and whose magnitude is the margin. The property \emph{speed stays above 5}, in \sentil's syntax is \code{G (speed > 5)} (\code{G} is \emph{globally}, the always operator, and we use these short keywords from here on), reads:
+
+\begin{lstlisting}[language=Python]
+Formula.parse("G (speed > 5)").robustness(trace)   # -1.0
+\end{lstlisting}
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[x=1.25cm, y=0.85cm]
+  \def\thr{5}
+  \draw[faint, line width=0.8pt, -{Stealth[length=2.4mm]}] (0,0) -- (5.4,0)
+    node[right, font=\sffamily\footnotesize, text=ink] {$t$};
+  \draw[faint, line width=0.8pt, -{Stealth[length=2.4mm]}] (0,0) -- (0,4.2);
+  \draw[vermillion, line width=1.4pt, densely dashed] (0,\thr*0.35) -- (5.2,\thr*0.35)
+    node[right, font=\sffamily\footnotesize, text=vermillion] {$c=5$};
+  \foreach \x/\y in {0/12, 1/9, 2/7, 3/4, 4/6} { \fill[sentilblue] (\x,\y*0.35) circle (2.4pt); }
+  \draw[hero, mark=none] (0,12*0.35) -- (1,9*0.35) -- (2,7*0.35) -- (3,4*0.35) -- (4,6*0.35);
+  \draw[okgreen, line width=1.3pt, {Stealth[length=2mm]}-{Stealth[length=2mm]}]
+    (3,4*0.35) -- (3,\thr*0.35);
+  \node[okgreen!70!black, font=\sffamily\footnotesize, right=1pt] at (3,4.5*0.35) {$\rho=-1$};
+  \node[font=\sffamily\footnotesize, text=ink, below] at (3,0) {$t{=}3$};
+\end{tikzpicture}\end{widefig}
+\caption{The robustness of \code{G (speed > 5)} is $-1$: the signal dips to $4$ at $t=3$, one unit under the bound. The sign says it fails; the magnitude says by how much.}
+\end{figure}
+
+A boolean monitor would have returned \emph{false} and stopped but \sentil{} returns $-1$: the property fails, and it fails by exactly one unit, because the worst sample sits one below the bound. Positive robustness means it holds with that much room to spare. \emph{Robustness} is what makes falsification, synthesis, and confidence bounds possible later, so it is worth getting a feel for it now.
+
+\section{Predicates}
+
+A predicate compares an arithmetic expression over signals to a constant, and its robustness is the signed distance to the boundary. Take \code{x} over a two-sample trace and try the six comparisons:
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0, 1], {"x": [5, 3]})
+Formula.parse("x > 0").robustness(tr)     #  5.0   distance above 0
+Formula.parse("x < 10").robustness(tr)    #  5.0   distance below 10
+Formula.parse("x >= 5").robustness(tr)    #  0.0   exactly on the boundary
+Formula.parse("x == 5").robustness(tr)    # -0.0   holds, with zero margin
+Formula.parse("x != 5").robustness(tr)    #  0.0
+\end{lstlisting}
+
+Three things to take from this. The robustness of \code{f > c} is \code{f - c} and of \code{f < c} is \code{c - f}, so it is the plain margin. On the boundary, the margin is zero, and \sentil{} treats \emph{zero as satisfied}, which is why \code{x >= 5} at \code{x = 5} reads \code{0.0} rather than failing. And \sentil{} does not distinguish strict from non-strict inequalities in the robustness value: \code{x > 5} and \code{x >= 5} give the same number.
+
+Predicates are not limited to a bare variable. Any side can have any arithmetic expression, with \code{+ - * / \%}, power \code{\textasciicircum}, and the functions \code{abs, sqrt, exp, ln, log, sin, cos, tan, floor, ceil}, plus two-argument \code{min} and \code{max}:
+
+\begin{lstlisting}[language=Python]
+"abs(x) < 5"            # magnitude of x below 5
+"x - y > 0"             # x currently leads y
+"sqrt(x) > 2"           # a nonlinear predicate
+"gap >= max(0.0, v_r*rho - v_f*v_f/(2.0*b))"   # a real safe-distance bound
+\end{lstlisting}
+
+\begin{pitfall}
+There is no \code{pow} function; write \code{x\textasciicircum 2}. \code{min} and \code{max} take exactly two arguments. And write \code{==} for equality, never a bare \code{=}.
+\end{pitfall}
+
+\section{Boolean combinations}
+
+Conjunction (and) takes the minimum of its parts, disjunction (or) the maximum, negation flips the sign, and implication is \code{max(-rho\_left, rho\_right)}.
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0], {"x": [3], "y": [1]})
+Formula.parse("(x > 0) and (y > 0)").robustness(tr)   # 1.0  = min(3, 1)
+Formula.parse("(x > 0) or (y > 0)").robustness(tr)    # 3.0  = max(3, 1)
+Formula.parse("not (x > 0)").robustness(tr)           # -3.0
+Formula.parse("(x > 0) implies (y > 0)").robustness(tr)  # 1.0 = max(-3, 1)
+\end{lstlisting}
+
+The keywords have symbol aliases if you prefer them: \code{and} is \code{\&\&}, \code{or} is \code{||}, \code{not} is \code{!}, and \code{implies} is \code{->}.
+
+\section{Always and Eventually}
+
+Temporal operators ask about a sequence of events rather than the values at an instant. \emph{Always} says the property holds at every sample in the window, and \emph{Eventually} says it holds at least once. \emph{Always} over a window, written \code{G} or \code{globally}, is the worst case in it, an infimum. \emph{Eventually}, written \code{F} or \code{finally}, is the best case, a supremum. If you want to check a property over a specific window, bound the window in brackets right after the keyword: \code{G[0, 5]} means \emph{over the next five time units}.
+
+To see how an evaluation works, let's take a signal that is mostly above the bound except for one sample:
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0,1,2,3,4], {"x": [5, 5, 0.5, 5, 5]})
+Formula.parse("G[0, 4] (x > 0)").robustness_signal(tr)  # [0.5,0.5,0.5,5,5]
+\end{lstlisting}
+
+\code{robustness\_signal} gives the robustness at every time point, not just the first. Every window that contains the dip at $t=2$ inherits its value of $0.5$; the last two windows have slid past it and see only fives. \emph{Eventually} is the mirror image, the best sample in the window:
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0,1,2], {"x": [-5, -3, -1]})
+Formula.parse("F (x > 0)").robustness(tr)   # -1.0  the best sample
+\end{lstlisting}
+
+Two edge cases are important, because they really trip up people. When a window slides off the end of the trace it becomes empty, and the infimum of nothing is $+\infty$ while the supremum of nothing is $-\infty$:
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0,1,2,3], {"x": [5, 1, 2, 4]})
+Formula.parse("G[1, 2] (x > 0)").robustness_signal(tr)  # [1, 2, 4, inf]
+Formula.parse("F[1, 2] (x > 0)").robustness_signal(tr)  # [2, 4, 4, -inf]
+\end{lstlisting}
+
+At the last sample the future window $[t{+}1, t{+}2]$ has no samples, so \code{G} reads $+\infty$ (vacuously true, nothing violated it) and \code{F} reads $-\infty$ (vacuously false, nothing satisfied it). These infinities are the correct semantics of STL.
+
+\begin{pitfall}
+Leaving the bound off an always or eventually makes the window \code{[0, inf)}, the whole rest of the trace. \code{G (x > 0)} is then the single worst sample anywhere ahead, which is rarely what you mean online. If you mean the next ten seconds, write \code{G[0, 10] (x > 0)}.
+\end{pitfall}
+
+\section{Until and since}
+
+\emph{Until} says one thing holds continuously until another becomes true. \code{phi U[0, b] psi} is satisfied if \code{psi} becomes true at some time within the bound while \code{phi} held all the way from the start of the window to when \code{psi} became true.
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0,1,2], {"x": [5, 3, -2], "y": [-1, -1, 4]})
+Formula.parse("(x > 0) U[0, 2] (y > 0)").robustness_signal(tr)  # [3, 3, 4]
+\end{lstlisting}
+
+\code{y} turns positive at $t=2$ with margin $4$, and \code{x} held positive before it with its smallest margin $3$, so the release is worth \code{min(4, 3) = 3}. \emph{Since} is the past-facing until, "\code{psi} was true and \code{phi} has held ever since":
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0,1,2], {"x": [5, 3, 1], "y": [2, -1, -1]})
+Formula.parse("(x > 0) S (y > 0)").robustness_signal(tr)  # [2, 2, 1]
+\end{lstlisting}
+
+\section{Historically and Once}
+
+Past operators look backward, and because the past is already known they resolve immediately with no waiting. \emph{Historically} (\code{H}) is always-over-the-past, a running minimum; \emph{once} (\code{O}) is eventually-over-the-past, a running maximum.
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0,1,2,3], {"x": [3, 1, -2, 4]})
+Formula.parse("H (x > 0)").robustness_signal(tr)   # [3, 1, -2, -2]
+Formula.parse("O (x > 0)").robustness_signal(tr)   # [3, 3, 3, 4]
+\end{lstlisting}
+
+Historically never recovers after the $-2$: a single past violation is permanent. Once latches the best moment seen. Bounded past windows mirror the future ones, including the empty-window infinity at the very start:
+
+\begin{lstlisting}[language=Python]
+Formula.parse("H[1, 2] (x > 0)").robustness_signal(
+    Trace([0,1,2,3], {"x":[5,1,2,4]}))            # [inf, 5, 1, 1]
+\end{lstlisting}
+
+\section{Next}
+
+The Next operator, \code{X} shifts evaluation one step forward. It checks the property at the next time step. It takes no interval, and at the last sample, where there is no next step, it returns $-\infty$:
+
+\begin{lstlisting}[language=Python]
+Formula.parse("X (x > 0)").robustness_signal(
+    Trace([0,1,2], {"x":[5,-3,2]}))               # [-3, 2, -inf]
+\end{lstlisting}
+
+\section{Recurrence and Stabilization}
+
+\emph{Recurrence}, \code{G F}, says something keeps happening; \emph{stabilization}, \code{F G}, says something eventually settles and stays. Nested temporal operators must be parenthesized.
+
+\begin{lstlisting}[language=Python]
+# recurrence: within every window, the signal comes back positive
+Formula.parse("G[0, 1] (F[0, 1] (x > 0))").robustness_signal(
+    Trace([0,1,2,3], {"x":[1,3,-1,2]}))           # [3, 2, 2, 2]
+
+# stabilization: eventually it stays positive for a stretch
+Formula.parse("F[0, 1] (G[0, 1] (x > 0))").robustness_signal(
+    Trace([0,1,2,3], {"x":[1,3,-1,2]}))           # [1, -1, 2, 2]
+
+# a conjunction inside an always: one bad sample sinks the whole window
+Formula.parse("G[0, 2] ((x > 0) and (y > 0))").robustness(
+    Trace([0,1,2], {"x":[3,1,2], "y":[2,4,-1]}))  # -1.0
+\end{lstlisting}
+
+\section{Building formulas in code}
+
+Strings are the best way to write a formula. When a formula is assembled from parts, parameterized in a loop, or built by another program, the Python builder is cleaner, and it produces the identical tree:
+
+\begin{lstlisting}[language=Python]
+from sentil import var, always, eventually, until, parse
+
+phi = always(var("speed") > 5) & eventually(var("gap") > 2)
+# identical to parse("G (speed > 5) and F (gap > 2)")
+\end{lstlisting}
+
+\code{var} makes a signal expression; the Python comparison and arithmetic operators build predicates and terms; and the formula-level operators map to overloads: \code{\&} is \emph{and}, \code{|} is \emph{or}, \code{\textasciitilde} is \emph{not}, \code{>>} is \emph{implies}. Every expression also carries the math methods, so a nonlinear predicate reads naturally:
+
+\begin{lstlisting}[language=Python]
+x = var("x")
+(x.sqrt() > 2)                      # sqrt(x) > 2
+(x.min(0) < 1)                      # min(x, 0) < 1
+((x * 2 - 1) > 5).always(0, 3)      # G[0, 3] (x*2 - 1 > 5)
+(x > 0).always(0, 5).probability(0.9)   # P>=0.9 (G[0, 5] (x > 0))
+\end{lstlisting}
+
+The temporal operators exist both as free functions, \code{always(phi, lower, upper)}, and as methods on a formula, \code{phi.always(lower, upper)}; use whichever reads better. One naming quirk: the next operator is \code{nxt} in the builder, because \code{next} is a Python builtin. The last line previews the probabilistic operator, which the next chapters are about.
+
+\section{A catalogue of patterns}
+
+Most real specifications are one of a handful of shapes. Here they are in \sentil{} syntax, each with the requirement it captures. These are the vocabulary of the specifications library in Chapter~\ref{ch:specs}.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.5}
+\begin{widefig}\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{pattern} & \textbf{shape}\\
+\midrule
+invariant / safety & \code{G[0, T] (speed < 120)}\\
+bounded response & \code{G[0, T] ((req > 0) implies F[0, d] (ack > 0))}\\
+stabilization / settling & \code{F[0, t] (G[0, T] (abs(out - target) < eps))}\\
+recurrence & \code{G[0, T] (F[0, w] (x > 0))}\\
+maintain until an event & \code{(abs(out - set) < eps) U[0, T] (event > 0.5)}\\
+absolute envelope & \code{G[0, T] (abs(bank\_angle) < 33.0)}\\
+time to collision & \code{G[0, T] ((closing > 0) implies (range > tau * closing))}\\
+chance-constrained safety & \code{P>=0.99 (G[0, T] (gap >= d\_min))}\\
+\bottomrule
+\end{tabular}\end{widefig}
+\end{table}
+
+\begin{trybox}
+Write \emph{whenever the brake pressure exceeds 80, the car decelerates within half a second}, at a 20-unit horizon. It is a bounded response: \code{G[0, 20] ((brake > 80) implies F[0, 0.5] (accel < 0))}. Bounds can be reals, so \code{0.5} is fine.
+\end{trybox}
+
+\section{STL semantics}
+
+Table~\ref{tab:sem} contains all the semantics we have discussed above. It is recursive and this means that the robustness of a formula is defined in terms of the robustness of its subformulas.
+
+\begin{table}[h]
+\centering
+\small
+\renewcommand{\arraystretch}{1.35}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{formula} & \textbf{robustness $\rho$ at time $t$}\\
+\midrule
+$f(x) > c$, $\;f(x) \ge c$ & $f(x_t) - c$\\
+$f(x) < c$, $\;f(x) \le c$ & $c - f(x_t)$\\
+$f(x) = c$ & $-\lvert f(x_t) - c\rvert$\\
+$f(x) \neq c$ & $\lvert f(x_t) - c\rvert$\\
+$\neg\varphi$ & $-\rho(\varphi, t)$\\
+$\varphi \wedge \psi$ & $\min\bigl(\rho(\varphi,t),\, \rho(\psi,t)\bigr)$\\
+$\varphi \vee \psi$ & $\max\bigl(\rho(\varphi,t),\, \rho(\psi,t)\bigr)$\\
+$\varphi \Rightarrow \psi$ & $\max\bigl(-\rho(\varphi,t),\, \rho(\psi,t)\bigr)$\\
+$\mathsf{G}_{[a,b]}\,\varphi$ & $\displaystyle\inf_{t' \in [t+a,\,t+b]} \rho(\varphi, t')$\\
+$\mathsf{F}_{[a,b]}\,\varphi$ & $\displaystyle\sup_{t' \in [t+a,\,t+b]} \rho(\varphi, t')$\\
+$\varphi\,\mathsf{U}_{[a,b]}\,\psi$ & $\displaystyle\sup_{s \in [t+a,\,t+b]} \min\Bigl(\rho(\psi,s),\, \inf_{r\in[t,s]}\rho(\varphi,r)\Bigr)$\\
+$\mathsf{X}\varphi$ & $\rho(\varphi, t{+}1)$, and $-\infty$ at the end of the trace\\
+$\mathsf{H},\ \mathsf{O},\ \mathsf{S}$ (past) & the mirror of $\mathsf{G},\mathsf{F},\mathsf{U}$ over $[t-b,\, t-a]$\\
+$\mathsf{P}_{\sim p}\,\varphi$ & evaluated statistically: a verdict, not a margin (Ch.~\ref{ch:prstl})\\
+\bottomrule
+\end{tabular}}
+\caption{The quantitative semantics. The probabilistic operator is the exception: it has no robustness margin, so \sentil{} evaluates it by sampling and returns a verdict, and asking for its deterministic robustness is an error (Chapter~\ref{ch:prstl}).}
+\label{tab:sem}
+\end{table}
+
+\section{Dense time}
+
+Everything so far read the trace at its sample points. This is called discrete evaluation. Sometimes the answer lives between them. Assuming you sample a particular signal every second, but you want to know if it ever crosses a threshold in between, you can use the dense evaluation. \sentil{} treats the signal as piecewise linear and reasons over the segments and this allows it to catch violations that happen between samples;
+
+\begin{lstlisting}[language=Python]
+tr = Trace([0, 1, 2], {"x": [1, 1, -3]})
+Formula.parse("G[0, 1.5] (x > 0)").robustness_dense(tr)   # -1.0
+\end{lstlisting}
+
+No sample equals $-1$, but the line from $x(1){=}1$ to $x(2){=}{-}3$ crosses to $-1$ at $t=1.5$, and the dense evaluation catches it. Discrete is the default because a fixed-rate sensor is discrete but when the samples are irregular or a between-sample crossing matters, use the dense evaluation. It costs more, and Chapter~\ref{ch:performance} shows it is still far ahead of the tools built for it.
+
+\section{Exercises}
+
+Work these out on your own first. The answers are in Appendix~\ref{ch:answers}.
+
+\begin{exercise}{ex:stl-desc}
+Write each requirement as a \sentil{} formula.
+\begin{enumerate}[label=(\alph*), leftmargin=1.6em, topsep=2pt]
+  \item The engine temperature stays below 100 for the whole next minute.
+  \item Whenever the alarm fires (\code{alarm > 0}), the valve opens (\code{valve > 0}) within two seconds.
+  \item The output eventually settles to within $0.1$ of the setpoint and stays there for a ten-second stretch.
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}{ex:stl-verdict}
+For each formula and trace, give the robustness at $t=0$ and say whether it holds.
+\begin{enumerate}[label=(\alph*), leftmargin=1.6em, topsep=2pt]
+  \item \code{G[0, 4] (x > 0)} on \code{x = [5, 5, 0.5, 5, 5]}.
+  \item \code{F[1, 2] (x > 0)} on \code{x = [-3, -1, 4, -2]}, and also give the robustness at $t=2$.
+  \item \code{(x > 0) U[0, 2] (y > 0)} on \code{x = [5, 3, -2]}, \code{y = [-1, -1, 4]}.
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}{ex:stl-graph}
+The signal below is \code{x} at $t = 0, 1, 2, 3$. Give the robustness of \code{G[0, 1] (x > 2)} at every time point.
+
+\smallskip
+\centering
+\begin{tikzpicture}[x=1.15cm, y=0.5cm]
+  \draw[faint, line width=0.8pt, -{Stealth[length=2.2mm]}] (0,0) -- (3.7,0) node[right, font=\sffamily\footnotesize]{$t$};
+  \draw[faint, line width=0.8pt, -{Stealth[length=2.2mm]}] (0,0) -- (0,5);
+  \draw[vermillion, densely dashed, line width=1.1pt] (0,2) -- (3.4,2) node[right, font=\sffamily\footnotesize, text=vermillion]{$2$};
+  \foreach \t/\v in {0/4, 1/1, 2/3, 3/0} { \fill[sentilblue] (\t,\v) circle (2.2pt); }
+  \draw[hero, mark=none] (0,4) -- (1,1) -- (2,3) -- (3,0);
+  \foreach \t in {0,1,2,3} { \node[font=\sffamily\footnotesize, below] at (\t,0) {\t}; }
+\end{tikzpicture}
+\end{exercise}

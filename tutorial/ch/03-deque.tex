@@ -1,0 +1,54 @@
+\chapter{The monotonic deque}
+\label{ch:deque}
+
+\section{The cost of the naive method}
+
+To evaluate \code{G[0, w] (x > 0)} at time $t$, you need the minimum robustness over the window $[t, t+w]$, or looking backward for a streaming monitor, over $[t-w, t]$. The brute-force way is to scan the window and take the smallest value. For one sample that is $O(w)$ work. For a trace of $n$ samples it is $O(nw)$, and it gets slower as the window grows. On a wide window over a long trace, that is the difference between a monitor that keeps up with a sensor and one that falls behind.
+
+You are recomputing almost the same minimum at every step. The window at $t+1$ shares all but one sample with the window at $t$.
+
+\section{Keep only the candidates}
+
+Hold a double-ended queue of samples that could still be the minimum of some current or future window. Two facts let you throw most samples away the moment they arrive.
+
+If a new sample is smaller than the one before it, that older sample can never again be the minimum: any window containing the old one also contains the new, smaller one. So you drop it. If an old sample's timestamp has fallen out the back of the window, it is gone for good and you drop it too. What survives is a queue whose timestamps strictly increase from front to back and whose values never decrease from front to back. The front is the minimum of the current window, read off in constant time.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[x=1.0cm]
+  \node[font=\sffamily\footnotesize, text=faint, anchor=east] at (-0.3, 2.2) {stream};
+  \foreach \i/\v in {0/7, 1/4, 2/6, 3/3, 4/5} {
+    \node[datum, minimum width=7mm] at (\i*1.15, 2.2) {\v};
+  }
+  \draw[flow, faint] (4*1.15+0.5, 2.2) -- (5.6, 2.2);
+
+  % state after 7,4,6,3
+  \node[font=\sffamily\footnotesize, text=faint, anchor=east] at (-0.3, 0.4) {deque};
+  \node[stage, minimum width=8mm, fill=sentilblue!14] (f) at (0.2,0.4) {3};
+  \node[datum, minimum width=8mm, right=6mm of f] (g) {5};
+  \node[font=\sffamily\footnotesize, text=sentilblue!70!black, below=1mm of f] {front = min};
+  \node[font=\sffamily\footnotesize, text=faint, below=1mm of g] {back};
+
+  \node[font=\sffamily\footnotesize, text=ink, align=left, anchor=west] at (3.4, 0.9)
+    {$7,6$ dropped: dominated};
+  \node[font=\sffamily\footnotesize, text=ink, align=left, anchor=west] at (3.4, 0.1)
+    {$4$ dropped: fell out the window};
+\end{tikzpicture}\end{widefig}
+\caption{As values arrive, any candidate larger than the incoming value is popped off the back, and any candidate too old is popped off the front. The front always holds the window minimum, read in $O(1)$.}
+\end{figure}
+
+Each sample is pushed once and popped at most once, so across the whole trace the work is $O(n)$, amortized $O(1)$ per sample, no matter how wide the window. Memory is bounded by the number of candidates alive at once, which is at most the window, never the trace. \emph{Eventually} is the same construction with the comparisons flipped: the queue's values never increase, and the front holds the window maximum.
+
+\begin{notebox}
+This is why \sentil{}'s streaming monitor's memory is flat. After a billion samples the deque holds only the handful of candidates inside the current window. Chapter~\ref{ch:online} looks at how this provides \sentil{}'s online monitoring with a fixed memory footprint, and Chapter~\ref{ch:performance} shows how fast it makes \sentil{}.
+\end{notebox}
+
+\section{Boundary conditions}
+
+\sentil{} evicts from the front exactly when a candidate's timestamp falls \emph{strictly} below $t_k - w$, so the sample at the very edge of the window still counts. It evicts from the back while a candidate's value is \emph{at least} the incoming value, which drops a tie from the queue so that a run of equal minima keeps only the newest.
+
+\section{Exercise}
+
+\begin{exercise}{ex:deque}
+Run the sliding-window minimum by hand over the stream \code{x = [7, 4, 6, 3, 5]}, with a window of the current sample and the two before it. Give the window minimum at every step, and say which candidates the deque holds right after the fourth sample. The answer is in Appendix~\ref{ch:answers}.
+\end{exercise}
