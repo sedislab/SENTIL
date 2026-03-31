@@ -329,12 +329,12 @@ def rare_event(records):
         return next((r for r in rows if r["tool"] == tool
                      and all(r.get(k) == v for k, v in kw.items())), None)
 
-    # One representative run per tool, at a comparable precision, in speed order.
+    # One representative run per tool, at a comparable precision, SENTIL first.
     picks = [
-        ("PRISM\n(exact)", one("prism"), style.TOOL["prism"]),
-        ("SENTIL\n(splitting)", one("sentil", particles=4000), style.TOOL["sentil"]),
-        ("Modest\n(fixed effort)", one("modest", method="fixed_effort"), style.TOOL["modest"]),
-        ("FIG\n(RESTART)", one("fig", stop_rel_prec=0.2), "#CC79A7"),
+        ("SENTIL", one("sentil", particles=4000), style.TOOL["sentil"]),
+        ("PRISM", one("prism"), style.TOOL["prism"]),
+        ("Modest", one("modest", method="fixed_effort"), style.TOOL["modest"]),
+        ("FIG", one("fig", stop_rel_prec=0.2), "#CC79A7"),
     ]
     picks = [(n, r, c) for n, r, c in picks if r]
     labels = [n for n, _, _ in picks]
@@ -348,7 +348,7 @@ def rare_event(records):
     ax1.set_ylabel("wall-clock time (s, log scale)")
     ax1.set_title("Time to estimate the overflow")
     ax1.set_xticks(range(len(picks)))
-    ax1.set_xticklabels(labels, fontsize=8.5)
+    ax1.set_xticklabels(labels, fontsize=10)
     for rect, t in zip(bars1, times):
         tag = f"{t:.0f} s" if t >= 1 else f"{t * 1000:.0f} ms"
         ax1.text(rect.get_x() + rect.get_width() / 2, t, tag, ha="center", va="bottom", fontsize=9, color=style.INK)
@@ -358,7 +358,7 @@ def rare_event(records):
     ax2.set_ylabel("estimated probability (millionths)")
     ax2.set_title("Estimate against the exact value")
     ax2.set_xticks(range(len(picks)))
-    ax2.set_xticklabels(labels, fontsize=8.5)
+    ax2.set_xticklabels(labels, fontsize=10)
     ax2.set_ylim(0, max(ests) * 1.3)
     ax2.legend(loc="upper right", fontsize=9)
 
