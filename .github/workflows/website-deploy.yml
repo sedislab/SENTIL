@@ -100,6 +100,26 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy out --project-name=sentil --branch=main
+      - name: tell indexnow what changed
+        run: |
+          key=$(ls out | grep -E '^[0-9a-f]{32}\.txt$' | head -1 | sed 's/\.txt$//')
+          python3 - "$key" <<'EOF'
+          import json, re, sys, urllib.request
+          key = sys.argv[1]
+          urls = re.findall(r'<loc>([^<]+)</loc>', open('out/sitemap.xml').read())
+          body = json.dumps({
+              'host': 'sentil.pages.dev',
+              'key': key,
+              'keyLocation': f'https://sentil.pages.dev/{key}.txt',
+              'urlList': urls,
+          }).encode()
+          req = urllib.request.Request(
+              'https://api.indexnow.org/indexnow',
+              data=body,
+              headers={'Content-Type': 'application/json; charset=utf-8'},
+          )
+          print('indexnow', urllib.request.urlopen(req, timeout=30).status, f'({len(urls)} urls)')
+          EOF
 
   verify:
     name: check the deployment is live
