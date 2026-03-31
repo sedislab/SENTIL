@@ -1,0 +1,82 @@
+\chapter{Closing the loop}
+\label{ch:control}
+
+Offline synthesis plans one trajectory against a model. A real controller cannot do that: the world drifts from the model, so it has to re-plan every step, in bounded time, forever. \sentil's \code{Controller} is that online form, and it closes the loop the tutorial opened with: synthesize an input, monitor the result, re-plan on what actually happened.
+
+\section{A controller with a deadline}
+
+At each step the controller sees the state, solves a short-horizon synthesis problem, and returns the input to apply, within a time budget. The budget is a hard deadline in \emph{nanoseconds}.
+
+\begin{lstlisting}[language=Python]
+from sentil import Controller, Formula, SystemModel, Bounds
+
+model  = SystemModel.linear([[1.0]], [[1.0]], [1.0], ["x"], 1.0, 3)
+spec   = Formula.parse("G (x > 0)")
+bounds = Bounds([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])
+
+# input_width = 1 (apply one value per step); 2_000_000 ns = 2 ms deadline
+ctrl = Controller(model, spec, 1, 2_000_000, bounds=bounds)
+
+state = [1.0]
+for _ in range(steps):
+    u = ctrl.control(state)          # a length-1 array, within budget
+    state = plant_step(state, u)
+del ctrl                             # frees the model and spec it borrows
+\end{lstlisting}
+
+The controller is \emph{anytime}: it takes one gradient step immediately as a floor, so even a one-nanosecond budget returns a usable input, then keeps improving the plan in chunks of eight steps until the deadline, keeping the best. It warm-starts the next call by shifting the previous plan forward one step, so most of the work is already done when the next state arrives. And when the model is affine and the spec is a minimum of affine predicates, it skips the climb and solves one small convex quadratic program whose margin equals the exact robustness. A disjunction or a nonlinear predicate drops back to the gradient path automatically.
+
+\begin{notebox}
+\sentil{} is able to meet the deadline for our benchmarks. On an integrator holding a setpoint under a $5$~ms budget, the online controller ran a mean of $0.099$~ms per step with a 99th-percentile of $0.112$~ms over two hundred steps, and missed none. The anytime floor is what guarantees this: a step with no time to improve still returns the floor input. Keep the \code{Controller} alive across the loop and \code{del} it when done; it is able to hold the model and spec by reference.
+\end{notebox}
+
+\section{The synthesize, monitor, re-plan loop}
+
+Pair the controller with the online monitor from Chapter~\ref{ch:online} and you have the whole system: the controller proposes, the monitor watches the result against the same specification, and the next plan starts from where the system truly is.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[node distance=12mm]
+  \node[stage] (ctrl) {\textbf{controller}\\re-plan for the\\next horizon};
+  \node[datum, right=16mm of ctrl] (plant) {plant};
+  \node[stage, below=11mm of plant] (mon) {\textbf{monitor}\\running robustness\\against the spec};
+  \node[datum, left=16mm of mon] (spec) {spec};
+  \draw[flow] (ctrl) -- node[above, font=\sffamily\footnotesize, text=faint] {input $u$} (plant);
+  \draw[flow] (plant) -- node[right, font=\sffamily\footnotesize, text=faint] {state} (mon);
+  \draw[flow] (mon) -- node[below, font=\sffamily\footnotesize, text=faint] {verdict} (spec);
+  \draw[flow] (spec) -- (ctrl);
+  \draw[flow] (plant.north) .. controls +(0,0.9) and +(0,0.9) ..
+    node[above, font=\sffamily\footnotesize, text=faint] {measured state} (ctrl.north);
+\end{tikzpicture}\end{widefig}
+\caption{The closed loop. One specification drives both halves: the controller plans against it, the monitor checks the outcome against it, and the measured state feeds the next plan.}
+\end{figure}
+
+\section{Safety Shields}
+
+A control-barrier-function shield is a runtime safety filter that sits over any nominal controller. It checks the proposed input against the barriers and the actuator bounds, and if it is unsafe it projects it to the nearest safe input. A barrier is a pair $(a, b)$ meaning the half-space $a \cdot u \ge b$. The shield solves a least-change quadratic program, minimizing the distance to the nominal subject to the barriers and the box, and then it rechecks. If the barriers and the bounds have no common feasible input, it returns an \emph{error}.
+
+\begin{lstlisting}[language=Python]
+from sentil import SafetyFilter, Bounds
+
+# bounds-only: clamp an out-of-box nominal onto the actuator box
+SafetyFilter(Bounds([-1.,-1.,-1.], [1.,1.,1.])).filter([2.0, 0.0, -2.0])
+# array([1.0, 0.0, -1.0])
+
+# a barrier u >= -0.5 pulls an unsafe nominal to the closest safe value
+SafetyFilter(Bounds.unbounded(1)).filter([-1.0], barriers=[([1.0], -0.5)])
+# array([-0.5])
+\end{lstlisting}
+
+\section{Chance constraints}
+
+A chance constraint turns a probabilistic requirement into something the loop can check as it runs. \code{ChanceConstraint(phi, 0.9)} asserts \code{phi} holds with probability at least $0.9$, and \code{validate} estimates it on the live system, clearing the requirement against the \emph{Wilson lower bound} of the estimate rather than the point estimate.
+
+\begin{lstlisting}[language=Python]
+from sentil import ChanceConstraint, Formula
+
+chance = ChanceConstraint(Formula.parse("G (y < 5)"), 0.9)
+report = chance.validate(walk.to_stochastic_system(), samples=300)
+report.estimate, report.lower_bound, report.holds   # est., lower, verdict
+\end{lstlisting}
+
+The verdict comes from \code{lower\_bound}, and that changes what passes. A property whose true probability is $0.5$ clears a target of $0.4$ but fails a target of $0.55$, because the lower bound of a one-half estimate cannot reach $0.55$. Raise the sample count or lower the target to pass a genuinely satisfied spec.

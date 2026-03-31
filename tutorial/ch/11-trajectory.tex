@@ -1,0 +1,93 @@
+\chapter{Synthesizing an input}
+\label{ch:trajectory}
+
+Monitoring tells you whether a run satisfies a spec. Synthesis finds a run that does. Give \sentil{} a system model, the bounds on your inputs, and a specification, and it returns an input sequence that maximizes robustness, the exact robustness it achieves, and whether the spec holds.
+
+\section{The problem}
+
+\begin{lstlisting}[language=Python]
+from sentil import Bounds, Formula, SystemModel, synthesis
+
+# x_{t+1} = x_t + u_t, starting at x0 = 1, over three steps
+model  = SystemModel.linear([[1.0]], [[1.0]], [1.0], ["x"], 1.0, 3)
+spec   = Formula.parse("G (x > 0)")
+bounds = Bounds([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])
+
+result = synthesis.synthesize(model, spec, bounds)
+result.robustness, result.holds, result.backend    # 1.0, True, Backend.Milp
+result.input                                        # the packed input
+\end{lstlisting}
+
+\code{SystemModel.linear(A, B, x0, variables, dt, horizon)} is the built-in for $x_{t+1} = Ax_t + Bu_t$; the model seam is a trait you can implement for anything else. The input is one flat packed vector of length \code{horizon * input\_width}, laid out step by step. \code{result.robustness} is the trajectory's exact margin, \code{holds} is whether it is non-negative, and \code{backend} is the solver that was used.
+
+\section{The right solver for the shape}
+
+Synthesis picks a backend from the problem's structure, and you can force one.
+
+\begin{description}[leftmargin=1.4em, style=nextline]
+  \item[Gradient ascent] climbs the smooth robustness from Chapter~\ref{ch:smooth}. Dependency-free, works on any differentiable model, the fallback default.
+  \item[MILP] encodes an affine model with an STL spec as a mixed-integer program and solves it to global optimality. This is a \emph{complete} solver: if a satisfying input exists it finds one. \sentil{} carries its own big-M encoding and a two-phase simplex with branch and bound, so there is no external solver to install.
+  \item[CMA-ES] is the gradient-free fallback for a model that is neither affine nor differentiable.
+\end{description}
+
+\code{Backend.Auto}, the default, is a three-way gate: it chooses MILP when every bound is finite \emph{and} the model is affine \emph{and} the spec is MILP-encodable, since that path is complete, and falls back to gradient ascent otherwise. CMA-ES is never chosen automatically; you opt in. Because MILP is complete, its optimum is the true reachable best, and an infeasible spec falls out as a negative optimum:
+
+\begin{lstlisting}[language=Python]
+m = SystemModel.linear([[1.0]], [[1.0]], [0.0], ["pos"], 1.0, 5)
+b = Bounds([-1.0]*5, [1.0]*5)
+
+f_near = Formula.parse("F[0, 5] (pos > 2)")
+f_far  = Formula.parse("F[0, 5] (pos > 10)")
+synthesis.synthesize(m, f_near, b).robustness  # 3.0   (reaches 5)
+synthesis.synthesize(m, f_far, b).robustness   # -5.0  (5 short)
+\end{lstlisting}
+
+The second spec is infeasible: \code{pos} cannot exceed $5$, and $10$ is $5$ away, so \sentil{} returns the \emph{minimally violating} input with \code{holds} false and robustness $-5$. That number is actionable; it tells you exactly how far short the best possible run falls. Force a backend when you know the landscape:
+
+\begin{lstlisting}[language=Python]
+from sentil import Backend
+synthesis.synthesize(m, spec, b, backend=Backend.Gradient)  # gradient climb
+synthesis.synthesize(m, spec, b, backend=Backend.CmaEs)  # gradient-free
+\end{lstlisting}
+
+\begin{pitfall}
+The gradient-free backend is \code{Backend.CmaEs}, not \code{Backend.CMA\_ES}. And MILP needs a finite box: an infinite bound with \code{Backend.Milp} raises, and under \code{Backend.Auto} it silently routes to gradient ascent instead. If you want the complete solver, give it finite bounds.
+\end{pitfall}
+
+\begin{notebox}
+\code{holds} reflects the \emph{exact} robustness, not the smooth surrogate. Gradient and CMA-ES climb the differentiable approximation, but the winning input is re-scored by the exact monitor before it is returned, so \code{holds} being \code{True} means the real specification holds. The initial state caps what is reachable and is not a decision variable: \code{G (x > 0)} on a model with \code{x0 = 1} can never beat robustness $1$, because $x_0$ is fixed.
+\end{notebox}
+
+\section{Options}
+
+\code{synthesize} has a small set of options.
+
+\begin{lstlisting}[language=Python]
+from sentil import SmoothConfig, SoftKind, Backend, synthesis
+
+synthesis.synthesize(
+    model, spec, bounds,
+    backend=Backend.Auto,  # Auto | Gradient | CmaEs | Milp
+    smooth=SmoothConfig(temperature=10.0,  # the surrogate to climb
+                        kind=SoftKind.LogSumExp),
+    max_iters=200,  # gradient steps or CMA-ES generations
+    population=0)  # CMA-ES population; 0 = from the dimension
+\end{lstlisting}
+
+\code{bounds} is the input box, and the reason it matters is that the MILP backend requires a finite box, and \code{Backend.Auto} reverts to gradient ascent without one. \code{smooth} is the differentiable surrogate from Chapter~\ref{ch:smooth}: raise the temperature for a surrogate that tracks the true robustness more tightly, lower it if the optimizer stalls on a sharp landscape, and switch to \code{ArithmeticGeometricMean} for the gradient-free search (it ignores temperature). \code{max\_iters} is the search budget, and \code{population} tunes CMA-ES. The smoothing has no effect on MILP, which encodes the problem exactly rather than climbing it.
+
+Affine dynamics with a finite box and an STL spec: leave \code{Auto}, which picks the complete MILP solver, or ask for \code{Milp} directly. A differentiable model, an infinite box, or the light default: \code{Gradient} with log-sum-exp smoothing. A rugged or discontinuous landscape gradients do not suit: \code{CmaEs} with the arithmetic-geometric-mean smoothing. On the command line the surface is narrower, \code{sentil synth --method gradient|cmaes|milp --model model.json --budget N}, with the box carried in the model file.
+
+\section{Falsification and counterexamples}
+
+The same machinery run in reverse looks for a trajectory that \emph{breaks} a spec, which is how you generate counterexamples and stress tests. \code{find\_counterexample} descends the smooth robustness locally; \code{falsify} searches globally with CMA-ES and seed-varied restarts, stopping at the first genuine violation. Both return a \code{Witness} with the offending input, its (negative) robustness, and the trace it produces.
+
+\begin{lstlisting}[language=Python]
+g  = Formula.parse("G[0, 5] (pos < 1)")
+cx = g.find_counterexample(m, b, max_iters=400)
+cx.robustness < 0.0, any(p >= 1.0 for p in cx.trace["pos"])   # True, True
+
+w = g.falsify(m, b, restarts=5)     # global search for a violation
+\end{lstlisting}
+
+A \code{Witness} with non-negative robustness means the search found no violation within the bounds, not that none exists; \code{find\_counterexample} is a local search, not a safety proof. For a violation in the deep tail, drive the system through \code{check\_rare\_event} from Chapter~\ref{ch:rare} instead. And to turn recorded data into a specification, the CLI's \code{sentil mine} bisects for the tightest bound a set of logged traces actually supports, which is the offline companion to all of this.

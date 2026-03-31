@@ -1,0 +1,81 @@
+\chapter{Smooth Robustness}
+\label{ch:smooth}
+
+Monitoring reads robustness off a fixed trace. Synthesis does the opposite: it moves the inputs to make robustness large. To move inputs by gradient you need robustness to have a gradient, and the exact semantics do not, because \emph{min} and \emph{max} have corners. We look at how to solve this problem, and how to use the smooth semantics in synthesis in this chapter.
+
+\section{The corner problem}
+
+The robustness of a conjunction is a minimum, and a minimum is not differentiable where its two arguments cross: the gradient jumps from one to the other. An optimizer that hits that corner stalls. So synthesis evaluates the same formula tree with a \emph{soft} minimum and maximum, smooth everywhere and tunable to sit as close to the exact operator as you like. The soft minimum is the log-sum-exp with a temperature $\beta$:
+\begin{equation*}
+\widetilde{\min}(v_1,\dots,v_k) = -\frac{1}{\beta}\,\ln\!\sum_{i=1}^{k} e^{-\beta v_i}.
+\end{equation*}
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, width=11.5cm, height=6cm,
+  xlabel={$x$}, ylabel={robustness}, xmin=0, xmax=1.6, ymin=0, ymax=0.95, legend pos=south east]
+  \addplot[faint, line width=1pt, domain=0:1.6, samples=2, forget plot] {x};
+  \addplot[faint, line width=1pt, domain=0:1.6, samples=2, forget plot] {1.6-x};
+  \addplot[vermillion, line width=2pt, domain=0:1.6, samples=90]
+    {-(1/12)*ln(exp(-12*x)+exp(-12*(1.6-x)))};
+  \addlegendentry{soft, $\beta=12$}
+  \addplot[sentilblue, line width=2.3pt, domain=0:1.6, samples=90]
+    {-(1/3)*ln(exp(-3*x)+exp(-3*(1.6-x)))};
+  \addlegendentry{soft, $\beta=3$}
+  \node[font=\sffamily\footnotesize, text=faint] at (axis cs:0.32,0.14) {$\min(a,b)$ has a corner at $x{=}0.8$};
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{The exact $\min$ (faint lines and their lower envelope) has a corner. The soft minimum rounds it: a high temperature hugs the exact operator, a low one gives a gentler surface to climb.}
+\label{fig:softmin}
+\end{figure}
+
+\section{Convergence}
+
+The soft value is always a little under the true minimum, and the gap closes as the temperature rises. On a conjunction with two tied margins of $3$, the gap is exactly $\ln(2)/\beta$:
+
+\begin{lstlisting}[language=Python]
+phi   = Formula.parse("(x > 0) and (y > 1)")
+trace = sentil.Trace([0.0], {"x": [3.0], "y": [4.0]})   # margins [3, 3]
+phi.robustness(trace)          # 3.0        exact min
+
+for beta in [1.0, 3.0, 10.0, 50.0, 200.0]:
+    phi.smooth_robustness(trace, sentil.SmoothConfig(temperature=beta))
+# 1.0    2.306853     gap ln(2)/1  = 0.693
+# 3.0    2.768951     gap 0.231
+# 10.0   2.930685     gap 0.069     (the default temperature)
+# 50.0   2.986137     gap 0.014
+# 200.0  2.996534     gap 0.003
+\end{lstlisting}
+
+The default temperature is $10$. Higher hugs the exact operator; lower gives a rounder surface a gradient method climbs more easily. Where the operands are well separated the gap is negligible at any temperature; it matters only near a corner.
+
+\section{The AGM alternative}
+
+\sentil{} offers an arithmetic-geometric-mean smoothing as an alternative to the log-sum-exp approach above. AGM takes no temperature and preserves the exact value's sign, which makes it the right choice for a gradient-free optimizer that only compares fitness values:
+
+\begin{lstlisting}[language=Python]
+agm = sentil.SmoothConfig(kind=sentil.SoftKind.ArithmeticGeometricMean)
+phi2 = Formula.parse("(x > 0) and (y > 0)")
+
+t_ok  = sentil.Trace([0.], {"x": [4.], "y": [4.]})
+t_bad = sentil.Trace([0.], {"x": [4.], "y": [-2.]})
+phi2.smooth_robustness(t_ok, agm)   # 4.0   holds
+phi2.smooth_robustness(t_bad, agm)  # -1.0  fails, sign kept
+\end{lstlisting}
+
+The important thing is the smooth interpreter walks the same tree the exact monitor walks, node for node, swapping only the reducers. Monitoring keeps the exact min and max because a verdict must be exact; synthesis uses the soft ones because a search must be smooth. Under the hood the interpreter reduces with the same two primitives, which you can call directly:
+
+\begin{lstlisting}[language=Python]
+from sentil import synthesis
+synthesis.soft_min([1.0, -2.0, 3.0], 20.0)   # -2.0  a lower bound
+synthesis.soft_max([1.0, -2.0, 3.0], 20.0)   #  3.0  an upper bound
+\end{lstlisting}
+
+\begin{pitfall}
+\code{SmoothConfig} and \code{SoftKind} are top-level, but \code{soft\_min}/\code{soft\_max} live in \code{sentil.synthesis} and take the temperature as a required argument. And AGM ignores the temperature entirely and is not differentiable at a tie, so never hand it to a gradient optimizer; it is for the CMA-ES search only.
+\end{pitfall}
+
+\section{The bound}
+
+The soft minimum is a strict lower bound on the true minimum at every temperature, so the smooth robustness of a conjunction is always at or below the exact one. That has a consequence you must respect: an input can clear the smooth surrogate and still fail the real spec. This is why synthesis always reports the \emph{exact} robustness of whatever it finds, and why you re-check \code{phi.robustness(result)} before trusting a synthesized input. Temperature is a knob, not a guarantee; the exact monitor is the guarantee.
