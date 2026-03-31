@@ -1,0 +1,15 @@
+ctmc
+
+const int c = 8;
+const double lambda = 3;
+const double mu1 = 2;
+const double mu2 = 6;
+
+module tandem
+  q1 : [0..c] init 0;
+  q2 : [0..c] init 1;
+
+  [arr] true  -> lambda : (q1'=min(q1+1,c));
+  [t12] q1>0  -> mu1    : (q1'=q1-1) & (q2'=min(q2+1,c));
+  [out] q2>0  -> mu2    : (q2'=q2-1);
+endmodule

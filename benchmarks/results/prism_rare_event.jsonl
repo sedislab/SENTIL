@@ -1,0 +1,1 @@
+{"tool":"prism","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"method":"exact","estimate":5.602338e-6,"truth":5.602338e-6,"time_ms":20}

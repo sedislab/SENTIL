@@ -1,0 +1,2 @@
+{"tool":"modest","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"method":"fixed_effort","stop_width":0.1,"estimate":5.30e-6,"truth":5.602338e-6,"time_ms":18100}
+{"tool":"modest","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"method":"restart","stop_width":0.2,"estimate":6.43e-6,"truth":5.602338e-6,"time_ms":9000}

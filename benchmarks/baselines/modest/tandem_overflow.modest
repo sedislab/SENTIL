@@ -1,0 +1,21 @@
+// Tandem queue as a CTMC (arrivals 3, queue one to two at rate 2, queue two drains at 6, capacity c). Queue two emptying is made absorbing, 
+// so reaching q2 == c is a rare event.
+
+const int c = 8;
+
+int(0..c) q1 = 0;
+int(0..c) q2 = 1;
+
+property Overflow = Pmax(<> (q2 == c));
+
+process Tandem()
+{
+   alt {
+   :: when(q2 > 0)           rate(3.0) {= q1 = min(q1 + 1, c) =}
+   :: when(q2 > 0 && q1 > 0) rate(2.0) {= q1 = q1 - 1, q2 = min(q2 + 1, c) =}
+   :: when(q2 > 0)           rate(6.0) {= q2 = q2 - 1 =}
+   };
+   Tandem()
+}
+
+Tandem()
