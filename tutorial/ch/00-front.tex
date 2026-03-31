@@ -1,0 +1,48 @@
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[sentilblue] (current page.north west) rectangle ([yshift=-3.9cm]current page.north east);
+  \node[anchor=north west, text=white, font=\sffamily\bfseries\fontsize{46}{46}\selectfont]
+    at ([xshift=0.95in, yshift=-1.25cm]current page.north west) {SENTIL};
+  \node[anchor=north west, text=white, font=\interlight\fontsize{13.5}{16}\selectfont]
+    at ([xshift=0.97in, yshift=-3.02cm]current page.north west)
+    {Runtime verification for Probabilistic Signal Temporal Logic (PrSTL)};
+\end{tikzpicture}
+
+\vspace*{6.4cm}
+\noindent{\sffamily\bfseries\fontsize{34}{38}\selectfont Tutorial}
+
+\vfill
+\noindent{\sffamily\large Paapa Kwesi Quansah \quad Ernest Bonnah}\\[2pt]
+{\sffamily\color{faint} SEDIS Lab, Baylor University}\\[10pt]
+{\sffamily\color{faint} Version 0.3.0}
+
+\clearpage
+\thispagestyle{empty}
+\noindent\rule{0pt}{1pt}
+\vfill
+\noindent {\sffamily\bfseries\color{sentilblue} About this tutorial}
+
+\medskip
+\noindent The aim of this tutorial is to get you familiar with STL, its probabilistic extension, PrSTL, \sentil{}, and the various capabilities \sentil{} provides for monitoring and control. It'll explain what the monitor is doing, what options you have and we'll look into some practical examples and case studies. It also serves as a reference for the operators, noise models, and statistical bounds that \sentil{} implements.
+
+\medskip
+\noindent We provide a number of examples, exercises and code snippets to illustrate the concepts. In addition, we also provide a benchmark section that shows how \sentil{} performs with regards to other tools in the space.
+
+\medskip
+\noindent {\sffamily\bfseries\color{sentilblue} Conventions}
+
+\medskip
+\noindent Code is typeset in \code{typewriter} and formulas when in code are the same. The colored margins mean:
+
+\smallskip
+\noindent{\color{sentilblue}\rule{2.2pt}{9pt}}~a \textbf{Note} adds context.\\
+\noindent{\color{trygreen}\rule{2.2pt}{9pt}}~a \textbf{Try it} is a small exercise.\\
+\noindent{\color{okpurple}\rule{2.2pt}{9pt}}~an \textbf{Exercise} is a problem to work; the answers are in Appendix~\ref{ch:answers}.\\
+\noindent{\color{vermillion}\rule{2.2pt}{9pt}}~a \textbf{Pitfall} is a mistake we want to highlight so that you don't make it.
+
+\medskip
+\noindent {\sffamily\bfseries\color{sentilblue} License}
+
+\medskip
+\noindent \sentil{} is dual licensed under MIT or Apache~2.0. This tutorial is part of the project documentation and carries the same terms.
+\clearpage

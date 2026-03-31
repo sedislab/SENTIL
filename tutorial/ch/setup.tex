@@ -1,0 +1,79 @@
+\chapter{Setup}
+\label{ch:setup}
+
+SENTIL is a Rust engine wrapped by a package in each major language. SENTIL is available for Python (what we'll use in this tutorial), C, C++, Java, Julia, MATLAB, and Simulink, and it is also available as a command-line tool, a ROS 2 package, and a microcontroller library. We also provide extensions for Apollo and AUTOSAR. The purpose of this chapter is to install it and run your first monitor in Python. If your system is built in another language, skip to the last section.
+
+\section{Install SENTIL}
+
+You need Python 3.8 or newer. There are three ways in.
+
+\textbf{Package Manager, pip and uv}
+
+\begin{lstlisting}[language=bash]
+pip install sentil
+\end{lstlisting}
+
+That pulls the wheel for your OS and Python and its only hard dependency is NumPy.
+
+Inside a uv-managed project, \code{uv add sentil} adds it to your dependencies; outside one, \code{uv pip install sentil}.
+
+\textbf{Prebuilt release wheel}. Every tagged release attaches wheels to the GitHub release page; download the one matching your Python and platform, then install the file.
+
+\begin{lstlisting}[language=bash]
+pip install ./sentil-0.3.0-*.whl  # Linux/macOS
+pip install .\sentil-0.3.0-cp311-cp311-win_amd64.whl  # Windows: exact name
+\end{lstlisting}
+
+\code{pip install 'sentil[pandas]'} pulls pandas for DataFrame ingest and \code{pip install 'sentil[plotting]'} for the robustness plots. 
+
+\textbf{Prebuild from source}. You'll need Rust and maturin installed, then clone the repository and build the wheel:
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/sedislab/SENTIL
+cd SENTIL/sentil-py
+maturin develop --release   # build and install into the active environment
+python -m pytest tests
+\end{lstlisting}
+
+\section{Confirm it works}
+
+\begin{lstlisting}[language=bash]
+python3 -c "import sentil; print(sentil.__version__)"    # 0.3.0
+\end{lstlisting}
+
+Second, it actually monitors. Parse a formula, build a trace, read the robustness:
+
+\begin{lstlisting}[language=Python]
+import sentil
+
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})
+phi = sentil.Formula.parse("G (speed > 5)")
+print(phi.robustness(trace))     # -1.0
+\end{lstlisting}
+
+The robustness is $-1$ because the speed dips to $4$ at $t=3$, one under the bound, so the property fails by 1. A positive value would mean it holds, and the magnitude is the margin.
+
+\section{Not using Python?}
+
+SENTIL ships the same engine in every major language, each with its own package and install path, and each with its own README. Go to the documentation site at \href{https://sentil.pages.dev}{sentil.pages.dev}, which has a language toggle and a per-language guide, or to the repository at \href{https://github.com/sedislab/SENTIL}{github.com/sedislab/SENTIL}, and read the README for your binding.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{widefig}\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{your system is in} & \textbf{how you install it}\\
+\midrule
+Rust & \code{cargo add sentil} (crates.io)\\
+C or C++ & vcpkg or Conan, or the distro \code{.deb}/\code{.rpm}; \code{find\_package(Sentil)}\\
+Java & a Maven dependency on \code{io.github.sedislab:sentil}\\
+Julia & \code{] add Sentil} at the Pkg REPL\\
+MATLAB / Simulink & the packaged toolbox from the File Exchange (Chapter~\ref{ch:matlab})\\
+the command line & Homebrew, Scoop, or Winget (Chapter~\ref{ch:cli})\\
+ROS 2 & \code{apt install ros-\$ROS\_DISTRO-sentil-ros} (Chapter~\ref{ch:ros})\\
+a microcontroller & the Arduino, PlatformIO, ESP-IDF, or Zephyr library\\
+\bottomrule
+\end{tabular}\end{widefig}
+\end{table}
+
+Every binding runs the identical engine, so everything you learn here in Python carries straight across.

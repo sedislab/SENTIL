@@ -1,101 +1,58 @@
-% The SENTIL tutorial. This file is the structure only, following the agreed outline.
-% The authors write the prose of each section; the part, chapter, and section headings
-% here are the scaffold and the table of contents the CI build compiles to a PDF.
-
-\documentclass[11pt]{book}
-
-\usepackage[utf8]{inputenc}
-\usepackage{lmodern}
-\usepackage{hyperref}
-\usepackage{listings}
-
-\title{SENTIL: Runtime Verification for Probabilistic Signal Temporal Logic}
-\author{Paapa Kwesi Quansah \and Ernest Bonnah \and The SEDIS Lab}
-\date{}
+\documentclass[11pt,openright]{book}
+\usepackage[papersize={7in,10in},inner=0.95in,outer=0.85in,top=0.9in,bottom=1in]{geometry}
+\usepackage{float}
+\input{preamble}
 
 \begin{document}
-
 \frontmatter
-\maketitle
+\input{ch/00-front}
 \tableofcontents
 
-\chapter{Preface}
-\chapter{Notation and conventions}
-\chapter{A capability gallery}
-
 \mainmatter
-
 \part{Getting started}
-\chapter{Introduction and overview}
-\section{What SENTIL does}
-\section{Where monitoring fits: offline and online, STL and PrSTL and statistical}
-\section{The architecture at a glance}
-\section{A brief comparison to RTAMT, Breach, and S-TaLiRo}
-\section{A roadmap for this book}
-\chapter{Installation}
-\section{Supported platforms and languages}
-\section{Per-language install}
-\section{The optional native and GPU backends}
-\section{Verifying the install}
-\section{The docker sandbox}
-\section{Troubleshooting}
-\chapter{Your first monitor in five minutes}
-\chapter{STL by example}
+\input{ch/01-intro}
+\input{ch/setup}
 
-\part{Deterministic monitoring}
-\chapter{STL syntax and quantitative semantics}
-\section{Predicates and boolean connectives}
-\section{Bounded and unbounded temporal operators}
-\section{The past operators}
-\chapter{Discrete and dense time}
-\chapter{The streaming online monitor}
-\section{The monotonic-deque intuition}
-\chapter{The CLI and the bindings side by side}
+\part{The language}
+\input{ch/02-stl}
+\input{ch/03-deque}
 
-\part{Probabilistic and statistical monitoring}
-\chapter{Stochastic signal lifting and noise models}
-\chapter{Monte Carlo statistical model checking}
-\section{The Wilson and Clopper-Pearson intervals}
-\chapter{Sequential probability ratio testing}
-\chapter{Rare-event splitting}
-\chapter{Choosing a regime}
+\part{Monitoring}
+\input{ch/04-offline}
+\input{ch/05-online}
+\input{ch/errors}
+\input{ch/06-prstl}
+
+\part{Probabilistic verification}
+\input{ch/07-lifting}
+\input{ch/08-smc}
+\input{ch/09-rare}
 
 \part{Synthesis}
-\chapter{Smooth robustness}
-\chapter{Open-loop trajectory synthesis}
-\chapter{The receding-horizon controller}
-\chapter{Chance constraints}
-\chapter{The control-barrier-function safety filter}
-\chapter{Witnesses and counterexamples}
+\input{ch/10-smooth}
+\input{ch/11-trajectory}
+\input{ch/12-control}
 
-\part{The specifications library}
-\chapter{Reaching for a vetted spec}
-\chapter{Parameterizing a spec}
-\chapter{Citing a spec}
+\part{The command line}
+\input{ch/cli}
 
-\part{Bindings}
-\chapter{Rust}
-\chapter{Python}
-\chapter{C and C++}
-\chapter{Java}
-\chapter{Julia}
-\chapter{MATLAB}
-\chapter{The command-line tool}
-\chapter{ROS 2}
-\chapter{Embedded}
+\part{Language bindings}
+\input{ch/13-specs}
+\input{ch/14-bindings}
 
-\part{Case studies}
-\chapter{CARLA and Apollo autonomous driving}
-\chapter{The medical device study}
-\chapter{The circadian gene-regulatory network}
-\chapter{The embedded Raspberry Pi deployment}
+\part{On real platforms}
+\input{ch/17-matlab}
+\input{ch/ros}
+\input{ch/apollo}
+\input{ch/autosar}
+\input{ch/microcontrollers}
+\input{ch/raspberry-pi}
 
-\part{Reference}
-\chapter{The full operator semantics}
-\chapter{The grammar}
-\chapter{The API per language}
-\chapter{The command-line tool}
-\chapter{Exit codes}
-\chapter{The claims ledger}
+\part{Results}
+\input{ch/15-performance}
+\input{ch/16-cases}
 
+\appendix
+\input{ch/A-reference}
+\input{ch/answers}
 \end{document}

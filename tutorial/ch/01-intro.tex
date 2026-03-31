@@ -1,0 +1,61 @@
+\chapter{The problem}
+
+Systems are increasingly becoming complex and because of their growing complexity, what it means for a system to be correct is also complex. A car is not correct if it never crashes; it is correct if it never crashes \emph{and} it never runs out of gas \emph{and} it never runs a red light \emph{and} it never goes over the speed limit \emph{and} it never leaves the lane \emph{and} it never brakes too hard \emph{and} it never accelerates too fast \emph{and} it never drifts too close to the car ahead. And that is just a small part of what we want from a car. 
+
+Because of this, we write specifications which are statements of what it means for a system to be correct to confirm that the systems we build are correct. More specifically, a specification is a property that we want the system to satisfy written in a formal language.
+
+There are many ways for us to check whether a system satisfies a specification. We can test it, we can simulate it, we can model check it, and we can monitor it. Testing and simulation are cheap but incomplete: they only show us that the system is correct for the cases we tried. Model checking is complete but expensive: it shows us that the system is correct for all possible cases, but it takes a lot of time and memory to do so and in many cases, it's infeasible. Runtime Verification or Monitoring is in between: it checks the system as it runs, and it gives us an answer on whether the system is correct for the cases that actually happen.
+
+\sentil{} is a \emph{runtime monitoring tool} for properties written in Probabilistic Signal Temporal Logic (PrSTL) and its deterministic subset, Signal Temporal Logic (STL). STL is a formal language for writing specifications about real-valued signals over time. A signal can be a function such as time or a real number or a vector of real numbers, and it may be continuous or discrete, and a specification is a statement about how that signal behaves over time. 
+
+Examples of specifications that can be written in STL include \emph{Speed stays under 120 for the whole window.} and \emph{Whenever the gap drops below two, it recovers within three seconds.} STL is a temporal logic, which means that the properties are expressed over time. STL is also a quantitative logic, which means it tells us \emph{how much} a signal satisfies a specification not just whether it does. PrSTL extends STL with probabilistic operators, which allows us to express properties about how \emph{likely} a signal is to satisfy a specification, given that your sensors are noisy and your model is stochastic.
+
+\section{What \sentil{} does}
+
+\sentil{} answers three questions for any running system;
+
+\begin{description}[leftmargin=1.4em, style=nextline]
+  \item[Does this trace satisfy the spec, and by how much?] Given a formula and a set of sensor readings (called a \emph{trace}), \sentil{} computes the robustness of the trace with respect to the formula. The robustness is a signed number that says not just whether the formula holds on the trace but by what margin. It can be performed after a run or on a live stream of data.
+  \item[How likely is the spec to hold?] Sensor readings are noisy, and most systems are stochastic. In order to answer the question of whether a system satisfies a specification, we need to take into account the uncertainty in the sensor readings and the stochasticity of the system.
+  \item[Find me an input that makes the spec hold.] Synthesis. It adds a differentiable view of robustness and an optimizer, and it turns a specification into a control input, or into a controller that plans against the spec at every step.
+\end{description}
+
+\section{The pipeline}
+
+The sequence of steps \sentil{} takes to return a probabilistic verdict is shown in Figure~\ref{fig:pipeline}. Deterministic monitoring is the middle stage alone where a formula and a trace go in, and a robustness value comes out.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[node distance=6mm]
+  \node[datum] (cal) {calibration\\pairs};
+  \node[stage, right=10mm of cal] (lift) {\textbf{lifting}\\fit a noise model,\\draw $N$ trajectories};
+  \node[stage, right=9mm of lift] (rob) {\textbf{robustness}\\evaluate $\rho$ on\\each trajectory};
+  \node[stage, right=9mm of rob] (agg) {\textbf{aggregation}\\estimate $\Pr$,\\bound the error};
+  \node[datum, right=9mm of agg] (out) {$\Pr = 0.94$\\$[0.92, 0.96]$};
+
+  \node[datum, above=7mm of rob] (spec) {spec\\\code{P>=0.9 (...)}};
+  \node[datum, below=7mm of lift] (sensor) {live\\reading};
+
+  \draw[flow] (cal) -- (lift);
+  \draw[flow] (sensor) -- (lift);
+  \draw[flow] (lift) -- (rob);
+  \draw[flow] (rob) -- (agg);
+  \draw[flow] (agg) -- (out);
+  \draw[flow] (spec) -- (rob);
+
+  \begin{scope}[on background layer]
+    \node[fit=(lift)(rob)(agg), draw=gridgray, line width=1pt, rounded corners=6pt,
+      inner sep=11pt] (box) {};
+  \end{scope}
+  \node[anchor=south west, font=\sffamily\footnotesize\itshape, text=faint]
+    at ([yshift=1pt]box.north west) {sentil-core};
+\end{tikzpicture}\end{widefig}
+\caption{The probabilistic pipeline.}
+\label{fig:pipeline}
+\end{figure}
+
+Stochastic signal lifting turns a deterministic sensor reading into a distribution. You give it paired ground-truth and sensor observations once; it fits a noise model, and from then on, every reading expands into an ensemble of candidate trajectories drawn from that model. Robustness evaluation then happens; it computes a signed number, the \emph{robustness}, that says whether the formula holds and by what margin. Statistical aggregation then takes the ensemble of robustness values and estimates the satisfaction probability with a confidence bound.
+
+\begin{notebox}
+You do not need any of the theory to use \sentil. If you want to write a monitor now, skip to Chapter~\ref{ch:offline}, get one running, and come back.
+\end{notebox}
