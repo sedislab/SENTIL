@@ -21,3 +21,18 @@ venv/
 *.swp
 *~
 .DS_Store
+
+# LaTeX tutorial build byproducts. The PDF is compiled and released by CI.
+tutorial/sentil-tutorial.pdf
+tutorial/*.aux
+tutorial/*.log
+tutorial/*.out
+tutorial/*.toc
+tutorial/*.fls
+tutorial/*.fdb_latexmk
+tutorial/*.synctex.gz
+
+# Benchmark figures are generated under benchmarks/results and staged into the
+# tutorial at build time, so they are not committed a second time here.
+tutorial/figures/smc_*.png
+tutorial/figures/rare_event*.png
