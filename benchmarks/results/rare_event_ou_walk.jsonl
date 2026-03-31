@@ -1,0 +1,4 @@
+{"tool":"sentil","benchmark":"rare_event/ou_walk","model":"ar1_walk","device":"cpu","level":9,"particles":4096,"estimate":7.839690e-4,"truth":7.304000e-4,"time_ms":2808.258}
+{"tool":"sentil","benchmark":"rare_event/ou_walk","model":"ar1_walk","device":"gpu","level":9,"particles":4096,"estimate":7.314239e-4,"truth":7.304000e-4,"time_ms":391.594}
+{"tool":"sentil","benchmark":"rare_event/ou_walk","model":"ar1_walk","device":"cpu","level":9,"particles":16384,"estimate":7.407197e-4,"truth":7.304000e-4,"time_ms":15323.981}
+{"tool":"sentil","benchmark":"rare_event/ou_walk","model":"ar1_walk","device":"gpu","level":9,"particles":16384,"estimate":7.292077e-4,"truth":7.304000e-4,"time_ms":357.165}

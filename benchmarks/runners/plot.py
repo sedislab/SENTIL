@@ -365,6 +365,45 @@ def rare_event(records):
     fig.suptitle("Rare-event estimation: tandem queue overflow, c=8")
     save(fig, "rare_event.png")
 
+def rare_event_gpu(records):
+    rows = [r for r in records if r.get("benchmark") == "rare_event/ou_walk"]
+    if not rows:
+        return
+
+    def secs(device, p):
+        return next((r["time_ms"] / 1000.0 for r in rows if r["device"] == device and r["particles"] == p), None)
+
+    pairs = [(p, secs("cpu", p), secs("gpu", p)) for p in sorted({r["particles"] for r in rows})]
+    pairs = [(p, c, g) for p, c, g in pairs if c and g]
+    if not pairs:
+        return
+    counts = [p for p, _, _ in pairs]
+    cpu = [c for _, c, _ in pairs]
+    gpu = [g for _, _, g in pairs]
+    x = list(range(len(counts)))
+    w = 0.38
+    fig, ax = plt.subplots(figsize=(7.4, 4.7))
+    b1 = ax.bar([i - w / 2 for i in x], cpu, width=w, color=style.FAINT, label="CPU (adaptive splitting)", zorder=3)
+    b2 = ax.bar([i + w / 2 for i in x], gpu, width=w, color=style.TOOL["sentil"], label="GPU (fixed effort)", zorder=3)
+    for rects in (b1, b2):
+        for rect in rects:
+            v = rect.get_height()
+            tag = f"{v:.1f} s" if v >= 1 else f"{v * 1000:.0f} ms"
+            ax.text(rect.get_x() + rect.get_width() / 2, v, tag, ha="center", va="bottom", fontsize=8.5, color=style.INK)
+    for i, (c, g) in enumerate(zip(cpu, gpu)):
+        ax.text(i, max(c, g) * 2.2, f"{c / g:.0f}x", ha="center", fontsize=11, color=style.INK, fontweight="bold")
+    ax.set_yscale("log")
+    ax.set_ylim(top=max(cpu) * 8)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{c:,}" for c in counts])
+    ax.set_xlabel("particles")
+    ax.set_ylabel("wall-clock time (s, log scale)")
+    ax.set_title("Continuous-score rare event on the device: SENTIL CPU vs GPU")
+    ax.legend(loc="upper left")
+    style.footnote(fig, "AR(1) crossing, P = 7.3e-4; both land on the exact value. The "
+                        "discrete-event tools (FIG, Modest, PRISM) cannot express this model.")
+    save(fig, "rare_event_gpu.png")
+
 def main():
     style.apply()
     records = load()
@@ -373,7 +412,7 @@ def main():
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online,
                    scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
-                   smc_tandem_queue, smc_biodiesel, smc_powertrain, particles, rare_event, synthesis):
+                   smc_tandem_queue, smc_biodiesel, smc_powertrain, particles, rare_event, rare_event_gpu, synthesis):
         figure(records)
     for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
                         ("julia", "Julia"), ("java", "Java"), ("matlab", "MATLAB")):
