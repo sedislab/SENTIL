@@ -319,17 +319,13 @@ def synthesis(records):
     ax.set_title("Open-loop synthesis and one online planning step")
     save(fig, "synthesis.png")
 
-def rare_event(records):
-    models = [
-        ("two-queue tandem\nP = 5.6e-6", "rare_event/tandem", 5.602338e-6),
-        ("three-queue tandem\nP = 1.3e-5", "rare_event/three_tandem", 1.274381e-5),
-    ]
+def _rare_event_panel(records, bench, truth, subtitle, fname):
     tools = ["SENTIL", "PRISM", "Modest", "FIG"]
     color = {"SENTIL": style.TOOL["sentil"], "PRISM": style.TOOL["prism"],
              "Modest": style.TOOL["modest"], "FIG": "#CC79A7"}
     fig_prec = {"rare_event/tandem": 0.2, "rare_event/three_tandem": 0.3}
 
-    def rep(bench, tool):
+    def rep(tool):
         t = tool.lower()
         rows = [r for r in records if r.get("benchmark") == bench and r.get("tool") == t]
         if not rows:
@@ -342,45 +338,41 @@ def rare_event(records):
             return next((r for r in rows if r.get("stop_rel_prec") == fig_prec.get(bench)), rows[0])
         return rows[0]
 
-    if not any(rep(m[1], "SENTIL") for m in models):
+    picks = [(name, rep(name), color[name]) for name in tools]
+    picks = [(n, r, c) for n, r, c in picks if r]
+    if not picks:
         return
-    n_tools = len(tools)
-    width = 0.78 / n_tools
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.2, 5.0))
-    top = 0.0
-    for ti, tool in enumerate(tools):
-        xs, times, ratios = [], [], []
-        for mi, (_, bench, truth) in enumerate(models):
-            r = rep(bench, tool)
-            xs.append(mi + (ti - (n_tools - 1) / 2) * width)
-            times.append(r["time_ms"] / 1000.0 if r else 0.0)
-            ratios.append(r["estimate"] / truth if r else 0.0)
-        top = max(top, max(times))
-        rects = ax1.bar(xs, times, width=width, color=color[tool], label=tool, zorder=3)
-        for rect, t in zip(rects, times):
-            tag = f"{t:.0f} s" if t >= 1 else f"{t * 1000:.0f} ms"
-            ax1.text(rect.get_x() + rect.get_width() / 2, t, tag, ha="center", va="bottom", fontsize=7, color=style.INK)
-        ax2.bar(xs, ratios, width=width, color=color[tool], zorder=3)
+    labels = [n for n, _, _ in picks]
+    colors = [c for _, _, c in picks]
+    times = [r["time_ms"] / 1000.0 for _, r, _ in picks]
+    ratios = [r["estimate"] / truth for _, r, _ in picks]
 
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.6, 4.9))
+    rects = ax1.bar(labels, times, color=colors, width=0.62, zorder=3)
+    for rect, t in zip(rects, times):
+        tag = f"{t:.0f} s" if t >= 1 else f"{t * 1000:.0f} ms"
+        ax1.text(rect.get_x() + rect.get_width() / 2, t, tag, ha="center", va="bottom", fontsize=9, color=style.INK)
     ax1.set_yscale("log")
-    ax1.set_ylim(top=top * 12)
+    ax1.set_ylim(top=max(times) * 12)
     ax1.set_ylabel("wall-clock time (s, log scale)")
     ax1.set_title("Time to estimate the overflow")
-    ax1.set_xticks(range(len(models)))
-    ax1.set_xticklabels([m[0] for m in models], fontsize=9)
-    ax1.legend(loc="upper left", ncol=4, fontsize=8.5, columnspacing=1.0)
 
+    ax2.bar(labels, ratios, color=colors, width=0.62, zorder=3)
     ax2.axhline(1.0, color=style.INK, linestyle="--", linewidth=1.0, zorder=2, label="exact")
     ax2.set_ylabel("estimate / exact value")
     ax2.set_title("Accuracy against the exact value")
-    ax2.set_xticks(range(len(models)))
-    ax2.set_xticklabels([m[0] for m in models], fontsize=9)
-    ax2.set_ylim(0, 1.45)
+    ax2.set_ylim(0, 1.4)
     ax2.legend(loc="upper right", fontsize=9)
 
-    fig.suptitle("Rare-event estimation across two queueing models", y=1.03)
-    fig.subplots_adjust(wspace=0.26, top=0.83)
-    save(fig, "rare_event.png")
+    fig.suptitle(f"Rare-event estimation: {subtitle}", y=1.01)
+    fig.subplots_adjust(wspace=0.3, top=0.86)
+    save(fig, fname)
+
+def rare_event(records):
+    _rare_event_panel(records, "rare_event/tandem", 5.602338e-6,
+                      "two-queue tandem overflow (P = 5.6e-6)", "rare_event.png")
+    _rare_event_panel(records, "rare_event/three_tandem", 1.274381e-5,
+                      "three-queue tandem overflow (P = 1.3e-5)", "rare_event_3tandem.png")
 
 def rare_event_gpu(records):
     rows = [r for r in records if r.get("benchmark") == "rare_event/ou_walk"]
@@ -400,8 +392,8 @@ def rare_event_gpu(records):
     x = list(range(len(counts)))
     w = 0.38
     fig, ax = plt.subplots(figsize=(7.4, 4.7))
-    b1 = ax.bar([i - w / 2 for i in x], cpu, width=w, color=style.FAINT, label="CPU (adaptive splitting)", zorder=3)
-    b2 = ax.bar([i + w / 2 for i in x], gpu, width=w, color=style.TOOL["sentil"], label="GPU (fixed effort)", zorder=3)
+    b1 = ax.bar([i - w / 2 for i in x], cpu, width=w, color=style.FAINT, label="CPU", zorder=3)
+    b2 = ax.bar([i + w / 2 for i in x], gpu, width=w, color=style.TOOL["sentil"], label="GPU", zorder=3)
     for rects in (b1, b2):
         for rect in rects:
             v = rect.get_height()
