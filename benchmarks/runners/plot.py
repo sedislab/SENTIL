@@ -319,6 +319,27 @@ def synthesis(records):
     ax.set_title("Open-loop synthesis and one online planning step")
     save(fig, "synthesis.png")
 
+def rare_event(records):
+    sent = [r for r in records
+            if r.get("benchmark") == "rare_event/tandem" and r.get("tool") == "sentil" and r.get("c") == 8]
+    figs = [r for r in records if r.get("benchmark") == "rare_event/tandem" and r.get("tool") == "fig"]
+    if not sent or not figs:
+        return
+    sx = sorted((r["rel_std"] * 100.0, r["time_ms"] / 1000.0) for r in sent)
+    # FIG stops at a relative CI half-width; at 90% confidence the estimate's std is
+    # about that over 1.645, so this puts both tools on the same precision axis.
+    fx = sorted((r["stop_rel_prec"] / 1.645 * 100.0, r["time_ms"] / 1000.0) for r in figs)
+    fig, ax = plt.subplots()
+    ax.plot([p for p, _ in sx], [t for _, t in sx], color=style.TOOL["sentil"], marker="o", label="SENTIL (splitting)")
+    ax.plot([p for p, _ in fx], [t for _, t in fx], color=style.FAINT, marker="s", label="FIG (RESTART)")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("estimate precision (relative std, %; lower is tighter)")
+    ax.set_ylabel("wall-clock time (s)")
+    ax.set_title("Rare-event estimation, tandem queue overflow, c=8 (P = 5.6e-6)")
+    ax.legend(loc="upper right")
+    save(fig, "rare_event.png")
+
 def main():
     style.apply()
     records = load()
@@ -327,7 +348,7 @@ def main():
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online,
                    scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
-                   smc_tandem_queue, smc_biodiesel, smc_powertrain, particles, synthesis):
+                   smc_tandem_queue, smc_biodiesel, smc_powertrain, particles, rare_event, synthesis):
         figure(records)
     for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
                         ("julia", "Julia"), ("java", "Java"), ("matlab", "MATLAB")):

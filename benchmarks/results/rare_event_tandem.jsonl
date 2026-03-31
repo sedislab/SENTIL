@@ -1,0 +1,5 @@
+{"tool":"sentil","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"particles":4000,"estimate":5.603414e-6,"truth":5.602364e-6,"rel_error":0.0002,"rel_std":0.0992,"simulations":190757,"time_ms":11.553,"seeds":20}
+{"tool":"sentil","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"particles":16000,"estimate":5.672610e-6,"truth":5.602364e-6,"rel_error":0.0125,"rel_std":0.0691,"simulations":759086,"time_ms":47.665,"seeds":20}
+{"tool":"sentil","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"particles":64000,"estimate":5.586450e-6,"truth":5.602364e-6,"rel_error":0.0028,"rel_std":0.0328,"simulations":3041917,"time_ms":170.460,"seeds":20}
+{"tool":"sentil","benchmark":"rare_event/tandem","model":"tandem_queue","c":10,"particles":8000,"estimate":3.242837e-7,"truth":3.147278e-7,"rel_error":0.0304,"rel_std":0.0989,"simulations":621646,"time_ms":24.274,"seeds":20}
+{"tool":"sentil","benchmark":"rare_event/tandem","model":"tandem_queue","c":12,"particles":16000,"estimate":1.911726e-8,"truth":1.860151e-8,"rel_error":0.0277,"rel_std":0.0993,"simulations":1862166,"time_ms":65.653,"seeds":20}
