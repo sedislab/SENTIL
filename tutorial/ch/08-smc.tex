@@ -1,0 +1,113 @@
+\chapter{Statistical model checking}
+\label{ch:smc}
+
+We gone through setting up a formula, a trace, and a noise model. The question is how do we estimate the probability that the formula holds? This chapter shows us how \sentil{} computes \code{check}: the estimate, the four intervals, the distribution underneath, how to size a run in advance, and how to decide a threshold without estimating the probability at all.
+
+\section{Estimate and interval}
+
+The estimator draws \code{samples} lifted realizations, scores the inner formula on each, and takes the fraction that satisfy. Around that fraction \sentil{} puts a confidence interval, defaulting to the Wilson score interval:
+
+\begin{equation*}
+\widehat{p}_{\text{Wilson}}^{\pm}
+= \frac{1}{1 + z^2/N}\left(\widehat{p} + \frac{z^2}{2N}
+\;\pm\; z\sqrt{\frac{\widehat{p}\,(1-\widehat{p})}{N} + \frac{z^2}{4N^2}}\right),
+\qquad z = \Phi^{-1}\!\left(1 - \tfrac{\alpha}{2}\right).
+\end{equation*}
+
+The result carries the estimate, the interval, the raw counts, and the verdict. A steady reading of $5$ with a half-unit of noise stays positive with near certainty:
+
+\begin{lstlisting}[language=Python]
+trace = sentil.Trace([0., 1., 2.], {"x": [5., 5., 5.]})
+lift = LiftingRegistry(); lift.register("x", NoiseModel.gaussian(0.0, 0.5))
+
+r = Formula.parse("P>=0.9 (G[0,2] (x > 0))").check(trace, lift, SmcConfig())
+r.probability, r.satisfactions, r.samples, r.holds  # 1.0,10000,10000,True
+r.interval.lower, r.interval.upper, r.interval.level # 0.9996, 1.0, 0.95
+\end{lstlisting}
+
+Put the reading exactly on the boundary and symmetric noise flips the predicate about half the time, which is why we need the interval:
+
+\begin{lstlisting}[language=Python]
+tb = sentil.Trace([0.], {"x": [0.]})
+lb = LiftingRegistry(); lb.register("x", NoiseModel.gaussian(0.0, 1.0))
+r = Formula.parse("P>=0.4 (x > 0)").check(tb, lb, SmcConfig())
+r.probability, r.holds                # 0.5051, True   (0.5051 >= 0.4)
+r.interval.lower, r.interval.upper    # 0.4953, 0.5149  never touches 0.4
+\end{lstlisting}
+
+\section{Intervals and methods}
+
+\code{holds} is decided from the point estimate; the interval is its uncertainty. When you need a coverage guarantee rather than a good estimate, \code{check\_conservative} swaps in the Clopper-Pearson exact interval, wider but never undercovering, leaving the estimate and verdict untouched. The four methods are also standalone functions you can call on any counts, and they line up like this on fifty successes in a hundred:
+
+\begin{lstlisting}[language=Python]
+from sentil import stats
+stats.wilson_interval(50, 100, 0.95)    # [0.403831, 0.596169]  default
+stats.clopper_pearson(50, 100, 0.95)    # [0.398321, 0.601679]  widest
+stats.jeffreys_interval(50, 100, 0.95)  # ~[0.404, 0.596]  Bayesian
+stats.agresti_coull(50, 100, 0.95)      # [0.403831, 0.596169]  = Wilson
+\end{lstlisting}
+
+Set \code{SmcConfig(method=IntervalMethod.Jeffreys)} to use the Jeffreys interval inside \code{check}. Same for \code{IntervalMethod.ClopperPearson} and \code{IntervalMethod.AgrestiCoull}.
+
+\begin{pitfall}
+In Python the config field is \code{method}, not \code{interval\_method} (that is the Rust name). And \code{holds} compares the \emph{point} estimate to the threshold, never the interval, so a probability that barely clears can return \code{True} while the interval still straddles the line. For a decision you can defend, gate on \code{interval.lower} or \code{interval.upper} yourself.
+\end{pitfall}
+
+\section{The distribution behind the Probability}
+
+A satisfaction fraction of $0.73$ can come from a property that holds comfortably three-quarters of the time or one that holds by a hair almost always. \code{check\_distribution} tells them apart by returning the spread of robustness across the ensemble.
+
+\begin{lstlisting}[language=Python]
+td = sentil.Trace([0.], {"x": [3.]})
+ld = LiftingRegistry(); ld.register("x", NoiseModel.gaussian(0.0, 1.0))
+phi = Formula.parse("P>=0.9 (x > 0)")
+res, dist = phi.check_distribution(td, ld, SmcConfig(seed=5))
+dist.count, dist.mean, dist.std_dev, dist.min, dist.max
+# 10000, 3.0114, 1.0071, -0.7209, 6.641
+\end{lstlisting}
+
+A mean well above zero with a modest spread is a comfortable margin; a mean near zero with a wide spread is a property surviving on luck. The \code{variance} is the population variance (divide by $N$), and \code{std\_dev} is its root.
+
+\section{Sizing a run in advance}
+
+The interval narrows like $1/\sqrt{N}$ (Figure~\ref{fig:halfwidth}). This means that getting a more precise estimate requires many more samples, which is why a three-digit probability is cheap and a five-digit one is not. Rather than guess, size the run for a target. The Chernoff-Hoeffding count is distribution-free; the Wilson count sizes by the half-width you will actually report and is smaller for a matched target.
+
+\begin{lstlisting}[language=Python]
+stats.chernoff_hoeffding_samples(0.1, 0.05)   # 185 samples
+stats.wilson_samples(0.01, 0.95)              # 9604 samples
+stats.z_score(0.95)                           # 1.959964
+\end{lstlisting}
+
+The first count is the distribution-free $\lceil \ln(2/\delta) / (2\varepsilon^2) \rceil$ for an absolute error $\varepsilon = 0.1$ at confidence $1-\delta = 0.95$. The second sizes by the half-width you report, $\lceil z^2 / (4h^2) \rceil$ at the worst case $p = 1/2$, so a target half-width of $0.01$ asks for $9604$.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, xmode=log, ymode=log,
+  xlabel={samples $N$}, ylabel={interval half-width},
+  xmin=80, xmax=2000000, width=11.5cm, height=6.2cm,
+  ytick={0.1,0.03,0.01,0.003,0.001},
+  yticklabels={$0.1$,$0.03$,$0.01$,$0.003$,$0.001$}]
+  \addplot[hero, mark=none, samples=40, domain=100:1000000] {1.959964 * sqrt(0.25/x)};
+  \node[anchor=west, font=\sffamily\footnotesize, text=sentilblue!70!black]
+    at (axis cs:2000,0.022) {$z\sqrt{p(1-p)/N}$, at $p=0.5$};
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{The cost of precision. The 95\% interval half-width shrinks as $1/\sqrt{N}$: about $0.01$ at ten thousand samples, and a further hundredfold in samples to reach $0.001$.}
+\label{fig:halfwidth}
+\end{figure}
+
+\section{When you only need a decision}
+
+Sometimes you do not want the probability, only whether it clears a bar. Estimating it to decide wastes samples. The sequential probability ratio test draws one realization at a time and stops the instant the evidence is conclusive.
+
+\begin{lstlisting}[language=Python]
+from sentil import SprtConfig
+ts = sentil.Trace([0.], {"x": [5.]})
+ls = LiftingRegistry(); ls.register("x", NoiseModel.gaussian(0.0, 0.5))
+sr = Formula.parse("P>=0.5 (x > 0)").check_sequential(ts, ls,
+        SprtConfig(0.4, 0.6, 0.05, 0.05, 5000))
+sr.verdict, sr.samples          # SprtVerdict.AcceptH1, 8
+\end{lstlisting}
+
+Eight draws, against a cap of five thousand. With \code{x = 5} and half-unit noise the predicate holds on essentially every draw, so the log-likelihood ratio climbs by $\ln(0.6) - \ln(0.4) = \ln(1.5) \approx 0.405$ per draw and crosses the acceptance bound $\ln(0.95/0.05) = \ln 19 \approx 2.944$ after $8$ draws. A signal at $x = -5$ hits the mirror bound and returns \code{AcceptH0} in the same eight. You give it the indifference region $(p_0, p_1)$ you do not care to split and the two error rates; it returns \code{AcceptH0}, \code{AcceptH1}, or \code{Inconclusive} if it hit the cap. For a single-threshold decision by Bayes factor rather than an indifference region, \code{check\_bayesian} is the analogue.

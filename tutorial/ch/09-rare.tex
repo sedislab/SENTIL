@@ -1,0 +1,118 @@
+\chapter{Rare events}
+\label{ch:rare}
+
+Some properties fail so rarely that catching the failure is the whole problem. A collision-free probability of $10^{-8}$ is exactly what a safety case needs, and exactly what plain Monte Carlo cannot reach: to see a $10^{-8}$ event once you would draw on the order of $10^{9}$ samples. This chapter is how \sentil{} resolves probabilities that small.
+
+\section{Why sampling more does not work}
+
+The interval from the last chapter shrinks like $1/\sqrt{N}$, but that is precision around a probability you can already see. When the probability itself is tiny, almost every sample lands in the boring region and tells you nothing, and you spend the whole budget before a single rare event appears. Throwing more samples at it is the wrong tool.
+
+\section{Splitting: guide the samples toward the event}
+
+Adaptive multilevel splitting reframes a rare event as a sequence of not-rare ones. Define a ladder of intermediate levels between the ordinary region and the rare one. Run a population of particles, keep the ones that reach the first level, clone them to replace the ones that fell back, and push to the next level. Each level is easy to cross; the product of the crossing fractions is the rare probability.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[x=1.5cm, y=1.05cm]
+  \foreach \l/\y in {0/0, 1/1.15, 2/2.3} {
+    \draw[faint, densely dashed, line width=0.8pt] (-0.3,\y) -- (4.6,\y);
+    \node[font=\sffamily\footnotesize, text=faint, anchor=east] at (-0.35,\y) {$L_{\l}$}; }
+  \node[font=\sffamily\footnotesize, text=vermillion, anchor=east] at (-0.35,3.15) {rare};
+  \draw[vermillion, densely dashed, line width=1pt] (-0.3,3.15) -- (4.6,3.15);
+  \draw[sentilblue, line width=1.2pt] (0,0) .. controls (0.6,0.9) .. (1,1.2);
+  \draw[sentilblue, line width=1.2pt] (0,0) .. controls (0.7,0.6) .. (1,1.18);
+  \draw[faint, line width=1pt] (0,0) .. controls (0.6,0.4) .. (1,0.55);
+  \node[faint, font=\sffamily\footnotesize] at (1.15,0.5) {$\times$};
+  \draw[oksky, line width=1pt, densely dotted] (1,1.2) .. controls (1.5,1.4) .. (2,2.32);
+  \draw[sentilblue, line width=1.2pt] (1,1.2) .. controls (1.6,1.7) .. (2,2.35);
+  \draw[faint, line width=1pt] (1,1.18) .. controls (1.6,1.4) .. (2,1.7);
+  \node[faint, font=\sffamily\footnotesize] at (2.15,1.68) {$\times$};
+  \draw[oksky, line width=1pt, densely dotted] (2,2.33) .. controls (2.6,2.7) .. (3.2,3.16);
+  \draw[sentilblue, line width=1.2pt] (2,2.35) .. controls (2.7,2.9) .. (3.3,3.2);
+  \node[font=\sffamily\footnotesize, text=faint, anchor=west, align=left] at (3.5,1.6)
+    {survivors clone\\(dotted) to replace\\the ones that die ($\times$)};
+\end{tikzpicture}\end{widefig}
+\caption{Multilevel splitting. Each particle only has to cross to the next level. Survivors are cloned to replace those that fall back, so the population always presses toward the rare region, and the crossing fractions multiply into the rare probability.}
+\end{figure}
+
+\section{A stochastic system to draw from}
+
+Deterministic monitoring takes a recorded trace but splitting generates its own, so you describe the dynamics as a \code{SimModel}: the variables, the step spacing, the horizon, an initial expression per variable, a one-step transition per variable, and the noise sources the transitions draw from. A Gaussian random walk reads directly:
+
+\begin{lstlisting}[language=Python]
+from sentil import SimModel, SimExpr, NoiseModel
+
+# y_{t+1} = y_t + N(0, 1), starting at 0, dt = 0.1, over 16 steps
+walk = SimModel(["y"], 0.1, 16,
+                [SimExpr.constant(0.0)],  # init state
+                [SimExpr.prev(0) + SimExpr.noise(0)],  # advance
+                [NoiseModel.gaussian(0, 1)])  # noise sources
+
+len(walk.simulate(seed=7))   # 17     (horizon 16 -> horizon+1 samples)
+\end{lstlisting}
+
+A transition reads \code{SimExpr.prev(d)} (the previous value of variable $d$), \code{SimExpr.noise(id)} (a fresh draw from noise source $id$), \code{SimExpr.time()}, constants, the arithmetic operators, and the usual math functions. The constructor checks the whole shape up front, one expression per variable, every index in range, no \code{prev} in the initial state, so a malformed model fails at build time with a named error. Always \code{simulate} one trajectory first to confirm the walk drifts and scales the way you meant.
+
+\section{Run the splitter}
+
+Convert the model to the system the splitter drives, wrap the property in \code{P}, and call \code{check\_rare\_event}. The result is a point estimate, not an interval.
+
+\begin{lstlisting}[language=Python]
+from sentil import Formula, RareEventConfig
+
+system = walk.to_stochastic_system()
+phi = Formula.parse("P>=0.99 (G[0,3] (y < 5))")
+r = phi.check_rare_event(system, RareEventConfig(particles=4096))
+
+r.violation_probability   # the tail estimate
+r.probability             # 1 - violation_probability
+r.holds                   # (1 - violation) >= 0.99 ?
+r.simulations             # total simulation steps spent
+\end{lstlisting}
+
+The default is four thousand particles from a fixed seed. Note the two probability fields: \code{violation\_probability} is the rare tail, and \code{probability} is one minus it, the satisfaction probability that \code{holds} tests against the threshold. There is no confidence interval by design, because a point estimate has no success-over-trials count to build one from.
+
+\section{Convergence across seeds and particle counts}
+
+Because the estimate is a point, the honest check at these probabilities is convergence: rerun across seeds and particle counts and see if the error tightens. Table~\ref{tab:particles} is that convergence on two known targets.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l r r@{}}
+\toprule
+& \textbf{100 particles} & \textbf{8000 particles}\\
+\midrule
+moderate event, $p \approx 3.3\times10^{-2}$ & 0.16 & 0.01\\
+rare event, $p \approx 6.0\times10^{-5}$ & 0.38 & 0.07\\
+\bottomrule
+\end{tabular}
+\caption{Mean relative error of the splitting estimate against the analytic probability, over five seeds.}
+\label{tab:particles}
+\end{table}
+
+\section{The GPU path}
+
+Splitting is embarrassingly parallel, and behind the \code{gpu} feature \sentil{} runs the whole loop on a WebGPU backend. It takes the \code{SimModel} directly (the device cannot cross a Python closure), and it needs the inner formula to be a \code{G[0, b]} window over a plain predicate. Unlike the CPU call, the fallback is yours to make: guard on the device, and on an unsupported shape catch the error and run the CPU splitter.
+
+\begin{lstlisting}[language=Python]
+import sentil
+from sentil import EvaluationError
+
+cfg = RareEventConfig(particles=8192)
+system = walk.to_stochastic_system()
+if sentil.gpu.is_available():
+    try:
+        est = phi.check_rare_event_gpu(walk, cfg)
+        est.violation_probability, est.particles, est.levels
+    except EvaluationError:  # a shape the kernel cannot lower
+        est = phi.check_rare_event(system, cfg)
+else:
+    est = phi.check_rare_event(system, cfg)
+\end{lstlisting}
+
+On an NVIDIA A40 the device sustains around 829 million trajectory realizations a second against roughly 7.9 million on one server core, near a hundredfold, and splitting carries the resolvable probability down into the $10^{-7}$ to $10^{-9}$ range that a flat run of feasible size never reaches. The GPU estimator is a different scheme from the CPU one, fixed-effort rather than last-particle, so it carries a small bias the CPU version does not, and the two agree within a factor of two on a rare crossing.
+
+\begin{pitfall}
+The GPU and CPU calls take different arguments: \code{check\_rare\_event\_gpu} takes the \code{SimModel}, \code{check\_rare\_event} takes the \code{StochasticSystem} from \code{to\_stochastic\_system()}. The GPU path declines a nonzero lower bound (\code{G[2, 5]}), a bounded or nested inner, and fewer than sixteen particles, all before the device is touched, raising \code{EvaluationError} so your \code{except} runs and the CPU call answers instead. A liveness shape is the one case the fallback does not cover, because splitting reads a violated prefix as settled and only a safety shape stays violated as a trajectory grows, so both paths refuse it. Write the property as a safety shape, or score trajectories from \code{StochasticSystem.simulate} yourself.
+\end{pitfall}

@@ -1,0 +1,131 @@
+\chapter{Stochastic signal lifting}
+\label{ch:lifting}
+
+A probability needs a source of randomness, and lifting is where it comes from. You calibrate the sensor noise, and from then on every reading fans out into an ensemble of what the reading might really have been. This chapter is how you build that noise model, from a known family or fitted from data, and how to register it so the statistical layer has something to sample.
+
+\section{The two ways noise enters}
+
+\sentil{} models a reading as the true value combined with a noise draw, additively or multiplicatively. The same choice sets how residuals are formed when you fit from a calibration log.
+
+\begin{lstlisting}[language=Python]
+from sentil import NoiseModel, NoiseInteraction
+
+NoiseModel.residuals([1.0, 2.0, 4.0], [1.5, 2.5, 4.5],
+                     NoiseInteraction.Additive)
+# array([0.5, 0.5, 0.5])           each residual = sensor - truth
+
+NoiseModel.residuals([2.0, 4.0], [3.0, 6.0],
+                     NoiseInteraction.Multiplicative)
+# array([1.5, 1.5])                each residual = sensor / truth
+
+NoiseModel.residuals([0.0], [5.0], NoiseInteraction.Multiplicative)
+# array([1.0])                     truth near zero is guarded, not infinite
+\end{lstlisting}
+
+Additive is the right model when the error is an offset independent of magnitude; multiplicative when the error grows with the reading. Because the multiplicative residual divides by the truth, a truth signal that crosses zero should use additive noise instead; \sentil{} guards a near-zero denominator by returning $1.0$ rather than blowing up, but a stream of $1.0$s is not a noise model you want.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[node distance=8mm]
+  \node[datum] (data) {truth vs\\sensor pairs};
+  \node[stage, right=9mm of data] (res) {residuals\\$y-g$ or $y/g$};
+  \node[stage, right=9mm of res] (fit) {fit a\\density};
+  \node[stage, right=9mm of fit] (ens) {draw $N$\\trajectories};
+  \draw[flow] (data) -- (res);
+  \draw[flow] (res) -- (fit);
+  \draw[flow] (fit) -- (ens);
+  \begin{scope}[shift={($(fit.south)+(0,-0.95)$)}, x=0.36cm, y=0.5cm]
+    \draw[faint, line width=0.7pt] (-2,0) -- (2,0);
+    \draw[sentilblue, line width=1.4pt] plot[domain=-2:2, samples=40] (\x, {1.4*exp(-\x*\x)});
+  \end{scope}
+  \begin{scope}[shift={($(ens.south)+(0,-0.55)$)}, x=0.5cm, y=0.28cm]
+    \foreach \s in {-1.1,-0.4,0.3,1.0} {
+      \draw[oksky, line width=0.7pt] (0,0) .. controls (1,\s) and (2,{1.4*\s}) .. (2.6,{1.6*\s}); }
+    \draw[sentilblue, line width=1.3pt] (0,0) .. controls (1,0) and (2,0.2) .. (2.6,0.25);
+  \end{scope}
+\end{tikzpicture}\end{widefig}
+\caption{Lifting. Paired calibration data becomes residuals, the residuals fit a density, and at runtime each reading is drawn from that density into an ensemble of candidate trajectories.}
+\end{figure}
+
+\section{Choosing a family}
+
+If you know the shape of your noise, you can just name it. \sentil{} ships a lot of named distributions and you can always do a pull request to add more.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{widefig}\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{family} & \textbf{reach for it when}\\
+\midrule
+\code{gaussian(mean, std)} & the residual histogram is roughly bell-shaped\\
+\code{uniform(low, high)} & the error is bounded with no preferred value\\
+\code{log\_normal(mu, sigma)} & a positive quantity with multiplicative spread\\
+\code{exponential(rate)}, \code{gamma(k, s)} & waiting times, positive-skewed magnitudes\\
+\code{beta(a, b)} & a bounded fraction in $[0,1]$\\
+\code{weibull}, \code{rayleigh}, \code{gumbel} & reliability, magnitudes, and extremes\\
+\code{cauchy}, \code{student\_t(df,\dots)} & heavy tails and outlier-prone sensors\\
+\code{truncated\_normal(m,s,lo,hi)} & Gaussian clipped to a physical range\\
+\code{poisson(rate)}, \code{binomial(n, p)} & counts and trials\\
+\code{dirac(value)} & a signal you trust exactly (a fixed offset)\\
+\midrule
+\code{bootstrap(residuals)} & no named family fits; keep the empirical shape\\
+\code{mixture(weights, models)} & two regimes, a multi-modal residual\\
+\bottomrule
+\end{tabular}\end{widefig}
+\end{table}
+
+Analytic \code{mean()} and \code{variance()} are there for every family that has them, and \code{None} for the ones that do not, like \code{cauchy} or a low-degree Student-t.
+
+\section{Register and lift}
+
+Registering a model on a variable and calling \code{lift} produces one noisy realization of the trace. A Dirac model is deterministic, so it shows the mechanics cleanly:
+
+\begin{lstlisting}[language=Python]
+import sentil
+trace = sentil.Trace([0., 1., 2.],
+                     {"x": [10., 20., 30.], "y": [1., 2., 3.]})
+
+lift = sentil.LiftingRegistry()
+lift.register("x", sentil.NoiseModel.dirac(5.0))    # Additive by default
+noisy = lift.lift(trace, seed=1)
+list(noisy["x"]), list(noisy["y"])    # [15.0, 25.0, 35.0], [1.0, 2.0, 3.0]
+\end{lstlisting}
+
+There are two things to take note of. Firstly, only \code{x} moved; \code{y} has no registered model, so it passes through untouched. Secondly, the shift was additive; if you register with \code{sentil.NoiseInteraction.Multiplicative} instead, the same Dirac scales the signal to \code{[20, 40, 60]}.
+
+\begin{pitfall}
+The interaction members are \code{NoiseInteraction.Additive} and \code{NoiseInteraction.Multiplicative}, capitalized like that. And a second \code{register} on the same variable \emph{replaces} the first; to combine two effects on one signal, build a \code{mixture}, do not register twice.
+\end{pitfall}
+
+\section{Fitting from data}
+
+More often you do not know the shape; you have a log of paired ground-truth and sensor readings. The workflow is five steps.
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Align the data.} Present the two arrays, the truth and the sensor readings at the same instants. A mismatch or an empty input is a \code{Fit} error.
+  \item \textbf{Form residuals} in the interaction you chose, with \code{NoiseModel.residuals(truth, sensor, interaction)}.
+  \item \textbf{Fit.} \code{NoiseModel.fit\_gaussian(res)} for a bell shape (maximum likelihood, Bessel-corrected variance); \code{fit\_bootstrap(res)} to keep the empirical distribution when no family fits; \code{fit\_gaussian\_mixture(res, components, max\_iters)} by expectation-maximization for multi-modal noise.
+  \item \textbf{Register} the fitted model on its variable, once per noisy sensor.
+  \item \textbf{Check.} \code{phi.check(trace, lift, SmcConfig(samples=N))}.
+\end{enumerate}
+
+\begin{lstlisting}[language=Python]
+res   = NoiseModel.residuals(truth, sensor, NoiseInteraction.Additive)
+model = NoiseModel.fit_gaussian(res)  # one of three fitters
+lift  = sentil.LiftingRegistry(); lift.register("range", model)
+\end{lstlisting}
+
+For a long calibration history, \code{fit\_bootstrap\_reservoir(res, max\_samples)} thins to a fixed-size representative subset by seeded reservoir sampling, so the model stays small no matter how much data you feed it. And a fitted model persists: \code{model.to\_json()} at calibration time, \code{NoiseModel.from\_file(path)} at deploy time, so the noise is fit once and loaded frozen.
+
+\section{From one reading to an ensemble}
+
+There is no separate ensemble-size knob. The number of trajectories the statistical layer scores is exactly the Monte Carlo sample count you pass to the checker, \code{SmcConfig.samples}: each sample lifts the whole trace once and evaluates the formula on that realization. Turn it up for a tighter interval, down for a faster answer.
+
+\begin{lstlisting}[language=Python]
+res = phi.check(trace, lift, SmcConfig(samples=5000))
+res.samples                     # 5000  exactly the ensemble size
+res.probability                 # == res.satisfactions / res.samples
+\end{lstlisting}
+
+That is the subject of the next chapter: how the fraction becomes a probabilistic estimate.
