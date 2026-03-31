@@ -1,0 +1,125 @@
+\chapter{Errors, and how to handle them}
+\label{ch:errors}
+
+In \sentil{}, every fallible operation returns a typed error rather than aborting. In this chapter, we look at the various error surfaces of SENTIL, and how to catch them.
+
+\section{\code{SentilError}}
+
+In Python every SENTIL failure is a \code{SentilError}, and it has three subclasses (\code{ParseError}, \code{SemanticError} and \code{EvaluationError}).
+
+\begin{lstlisting}[language=Python]
+from sentil import SentilError, ParseError, SemanticError, EvaluationError
+\end{lstlisting}
+
+\code{ParseError} means the formula string did not parse. \code{SemanticError} means it parsed but means something is invalid for the call; an unknown variable, or a formula of the wrong shape. \code{EvaluationError} means the data or the runtime was the problem, a dimension mismatch, a division by zero, a bad model parameter. A \code{SemanticError} is about the \emph{formula}, an \code{EvaluationError} is about the \emph{trace or the numbers}.
+
+\section{Parse errors}
+
+A malformed formula raises \code{ParseError} with a one-based line and column at the exact token where parsing stopped.
+
+\begin{lstlisting}[language=Python]
+Formula.parse("G (speed > )")
+# ParseError: parse error at line 1, column 12:
+#   expected a value or `(`, found `)`
+Formula.parse("always [0,) (x > 0)")
+# ParseError: parse error at line 1, column 11:
+#   expected a number or `inf`, found `)`
+Formula.parse("x = 5")
+# ParseError: parse error at line 1, column 3: stray `=`;
+#   write `==` to compare for equality
+\end{lstlisting}
+
+The parser also knows the operator keywords are reserved, so if you use one where a value belongs it tells you:
+
+\begin{lstlisting}[language=Python]
+Formula.parse("G > 5")
+# ParseError: parse error at line 1, column 1:
+#   expected a value, found `always`;
+#   `G`, `globally`, and `always` are reserved for the always operator
+\end{lstlisting}
+
+Deep nesting is caught too, at a limit of 256. Every one of these is a \code{ParseError}, so a program that reads formulas from users can wrap \code{parse} once and report the error and location back to them.
+
+\section{Semantic errors}
+
+The formula parsed, but it does not fit the call. The four you will most often meet:
+
+\begin{lstlisting}[language=Python]
+# a formula names a signal the trace does not have
+Monitor("G (x > 0)").robustness(Trace([0,1,2], {"y": [1., 2., 3.]}))
+# SemanticError: no value available for variable `x`;
+#   add a signal named `x` to the trace, or include it
+#   in the streaming update
+
+# statistical check on a formula with no P wrapper
+Formula.parse("G (x > 0)").check(trace, lifting)
+# SemanticError: statistical checking needs a formula
+#   wrapped in the probabilistic operator `P`
+
+# deterministic robustness of a P formula (there is no margin to report)
+Monitor("P>=0.5 (G (x > 0))").robustness(trace)
+# SemanticError: the probabilistic operator `P` needs
+#   statistical evaluation; deterministic robustness is undefined for it
+
+# a feature that does not apply in this mode
+Monitor("X (x > 0)", Config(time=TimeMode.Dense)).robustness(trace)
+# SemanticError: unsupported: next in dense time;
+#   use discrete robustness for it
+\end{lstlisting}
+
+\section{Evaluation errors}
+
+The formula was fine; the trace or a parameter was not. These raise \code{EvaluationError}, several of them at the moment you build the trace:
+
+\begin{lstlisting}[language=Python]
+Trace([0, 1, 2], {"x": [1.0, 2.0]})
+# EvaluationError: signal `x` has 2 samples but the trace has 3 time points
+Trace([0.0, 1.0, 0.5], {"x": [1., 2., 3.]})
+# EvaluationError: trace times must strictly increase,
+#   but time 0.5 does not follow 1
+NoiseModel.gaussian(0.0, -1.0)
+# EvaluationError: invalid Gaussian noise model:
+#   standard deviation must be non-negative, got -1
+NoiseModel.fit_gaussian([0.5])
+# EvaluationError: could not fit a Gaussian MLE model:
+#   need at least 2 samples, got 1
+Monitor("G (1 / (x - x) > 0)").robustness(Trace([0,1], {"x": [1., 2.]}))
+# EvaluationError: division by zero while evaluating `1 / (x - x)`
+\end{lstlisting}
+
+\section{Handling errors well}
+
+The pattern is a base-class catch for the general case, with subclass arms where you want to react differently, say to point a user at a syntax mistake versus a data mistake. The error enum can grow, and a new failure will land in \code{SentilError}.
+
+\begin{lstlisting}[language=Python]
+def evaluate(formula, trace):
+    try:
+        return sentil.Monitor(formula).robustness(trace)
+    except ParseError as e:
+        report_syntax(e)          # e carries the line and column
+    except SemanticError as e:
+        report_spec_mismatch(e)   # unknown variable, wrong shape
+    except EvaluationError as e:
+        report_bad_data(e)        # trace, parameters, runtime
+    except SentilError as e:
+        report_other(e)           # anything added in a later release
+\end{lstlisting}
+
+\begin{pitfall}
+\code{Config} takes \code{time=} (a \code{TimeMode}), and you pass it to the \code{Monitor(formula, config)} constructor, not to \code{robustness}. Handing a config to \code{robustness} is an ordinary Python \code{TypeError}, not a \code{SentilError}.
+\end{pitfall}
+
+\section{Across the language boundary}
+
+The same failures surface in each binding's idiom. Java throws a checked \code{SentilException} with the same three subtypes; C++ throws or returns a status per the header's contract; and C, which has no exceptions, returns a stable integer status code and a retrievable message. A handle-building C call returns \code{NULL} on failure; a value-computing call returns a \code{sentil\_error\_t} and writes its result through an out-pointer. Either way you read the detail from the calling thread:
+
+\begin{lstlisting}[language=C]
+sentil_formula_t *f = sentil_formula_parse("G (");
+if (f == NULL) {
+    fprintf(stderr, "code %d: %s\n",
+            sentil_get_last_error_code(),   /* SENTIL_ERR_PARSE == 3 */
+            sentil_get_last_error());       /* borrowed; do not free */
+}
+\end{lstlisting}
+
+The message is the same string the engine produced, column pointer and all. And the boundary never aborts the host: a would-be panic inside the engine is trapped and returned as the \code{PANIC} status rather than killing your process.

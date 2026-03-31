@@ -1,0 +1,107 @@
+\chapter{Monitoring a live stream}
+\label{ch:online}
+
+Offline monitoring assumes you have the whole trace. A running system does not hand you that. It hands you one reading at a time, and it wants a verdict before the next one arrives. This is where the deque from Chapter~\ref{ch:deque} pays off: an online monitor folds each sample in constant amortized time and holds memory proportional to the window, so it keeps up with a fast sensor forever.
+
+\section{Fold one sample at a time}
+
+\begin{lstlisting}[language=Python]
+import sentil
+
+monitor = sentil.OnlineMonitor("G[0, 10] (x > -0.9)")
+for t in range(60):
+    verdict = monitor.update(float(t), {"x": sin(t * 0.3)})
+    if verdict.resolved and not verdict.satisfied:
+        print(f"violated at t={t}, robustness={verdict.value:.3f}")
+        break
+else:
+    print("held over the whole stream")
+\end{lstlisting}
+
+Each \code{update} takes a timestamp and the current value of every variable and returns a \code{Robustness} verdict. It carries five fields; \code{value} is the running robustness, \code{resolved} says whether the monitor has seen enough of the future to commit, \code{satisfied} is the boolean verdict once it has (\code{value > 0}), and \code{lower} and \code{upper} bracket the value while it is still unresolved. The reason why \code{lower} and \code{upper} are used is that for some formulas, the verdict relies on data not yet available so, the monitor cannot give one number, so it gives the tightest interval the data so far allows, and \code{value} is that interval's midpoint. You watch the stream and stop the instant \code{resolved and not satisfied}, which is the moment the property has provably failed.
+
+\begin{lstlisting}[language=Python]
+v = monitor.update(3.0, {"x": 0.4})
+v.resolved, v.satisfied, v.value, v.lower, v.upper
+# while a future window is still open: (False, ..., midpoint, lo, hi)
+\end{lstlisting}
+
+\section{Why \code{resolved} matters}
+
+A future-time operator cannot be decided the instant you see a sample. \code{G[0, 10] (x > -0.9)} at time $t$ asks about the window ending at $t+10$, so the monitor withholds a verdict for that sample until the window fills. That is what \code{resolved} reports. Until it is true, \code{satisfied} is not yet meaningful; the monitor is still accumulating.
+
+\begin{pitfall}
+If you read \code{satisfied} while \code{resolved} is false, you are reading a verdict the monitor has not made. Always gate on \code{resolved} first. And always bound the horizon on a future operator: an unbounded \code{F (x > 0)} can never resolve online, because at no finite time can the monitor rule out a future satisfaction.
+\end{pitfall}
+
+\section{Real-time guarantees}
+
+The cost per \code{update} does not grow with how long the monitor has been running. On one cpu core, the streaming path sustains close to nine million updates a second on a medium-complexity nested formula, with a median around 110 nanoseconds and a tail near 150. On a Raspberry Pi~4 under four watts, a bank of sixty specifications runs every cycle at 85~Hz with the worst cycle at 10.7~ms against an 11.8~ms deadline, and not one deadline missed across six hundred thousand cycles. Chapter~\ref{ch:performance} has the full distributions.
+
+\begin{notebox}
+Past operators resolve immediately. \code{H[0, 5] (x > 0)} at time $t$ looks only backward, so the monitor can commit at every step.
+\end{notebox}
+
+\section{Watching many properties at once}
+
+A real system checks more than one thing. A car wants speed, following distance, lane position, and a dozen more held at once. Running one monitor per property and looping over them works, but a \code{MultiMonitor} does it in one call: you register a bank of named formulas, and each \code{update} folds the sample into all of them and returns a verdict per name.
+
+\begin{lstlisting}[language=Python]
+from sentil import MultiMonitor, Formula
+
+bank = MultiMonitor()
+bank.add("speed",   "speed < 30")
+bank.add("gap",     "gap > 5")
+bank.add("lane",    Formula.parse("abs(offset) < 1.5"))
+
+verdicts = bank.update(0.0, {"speed": 24, "gap": 3.2, "offset": 0.4})
+for name, v in verdicts.items():
+    print(name, v.satisfied, round(v.value, 2))
+# speed True 6.0
+# gap   False -1.8     <- the gap dropped below 5
+# lane  True 1.1
+\end{lstlisting}
+
+\code{add} takes a name and a formula, as a string or an already-parsed \code{Formula}. \code{update} returns a mapping from each name to its \code{Robustness}, so you see every property's verdict and margin from one call.
+
+The bank beats a loop over separate monitors, because with $N$ separate \code{OnlineMonitor} objects you cross the language boundary $N$ times per sample and marshal the reading into the engine's form $N$ times. The bank does it once: one timestamp, one values conversion, one boundary crossing, and every formula advances off it in lockstep. That shared clock is also a correctness property, not just a speed one: the bank advances every formula even when one of them errors, so a momentarily bad reading can never leave the others a step behind on a desynchronized window. This is how the embedded deployment in Chapter~\ref{ch:cases} checks sixty specifications per 85~Hz cycle. What the bank does \emph{not} do is share the per-formula symbol lookup, and it has no packed fast path; when you need the allocation-free hot path of Chapter~\ref{ch:online} for a single very high-rate property, use one \code{OnlineMonitor} and \code{update\_packed}.
+
+\section{Deterministic and probabilistic formulas in one bank}
+
+The bank does not care whether a formula is a plain STL property or a probabilistic one. Register some with \code{add} and some with \code{add\_probabilistic}, giving the latter a noise model, and a single \code{update} advances all of them together. The deterministic ones report a robustness; the probabilistic ones accumulate a running satisfaction probability you read with \code{probabilities}.
+
+\begin{lstlisting}[language=Python]
+from sentil import MultiMonitor, Formula, LiftingRegistry, NoiseModel
+
+lifting = LiftingRegistry()
+lifting.register("x", NoiseModel.gaussian(0.0, 0.3))
+
+bank = MultiMonitor()
+bank.add("det", "x > 0")
+guard = Formula.parse("P>=0.8 (G[0, 2] (x > 0))")
+bank.add_probabilistic("prob", guard, lifting)
+
+for t in range(3):
+    bank.update(float(t), {"x": 2.0})
+bank.probabilities()   # {"det": None, "prob": 1.0}
+\end{lstlisting}
+
+A deterministic formula reports \code{None} from \code{probabilities}; a \code{P~p} formula reports its live estimate. That estimate is the share of particles whose own window has closed satisfied, so it reads 0.0 through the first two samples and reaches 1.0 only once the \code{G[0, 2]} window fills at $t=2$. Bound the inner window if you want the slot to settle at all: an unbounded \code{G} keeps every particle open forever, and the share stays at 0.0 for as long as the monitor runs. One design point worth stating: all monitors in a bank advance before any error is reported, so if one formula references a variable that is momentarily missing, it fails in its own slot without leaving the others a step behind. We prioritized the correctness of the evaluation and so a desynchronized window can't happen.
+
+\begin{notebox}
+For whole-trace work there is a matching \code{FormulaBank}: \code{bank.add(name, formula)} then \code{bank.robustness(trace)} returns a name-to-value mapping in one offline pass, with \code{robustness\_dense} for the dense reading.
+\end{notebox}
+
+\section{Reading the live probability}
+
+A single probabilistic monitor exposes the same running estimate through \code{last\_probability}. It answers from the first sample rather than withholding, and the number it gives is the settled share: while the inner formula's windows are still open that share is a conservative lower bound, and it converges to the offline value as the horizon passes. A live PrSTL monitor therefore tightens toward the truth as it runs rather than jumping to it. What tells you whether the number is a verdict yet is \code{resolved} on the verdict beside it, which stays false until the bound decides the threshold one way or the other.
+
+\begin{lstlisting}[language=Python]
+mon = sentil.OnlineMonitor.with_lifting(
+    Formula.parse("P>=0.9 (G[0, 5] (x > 0))"), lifting)
+for t, x in enumerate(stream):
+    verdict = mon.update(float(t), {"x": x})
+    p = mon.last_probability()   # the settled share, 0.0 until t reaches 5
+    if verdict.resolved:
+        print(t, p)
+\end{lstlisting}

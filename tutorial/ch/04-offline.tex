@@ -1,0 +1,111 @@
+\chapter{Monitoring a recorded trace}
+\label{ch:offline}
+
+You have a log, and a property, and you want to know whether the log satisfies it. That is offline monitoring, and we decompose it into three parts; building a trace, reading its robustness, localizing the failures. This chapter walks you through all three, then escalates that trace from a flat predicate up to a nested guarantee to see how the evaluation works.
+
+\section{Building a trace}
+
+A \code{Trace} is a strictly increasing time vector plus one named value array per signal. There are three in-memory ways to make one, for the three ways data arrives.
+
+\begin{lstlisting}[language=Python]
+import sentil
+from sentil import Trace, Formula
+
+t  = Trace([0, 1, 2, 3, 4], {"speed": [12, 9, 7, 4, 6]})   # times + a dict
+ti = Trace.indexed(3); ti.add_signal("x", [5.0, -3.0, 2.0])  # 0..n-1 grid
+tc = Trace.from_csv("time,x\n0,5\n1,-3\n2,2")  # CSV/TSV text
+
+len(t), t.variables, "speed" in t   # (5, ['speed'], True)
+list(t["speed"])                    # [12.0, 9.0, 7.0, 4.0, 6.0]
+\end{lstlisting}
+
+Most of the time, the data is already in a file, so \code{Trace.from\_path} opens one and picks the reader from the extension. CSV, TSV, classic MATLAB \code{.mat}, SQLite, Parquet and Arrow are always available; the rest are opt-in build features.
+
+\begin{lstlisting}[language=Python]
+Trace.from_path("drive.csv")       # .csv .txt (comma), .tsv (tab)
+Trace.from_path("run.sqlite")      # .db .sqlite .sqlite3 (first table)
+Trace.from_path("log.parquet")     # .parquet, .arrow/.feather, .mat
+\end{lstlisting}
+
+If your data is in a DataFrame, the \code{pandas} extra reads it directly: \code{from sentil.pandas import trace\_from\_dataframe} then \code{trace\_from\_dataframe(df, time\_column="time")}, using every other column as a signal. And a sparse or multi-rate recording is brought onto the grid the monitor runs at with \code{trace.resample(times, Interpolation.Linear)}; if you resample one trace onto many grids, \code{trace.prepare(interp)} solves the coefficients once for reuse.
+
+\begin{pitfall}
+Two things usually trip people up. \code{from\_csv} takes the CSV \emph{text}, not a filename; pass a path to \code{from\_path}. And \code{trace.variables} always comes back sorted alphabetically, not in column order, so read a signal by name, not position. Every value array must match the time length and every value must be finite, or the constructor raises an \code{EvaluationError}.
+\end{pitfall}
+
+\section{Robustness calls}
+
+There are two main calls for evaluating robustness: \code{robustness} which returns a single number and \code{robustness\_signal} which gives one per sample. \code{robustness} returns the robustness value at $t=0$, which for a top-level temporal formula is the verdict of the whole-trace. For a bare predicate, though, the scalar only reports the first sample, and you need the signal to see the rest.
+
+\begin{lstlisting}[language=Python]
+phi = Formula.parse("speed > 5")
+phi.robustness(t)               # 7.0            the margin at t=0
+list(phi.robustness_signal(t))  # [7.0, 4.0, 2.0, -1.0, 1.0]   every sample
+\end{lstlisting}
+
+The dip to $-1$ at $t=3$ is the one moment \code{speed} fell below $5$.
+
+\section{Where it fails}
+
+\code{violations} turns that signal into spans you can log or alarm on: the maximal runs where robustness goes negative, each a frozen \code{Interval} with \code{.start} and \code{.end}.
+
+\begin{lstlisting}[language=Python]
+[(v.start, v.end) for v in phi.violations(t)]           # [(3.0, 3.0)]
+
+t2 = Trace([0, 1, 2], {"x": [3, -1, 2]})
+g  = Formula.parse("G[0, 2](x > 0)")
+[(v.start, v.end) for v in g.violations(t2)]            # [(0.0, 1.0)]
+\end{lstlisting}
+
+The single-sample dip is a point span; the second, where an always-window is dragged negative by the middle sample, is a two-second span.
+
+\section{Discrete and dense evaluations}
+
+The calls above read the trace at its sample points. When a threshold is crossed and recovered between two samples, the discrete reading steps over it and the dense reading interpolates and catches it. Two cases make the difference concrete.
+
+\begin{lstlisting}[language=Python]
+td = Trace([0.0, 1.0, 2.0], {"x": [1.0, 1.0, -3.0]})    # x(1.5) = -1
+p  = Formula.parse("G[0, 1.5](x > 0)")
+p.robustness(td)        # 1.0    discrete: the window sees only t=0, 1
+p.robustness_dense(td)  # -1.0   dense: finds the drop at t=1.5
+
+te = Trace([0.0, 2.0], {"x": [1.0, -1.0]})              # crosses 0 at t=1
+q  = Formula.parse("F[0, 2](x == 0)")
+q.robustness(te)        # -1.0   discrete: nearest sample is one away
+q.robustness_dense(te)  # -0.0   dense: the exact zero-crossing
+\end{lstlisting}
+
+Discrete is the default because a fixed-rate sensor is discrete. Reach for dense when the samples are irregular or a between-sample crossing matters, as it does for an \code{==} predicate that only scores zero exactly where the signal touches the constant.
+
+\section{Escalate one trace}
+
+The best way to feel the operators is to hold the trace fixed and climb the formula. Same \code{speed = [12, 9, 7, 4, 6]} throughout.
+
+\begin{lstlisting}[language=Python]
+P = Formula.parse
+
+# rung 1: a predicate. the scalar is only t=0; the signal shows the dip
+P("speed > 5").robustness(t)                        # 7.0
+list(P("speed > 5").robustness_signal(t))      # [7.0, 4.0, 2.0, -1.0, 1.0]
+
+# rung 2: bounded eventually. the best of the first three samples
+P("F[0, 2](speed > 10)").robustness(t)              # 2.0   (12 - 10)
+
+# rung 3: unbounded always. now one number IS the whole-trace verdict
+P("G (speed > 5)").robustness(t)                    # -1.0
+[(v.start, v.end) for v in P("G (speed > 5)").violations(t)] # [(0.0, 3.0)]
+
+# rung 4: bounded always, read per sample
+list(P("G[0, 2](speed > 5)").robustness_signal(t))
+# [2.0, -1.0, -1.0, -1.0, 1.0]
+
+# rung 5: nested. after a slowdown below 5, recover above 8 in 2 steps
+nested = P("G ((speed < 5) implies F[0, 2](speed > 8))")
+nested.robustness(t), nested.depth, nested.is_temporal   # (-1.0, 4, True)
+\end{lstlisting}
+
+Rung five is the shape most real specifications take, and it fails here: at $t=3$ the speed is $4$, so the antecedent \code{speed < 5} is true, and the consequent needs \code{speed > 8} somewhere in $[3, 5]$, but the best the trace offers there is $6$, so the property misses by $8 - 6$... clamped by the antecedent's own margin to $-1$. The \code{depth} and \code{is\_temporal} getters, handy when you generate formulas, confirm it is a depth-four temporal tree.
+
+\begin{notebox}
+You do not have to write formulas as strings. The builder from Chapter~\ref{ch:stl} produces the identical tree, which is what you use when a spec is assembled in a loop or parameterized. Strings for a spec you know; the builder for a spec you generate.
+\end{notebox}
