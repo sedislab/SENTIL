@@ -320,49 +320,66 @@ def synthesis(records):
     save(fig, "synthesis.png")
 
 def rare_event(records):
-    rows = [r for r in records if r.get("benchmark") == "rare_event/tandem" and r.get("c") == 8]
-    if not rows:
-        return
-    truth = 5.602338e-6
-
-    def one(tool, **kw):
-        return next((r for r in rows if r["tool"] == tool
-                     and all(r.get(k) == v for k, v in kw.items())), None)
-
-    # One representative run per tool, at a comparable precision, SENTIL first.
-    picks = [
-        ("SENTIL", one("sentil", particles=4000), style.TOOL["sentil"]),
-        ("PRISM", one("prism"), style.TOOL["prism"]),
-        ("Modest", one("modest", method="fixed_effort"), style.TOOL["modest"]),
-        ("FIG", one("fig", stop_rel_prec=0.2), "#CC79A7"),
+    models = [
+        ("two-queue tandem\nP = 5.6e-6", "rare_event/tandem", 5.602338e-6),
+        ("three-queue tandem\nP = 1.3e-5", "rare_event/three_tandem", 1.274381e-5),
     ]
-    picks = [(n, r, c) for n, r, c in picks if r]
-    labels = [n for n, _, _ in picks]
-    colors = [c for _, _, c in picks]
-    times = [r["time_ms"] / 1000.0 for _, r, _ in picks]
-    ests = [r["estimate"] * 1e6 for _, r, _ in picks]
+    tools = ["SENTIL", "PRISM", "Modest", "FIG"]
+    color = {"SENTIL": style.TOOL["sentil"], "PRISM": style.TOOL["prism"],
+             "Modest": style.TOOL["modest"], "FIG": "#CC79A7"}
+    fig_prec = {"rare_event/tandem": 0.2, "rare_event/three_tandem": 0.3}
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.4, 4.7))
-    bars1 = ax1.bar(range(len(picks)), times, color=colors, width=0.62, zorder=3)
+    def rep(bench, tool):
+        t = tool.lower()
+        rows = [r for r in records if r.get("benchmark") == bench and r.get("tool") == t]
+        if not rows:
+            return None
+        if t == "sentil":
+            return min(rows, key=lambda r: r.get("particles", 0))
+        if t == "modest":
+            return next((r for r in rows if r.get("method") == "fixed_effort"), rows[0])
+        if t == "fig":
+            return next((r for r in rows if r.get("stop_rel_prec") == fig_prec.get(bench)), rows[0])
+        return rows[0]
+
+    if not any(rep(m[1], "SENTIL") for m in models):
+        return
+    n_tools = len(tools)
+    width = 0.78 / n_tools
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.2, 5.0))
+    top = 0.0
+    for ti, tool in enumerate(tools):
+        xs, times, ratios = [], [], []
+        for mi, (_, bench, truth) in enumerate(models):
+            r = rep(bench, tool)
+            xs.append(mi + (ti - (n_tools - 1) / 2) * width)
+            times.append(r["time_ms"] / 1000.0 if r else 0.0)
+            ratios.append(r["estimate"] / truth if r else 0.0)
+        top = max(top, max(times))
+        rects = ax1.bar(xs, times, width=width, color=color[tool], label=tool, zorder=3)
+        for rect, t in zip(rects, times):
+            tag = f"{t:.0f} s" if t >= 1 else f"{t * 1000:.0f} ms"
+            ax1.text(rect.get_x() + rect.get_width() / 2, t, tag, ha="center", va="bottom", fontsize=7, color=style.INK)
+        ax2.bar(xs, ratios, width=width, color=color[tool], zorder=3)
+
     ax1.set_yscale("log")
+    ax1.set_ylim(top=top * 12)
     ax1.set_ylabel("wall-clock time (s, log scale)")
     ax1.set_title("Time to estimate the overflow")
-    ax1.set_xticks(range(len(picks)))
-    ax1.set_xticklabels(labels, fontsize=10)
-    for rect, t in zip(bars1, times):
-        tag = f"{t:.0f} s" if t >= 1 else f"{t * 1000:.0f} ms"
-        ax1.text(rect.get_x() + rect.get_width() / 2, t, tag, ha="center", va="bottom", fontsize=9, color=style.INK)
+    ax1.set_xticks(range(len(models)))
+    ax1.set_xticklabels([m[0] for m in models], fontsize=9)
+    ax1.legend(loc="upper left", ncol=4, fontsize=8.5, columnspacing=1.0)
 
-    ax2.bar(range(len(picks)), ests, color=colors, width=0.62, zorder=3)
-    ax2.axhline(truth * 1e6, color=style.INK, linestyle="--", linewidth=1.0, zorder=2, label="exact, 5.60e-6")
-    ax2.set_ylabel("estimated probability (millionths)")
-    ax2.set_title("Estimate against the exact value")
-    ax2.set_xticks(range(len(picks)))
-    ax2.set_xticklabels(labels, fontsize=10)
-    ax2.set_ylim(0, max(ests) * 1.3)
+    ax2.axhline(1.0, color=style.INK, linestyle="--", linewidth=1.0, zorder=2, label="exact")
+    ax2.set_ylabel("estimate / exact value")
+    ax2.set_title("Accuracy against the exact value")
+    ax2.set_xticks(range(len(models)))
+    ax2.set_xticklabels([m[0] for m in models], fontsize=9)
+    ax2.set_ylim(0, 1.45)
     ax2.legend(loc="upper right", fontsize=9)
 
-    fig.suptitle("Rare-event estimation: tandem queue overflow, c=8")
+    fig.suptitle("Rare-event estimation across two queueing models", y=1.03)
+    fig.subplots_adjust(wspace=0.26, top=0.83)
     save(fig, "rare_event.png")
 
 def rare_event_gpu(records):
