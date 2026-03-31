@@ -1,0 +1,22 @@
+// Three-queue exponential tandem as a CTMC. Arrivals 3 feed q1, q1 into q2 at rate 2, q2 into q3 at rate 4, q3 out at rate 6, capacity c. Queue three emptying is made
+// absorbing, so reaching capacity is a rare event.
+const int c = 6;
+
+int(0..c) q1 = 0;
+int(0..c) q2 = 0;
+int(0..c) q3 = 1;
+
+property Overflow = Pmax(<> (q3 == c));
+
+process Tandem3()
+{
+   alt {
+   :: when(q3 > 0)            rate(3.0) {= q1 = min(q1 + 1, c) =}
+   :: when(q3 > 0 && q1 > 0)  rate(2.0) {= q1 = q1 - 1, q2 = min(q2 + 1, c) =}
+   :: when(q3 > 0 && q2 > 0)  rate(4.0) {= q2 = q2 - 1, q3 = min(q3 + 1, c) =}
+   :: when(q3 > 0)            rate(6.0) {= q3 = q3 - 1 =}
+   };
+   Tandem3()
+}
+
+Tandem3()

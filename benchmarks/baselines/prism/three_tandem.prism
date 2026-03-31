@@ -1,0 +1,18 @@
+ctmc
+
+const int c = 6;
+const double lambda = 3;
+const double mu1 = 2;
+const double mu2 = 4;
+const double mu3 = 6;
+
+module tandem3
+  q1 : [0..c] init 0;
+  q2 : [0..c] init 0;
+  q3 : [0..c] init 1;
+
+  [arr] true  -> lambda : (q1'=min(q1+1,c));
+  [p12] q1>0  -> mu1    : (q1'=q1-1) & (q2'=min(q2+1,c));
+  [p23] q2>0  -> mu2    : (q2'=q2-1) & (q3'=min(q3+1,c));
+  [out] q3>0  -> mu3    : (q3'=q3-1);
+endmodule

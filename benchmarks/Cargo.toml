@@ -40,6 +40,10 @@ name = "sentil_rare_walk_runner"
 path = "src/bin/sentil_rare_walk_runner.rs"
 
 [[bin]]
+name = "sentil_rare_3tandem_runner"
+path = "src/bin/sentil_rare_3tandem_runner.rs"
+
+[[bin]]
 name = "sentil_ctmc_runner"
 path = "src/bin/sentil_ctmc_runner.rs"
 

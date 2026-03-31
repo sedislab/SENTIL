@@ -1,0 +1,1 @@
+{"tool":"sentil","benchmark":"rare_event/three_tandem","model":"three_tandem","c":6,"particles":20000,"estimate":1.284545e-5,"truth":1.274381e-5,"rel_error":0.0080,"rel_std":0.1202,"simulations":560365,"time_ms":46.125,"seeds":20}

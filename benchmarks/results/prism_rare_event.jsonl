@@ -1,1 +1,2 @@
 {"tool":"prism","benchmark":"rare_event/tandem","model":"tandem_queue","c":8,"method":"exact","estimate":5.602338e-6,"truth":5.602338e-6,"time_ms":20}
+{"tool":"prism","benchmark":"rare_event/three_tandem","model":"three_tandem","c":6,"method":"exact","estimate":1.274381e-5,"truth":1.274381e-5,"time_ms":40}

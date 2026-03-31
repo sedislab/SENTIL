@@ -1,0 +1,46 @@
+// Three-queue exponential tandem for FIG. Arrivals rate 3 feed q1, q1 into q2 at rate 2, q2 into q3 at rate 4, q3 out at rate 6, capacity c. 
+// Rare event: q3 reaches c before it empties, from one packet in q3.
+const int c = 6;
+const int lambda = 3;
+const int mu1 = 2;
+const int mu2 = 4;
+const int mu3 = 6;
+
+module Arrivals
+	clk0: clock;
+	[P0!] @ clk0 -> (clk0'= exponential(lambda));
+endmodule
+
+module Queue1
+	q1: [0..c];
+	clk1: clock;
+	[P0?] q1 == 0          -> (q1'= q1+1) & (clk1'= exponential(mu1));
+	[P0?] q1  > 0 & q1 < c -> (q1'= q1+1);
+	[P0?] q1 == c          -> ;
+	[P1!] q1 == 1 @ clk1 -> (q1'= q1-1);
+	[P1!] q1  > 1 @ clk1 -> (q1'= q1-1) & (clk1'= exponential(mu1));
+endmodule
+
+module Queue2
+	q2: [0..c];
+	clk2: clock;
+	[P1?] q2 == 0          -> (q2'= q2+1) & (clk2'= exponential(mu2));
+	[P1?] q2  > 0 & q2 < c -> (q2'= q2+1);
+	[P1?] q2 == c          -> ;
+	[P2!] q2 == 1 @ clk2 -> (q2'= q2-1);
+	[P2!] q2  > 1 @ clk2 -> (q2'= q2-1) & (clk2'= exponential(mu2));
+endmodule
+
+module Queue3
+	q3: [0..c] init 1;
+	clk3: clock;
+	[P2?] q3 == 0          -> (q3'= q3+1) & (clk3'= exponential(mu3));
+	[P2?] q3  > 0 & q3 < c -> (q3'= q3+1);
+	[P2?] q3 == c          -> ;
+	[P3!] q3 == 1 @ clk3 -> (q3'= q3-1);
+	[P3!] q3  > 1 @ clk3 -> (q3'= q3-1) & (clk3'= exponential(mu3));
+endmodule
+
+properties
+	P( q3 > 0 U q3 == c )
+endproperties
