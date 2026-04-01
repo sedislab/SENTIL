@@ -1,6 +1,3 @@
-// Value types and scoped enums. Each enumerator is pinned to its C constant, 
-// so converting to and from the C enum is an exact cast. The owning RAII classes
-// live in sentil.hpp.
 #ifndef SENTIL_TYPES_HPP
 #define SENTIL_TYPES_HPP
 

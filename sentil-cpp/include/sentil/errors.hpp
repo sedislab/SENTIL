@@ -1,5 +1,3 @@
-// The exception hierarchy and the helpers. It follows the house style of catching 
-// SentilError for everything, or a subclass to separate the failure kinds.
 #ifndef SENTIL_ERRORS_HPP
 #define SENTIL_ERRORS_HPP
 
