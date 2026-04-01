@@ -106,7 +106,7 @@ Artifact: `benchmarks/results/sentil_dense.jsonl`.
 
 Per-sample latency on the online monitor, the nested formula `always[0, 100](eventually[0, 10](x > 5))` driven one sample at a time through `StreamMonitor::update_packed`.
 Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- streaming`.
-Measured on one EPYC core over a million samples: median 81 ns, p99 120 ns, mean 87 ns. Each update is timed on its own, so two clock reads of a few tens of nanoseconds are folded into every figure and the true per-sample cost is lower. The tail sits within about one and a half times the median, and the monitor sustains over eleven million updates per second, far above the ten kilohertz target. Tolerance: report the measured number, do not target one; the exact figure is hardware-bound. Tier: CPU.
+Measured on one EPYC 7763 core over a million samples: median 110 ns, p99 150 ns, mean 112 ns. Each update is timed on its own, so two clock reads of a few tens of nanoseconds are folded into every figure and the true per-sample cost is lower. The tail sits within about one and a half times the median, and the monitor sustains over nine million updates per second, far above the ten kilohertz target. Tolerance: report the measured number, do not target one; the exact figure is hardware-bound. Tier: CPU. Artifact: `benchmarks/results/sentil_streaming.jsonl`.
 
 Memory is proportional to the largest temporal window, not the trace length, so an arbitrarily long stream holds steady resident memory for a given formula.
 

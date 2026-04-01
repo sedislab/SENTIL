@@ -150,6 +150,22 @@ def particle_convergence():
     check("rare-event estimate sharpens with particles", worst_top <= 0.15 and decreases,
           f"error at the largest count is {worst_top:.3f} (target 0.15) and below the smallest-count error")
 
+def streaming_cost():
+    record = load(os.path.join(RESULTS, "sentil_streaming.jsonl"))[0]
+    timing = record["timing"]
+    median_ns = timing["p50_ms"] * 1e6
+    tail_ratio = timing["p99_ms"] / timing["p50_ms"]
+    ok = (
+        median_ns < 1000.0
+        and tail_ratio <= 2.0
+        and abs(record["robustness"] - (-17.99211575372234)) < 1e-9
+    )
+    check(
+        "streaming per-sample cost sub-microsecond with a bounded tail",
+        ok,
+        f"median {median_ns:.0f} ns, p99 {tail_ratio:.2f}x the median, robustness {record['robustness']}",
+    )
+
 def glucose():
     report = json.load(open(os.path.join(EXPERIMENTS, "glucose_control", "results", "glucose.json"), encoding="utf-8"))
     missed = report["controllers"]["missed_lunch_bolus"]["specifications"]["euglycemia"]["robustness"]
@@ -159,7 +175,7 @@ def glucose():
     check("glucose euglycemia separates the controllers", ok, f"missed-bolus {missed}, tuned {tuned}")
 
 def main():
-    for stage in (rtamt_speedup, monitoring_flat, dense_multiple, smc_accuracy, synthesis, particle_convergence, circadian, glucose):
+    for stage in (rtamt_speedup, monitoring_flat, dense_multiple, ledger_tables, streaming_cost, smc_accuracy, synthesis, particle_convergence, circadian, glucose):
         try:
             stage()
         except (FileNotFoundError, KeyError, ValueError, ZeroDivisionError, TypeError) as err:
