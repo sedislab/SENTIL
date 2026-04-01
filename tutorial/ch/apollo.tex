@@ -1,0 +1,124 @@
+\chapter{Apollo}
+\label{ch:apollo}
+
+Baidu Apollo is a full autonomous-driving stack, and \sentil{} installs into it as a Cyber RT module. It ships two components, a monitor that watches Apollo's channels against a bank of specifications and a controller that shields or synthesizes commands, plus two offline tools. The compiled engine is linked through a Bazel external repository, so the vehicle build needs no Rust toolchain. Cyber RT is Linux only.
+
+\section{Build and install}
+
+Three steps. First, build the engine once and stage it as an install tree the module expects, \code{include/sentil/*.hpp}, \code{include/sentil.h}, and \code{lib/libsentil.so}:
+
+\begin{lstlisting}[language=bash]
+cargo build --release -p sentil-ffi
+# then copy the headers and libsentil.so into that install tree
+\end{lstlisting}
+
+Second, declare a Bazel external repository named \code{@sentil\_cpp} pointing at that tree, with the module's \code{bzl/sentil\_cpp.BUILD} as its build file. Every target links \code{@sentil\_cpp//:sentil\_cpp}. Third, drop the directory into your workspace as \code{modules/sentil} and build it with Apollo's package method:
+
+\begin{lstlisting}[language=bash]
+cp -r sentil-apollo <apollo-workspace>/modules/sentil
+buildtool build -p sentil
+buildtool install sentil
+\end{lstlisting}
+
+In the Apollo dev container the flow is \code{aem start}, the two \code{buildtool} commands, then \code{cyber\_launch}.
+
+\begin{pitfall}
+The repository does not commit a literal \code{WORKSPACE}/\code{MODULE.bazel} snippet for \code{@sentil\_cpp}; you write the repository declaration yourself, and the \code{bzl} file pins only the required install-tree layout. That layout, the two include paths and the one library, is the contract to satisfy.
+\end{pitfall}
+
+\section{Configure the monitor}
+
+Both components read a protobuf-text config. The monitor's has formulas, the channels to read, the field each variable binds to, and an output channel. The default config carries a deterministic speed limit and a probabilistic follow distance:
+
+\begin{lstlisting}
+formulas { id: 1  expression: "G[0, 5.0] (ego_speed < 20.0)" }
+formulas { id: 2  expression: "P>=0.99 (G[0, 2.0] (front_gap > 5.0))" }
+
+input_channels {
+  channel: "/apollo/canbus/chassis"
+  message_type: "apollo.canbus.Chassis"
+  fields { variable: "ego_speed"  field_path: "speed_mps" }
+}
+input_channels {
+  channel: "/apollo/perception/obstacles"
+  message_type: "apollo.perception.PerceptionObstacles"
+  fields { variable: "front_gap"  builtin: "FRONT_GAP" }
+}
+output_channel: "/apollo/sentil/status"
+lifting_registry {
+  variable: "front_gap"  interaction: ADDITIVE
+  noise { gaussian { mean: 0.0  std_dev: 0.25 } }
+}
+algorithm: SMC  sample_budget: 1000  confidence: 0.99
+\end{lstlisting}
+
+A field is either a \code{field\_path}, a dotted, optionally indexed path resolved against the message descriptor \emph{once at startup}, so a typo fails at init rather than reading a silent zero on the road, or a \code{builtin} for a quantity a raw path cannot express, because the nearest obstacle is not the obstacle at index zero. The three builtins are \code{NEAREST\_OBSTACLE\_DISTANCE}, \code{MIN\_TTC}, and \code{FRONT\_GAP} (the gap to the nearest obstacle inside the ego lane corridor). All read the perception obstacle list and treat each obstacle as ego-relative, so an upstream adapter must put perception in the ego frame first.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[font=\sffamily\footnotesize, node distance=7mm,
+    ch/.style={draw=faint, line width=0.9pt, rounded corners=2pt, fill=paper, inner sep=4pt, align=center},
+    comp/.style={draw=sentilblue, line width=1.2pt, rounded corners=3pt, fill=sentilblue!8,
+      inner sep=6pt, align=center},
+    sig/.style={-{Stealth[length=2.6mm]}, line width=0.9pt, faint}]
+  \node[ch] (perc) {/perception};
+  \node[ch, below=3mm of perc] (loc) {/localization};
+  \node[ch, below=3mm of loc] (chas) {/canbus/chassis};
+  \node[comp, right=13mm of loc] (mon) {SENTIL\\monitor};
+  \node[ch, right=13mm of mon] (stat) {/sentil/status};
+  \node[comp, below=10mm of mon] (ctl) {SENTIL\\control (shield)};
+  \node[ch, left=13mm of ctl] (nom) {/control\\(nominal)};
+  \node[ch, right=13mm of ctl] (cmd) {/control\\(guarded)};
+  \foreach \a in {perc,loc,chas} \draw[sig] (\a.east) -- (mon.west);
+  \draw[sig] (mon.east) -- (stat.west);
+  \draw[sig] (nom.east) -- (ctl.west);
+  \draw[sig] (ctl.east) -- (cmd.west);
+\end{tikzpicture}\end{widefig}
+\caption{The Apollo module. The monitor fuses perception, localization, and chassis into a verdict; the control component, in its default SHIELD mode, projects Apollo's nominal command into bounds before it reaches the vehicle.}
+\end{figure}
+
+\section{Launch and read the verdict}
+
+Point the dag at your config, launch, and watch the status channel:
+
+\begin{lstlisting}[language=bash]
+cyber_launch start modules/sentil/monitor/launch/sentil_monitor.launch
+cyber_monitor -c /apollo/sentil/status
+\end{lstlisting}
+
+The status carries, per formula, the robustness, the satisfied flag, a severity of OK, WARN, ERROR, or FATAL, and for a \code{P} formula the running probability with its Wilson interval. Two component forms ship: the default fuses a verdict from a consistent perception, localization, and chassis set, while the timer form emits at a fixed rate; reach for the timer when a steady cadence matters more than reacting to each frame.
+
+\section{On the real transport}
+
+The \code{apollo\_cyber\_monitoring} case study runs the module across \emph{three} separate Cyber processes, a scenario source, the monitor, and a verdict reader. The ego holds $15$~m/s while a lead vehicle closes from twelve metres to three. The reader logged seventy-one verdicts, and the follow-distance probability tells the story as the gap closes:
+
+\begin{figure}[h]
+\centering
+\begin{lstlisting}
+t     formula  satisfied  probability  ci_lower  ci_upper
+2.00  2        1          1.0000       0.9934    1.0000
+4.30  2        0          0.9830       0.9688    0.9908
+4.40  2        0          0.9370       0.9142    0.9541
+5.00  1        1          5.0000
+\end{lstlisting}
+\caption{The Apollo verdict stream over Cyber RT. Formula~1, the bounded-future speed limit, stays provisional until five seconds fill its window, then resolves at robustness $5.0$. Formula~2, the probabilistic follow distance, holds at $1.0$ while the lead is far, then crosses below $0.99$ and collapses toward zero as the gap shrinks under the safe bound.}
+\end{figure}
+
+\section{Control, and offline synthesis}
+
+The control component has three modes, set in one field. \code{SHIELD}, the default, takes Apollo's nominal command and projects the throttle, brake, and steering into bounds, so \sentil{} guards Apollo's controller rather than replacing it. \code{SYNTHESIZE} makes \sentil{} the controller: it builds the state from localization and chassis, plans over the horizon within a per-tick deadline, and writes a command. \code{ADVISORY} synthesizes but publishes with no actuation authority, so a synthesized controller can be watched against a live drive before it is trusted. Run the monitor and control on the same spec and the synthesize-monitor-replan loop from Chapter~\ref{ch:control} runs inside one dag.
+
+For the design-time work the online controller cannot afford, \code{sentil\_synthesizer} runs the offline subsystem on any host, given a config with a model:
+
+\begin{lstlisting}[language=bash]
+CFG=examples/synthesize_control.pb.txt
+sentil_synthesizer --config=$CFG --op=plan      # an input sequence
+sentil_synthesizer --config=$CFG --op=witness   # a counterexample
+sentil_synthesizer --config=$CFG --op=chance    # a chance-constraint check
+\end{lstlisting}
+
+And \code{sentil\_record\_analyzer} replays a recorded drive and runs the heavier statistical algorithms, SMC, SPRT, per formula. Both need only the engine and the config bridge, not a running Cyber RT.
+
+\begin{notebox}
+For online monitoring, prefer a past operator. The companion \code{apollo\_aeb\_monitoring} study checks \code{H (nearest > 5.0)}, an emergency-braking invariant, precisely because a past operator resolves from history the monitor already has, while an unbounded \code{G} would wait on a future it cannot see. In that study the invariant holds at robustness $10.3$ while a guardrail is nearest, then breaks at $-1.0$ the instant a closing lead comes inside five metres, the edge a planner brakes on.
+\end{notebox}

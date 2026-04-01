@@ -1,0 +1,108 @@
+\chapter{AUTOSAR Adaptive}
+\label{ch:autosar}
+
+The AUTOSAR Adaptive Platform is where safety-critical automotive software runs, and \sentil{} exposes its monitor and controller there as \code{ara::com} services. \code{sentil\_monitor} subscribes to a signal frame, evaluates the specifications, and offers a verdict; \code{sentil\_control} shields or synthesizes a command. Both statically link the compiled engine, so the ECU needs no Rust toolchain. You do not need a licensed platform to run it: the package ships an open-source \code{ara::com} stub over vsomeip, so the apps and their tests run on a plain Linux box. This chapter builds it against that stub and runs the forward-collision demo.
+
+\section{Build against the stub}
+
+Three prerequisites, then three commands. First, Boost from your package manager (\code{libboost-all-dev} on Debian, \code{boost-devel} on Fedora). Second, vsomeip, built and installed from the COVESA source; it provides the \code{vsomeip3} CMake package the configure step resolves. Third, stage the engine into a \code{SENTIL\_ROOT} prefix with a precise layout, the shared library and both the C and C++ headers:
+
+\begin{lstlisting}[language=bash]
+cargo build --release -p sentil-ffi
+export SENTIL_ROOT=/opt/sentil
+mkdir -p "$SENTIL_ROOT/lib" "$SENTIL_ROOT/include"
+cp target/release/libsentil.so "$SENTIL_ROOT/lib/"
+cp sentil-ffi/include/sentil.h "$SENTIL_ROOT/include/"
+cp -r sentil-cpp/include/sentil "$SENTIL_ROOT/include/"
+\end{lstlisting}
+
+Then configure against the stub, build, and test:
+
+\begin{lstlisting}[language=bash]
+cd sentil-autosar-adaptive
+cmake -B build -G Ninja -DSENTIL_AP_VENDOR=stub \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86_64-stub.cmake \
+  -DSENTIL_ROOT=/opt/sentil   # add -DCMAKE_PREFIX_PATH if non-default
+ninja -C build
+ctest --test-dir build
+\end{lstlisting}
+
+If you only want to compile the engine-facing logic and its tests without vsomeip at all, build with \code{-DSENTIL\_AP\_VENDOR=none}. That is the tier continuous integration runs, and it passes four tests, parity against the cross-language oracle, synthesis, a probabilistic lift, and ARXML validation:
+
+\begin{lstlisting}
+100% tests passed, 0 tests failed out of 4
+# parity: reproduced 45 deterministic cases through the served verdict
+# arxml_validate: 3 interfaces, 2 provided instances, ok
+\end{lstlisting}
+
+\begin{pitfall}
+The \code{SENTIL\_ROOT} layout is exact and load-bearing: \code{include/} needs both \code{sentil.h} and the \code{sentil/} directory of C++ headers, because the apps include \code{sentil/sentil.hpp}. And \code{libsentil.so} is shared, so set \code{LD\_LIBRARY\_PATH=\$SENTIL\_ROOT/lib} before running the apps, or install the \code{.deb} and let \code{ldconfig} find it. The stub build and the demo are Linux only.
+\end{pitfall}
+
+\section{The three services}
+
+The data path is events and fields, because a SOME/IP round trip per sensor tick is the wrong shape for a real-time monitor; the control plane is methods. Three interfaces carry it. \code{SignalInterface} (service \code{0x6000}) streams a \code{SignalFrame} event, a timestamp with parallel name and value arrays, the monitor's input. \code{VerdictInterface} (\code{0x6001}) offers a \code{Verdict} field for late subscribers, a \code{Violation} event that fires only on a satisfied-to-violated edge, and a \code{SetSpecification} method to reconfigure. \code{ControlInterface} (\code{0x6002}) offers \code{ComputeControl}, a \code{ControlCommand} event, and a \code{ControllerStatus} field exposing deadline-met, feasibility, and whether the safety filter intervened.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[font=\sffamily\footnotesize, node distance=8mm,
+    svc/.style={draw=faint, line width=0.9pt, rounded corners=2pt, fill=paper, inner sep=5pt, align=center},
+    comp/.style={draw=sentilblue, line width=1.2pt, rounded corners=3pt, fill=sentilblue!8,
+      inner sep=6pt, align=center},
+    ev/.style={-{Stealth[length=2.6mm]}, line width=0.9pt, faint},
+    me/.style={{Stealth[length=2.6mm]}-{Stealth[length=2.6mm]}, line width=0.9pt, sentilblue}]
+  \node[svc] (perc) {perception /\\adapter};
+  \node[comp, right=34mm of perc] (mon) {\textbf{sentil\_monitor}};
+  \node[svc, right=36mm of mon] (plan) {planner /\\health mgmt};
+  \node[comp, below=13mm of mon] (ctl) {\textbf{sentil\_control}};
+  \node[svc, left=34mm of ctl] (client) {control\\client};
+  \draw[ev] (perc.east) -- node[midway, above=1pt, font=\sffamily\scriptsize, text=faint]{SignalFrame} (mon.west);
+  \draw[ev] (mon.east) -- node[midway, above=1pt, font=\sffamily\scriptsize, text=faint]{Verdict, Violation} (plan.west);
+  \draw[me] (client.east) -- node[midway, above=1pt, font=\sffamily\scriptsize, text=sentilblue!70!black]{ComputeControl} (ctl.west);
+\end{tikzpicture}\end{widefig}
+\caption{The AUTOSAR services. The signal arrives as a streamed event, the verdict is a notified field with a violation-edge event, and control is a request-response method. Solid blue is a method call; grey is an event stream.}
+\end{figure}
+
+\section{Run the forward-collision demo}
+
+One command starts the three processes, the perception publisher, the monitor (which also hosts the vsomeip routing manager), and the planner:
+
+\begin{lstlisting}[language=bash]
+export LD_LIBRARY_PATH=/opt/sentil/lib:$LD_LIBRARY_PATH
+examples/adas_fca_monitor/run.sh
+\end{lstlisting}
+
+The publisher closes a front gap from thirty metres, half a metre per tick, and the monitor checks \code{front\_gap > 5.0}, whose robustness is the gap minus five. The planner latches the \code{Verdict} field and prints each one, and it acts on the single \code{Violation} event the moment the gap crosses the bound:
+
+\begin{figure}[h]
+\centering
+\begin{lstlisting}
+verdict t=4.9  robustness=0.500   satisfied=1
+verdict t=5.0  robustness=0.000   satisfied=1
+verdict t=5.1  robustness=-0.500  satisfied=0
+VIOLATION at t=5.1, engaging fallback
+verdict t=5.2  robustness=-1.000  satisfied=0
+\end{lstlisting}
+\caption{The AUTOSAR \code{sentil\_monitor} on the forward-collision demo. The robustness is the metres of margin to the bound; as the lead closes it falls through zero at $t=5.0$ and the \code{Violation} event fires on the satisfied-to-violated edge at $t=5.1$, exactly the edge a planner subscribes to. Exactly one event fires across the whole run, not one per tick.}
+\end{figure}
+
+\begin{pitfall}
+Only one \code{Violation} event fires, on the onset, not one per tick after. A consumer that wants the ongoing state latches the \code{Verdict} field, which carries the current verdict every frame; the event is for the transition.
+\end{pitfall}
+
+\section{Probabilistic and synthesis modes, no rebuild}
+
+Set an environment variable at launch and the same binary changes behavior. \code{SENTIL\_MONITOR\_MODE=probabilistic} registers the PrSTL form \code{P>=0.95 (front\_gap > 5.0)}, lifts the gap under additive Gaussian noise over two thousand samples, and the \code{Verdict} field then carries the estimated probability with its Wilson interval. \code{SENTIL\_CONTROL\_MODE=synthesize} swaps the default safety-filter shield for the receding-horizon controller over a double integrator holding \code{G[0, 20] (pos > 1.0 and pos < 9.0)} within an eight-millisecond budget per step.
+
+\begin{lstlisting}[language=bash]
+SENTIL_MONITOR_MODE=probabilistic \
+  VSOMEIP_APPLICATION_NAME=sentil_monitor build/sentil_monitor
+SENTIL_CONTROL_MODE=synthesize \
+  VSOMEIP_APPLICATION_NAME=sentil_control build/sentil_control
+\end{lstlisting}
+
+The control app carries the whole synthesis surface, \code{plan}, \code{falsify}, and a chance-constraint check, beyond the online \code{ComputeControl}, so a plan validated offline is the policy the controller runs online.
+
+\begin{notebox}
+Moving to a vendor platform, Vector, Elektrobit, or Apex, is a toolchain swap, not a code change: set \code{-DSENTIL\_AP\_VENDOR=<vendor>} with the vendor toolchain file and point \code{ARA\_COM\_ROOT} at the vendor \code{ara::com}, and the vendor generator emits ARXML from the same interface model. The app source is unchanged. On an ECU, the \code{.deb} and \code{.rpm} install everything under \code{/opt/sentil}. And the AUTOSAR monitor registers as a Platform Health Management Supervised Entity, so a blown deadline or a falsified property is caught by the platform's own health machinery; \sentil{} is a verdict source, and the integrator owns the ISO~26262 argument.
+\end{notebox}

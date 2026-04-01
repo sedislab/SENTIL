@@ -1,0 +1,51 @@
+\chapter{Raspberry Pi}
+\label{ch:pi}
+
+A Raspberry Pi sits between the microcontroller of the last chapter and a server: it is a full Linux computer, four cores under four watts, so it runs the \emph{whole} engine, statistical model checking and all, not just the streaming monitor. It is also the board the real-time claim was measured on, running the safety monitor for an autonomous-driving stack. This short chapter installs \sentil{} on a Pi and reads what it costs there.
+
+\section{Install}
+
+Because the Pi runs a full operating system with Python, the fast path is the same wheel as any other Linux machine, built for the 64-bit ARM core:
+
+\begin{lstlisting}[language=bash]
+pip install sentil          # a prebuilt aarch64 wheel; nothing to compile
+sentil --version            # the CLI ships an ARM release artifact too
+\end{lstlisting}
+
+If you are deploying the compiled monitor rather than the Python package, cross-compile it on your workstation and copy the binary across, which is faster than building on the board:
+
+\begin{lstlisting}[language=bash]
+cross build --release --target aarch64-unknown-linux-gnu \
+  -p sentil-embedded-deployment
+\end{lstlisting}
+
+A native build of the whole workspace takes about twelve minutes on the board, so cross-compiling is worth it for a tight loop.
+
+\section{The deployment, and what it costs}
+
+The reference deployment runs a bank of sixty streaming safety specifications over nine signals reduced from the sensor stack, speed, following distance, time to collision, acceleration, jerk, lane offset, fusion confidence, collision probability, and yaw rate, with nesting depth from one to three. One cycle ingests the latest reading and evaluates every specification, and the question is whether all sixty fit inside the $1/85$~Hz budget, cycle after cycle, for hours. They do, with room to spare.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{widefig}\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{metric} & \textbf{value on a Raspberry Pi 4}\\
+\midrule
+mean cycle latency & $9.57$ ms\\
+median & $9.44$ ms\\
+95th / 99th percentile & $10.62$ / $10.71$ ms\\
+maximum observed & $11.09$ ms\\
+real-time deadline & $11.76$ ms ($1/85$ Hz)\\
+deadline violations & $0$ of $612{,}000$\\
+steady-state memory & $12.3$ MB, zero growth over two hours\\
+power / thermal & under $4$ W, about $55^{\circ}$C in a $25^{\circ}$C room\\
+\bottomrule
+\end{tabular}\end{widefig}
+\end{table}
+
+Over a two-hour drive of six hundred twelve thousand cycles, the worst cycle came in at $10.71$~ms at the 99th percentile against an $11.76$~ms deadline, and not one cycle missed. Memory held flat at $12.3$~megabytes with no growth, because the streaming monitor holds the window, not the history. On the same board, RTAMT runs about $47$~ms per cycle, four times over the deadline, and Breach does not run on ARM at all. Because the Pi is a real computer, the deployment also ran ten \emph{probabilistic} specifications through the statistical layer alongside the deterministic bank, which a microcontroller could not host.
+
+\begin{notebox}
+Run \code{run\_deployment.sh --duration 120} on the board to reproduce these figures; they are hardware-bound, so a workstation run of the same harness will show the same result with a little slack.
+\end{notebox}

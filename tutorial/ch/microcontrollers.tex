@@ -1,0 +1,106 @@
+\chapter{Microcontrollers}
+\label{ch:microcontrollers}
+
+Built \code{no\_std}, \sentil{} fits on a Cortex-M or a RISC-V core with a heap and no operating system, so a monitor rides on the microcontroller that reads the sensor, with no network round trip and no host. This chapter puts a monitor, and then a controller, on the chip.
+
+\section{Features and limits}
+
+A microcontroller has neither the memory for a sampling ensemble nor a GPU, so this target leaves statistical model checking and the GPU paths out. Everything else runs on the chip: the streaming STL monitor, the multi-formula monitor, offline robustness over a buffered trace, open-loop planning by gradient or CMA-ES, the receding-horizon controller, and the safety filter. That is the whole deterministic and synthesis surface of the book, on a board.
+
+\section{Your first monitor}
+
+You give the engine one fixed block of memory in \code{setup}, then fold one sample per loop. The monitor owns its handle and frees it in its destructor, so a global monitor needs no cleanup.
+
+\begin{lstlisting}[language=C++]
+#include <Sentil.h>
+
+static SentilMonitor monitor;
+static uint8_t sentil_heap[4096];
+static const double readings[] = {3.0, 1.5, 2.0, -0.5, 4.0};
+static unsigned long step = 0;
+
+void setup() {
+  Serial.begin(115200);
+  sentil_embedded_init(sentil_heap, sizeof(sentil_heap));
+  monitor.begin("H (x > 0)");            // has x stayed positive?
+}
+
+void loop() {
+  double packed[1] = { readings[step % 5] };
+  sentil_embedded_robustness_t r;
+  if (monitor.update((double)step, packed, 1, r) == SENTIL_EMBEDDED_OK) {
+    Serial.print("robustness="); Serial.print(r.value);
+    Serial.println(r.satisfied ? "  (holds)" : "  (violated)");
+  }
+  step++; delay(1000);
+}
+\end{lstlisting}
+
+Over the serial monitor that prints the running verdict:
+
+\begin{lstlisting}
+robustness=3.00  (holds)
+robustness=1.50  (holds)
+robustness=1.50  (holds)
+robustness=-0.50  (violated)
+robustness=-0.50  (violated)
+\end{lstlisting}
+
+The robustness is the running minimum of \code{x}, because \code{H (x > 0)} (historically) asks whether \code{x} has stayed positive since power-on; the dip to $-0.5$ fails it by that much, and once failed it stays failed. The companion sketch lights the built-in LED when a windowed safety property fails.
+
+\section{More than a monitor}
+
+The same header carries the rest. A multi-formula monitor folds one sample into a whole bank of properties at once. A fixed-size ring buffer keeps a running mean, variance, min, and max, for smoothing or thresholding a signal before the monitor sees it. And offline calls evaluate a formula over a captured trace, its scalar robustness, its per-sample signal, and the intervals where it fails, with a formula bank for several properties over one trace. None of it allocates beyond the block you handed \code{init}.
+
+Planning and control fit too. Build a linear model, parse a spec, and let a receding-horizon controller plan each step from the live state:
+
+\begin{lstlisting}[language=C++]
+sentil_embedded_model_t* model;
+double a[1] = {1.0}, b[1] = {1.0}, x0[1] = {2.0};
+const char* vars[1] = {"x"};
+sentil_embedded_linear_model_create(a, 1, b, 1, x0, vars, 1.0, 5, &model);
+
+sentil_embedded_formula_t* spec;
+sentil_embedded_formula_create("G (x > 0)", &spec);
+
+sentil_embedded_controller_t* controller;   // owns the model and spec
+sentil_embedded_controller_create(model, spec, 1, 150, nullptr, &controller);
+
+double state[1] = { x }, u[1];
+sentil_embedded_controller_control(controller, state, 1, u); // writes u[0]
+\end{lstlisting}
+
+For the integrator $x_{t+1} = x_t + u_t$ under \code{G (x > 0)}, the controller pushes an input near the upper edge of its bounds to counter a disturbance and holds \code{x} positive step after step. The budget, $150$ here, is a gradient-step count, not a clock, because a board has none; pick it for the time the chip can spare per step. Synthesis wants a few more kilobytes of heap than the bare monitor, so reserve them.
+
+\section{The smallest boards}
+
+A board short on flash can leave out the formula parser entirely and load a formula compiled on a workstation. Run the bundled tool, paste the byte array it prints, and call \code{beginCompiled} instead of \code{begin}:
+
+\begin{lstlisting}[language=bash]
+cargo run --features std --bin sentil-compile-formula -- \
+  "H[0, 8](level < 900)"
+# prints SENTIL_FORMULA[] and SENTIL_FORMULA_LEN to paste into the sketch
+\end{lstlisting}
+
+The same tool reaches the specifications library, so a board gets a vetted, standards-derived property without shipping the whole library in flash. A spec that resolves to a probabilistic formula is refused, since a board cannot decide one; pick a deterministic variant.
+
+\begin{pitfall}
+Bad input comes back as a status code, never a crash: a malformed formula is \code{SENTIL\_EMBEDDED\_PARSE}, a packed update shorter than the formula's variables is \code{SENTIL\_EMBEDDED\_PACKED\_LENGTH}, and \code{sentil\_embedded\_status\_message} turns any code into a short string. The one hard limit is memory: exhausting the heap halts the board, so size the block you pass \code{init} for the worst-case window and leave headroom.
+\end{pitfall}
+
+\section{Install}
+
+Pick the packaging for your toolchain. Each ships the header, the \code{Sentil.cpp} wrapper, and a precompiled archive per board, so no Rust toolchain is needed on your machine.
+
+\begin{itemize}[leftmargin=1.4em, topsep=2pt]
+  \item \textbf{Arduino}: search for \emph{Sentil} in the Library Manager.
+  \item \textbf{PlatformIO}: add \code{lib\_deps = sentil/Sentil} to \code{platformio.ini}.
+  \item \textbf{ESP-IDF}: add it through the component manager.
+  \item \textbf{Zephyr and bare metal}: download the archive from the release and add it the way that ecosystem expects.
+\end{itemize}
+
+The prebuilt archives cover the 32-bit ARM and RISC-V cores with a heap: Cortex-M0+ (RP2040, SAMD21), Cortex-M3, Cortex-M4 and M7 (STM32, Teensy), and the RISC-V ESP32 variants. Any other 32-bit ARM or RISC-V core with a heap and a C toolchain works too: find its Rust target triple, build the archive with \code{cargo build --release --features mcu --target <triple>} (adding \code{--no-default-features} on the smallest cores to drop the parser and synthesis), and link the resulting archive and \code{Sentil.cpp} into your project. The \code{cross\_compile} guide in the package walks the exact commands per core.
+
+\begin{notebox}
+This is the same monitor that keeps up with a server sensor, shrunk to the chip, and the guarantees come with it: constant work per sample and memory bounded by the window, not the trace. On a Raspberry Pi~4, a class up from these boards, a bank of sixty specifications runs every cycle at 85~Hz under four watts and never misses its deadline (Chapter~\ref{ch:pi}). The reach from the data center to the four-watt board, one engine throughout, is the point.
+\end{notebox}

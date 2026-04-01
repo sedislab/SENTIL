@@ -1,0 +1,120 @@
+\chapter{ROS 2}
+\label{ch:ros}
+
+In ROS, a robot already publishes everything a monitor needs and \sentil{} watches those topics without touching the nodes that produce them. \code{sentil\_ros} is a managed lifecycle node that subscribes to your existing topics, evaluates a bank of STL and PrSTL specifications as messages arrive, and republishes a verdict per formula. There's no code to write, but you only need to write a small YAML file. In this chapter, we install it, configure it, and run it on a real recorded drive.
+
+\section{Install}
+
+The package is \code{sentil\_ros} and it builds against Humble, Jazzy, and Rolling. The released binary is one \code{apt} line and pulls the engine in for you:
+
+\begin{lstlisting}[language=bash]
+sudo apt install ros-$ROS_DISTRO-sentil-ros      # after adding the SENTIL archive
+\end{lstlisting}
+
+To build from source you first need the engine on a prefix (the released package handles this; a source build does not), then \code{colcon build} the one package:
+
+\begin{lstlisting}[language=bash]
+export SENTIL_PREFIX=/path/to/sentil-prefix
+export LD_LIBRARY_PATH="$SENTIL_PREFIX/lib:$LD_LIBRARY_PATH"
+
+cd ~/ros2_ws/src && git clone https://github.com/sedislab/SENTIL
+cd ~/ros2_ws
+colcon build --packages-select sentil_ros \
+  --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
+source install/setup.bash
+\end{lstlisting}
+
+A tagged release archive builds the same way from an unpacked tarball; on Windows, fetch the \code{.zip}, \code{tar xf} it, and \code{colcon build} with \code{-DCMAKE\_PREFIX\_PATH=\%SENTIL\_PREFIX\%}.
+
+\section{Configure}
+
+A monitor is a YAML parameter file. The top key must equal the node name, \code{sentil\_monitor}, and each formula is configured under a flat \code{formulas.<id>} key. The smallest complete monitor, a speed limit:
+
+\begin{lstlisting}[language=yaml]
+sentil_monitor:
+  ros__parameters:
+    formulas: ["speed_limit"]
+    formulas.speed_limit:
+      formula: "G[0,10] (speed < 30.0)"
+      verification: { method: robustness }
+      signal_names: ["speed"]
+      variables:
+        speed:
+          topic: "/vehicle/odom"
+          field: "twist.twist.linear.x"     # a dotted path into the message
+\end{lstlisting}
+
+Each variable binds to a \code{topic} and a \code{field}, a dotted path resolved by message introspection, so one monitor reads a scalar out of \emph{any} message type with no compile-time knowledge. Paths descend through submessages and index sequences, \code{pose.pose.position.x} or \code{ranges[1]}, and only numeric leaves resolve. A bad path is a typed error, logged as a throttled warning with that sample dropped, never a crash.
+
+A probabilistic formula adds a noise model and switches the method to \code{smc}, and the node then also publishes a running probability with a Wilson interval:
+
+\begin{lstlisting}[language=yaml]
+    formulas.following_distance:
+      formula: "P>=0.95 (G[0,10] (gap > 5.0))"
+      verification: { method: smc }
+      signal_names: ["gap"]
+      variables:
+        gap:
+          topic: "/perception/lead_vehicle"
+          field: "range"
+          noise: { type: gaussian, mean: 0.0, std_dev: 0.2 }
+      config: { particles: 1000, confidence: 0.95 }
+\end{lstlisting}
+
+\begin{pitfall}
+\code{method: robustness} keeps a formula deterministic \emph{even if} the variable has a noise model; use \code{smc} (or \code{automatic}) to lift the noise into a probability. Every variable under \code{variables} must also appear in \code{signal\_names}, and each needs both a \code{topic} and a \code{field}, or configuration fails with the reason named.
+\end{pitfall}
+
+\section{Launch, and drive the lifecycle}
+
+Launching configures and activates the node in one step:
+
+\begin{lstlisting}[language=bash]
+ros2 launch sentil_ros sentil_monitor.launch.py params_file:=speed.yaml
+\end{lstlisting}
+
+Because it is a lifecycle node you can also step it by hand with \code{autostart:=false}, then \code{ros2 lifecycle set /sentil\_monitor configure} and \code{activate}; it publishes only while active, and a bad config fails configuration cleanly rather than crashing. Read the verdicts off the topics it publishes per formula:
+
+\begin{lstlisting}[language=bash]
+ros2 topic echo /sentil_monitor/speed_limit/robustness   # signed margin
+ros2 topic echo /sentil_monitor/following_distance/probability  # estimate
+ros2 topic echo /diagnostics   # OK / ERROR / WARN / STALE
+\end{lstlisting}
+
+The \code{robustness} message carries the margin and an \code{is\_concrete} flag, false while a bounded window is still filling, when it reports an interval instead of a final value. The diagnostic maps satisfied to OK, violated to ERROR, and, crucially, \emph{waiting on data} to STALE with the missing variables named, so a mistyped topic surfaces instead of the monitor silently hanging.
+
+\begin{pitfall}
+No verdicts appear until every variable of every formula has been seen at least once; one silent topic keeps all formulas STALE. Echo \code{/diagnostics} first when nothing publishes, and it will name the variable it is still waiting on.
+\end{pitfall}
+
+\section{On a real drive}
+
+The case study runs four formulas over a recorded CARLA drive: a speed limit, a following distance, a pedestrian clearance, and a probabilistic pedestrian-clearance. Every variable pins an explicit message \code{type} so the topics resolve against the replayed bag before any live publisher exists. Replay is two terminals, and the monitor must run on sim time while the bag publishes the clock:
+
+\begin{lstlisting}[language=bash]
+ros2 launch sentil_ros replay.launch.py \
+  params_file:=sentil-ros/config/carla_verification.yaml
+ros2 bag play experiments/carla_driving/carla_drive_bag --clock
+\end{lstlisting}
+
+The bag is six thousand messages over a hundred seconds, and the node's output tells the story: over the drive the following-distance property is violated in $980$ of $1800$ resolved frames as the ego tailgates, the pedestrian clearance in $43$ (the close passes), the speed limit in none (speed peaked at $11.55$~m/s under the $12$ bound), and the collision-risk probability drops below its $0.95$ threshold in $245$ frames, the pedestrian encounters. The overlay draws every verdict on the camera feed. Most of the drive looks like Figure~\ref{fig:carla-ok}; then a truck cuts in and the following-distance verdict flips red in the same frame (Figure~\ref{fig:carla-viol}).
+
+\begin{figure}[h]
+\centering
+\screenshot{carla_ok}
+\caption{The monitor riding along a CARLA drive. Each row is a live verdict: the deterministic properties show a green robustness margin, and the probabilistic pedestrian-clearance formula shows $\Pr = 1.00$ against its $0.95$ threshold.}
+\label{fig:carla-ok}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\screenshot{carla_violation}
+\caption{The violation. The front-gap property reads \emph{VIOLATED}, robustness $-0.6$, as a truck cuts in one gap-unit too close; speed and pedestrian clearance stay satisfied.}
+\label{fig:carla-viol}
+\end{figure}
+
+The deterministic stream costs about half a microsecond per sample and sustains near two million samples a second; the probabilistic check runs a median of $0.65$~ms, inside the two-millisecond control deadline. Against RTAMT on the same three-formula workload, \sentil{} is $21.5\times$ faster online while agreeing on robustness to the last digit, and does the probabilistic check RTAMT cannot express. To watch a live CARLA ego instead of a bag, \code{carla\_monitor.launch.py} runs the same config and can even start the bridge for you.
+
+\begin{notebox}
+The package also ships \code{sentil\_control}, the same lifecycle-component shape turning a spec into a control command on a topic. Its \code{mode} selects the behavior, \code{receding\_horizon} online, \code{open\_loop} offline, \code{safety\_filter} as a barrier shield, and \code{witness} or \code{chance} for search and validation, so the synthesize-monitor-replan loop from Chapter~\ref{ch:control} runs as two ROS nodes on the same spec.
+\end{notebox}

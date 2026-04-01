@@ -1,0 +1,96 @@
+\chapter{MATLAB and Simulink}
+\label{ch:matlab}
+
+Most control engineers have their work in MATLAB and Simulink and in this chapter, we show \sentil{} in that environment. The toolbox is behind a MATLAB API and a Simulink block, which means you can either check a specification on recorded data at the command line or then drop the identical specification into a model to watch a controller as it simulates.
+
+\section{The command-line API}
+
+The \code{sentil} package mirrors the other bindings, in MATLAB's idiom. A trace is timestamps plus named signals, a formula parses from a string, and robustness comes back as a number.
+
+\begin{lstlisting}[language=Matlab]
+trace = sentil.Trace([0 1 2 3 4], 'speed', [12 9 7 4 6]);
+phi = sentil.Formula.parse('G (speed > 5)');
+phi.robustness(trace)            % -1
+phi.violations(trace)            % the [start end] spans where it fails
+\end{lstlisting}
+
+Streaming, probabilistic checks, and synthesis are all here under the same names you have seen so far: \code{sentil.OnlineMonitor}, \code{sentil.LiftingRegistry} with \code{sentil.NoiseModel.gaussian}, \code{phi.check(trace, lifting, cfg)}, and \code{sentil.Synthesis}. Handle-backed objects free with \code{delete}; every fallible call throws an \code{MException} under the \code{sentil:} namespace.
+
+\section{The Simulink block}
+
+The streaming monitor runs inside a model as a masked S-Function block. Build the block library once, then it is a block like any other:
+
+\begin{lstlisting}[language=Matlab]
+create_sentil_library("sentil_lib");   % writes sentil_lib.slx
+\end{lstlisting}
+
+Drag the \code{SENTIL Monitor} block into a model and open its mask, or configure it from a script. The mask has four fields: the formula, the comma-separated input variables in port order, the mode, and, for the probabilistic mode, the Monte Carlo sample count.
+
+\begin{lstlisting}[language=Matlab]
+add_block('sentil_lib/SENTIL Monitor', 'my_model/Monitor');
+set_param('my_model/Monitor', ...
+    'formula_str', 'G (speed < 120)', ...
+    'var_names_str', 'speed', ...          % in port order
+    'mode_sel', 'Deterministic');          % or 'Probabilistic/SMC'
+\end{lstlisting}
+
+Wire the monitored signals into the input port in the named order. In deterministic mode the output port carries the running robustness at each solver step; in probabilistic mode the block lifts the signal through a noise model and the output carries the estimate with its bounds. The block holds the same O(1) per-step cost as the streaming monitor everywhere else, so it does not slow the simulation.
+
+\section{A worked model: the artificial pancreas}
+
+The flagship model is the FDA-accepted UVA/Padova artificial pancreas, and it shows the pattern you would use for any plant: the physiological model in the middle, a controller in the loop, and two \code{SENTIL Monitor} blocks watching the true blood-glucose signal against a safe-band specification and a hypoglycemia specification.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}[font=\sffamily\footnotesize,
+    blk/.style={draw=faint, line width=0.9pt, rounded corners=2pt, fill=paper,
+      inner sep=5pt, align=center, minimum height=9mm, minimum width=15mm},
+    mon/.style={draw=sentilblue, line width=1.3pt, rounded corners=2pt,
+      fill=sentilblue!8, inner sep=5pt, align=center, minimum height=9mm},
+    sig/.style={-{Stealth[length=2.6mm]}, line width=0.9pt, faint}]
+  \node[blk] (meals) {meals};
+  \node[blk, right=12mm of meals] (plant) {glucose\\dynamics};
+  \node[blk, right=12mm of plant] (cgm) {CGM\\sensor};
+  \node[blk, above=8mm of cgm] (noise) {sensor\\noise};
+  \node[mon, right=16mm of cgm, yshift=9mm] (m1) {\textbf{SENTIL}\\euglycemia};
+  \node[mon, right=16mm of cgm, yshift=-9mm] (m2) {\textbf{SENTIL}\\hypo};
+  \node[blk, right=9mm of m1] (o1) {$\rho_{\text{norm}}$};
+  \node[blk, right=9mm of m2] (o2) {$\rho_{\text{hypo}}$};
+  \node[blk, below=14mm of plant] (pump) {pump controller $K_p$};
+
+  \draw[sig] (meals) -- (plant);
+  \draw[sig] (plant) -- (cgm);
+  \draw[sig] (noise) -- (cgm);
+  \coordinate (j) at ([xshift=7mm]cgm.east);
+  \draw[sig] (cgm.east) -- (j);
+  \draw[sig] (j) |- (m1.west);
+  \draw[sig] (j) |- (m2.west);
+  \draw[sig] (m1) -- (o1);
+  \draw[sig] (m2) -- (o2);
+  \draw[sig, sentilblue] (cgm.south) |- (pump.east)
+    node[pos=0.25, right, font=\sffamily\scriptsize, text=sentilblue!70!black] {measured};
+  \draw[sig, sentilblue] (pump.north) -- (plant.south)
+    node[midway, right, font=\sffamily\scriptsize, text=sentilblue!70!black] {insulin};
+\end{tikzpicture}\end{widefig}
+\caption{The insulin model as it sits in Simulink, with the physiology collapsed to one block. Meals and the pump controller drive the glucose dynamics; the CGM sensor, corrupted by measurement noise, feeds two SENTIL Monitor blocks that emit the euglycemia and hypoglycemia robustness at every solver step, and the measured glucose closes the control loop.}
+\end{figure}
+
+The two specifications are \emph{Glucose should stay in the euglycemic band}, and \emph{it should almost never go hypoglycemic}:
+
+\begin{lstlisting}[language=Matlab]
+R1 = 'P>=0.999 (G[0, 86400] (70 <= glucose and glucose <= 180))';
+R2 = 'P<0.001  (F[0, 86400] (glucose < 60))';
+\end{lstlisting}
+
+Run \code{run\_fda\_insulin\_benchmark} and it assembles the model, sweeps a 1000-patient cohort drawn from the UVA/Padova parameter space, and checks both controllers. On the average-adult patient a controller that misses a meal bolus gives a euglycemia robustness of about $-105$~mg/dL, a real violation over a known interval; a tuned controller reaches $+8$ and holds. Both keep the hypoglycemia probability safe, at about $1.0$. Figure~\ref{fig:glucose} is the trace the monitor watched.
+
+\begin{figure}[h]
+\centering
+\screenshot{glucose}
+\caption{The artificial-pancreas run. The euglycemic band is the safe region; the missed-bolus excursion is the interval where the euglycemia robustness goes negative, caught by the SENTIL block online.}
+\label{fig:glucose}
+\end{figure}
+
+\begin{notebox}
+The cohort figures the case study reports were produced on MATLAB R2023a or newer, which the closed-loop model needs for its noise and solver behavior to match; the harness builds and runs on earlier releases, but the reported numbers track the release. The block itself works from R2021b.
+\end{notebox}
