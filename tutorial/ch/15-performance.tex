@@ -1,0 +1,209 @@
+\chapter{Performance}
+\label{ch:performance}
+
+We look at the performance of \sentil{} in a variety of ways, and against a variety of baselines. The offline monitor is compared to three standard STL tools; RTAMT, MoonLight, and Banquo. The dense-time monitor is compared to Breach and RTAMT's dense monitor. The online monitor is compared to RTAMT's online monitor on a real workload. The statistical layer is compared to PRISM, Modest and UPPAAL-SMC on a shared circadian model, a tandem queue model, a biodiesel model and on a powertrain model. We also test out the rare event estimation on two models and against PRISM, Modest and FIG. Synthesis is timed on a set of small control problems.
+
+To reproduce any of these experiments, look at the \code{experiments/} directory in the repository, and follow the README in each subdirectory.
+
+\section{How it was measured}
+
+Nearly every speed comparison uses one formula, the nested bounded property \code{G[0,100] (F[0,10] (x > 5))}, and every tool computes the \emph{same} robustness on it, so the timing measures identical work. Two questions are kept strictly apart. The \emph{full-signal} question asks for the robustness at every sample, which is what an offline evaluator like RTAMT computes; this is the like-for-like offline comparison. The \emph{monitoring} question asks for the robustness at the first sample, what an online monitor reports each step, and its cost is flat in trace length.
+
+We measured all timings on an AMD EPYC 7763, a 64-core server CPU with 256~GiB of RAM, running Ubuntu 22.04. The machine was otherwise idle, and the experiments were run in isolation. Every timing is the mean over repeated runs, thirty at the smaller sizes and a million individual updates for the streaming figures, with the tail reported as the 99th-percentile.
+
+\section{Offline discrete time monitoring}
+
+The offline monitor evaluates a formula over a recorded trace. Figure~\ref{fig:scaling} is a length sweep against the three standard STL tools, RTAMT, MoonLight, and Banquo, all reading identical robustness. \sentil{} is linear and sits far below all three: roughly $140\times$ faster than RTAMT and Banquo across the range, and $35$ to $70\times$ faster than MoonLight, the quickest baseline.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, xmode=log, ymode=log, width=11.5cm, height=6.6cm,
+  xlabel={samples}, ylabel={time (ms)}, legend pos=north west,
+  xtick={1000,10000,100000,1000000}, xticklabels={$10^3$,$10^4$,$10^5$,$10^6$}]
+  \addplot[base, vermillion, mark=square*, mark size=1.8pt]
+    coordinates {(1000,6.10)(10000,51.4)(100000,513.8)(1000000,5381)};       \addlegendentry{RTAMT}
+  \addplot[base, okpurple, mark=triangle*, mark size=2pt]
+    coordinates {(1000,7.57)(10000,74.6)(100000,514.8)(1000000,5383)};       \addlegendentry{Banquo}
+  \addplot[base, oksky, mark=diamond*, mark size=2pt]
+    coordinates {(1000,2.39)(10000,13.9)(100000,130.7)(1000000,2622)};       \addlegendentry{MoonLight}
+  \addplot[hero]
+    coordinates {(1000,0.037)(10000,0.399)(100000,3.64)(1000000,37.06)};     \addlegendentry{SENTIL}
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{Discrete STL over a length sweep.}
+\label{fig:scaling}
+\end{figure}
+
+Per formula, on the five oracle properties at two thousand samples, the speedup over RTAMT ranges from about $80\times$ on the simplest to $158\times$ on the most nested.
+
+\section{Dense time monitoring}
+
+We compare \sentil{} on a dense time monitoring task against Breach and RTAMT's dense monitor. Figure~\ref{fig:dense} reports the time and it's behavior as the number of samples increase. \sentil{} is flat at a few microseconds. Breach is flat too but a thousand times higher, so \sentil{} runs $1083\times$ faster at a thousand samples and $1514\times$ at a million, with identical robustness. RTAMT's dense monitor does not stay flat at all: it climbs super-linearly to over five minutes at a million samples.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, xmode=log, ymode=log, width=11.5cm, height=6.4cm,
+  xlabel={samples}, ylabel={ms to answer the query}, legend pos=north west,
+  xtick={1000,10000,100000,1000000}, xticklabels={$10^3$,$10^4$,$10^5$,$10^6$}]
+  \addplot[base, vermillion, mark=square*, mark size=1.8pt]
+    coordinates {(1000,10.1)(10000,141.5)(100000,4389)(1000000,336834)};   \addlegendentry{RTAMT (dense)}
+  \addplot[base, okorange, mark=triangle*, mark size=2pt]
+    coordinates {(1000,4.86)(10000,2.11)(100000,2.49)(1000000,6.97)};      \addlegendentry{Breach}
+  \addplot[hero]
+    coordinates {(1000,0.0045)(10000,0.0045)(100000,0.0045)(1000000,0.0046)}; \addlegendentry{SENTIL}
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{Dense-time monitoring.}
+\label{fig:dense}
+\end{figure}
+
+\sentil{} is about seven to twelve times slower than its own discrete full-signal cost.
+
+\section{Online monitoring}
+
+The streaming monitor is driven one sample at a time over a million timed updates. It runs at a median of $110$~nanoseconds, a mean of $112$, and a 99th-percentile of $150$, which is close to nine million updates a second and roughly four orders of magnitude past the ten-kilohertz real-time target.
+
+Against the standard online STL monitor the gap holds on a real workload. Monitoring a recorded autonomous-driving trace against three deterministic safety properties, one sample at a time, \sentil{} folds all three into a single streaming update and runs at $1.8$~microseconds a sample. RTAMT has no multi-formula monitor, so it runs one per property and takes $40$, about $21\times$ (Figure~\ref{fig:online-rtamt}). Both read identical verdicts, and the tail tells the same story, $2.3$ against $52$ microseconds at the 99th percentile.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, ymode=log, width=10.5cm, height=5.6cm,
+  ylabel={$\mu$s per update}, symbolic x coords={median,99th percentile},
+  xtick=data, ybar, bar width=22pt, ymin=1, ymax=130, enlarge x limits=0.5,
+  nodes near coords, point meta=explicit symbolic,
+  every node near coord/.append style={font=\sffamily\footnotesize, text=ink, anchor=south},
+  legend style={draw=none, fill=none, font=\sffamily\small}, legend pos=north west]
+  \addplot[draw=none, fill=sentilblue] coordinates {(median,1.843)[1.8] (99th percentile,2.265)[2.3]};
+  \addplot[draw=none, fill=vermillion] coordinates {(median,39.614)[40] (99th percentile,51.586)[52]};
+  \legend{SENTIL, RTAMT}
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{Online monitoring on a recorded drive, three deterministic properties folded into one streaming update, per-sample latency in microseconds (log scale).}
+\label{fig:online-rtamt}
+\end{figure}
+
+There is also a question RTAMT cannot answer. On the same drive, \sentil{} monitors a probabilistic property, \code{P>=0.95 (...)}, online by streaming Monte Carlo over a thousand particles, and returns a running satisfaction probability at about $96$~microseconds a frame. A classical STL monitor has no probabilistic verdict to give; this is the online statistical layer at work.
+
+Because every binding calls the same core, the only per-language cost is the boundary crossing (Figure~\ref{fig:overhead}): the native bindings stay well under a fifth of a microsecond, and even the managed ones clear a million updates a second.
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, ymode=log, width=11.5cm, height=6cm,
+  ylabel={ns per update}, symbolic x coords={C,Rust,Julia,C++,Python,Java,MATLAB},
+  xtick=data, ymin=40, ymax=15000, ybar, bar width=16pt,
+  nodes near coords, point meta=explicit symbolic,
+  nodes near coords style={font=\sffamily\footnotesize, text=ink},
+  every node near coord/.append style={anchor=south}]
+  \addplot[draw=none, fill=sentilblue] coordinates
+    {(C,74)[74] (Rust,112)[112] (Julia,114)[114] (C++,134)[134]
+     (Python,521)[521] (Java,680)[680] (MATLAB,6490)[6490]};
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{Per-sample streaming cost by binding (nanoseconds, log scale). The native bindings allocate nothing on the hot path; MATLAB, at microseconds.}
+\label{fig:overhead}
+\end{figure}
+
+\section{Memory}
+
+The streaming monitor's resident memory is \emph{flat} at exactly four mebibytes across ten thousand, a hundred thousand, a million, ten million, and a hundred million samples. Other tools grow linearly into the gigabytes; RTAMT to $2.26$ and Banquo to $5.82$ at ten million samples (Figure~\ref{fig:memory}).
+
+\begin{figure}[h]
+\centering
+\begin{widefig}\begin{tikzpicture}
+\begin{axis}[sentilaxis, xmode=log, ymode=log, width=11.5cm, height=6cm,
+  xlabel={samples}, ylabel={peak memory (MB)}, legend pos=north west,
+  xtick={10000,100000,1000000,10000000}, xticklabels={$10^4$,$10^5$,$10^6$,$10^7$}]
+  \addplot[base, okpurple, mark=triangle*, mark size=2pt]
+    coordinates {(10000,19.9)(100000,71.7)(1000000,592.4)(10000000,5819)};   \addlegendentry{Banquo}
+  \addplot[base, vermillion, mark=square*, mark size=1.8pt]
+    coordinates {(10000,17.8)(100000,36.7)(1000000,245.6)(10000000,2257)};   \addlegendentry{RTAMT}
+  \addplot[hero]
+    coordinates {(10000,4.19)(100000,4.19)(1000000,4.19)(10000000,4.19)};    \addlegendentry{SENTIL}
+\end{axis}
+\end{tikzpicture}\end{widefig}
+\caption{Peak memory over the stream. SENTIL holds a bounded four mebibytes forever; the baselines grow linearly into the gigabytes.}
+\label{fig:memory}
+\end{figure}
+
+\section{Statistics and rare events}
+
+For an ordinary probability \sentil{} runs Monte Carlo with a Wilson interval, and we check it on four stochastic models against PRISM, UPPAAL-SMC, and Modest, each rebuilt for the fragment it samples (Figure~\ref{fig:smc-models}). On the shared circadian CTMC at ten thousand samples all four agree on a probability near $0.04$; \sentil{} returns it in about a second where PRISM takes twenty-seven, UPPAAL-SMC nineteen, and Modest seventy-three. The pattern repeats. On the tandem queue every tool lands near $0.72$ and \sentil{} is roughly $17\times$ faster than PRISM and $67\times$ faster than UPPAAL-SMC. On the biodiesel reactor, where PRISM's numerical engine does not apply, \sentil{} reaches $0.19$ in ten seconds against the three minutes UPPAAL-SMC and Modest each need, and the powertrain controller tells the same story near $0.50$. It is the fastest on all four, and every estimate agrees.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.49\linewidth}\centering\screenshot{smc_circadian}\end{minipage}\hfill
+\begin{minipage}{0.49\linewidth}\centering\screenshot{smc_tandem_queue}\end{minipage}\\[6pt]
+\begin{minipage}{0.49\linewidth}\centering\screenshot{smc_biodiesel}\end{minipage}\hfill
+\begin{minipage}{0.49\linewidth}\centering\screenshot{smc_powertrain}\end{minipage}
+\caption{Statistical model checking across four models, wall-clock seconds to estimate the satisfaction probability with the estimate printed on every bar. PRISM has no entry for biodiesel or powertrain because its numerical engine does not apply there.}
+\label{fig:smc-models}
+\end{figure}
+
+We also check the estimates' correctness. A separate accuracy suite runs the sampler on models whose probability is known in closed form and plots the estimate against the truth: every point sits on the diagonal, inside its reported Wilson interval (Figure~\ref{fig:smc-detail}, left). On the device the flat Monte Carlo path tiles across dispatches, so its realization-step rate climbs with the sample count and settles near eleven billion per second out to a hundred billion samples, well above the CPU (Figure~\ref{fig:smc-detail}, right).
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.49\linewidth}\centering\screenshot{smc_accuracy}\end{minipage}\hfill
+\begin{minipage}{0.49\linewidth}\centering\screenshot{smc_throughput}\end{minipage}
+\caption{Left, the estimate against closed-form truth on models with a known probability; every point lands on the diagonal. Right, the throughput of the flat Monte Carlo path on the GPU against the CPU as the sample count grows.}
+\label{fig:smc-detail}
+\end{figure}
+
+Rare events are the harder question, the tail plain Monte Carlo never reaches at a feasible budget. \sentil{} estimates them by adaptive multilevel splitting, and the natural comparison is against tools built for exactly this: FIG, Modest, and PRISM. Two queueing models make the case. On the two-queue tandem overflow, the benchmark FIG is built around, all four tools land on the exact $5.6\times10^{-6}$ at capacity eight (Figure~\ref{fig:rare-tandem2}); on a three-queue tandem they land on the exact $1.3\times10^{-5}$ (Figure~\ref{fig:rare-tandem3}). PRISM computes each exactly by solving the chain, and among the simulation methods \sentil{} is the fastest by a wide margin, tens of milliseconds against Modest's and FIG's tens of seconds, since its embedded-chain step is a few arithmetic operations against their general model engines. PRISM's exact check is quick only because these state spaces are small; it stops being an option once the model is large or continuous.
+
+\begin{figure}[H]
+\centering
+\screenshot{rare_event}
+\caption{Rare-event estimation on the two-queue tandem overflow ($P = 5.6\times10^{-6}$). Left, wall-clock time on a log scale; right, each tool's estimate over the exact value. All four agree, and among the simulation methods SENTIL is faster by fifteen hundred to five thousand times.}
+\label{fig:rare-tandem2}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\screenshot{rare_event_3tandem}
+\caption{The same comparison on a three-queue tandem overflow ($P = 1.3\times10^{-5}$).}
+\label{fig:rare-tandem3}
+\end{figure}
+
+Continuous is a direction the discrete-event tools cannot follow at all. An Ornstein-Uhlenbeck level crossing, a continuous-score event none of FIG, Modest, or PRISM can express, \sentil{} runs on both the CPU and the GPU (Figure~\ref{fig:rare-gpu}). Both paths land on the exact probability; the device splitter is about forty times faster than the CPU at sixteen thousand particles, and it holds flat as the particle count grows where the CPU scales linearly.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\linewidth}\centering\screenshot{rare_event_gpu}\end{minipage}
+\caption{A continuous-score rare event on the device, SENTIL's CPU splitter against its GPU splitter, wall-clock time on a log scale by particle count. Both reach the exact probability; the GPU stays flat while the CPU grows with the particle count.}
+\label{fig:rare-gpu}
+\end{figure}
+
+\section{Synthesis}
+
+Synthesis is timed on a set of small control problems, and Table~\ref{tab:synth} is the committed run. Monitoring and statistical checking each race against a standard external tool; controller synthesis against a temporal specification has no such standard baseline to measure against, so the comparison that matters is internal, which backend reaches the spec and at what cost. Every offline case reaches a positive robustness, so the spec holds on the model, in a few milliseconds. The same \emph{hold} problem solved two ways is the backend comparison: gradient ascent at $1.72$~ms against the black-box CMA-ES at $5.87$, about $3.4\times$, both reaching the same robustness, which is why gradient is the default and CMA-ES the fallback for a problem that is not differentiable. Against the clock, the online receding-horizon controller's real figure is deadline adherence: warm-started each step, it holds an integrator at about a tenth of a millisecond, a 99th-percentile step of $0.112$~ms against a five-millisecond deadline, and it misses none of two hundred steps.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{widefig}\begin{tabular}{@{}l l r r@{}}
+\toprule
+\textbf{problem} & \textbf{backend} & \textbf{robustness} & \textbf{time}\\
+\midrule
+hold, offline          & gradient & $+0.50$ & $1.72$ ms\\
+reach, offline         & gradient & $+4.00$ & $1.26$ ms\\
+bounded input, offline & gradient & $+0.40$ & $2.90$ ms\\
+hold, offline          & CMA-ES   & $+0.50$ & $5.87$ ms\\
+integrator hold, online & gradient & $+0.50$ & $0.099$ ms/step\\
+\bottomrule
+\end{tabular}\end{widefig}
+\caption{Synthesis timing. The three offline gradient cases and the CMA-ES case are open-loop; the last is the online controller, whose $0.099$~ms mean has a 99th-percentile of $0.112$ and zero deadline misses over two hundred steps against a $5$~ms budget. The MILP backend is not in the committed timings, so no number is quoted for it.}
+\label{tab:synth}
+\end{table}
+
+\section{Scaling shapes}
+
+Three scaling shapes close the case, and each is a design property made visible. Cost is \emph{flat} in trace length for the monitoring question, at a few microseconds regardless of size. It is \emph{flat} in the temporal-bound width, about fifty nanoseconds whether the window is ten or a hundred thousand, which is the monotonic deque's $O(1)$ per sample made measurable. And the splitting estimate's error tightens with particle count, from sixteen percent to one on a moderate event and from thirty-eight to seven on a rare one, from a hundred particles to eight thousand.
+
+\begin{notebox}
+Everything in this chapter ran on one machine, the same AMD EPYC~7763, and every timing is the mean over repeated runs, thirty at the smaller sizes and a million individual updates for the streaming figures, with the tail reported as the 99th-percentile. The absolute milliseconds carry that shared machine's contention; the ratios and the shapes are the claim. The deterministic tier reruns in continuous integration on every commit, and a tolerance drift fails the build.
+\end{notebox}

@@ -1,0 +1,61 @@
+\chapter{Case Studies}
+\label{ch:cases}
+
+We have seen the tool's performance on a range of synthetic benchmarks, and we have seen the language's expressiveness on a range of specifications. But how does it work on real systems, with real data, and what do those numbers look like? This chapter is a tour of five deployments, each of which is a full experiment in the repo.
+
+\section{Autonomous driving}
+
+\sentil{} runs inside a CARLA stack over a three-hundred-second, six-thousand-frame drive. Over the whole drive the deterministic verdicts are blunt: the lane-keeping and clearance conjuncts go negative (robustness $-1.44$ and $-3.11$, the car cuts close more than once), and only the speed limit holds, at $+19.5$. The deterministic streaming monitor pays about half a microsecond per sample and sustains near two million samples a second, and the per-frame probabilistic check runs a median of $0.65$~ms with a 99th-percentile of $0.89$, inside the two-millisecond control deadline.
+
+The frame that justifies the probabilistic layer is a pedestrian encounter at $t = 146.35$~s. There, the deterministic clearance \emph{locally} holds, $5.69$~m against a $5$~m bound, nominally safe. But lift the predicted clearance by the pedestrian's motion uncertainty over the next ten seconds and the collision-free probability collapses to $0.0005$. A deterministic monitor sees a comfortable margin at that instant; the probabilistic monitor sees a near-certain collision hiding under the uncertainty. That gap is the argument for PrSTL in one frame. Against RTAMT on the same workload, \sentil{} is $21.5\times$ faster online, $80$ to $155\times$ faster offline while agreeing on robustness to the last digit, and does the probabilistic check RTAMT cannot express at all.
+
+\begin{figure}[h]
+\centering
+\screenshot{carla_timeline}
+\caption{The full CARLA drive, one panel per monitored property over time: deterministic robustness, and for the pedestrian clearance the satisfaction probability. The shaded spans are where a property dips below its bound.}
+\label{fig:carla-timeline}
+\end{figure}
+
+\section{An artificial pancreas}
+
+On the FDA-accepted UVA/Padova insulin model, \sentil{} checks that blood glucose stays in the euglycemic band, \code{G (glucose > 70 and glucose < 180)}. A controller that misses a lunch bolus gives a robustness of $-105$, a real violation, and \code{violations} pins it to the interval $[809, 1424]$ minutes, the long hyperglycemic excursion that runs from lunch to the end of the day after the skipped dose; a tuned controller reaches $+8$ and its violation list is empty. The probabilistic safety property, that glucose stays above the hypoglycemia line with probability at least $0.95$ under $7$~mg/dL of CGM noise, holds for \emph{both} controllers, at about $1.0$. That is the honest reading: both avoid the dangerous low, and only one keeps glucose well controlled. The two layers separate \emph{safe} from \emph{well controlled}, and you want both answers.
+
+\section{A UAV under GPS noise}
+
+The clearest single number in the book comes from a geofenced UAV flying three routes through the same intruder crossing. All three respect the geofence and the speed limit; they differ on separation. The direct route collides: separation robustness $-5.53$, and the probability it stays clear is $0$. The deconflicted route is comfortable: $+9.81$ of margin, probability $0.998$. The lesson is the third, \emph{marginal} route:
+
+\begin{lstlisting}[language=Python]
+sentil.parse("G (sep > 10)").robustness(route)   # +0.7242  looks SAFE
+lifting.register("sep", sentil.NoiseModel.gaussian(0.0, 3.0))  # sigma 3 m
+phi = sentil.parse("P>=0.95 (G (sep > 10))")
+cfg = sentil.SmcConfig(samples=4000, seed=11)
+phi.check(route, lifting, cfg).probability   # 0.0767  FAILS
+\end{lstlisting}
+
+It clears the ten-metre separation bound by $0.72$~m, so a classical monitor calls it safe. But against $3$~m of GPS noise, the probability the separation actually holds is $0.077$, nowhere near the $0.95$ required. Positive robustness is not a safety guarantee under uncertainty, and here that is one route, two numbers, one verdict flipped.
+
+\begin{figure}[h]
+\centering
+\screenshot{uav}
+\caption{The three UAV routes through the intruder encounter. The marginal route (centre) clears the deterministic separation bound yet fails the chance constraint under GPS noise; the deconflicted route holds on both.}
+\label{fig:uav}
+\end{figure}
+
+\section{A circadian clock}
+
+From the BioModels repository, a mammalian circadian gene-regulatory network, a hundred stochastic realizations over two hundred seventy hours. Sustained oscillation is not one threshold; it is two recurrence properties, a peak in every window and a trough in every window: \code{G[0, 240] (F[0, 24] (activator > 3000))} and its mirror. On the ensemble mean the peak recurrence scores $+2528$ and the trough $+1035$, every one of the hundred realizations satisfies the joint property, the empirical probability is $1.0$, and the recovered period is $23.8$~hours against a biological twenty-four. A monitor written for control loops reads a biological oscillator without a change.
+
+\begin{figure}[h]
+\centering
+\screenshot{circadian}
+\caption{The circadian network's protein oscillation across the ensemble. The recurrence property, peaks and troughs returning within their period bounds, holds on every one of the hundred realizations.}
+\label{fig:circadian}
+\end{figure}
+
+\section{A monitor on a microcontroller}
+
+The embedded deployment puts \sentil{} on a Raspberry Pi~4, a quad-core board under four watts, running a bank of sixty specifications every cycle at 85~Hz. Over six hundred twelve thousand cycles the mean cycle takes $9.57$~ms and the worst $10.71$, against an $11.76$~ms deadline, and not one cycle missed it; steady-state memory holds at $12.3$~megabytes with zero growth over two hours. RTAMT on the same board runs about $47$~ms per cycle, four times over the deadline, and Breach does not run on ARM at all. The same flat-memory, constant-per-sample guarantees that let the core keep up with a server sensor are what let it fit on a microcontroller-class board and never miss a beat.
+
+\begin{notebox}
+These five span a spread no single tool usually covers: a GPU-backed driving stack, an FDA-accepted medical model, a UAV under GPS noise, a stochastic biological network, and a bare embedded board. They run the same engine and the same specification language. Every number here regenerates from committed data by rerunning the experiment's one script; the reproduction commands are in each experiment's README and the claims ledger.
+\end{notebox}
