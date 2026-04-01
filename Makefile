@@ -12,7 +12,7 @@ test-embedded:
 
 verify:
 	python3 scripts/check_version.py
-	cargo test --offline -p sentil
+	cargo test --offline -p sentil -p sentil-benchmarks -p sentil-cli
 	$(MAKE) -C sentil-ffi test-ffi CARGO='cargo --offline'
 	python3 scripts/check_claims.py
 
