@@ -31,7 +31,7 @@ On discrete-time STL, SENTIL and RTAMT compute the same thing and we measure the
 | 100,000 | 3.64 ms | 514 ms | 141x |
 | 1,000,000 | 37.1 ms | 5381 ms | 145x |
 
-Both are linear in trace length; SENTIL runs about two orders of magnitude faster across the range. Per formula at 2001 samples, the full-signal speedup is about two orders of magnitude across the five benchmark formulas. Online, driven one sample at a time, and SENTIL's median per-update is 1.843 us against RTAMT's 39.614 us, about 21.5x.
+Both are linear in trace length; SENTIL runs about two orders of magnitude faster across the range. Per formula at 2001 samples, the full-signal speedup ranges from about 80x to about 158x across the five benchmark formulas. Online, driven one sample at a time, and SENTIL's median per-update is 1.843 us against RTAMT's 39.614 us, about 21.5x.
 
 ![Offline discrete STL, milliseconds to score the whole signal against trace length, SENTIL beside RTAMT, MoonLight, and Banquo](/benchmarks/discrete_offline.png)
 
@@ -63,7 +63,7 @@ Comparing against PRISM, Modest, and UPPAAL-SMC needs a model all four can simul
 | circadian | 0.0378 (1016 ms) | 0.0407 (27,575 ms) | 0.038 (73,000 ms) | 0.038084 (19,380 ms) |
 | tandem | 0.7151 (304 ms) | 0.7257 (5,214 ms) | 0.7201 (10,200 ms) | 0.720017 (20,416 ms) |
 
-On the circadian model SENTIL runs roughly an order of magnitude faster than PRISM, UPPAAL-SMC and Modest alike. The speedup comes from the step being a few arithmetic operations against a general model engine, not from a looser estimate: the probabilities land on the same value. Two further models, the biodiesel reactor at 0.192 and the powertrain controller at 0.503, are continuous-state recurrences PRISM cannot express; SENTIL, Modest, and UPPAAL all run them and agree, and SENTIL finishes more than an order of magnitude sooner.
+On the circadian model SENTIL runs about 27 times faster than PRISM, about 19 times faster than UPPAAL-SMC, and roughly 70 times faster than Modest; on the tandem queue it is about 17 times faster than PRISM. The speedup comes from the step being a few arithmetic operations against a general model engine, not from a looser estimate: the probabilities land on the same value. Two further models, the biodiesel reactor at 0.192 and the powertrain controller at 0.503, are continuous-state recurrences PRISM cannot express; SENTIL, Modest, and UPPAAL all run them and agree, and SENTIL finishes more than an order of magnitude sooner.
 
 ![Statistical model checking the circadian CTMC, seconds at about ten thousand samples per tool](/benchmarks/smc_circadian.png)
 
