@@ -277,6 +277,21 @@ mod tests {
     }
 
     #[test]
+    fn dense_until_signal_has_no_nan_next_to_an_empty_window() {
+        let phi = Formula::parse("(y > 0) until[1, 3] (x > 0)").unwrap();
+        let mut trace = Trace::new(vec![1.8, 3.5, 5.1, 5.5, 7.4, 7.8]).unwrap();
+        trace
+            .add_signal("x", vec![0.8, -0.1, -3.4, -1.6, -3.0, 3.8])
+            .unwrap();
+        trace
+            .add_signal("y", vec![-1.5, 1.9, -3.3, -3.3, -1.7, -4.0])
+            .unwrap();
+        let dense = phi.robustness_dense_signal(&trace).unwrap();
+        assert!(dense.iter().all(|v| !v.is_nan()), "dense had NaN: {dense:?}");
+        assert_eq!(dense, vec![-1.5, -3.3, -3.3, -3.3, f64::NEG_INFINITY, f64::NEG_INFINITY]);
+    }
+
+    #[test]
     fn probabilistic_operator_is_rejected_by_deterministic_robustness() {
         let phi = Formula::parse("P>=0.9(x > 0)").unwrap();
         let mut trace = Trace::new([0.0]).unwrap();

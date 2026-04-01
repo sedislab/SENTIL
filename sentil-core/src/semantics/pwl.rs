@@ -34,6 +34,10 @@ impl Pwl {
         let upper = self.points.partition_point(|p| p.0 <= t);
         let (t0, v0) = self.points[upper - 1];
         let (t1, v1) = self.points[upper];
+        // A segment touching an infinity is read as a left-held step.
+        if !v0.is_finite() || !v1.is_finite() {
+            return v0;
+        }
         v0 + (v1 - v0) * (t - t0) / (t1 - t0)
     }
 
@@ -236,6 +240,16 @@ mod tests {
         let x = Pwl::new(vec![(0.0, 1.0), (1.0, 1.0), (2.0, -3.0)]);
         let always = window(&x, 0.0, 1.5, true);
         assert_eq!(always.at(0.0), -1.0);
+    }
+
+    #[test]
+    fn at_a_breakpoint_next_to_an_infinity_reads_the_breakpoint_not_nan() {
+        let p = Pwl::new(vec![(0.0, -3.3), (1.0, f64::NEG_INFINITY)]);
+        assert_eq!(p.at(0.0), -3.3);
+        assert_eq!(p.at(1.0), f64::NEG_INFINITY);
+        let q = Pwl::new(vec![(0.0, f64::NEG_INFINITY), (1.0, f64::NEG_INFINITY)]);
+        assert_eq!(q.at(0.5), f64::NEG_INFINITY);
+        assert_eq!(p.at(0.5), -3.3);
     }
 
     #[test]
