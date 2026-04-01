@@ -1,0 +1,105 @@
+\chapter{\sentil{} in other languages}
+\label{ch:bindings}
+
+As mentioned above, \sentil{} is a Rust core wrapped in a thin, stable C interface, and every binding calls that same core. This makes it possible to extend \sentil{} to many languages without reimplementing the engine, and to keep them all in sync.
+
+\section{\sentil{} in Python, C++, Julia, and Java}
+
+The trace is \code{speed = [12, 9, 7, 4, 6]}, the spec is \code{G (speed > 5)}, and the answer is $-1$, driven by the dip to $4$ at $t=3$. Here it is in Rust and in four bindings;
+
+\begin{lstlisting}[language=sentilrust]
+// Rust
+let mut trace = Trace::new(vec![0.0, 1.0, 2.0, 3.0, 4.0])?;
+trace.add_signal("speed", vec![12.0, 9.0, 7.0, 4.0, 6.0])?;
+let phi = Formula::parse("G (speed > 5)")?;
+phi.robustness(&trace)?;          // -1
+phi.robustness_signal(&trace)?;   // [-1.0, -1.0, -1.0, -1.0, 1.0]
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python]
+# Python
+trace = sentil.Trace([0, 1, 2, 3, 4], {"speed": [12., 9., 7., 4., 6.]})
+phi = Formula.parse("G (speed > 5)")
+phi.robustness(trace)                                      # -1.0
+[(v.start, v.end) for v in phi.violations(trace)]          # [(0.0, 3.0)]
+\end{lstlisting}
+
+\begin{lstlisting}[language=C++]
+// C++
+sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12., 9., 7., 4., 6.});
+sentil::Formula phi = sentil::Formula::parse("G (speed > 5)");
+phi.robustness(trace);            // -1
+\end{lstlisting}
+
+\begin{lstlisting}[language=sentiljulia]
+# Julia
+phi = formula("G (speed > 5)")
+trace = Trace(collect(0.0:1.0:4.0), "speed", [12., 9., 7., 4., 6.])
+robustness(phi, trace)            # -1.0
+\end{lstlisting}
+
+\begin{lstlisting}[language=bash]
+# CLI
+sentil check -f 'G (speed > 5)' -t trace.csv
+#   verdict     violated
+#   robustness  -1.000000   (exit 10 = violation, not error)
+\end{lstlisting}
+
+\begin{pitfall}
+The streaming verdict carries the same five fields everywhere, \code{resolved}, \code{satisfied}, \code{value}, \code{lower}, \code{upper}, but Rust exposes them as methods (\code{verdict.is\_resolved()}) and the others as fields (\code{verdict.resolved}).
+\end{pitfall}
+
+\section{Feature Parity}
+
+Every binding ships a \code{test\_oracle} that loads the shared \code{benchmarks/deterministic} \code{/oracle.json} and reproduces each stored value so you can be sure that the FFI didn't break anything.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.3}
+\begin{widefig}\begin{tabular}{@{}l l l@{}}
+\toprule
+\textbf{operation} & \textbf{Python} & \textbf{Rust}\\
+\midrule
+parse a formula & \code{Formula.parse(s)} & \code{Formula::parse(s)}\\
+offline robustness & \code{phi.robustness(tr)} & \code{phi.robustness(\&tr)}\\
+stream a sample & \code{mon.update(t, m)} & \code{mon.update(t, \&m)}\\
+probabilistic check & \code{phi.check(tr, lift, cfg)} & \code{phi.check(\&tr, \&lift, \&cfg)}\\
+synthesize an input & \code{synthesis.synthesize(\dots)} & \code{Synthesizer::solve(\&prob)}\\
+\bottomrule
+\end{tabular}\end{widefig}
+\caption{The same operations under each language's idioms.}
+\end{table}
+
+\begin{notebox}
+Synthesis is the one place to compare the \emph{objective}, not the answer. Gradient ascent returns any input that reaches the optimum, so Python may find \code{[1, -1, 0]} and Rust \code{[1, 1, 0.41]} for the same problem, both scoring robustness $1.0$. The achieved robustness matches across bindings; the witness input need not.
+\end{notebox}
+
+\section{\sentil{} on microcontrollers}
+
+Every binding covers the full engine with the exception of the Arduino target. This is because it cannot run statistical model checking or the GPU path, because a microcontroller has neither the memory for an ensemble nor a GPU. It delivers the streaming deterministic monitor in full though.
+
+\section{FFI Boundary Costs}
+
+Calling across a language boundary is not free, and \sentil{} keeps the cost small by keeping the boundary thin: primitives and opaque handles cross it, the heavy work stays in Rust. Table~\ref{tab:overhead} is the per-sample cost of one streaming update through each binding, on the same nested formula.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l r@{}}
+\toprule
+\textbf{binding} & \textbf{per update}\\
+\midrule
+C            & 74 ns\\
+C++          & 134 ns \\
+Rust (core)  & 112 ns \\
+Python       & 521 ns\\
+Julia        & 114 ns \\
+Java         & 680 ns\\
+MATLAB       & 6.49 \textmu s\\
+\bottomrule
+\end{tabular}
+\caption{Per-sample streaming cost by binding, same workload and machine.}
+\label{tab:overhead}
+\end{table}
+
+Because the core is shared, a correctness fix or a speedup lands for every language at once. There is no per-binding reimplementation to drift out of sync, which is the usual way multi-language tools grow inconsistent.

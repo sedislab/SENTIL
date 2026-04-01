@@ -1,0 +1,94 @@
+\chapter{The specifications library}
+\label{ch:specs}
+
+\sentil{} ships a library of vetted specifications so that it's easy to start using it with very minimal setup. Currently, we have fifty-four specifications across ten domains, each drawn from a standard, a textbook, or a paper, each with a plain description, an accurate formula and defaults. The aim is to make writing and using specifications as easy as possible so that the friction of applying formal methods does not outweigh the benefit of doing so.
+
+\section{What the library covers}
+
+The domains, their counts, and one representative formula from each in \sentil{} syntax:
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.3}
+\begin{widefig}\begin{tabular}{@{}l r l@{}}
+\toprule
+\textbf{domain} & \textbf{n} & \textbf{representative}\\
+\midrule
+aerospace  & 5  & \code{G[0, 60] (abs(bank\_angle) < 67.0)}\\
+automotive & 5  & \code{G[0, 30] ((closing > 0) implies (range > 2.0 * closing))}\\
+controls   & 14 & \code{F[0, 5] (G[0, 25] (abs(output - reference) < 0.02))}\\
+financial  & 4  & \code{G[0, 120] (drawdown < 0.20)}\\
+industrial & 4  & \code{G[0, T] ((pressure > p\_trip) implies F[0, t] (relief > 0.5))}\\
+medical    & 5  & \code{G[0, 60] (glucose >= 54.0)}\\
+networking & 4  & \code{G[0, 60] (one\_way\_delay < 0.1)}\\
+power      & 4  & \code{G[0, 60] (frequency > 58.8 and frequency < 61.2)}\\
+robotics   & 5  & \code{G[0, 30] (clearance > 0.2)}\\
+uav        & 4  & \code{F[0, deadline] (waypoint\_distance < tolerance)}\\
+\bottomrule
+\end{tabular}\end{widefig}
+\end{table}
+
+\emph{Controls} is the deep one because classical control has a name for every transient shape: overshoot, settling time, rise time, steady-state error, disturbance rejection, and so on. Every entry names its variables and units, declares its parameters with defaults and valid ranges, gives a deterministic and often a probabilistic form, and cites its source.
+
+\section{Using one}
+
+Pick a name, override the placeholders that are system-specific, and build a formula or a monitor.
+
+\begin{lstlisting}[language=Python]
+import sentil
+
+sentil.SpecBuilder.available()          # the 54 sorted names
+
+phi = (sentil.SpecBuilder("controls/overshoot")
+       .with_param("max_overshoot", 0.1)    # others keep their defaults
+       .build_formula())
+\end{lstlisting}
+
+\code{with\_param} returns a \emph{new} builder and validates immediately, so an out-of-range value raises and leaves the original untouched; chain or reassign, never call it for its side effect. The formula is then ordinary, and everything in the book works on it. Check it against a trace where the overshoot runs $0.1$ against a $0.05$ allowance:
+
+\begin{lstlisting}[language=Python]
+phi = sentil.SpecBuilder("controls/overshoot").build_formula()
+t = sentil.Trace([0., 10., 20., 30.],
+                 {"output": [0.5]*4, "reference": [0.4]*4})
+phi.robustness(t)      # -0.05   the excess overshoot, exactly 0.05 - 0.1
+\end{lstlisting}
+
+Many specs ship a \emph{family} of directions as named variants, so one file covers related requirements. Overshoot ships \code{step\_up}, \code{step\_down}, and \code{bidirectional}; list them with the \code{available\_variants} property and select one with \code{with\_variant}:
+
+\begin{lstlisting}[language=Python]
+sb = sentil.SpecBuilder("controls/overshoot")
+sb.available_variants   # ['step_up', 'step_down', ...]
+sb.with_variant("step_down").build_deterministic()
+# 'always[0, 30.0](reference - output < 0.05 * 1.0)'
+\end{lstlisting}
+
+That output is worth a note: the builder emits the formula in the long \code{always} spelling the source TOML is written in. \code{G} and \code{always} are the same operator, so a \code{G} formula you write parses identically; the library just prints what its file says.
+
+\section{The anatomy of a spec}
+
+Each specification is a small TOML with seven tables. \code{[metadata]} gives the name, domain, description, and citation references. \code{[variables]} names each signal with a unit. \code{[parameters]} declares each \code{\{placeholder\}} with a default, an optional inclusive range that \code{with\_param} enforces, and a description. \code{[formulas]} holds the required deterministic form and an optional probabilistic one. \code{[noise.<signal>]} ships a ready-made noise model; \code{[noise\_fit.<signal>]}, which is different, is a recipe to \emph{learn} one from your calibration data. \code{[verification.smc/sprt/ams]} carries the recommended statistical settings. And \code{[variants.<name>]} overrides formulas or defaults to ship the family.
+
+\begin{lstlisting}[language=Python]
+sb = sentil.SpecBuilder("controls/overshoot")
+mon = sb.build_monitor()
+
+sb.smc_settings()    # (0.95, 1000)
+sb.sprt_settings()   # (0.9, 0.95, 0.05, 0.05, 5000)
+sb.ams_settings()    # (4096, 0)
+\end{lstlisting}
+
+The SMC tuple is (confidence, sample budget); the SPRT tuple is $(p_0, p_1, \alpha, \beta, \text{max\_samples})$.
+
+\code{build\_monitor} preloads the template's SMC sample budget and confidence and the AMS particle count into the monitor, so a spec's own recommended statistical settings come along for free. It does \emph{not} apply the SPRT settings; read those with \code{sprt\_settings} and drive a sequential test yourself.
+
+\begin{pitfall}
+The Python monitor builder is \code{build\_monitor()}; \code{into\_monitor} is the Rust name and does not exist on the Python object. \code{available\_variants} is a property, so no parentheses. And \code{build\_probabilistic\_formula} raises if the template ships no probabilistic form, which not all do.
+\end{pitfall}
+
+\section{Your own library}
+
+Point \code{SENTIL\_SPECS\_DIR} at a directory of your own files and they resolve \emph{before} the built-in set, so a house spec at \code{\$SENTIL\_SPECS\_DIR/controls/overshoot.toml} shadows the built-in of the same name. A bare \code{domain/name} is searched there first, as TOML then YAML then JSON, then the embedded library; a name with a path or an extension is read straight off disk. An organization keeps its regulatory bounds and internal safety cases in one place and reaches them by name from every binding.
+
+\begin{notebox}
+The library is human-written and checked: every specification parses, type-checks, and evaluates to the expected verdict on a known trace. An easy first contribution is to add a new spec, or a variant so if you see something that you think will benefit the community, please make a pull request.
+\end{notebox}

@@ -1,0 +1,150 @@
+\chapter{The command line}
+\label{ch:cli}
+
+Not every job wants or needs a program. If you have a CSV of a drive, a flight, a patient, and a property you want checked, and you want an answer at a shell prompt or inside a pipeline, we offer \code{sentil} on the command line. Data goes to standard output, logs to standard error, and the exit code is a verdict you can branch on. This chapter looks at \sentil{} in CLI form.
+
+\section{Install}
+
+\begin{lstlisting}[language=bash]
+brew install sedislab/sentil/sentil  # macOS and Linux
+scoop bucket add sedislab https://github.com/sedislab/scoop-sentil
+scoop install sentil  # Windows
+winget install SEDIS.SENTIL  # Windows, alternative
+cargo install --path sentil-cli  # from source, any OS with Rust
+\end{lstlisting}
+
+Or download the archive for your platform from the GitHub release, unpack it, and put the \code{sentil} executable on your \code{PATH}; each archive also carries the man page and the shell completions, and the package managers wire those up for you. On a Raspberry Pi, use the ARM release artifacts. Check it:
+
+\begin{lstlisting}[language=bash]
+sentil --version      # sentil 0.3.0
+\end{lstlisting}
+
+\section{Running it}
+
+Every invocation is \code{sentil [options] <verb> [verb options]}. You give it a \emph{property}, either a raw formula with \code{-f} or a premade specification with \code{--spec}, and \emph{data}, a recorded trace with \code{-t FILE} (or \code{-} for standard input) or, for the online monitor, a live JSON stream. It parses, loads, checks that every signal the formula names is a column in the trace, evaluates, prints a result, and exits with a code that says what happened. The global \code{-o text|json|ndjson} chooses the output shape; text is the default and JSON is a stable contract with a \code{schema\_version}.
+
+\section{Example Walktrough: is the car keeping a safe gap?}
+
+Here is a recorded drive. The car accelerates from $28$ to $31$~m/s while the following gap shrinks from $42$~m to $18.5$~m at $t=4$, then eases off and recovers.
+
+\begin{lstlisting}[language=bash]
+cat > drive.csv <<'EOF'
+time,speed,gap
+0.0,28.0,42.0
+1.0,29.1,37.5
+2.0,30.2,30.5
+3.0,30.9,23.5
+3.5,31.1,20.0
+4.0,30.4,18.5
+4.5,29.0,19.5
+5.0,27.5,22.0
+EOF
+\end{lstlisting}
+
+\textbf{Step 1, a verdict.} Does the gap stay above $20$~m for the whole drive?
+
+\begin{lstlisting}[language=bash]
+sentil check -f 'G (gap > 20)' -t drive.csv --semantics discrete
+\end{lstlisting}
+\begin{lstlisting}
+check
+  formula     G (gap > 20)
+  trace       drive.csv
+  semantics   discrete
+  verdict     violated
+  robustness  -1.500000
+$ echo $?
+10
+\end{lstlisting}
+
+It fails by $1.5$~m, the worst shortfall, and the process exits $10$. That $10$ is not an error; it is the \emph{violated} verdict, distinct from a real failure, so \code{sentil check ... \&\& deploy} runs the deploy only when the spec held.
+
+\textbf{Step 2, where and how bad.} \code{--violations} gives the failing interval; \code{--signal} gives the margin at every sample.
+
+\begin{lstlisting}[language=bash]
+sentil check -f 'gap > 20' -t drive.csv --violations --semantics discrete
+#   [4.000, 4.500]
+sentil check -f 'gap > 20' -t drive.csv --signal --semantics discrete
+#   22, 17.5, ..., 0, -1.5, ...
+\end{lstlisting}
+
+The gap grazes exactly zero robustness before it goes negative, which is the moment to watch for.
+
+\textbf{Step 3, use a vetted spec.} Instead of a hand-written formula, reach into the standards library, and tune a parameter in place:
+
+\begin{lstlisting}[language=bash]
+sentil check --spec automotive/speed_limit -t drive.csv --semantics discrete
+#   formula   always[0, 30.0](speed <= 33.3)
+#   verdict   satisfied   robustness 2.200000
+sentil check --spec automotive/speed_limit -p speed_limit=30 \
+  -t drive.csv --semantics discrete
+#   verdict violated   robustness -1.100000
+\end{lstlisting}
+
+\textbf{Step 4, account for sensor noise.} The radar is not exact. Estimate the probability the gap safety holds over the safe early window under $2$~m of Gaussian noise:
+
+\begin{lstlisting}[language=bash]
+sentil smc -f 'P>=0.9 (G[0,2] (gap > 20))' -t drive.csv \
+  --noise 'gap=gaussian:0,2' --samples 5000
+#   probability 1.000000   interval [0.999232, 1.000000] at 95%
+#   verdict holds
+\end{lstlisting}
+
+The sequential test decides the same question in a fraction of the samples: \code{--algo sprt} accepts after $27$ draws instead of five thousand.
+
+\textbf{Step 5, watch it live.} Pipe JSON samples, one per line, into the online monitor. A past operator like \code{H} settles to a verdict from what it has already seen, so it makes a real-time alarm:
+
+\begin{lstlisting}[language=bash]
+printf '%s\n' '{"time":0.0,"gap":42}' \
+              '{"time":0.5,"gap":30}' \
+              '{"time":1.0,"gap":18}' \
+  | sentil monitor -f 'H (gap > 20)' -o ndjson
+# {..."f0":{"robustness":22.0,"satisfied":true}...,"time":0.0}
+# {..."f0":{"robustness":-2.0,"satisfied":false}...,"time":1.0}
+\end{lstlisting}
+
+Separate several formulas with \code{;} to watch them at once, one verdict per formula per sample, in a single pass over the stream.
+
+\section{The verbs}
+
+\sentil{} in CLI form has 14 verbs.
+
+\begin{table}[h]
+\centering\small
+\renewcommand{\arraystretch}{1.25}
+\begin{widefig}\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{verb} & \textbf{what it does}\\
+\midrule
+\code{check} & offline robustness of a formula over a recorded trace\\
+\code{monitor} & the online streaming monitor, one JSON sample in, one verdict out\\
+\code{smc} & statistical model checking of a \code{P} formula (\code{--algo smc|sprt|chernoff|bayes})\\
+\code{fit} & fit a noise model from paired truth and sensor columns\\
+\code{lift} & apply noise models to a trace and write the ensemble as CSV\\
+\code{synth} & synthesize a control input for a spec on a linear model\\
+\code{falsify} & search a model's input space for a counterexample\\
+\code{mine} & find the tightest spec parameter that still holds\\
+\code{specs} & list or inspect the premade specifications\\
+\code{explain} & an operator's semantics, the exit-code table, or a verb's JSON fields\\
+\code{init} & an interactive builder that prints and runs the equivalent command\\
+\code{config} & show which config files are read and the values in effect\\
+\code{completion}, \code{man} & emit the shell completion script or the man page\\
+\bottomrule
+\end{tabular}\end{widefig}
+\end{table}
+
+The input trace is sniffed from content, so no extension is required: CSV with a \code{time} column, or a JSON array of records; \code{.tsv} is tab-delimited. Parquet, Arrow, and SQLite are also supported. Bind a differently-named column with \code{--map speed=velocity\_mps}. Fifteen noise families are accepted as \code{VAR=family:params}, with an optional \code{:additive} or \code{:multiplicative}.
+
+\section{Exit codes}
+
+\code{0} the spec held, \code{10} it was violated, \code{2} a usage error, \code{65} bad input, \code{66} a missing file, \code{69} an unavailable backend, \code{130} interrupted. Two verbs make the tool teach itself: \code{sentil explain until} prints an operator's exact robustness, \code{sentil explain exit-codes} prints that table, and \code{sentil specs <name>} prints a specification's formula, parameters, and citations. And a project \code{sentil.toml} can set defaults and name aliases, so a team wraps a house check into one word:
+
+\begin{lstlisting}[language=bash]
+# sentil.toml:  [alias]
+#   highway = "check --spec automotive/speed_limit --semantics discrete"
+sentil -o text highway -t drive.csv  # expands the alias, adds your args
+\end{lstlisting}
+
+\begin{pitfall}
+Put global flags like \code{-o text} \emph{before} the alias name; an alias is an external subcommand, so flags after it are appended to the alias, not applied to the run. And the default semantics is \code{dense}: pass \code{--semantics discrete} when you want sample-exact behavior, which the \code{next} operator also requires.
+\end{pitfall}
