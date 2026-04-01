@@ -7,8 +7,12 @@ on:
   pull_request:
     paths:
       - 'tutorial/**'
+      - 'benchmarks/results/*.png'
       - '.github/workflows/tutorial.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -16,11 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: stage the benchmark figures
+        run: sh tutorial/sync-figures.sh
       - name: compile to pdf
         uses: xu-cheng/latex-action@v3
         with:
           working_directory: tutorial
           root_file: sentil-tutorial.tex
+          latexmk_use_xelatex: true
       - uses: actions/upload-artifact@v4
         with:
           name: sentil-tutorial
