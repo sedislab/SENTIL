@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, ArrowRight, BookOpen, Rocket, Sigma, Workflow } from 'lucide-react';
+import { Activity, ArrowRight, BookOpen, Sigma, Workflow } from 'lucide-react';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Card, Cards } from '@/components/card';
 import { Highlight } from '@/lib/highlight';
