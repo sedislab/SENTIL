@@ -71,7 +71,7 @@ synthesize an input & \code{synthesis.synthesize(\dots)} & \code{Synthesizer::so
 \end{table}
 
 \begin{notebox}
-Synthesis is the one place to compare the \emph{objective}, not the answer. Gradient ascent returns any input that reaches the optimum, so Python may find \code{[1, -1, 0]} and Rust \code{[1, 1, 0.41]} for the same problem, both scoring robustness $1.0$. The achieved robustness matches across bindings; the witness input need not.
+Synthesis is the one place to compare the \emph{objective}, not the answer. Gradient ascent returns any input that reaches the optimum, so Python may find \code{[1, -1, 0]} and Rust \code{[1, 1, 0.41]} for the same problem, both scoring robustness $1.0$. The achieved robustness is what we need to match. The witness input does not necessarily need to match.
 \end{notebox}
 
 \section{\sentil{} on microcontrollers}

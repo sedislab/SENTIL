@@ -1,4 +1,4 @@
-\chapter{Signal temporal logic, hands on}
+\chapter{Signal temporal logic}
 \label{ch:stl}
 
 In this chapter, we'll get our hands dirty understanding and writing Signal Temporal Logic (STL) formulas. We'll also look at how STL formulas are evaluated on traces so that by the end, you can write the property you actually mean to write.
@@ -40,7 +40,7 @@ Formula.parse("G (speed > 5)").robustness(trace)   # -1.0
   \node[okgreen!70!black, font=\sffamily\footnotesize, right=1pt] at (3,4.5*0.35) {$\rho=-1$};
   \node[font=\sffamily\footnotesize, text=ink, below] at (3,0) {$t{=}3$};
 \end{tikzpicture}\end{widefig}
-\caption{The robustness of \code{G (speed > 5)} is $-1$: the signal dips to $4$ at $t=3$, one unit under the bound. The sign says it fails; the magnitude says by how much.}
+\caption{The robustness of \code{G (speed > 5)} is $-1$: the signal dips to $4$ at $t=3$, one unit under the bound and thus, it fails by one unit.}
 \end{figure}
 
 A boolean monitor would have returned \emph{false} and stopped but \sentil{} returns $-1$: the property fails, and it fails by exactly one unit, because the worst sample sits one below the bound. Positive robustness means it holds with that much room to spare. \emph{Robustness} is what makes falsification, synthesis, and confidence bounds possible later, so it is worth getting a feel for it now.

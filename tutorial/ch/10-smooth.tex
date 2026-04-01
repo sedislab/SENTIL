@@ -64,7 +64,7 @@ phi2.smooth_robustness(t_ok, agm)   # 4.0   holds
 phi2.smooth_robustness(t_bad, agm)  # -1.0  fails, sign kept
 \end{lstlisting}
 
-The important thing is the smooth interpreter walks the same tree the exact monitor walks, node for node, swapping only the reducers. Monitoring keeps the exact min and max because a verdict must be exact; synthesis uses the soft ones because a search must be smooth. Under the hood the interpreter reduces with the same two primitives, which you can call directly:
+The important thing is the smooth interpreter walks the same tree the exact monitor walks, node for node, swapping only the reducers. Monitoring keeps the exact min and max because a verdict must be exact but synthesis uses the soft ones because a search must be smooth. Under the hood the interpreter reduces with the same two primitives, which you can call directly:
 
 \begin{lstlisting}[language=Python]
 from sentil import synthesis
@@ -78,4 +78,4 @@ synthesis.soft_max([1.0, -2.0, 3.0], 20.0)   #  3.0  an upper bound
 
 \section{The bound}
 
-The soft minimum is a strict lower bound on the true minimum at every temperature, so the smooth robustness of a conjunction is always at or below the exact one. That has a consequence you must respect: an input can clear the smooth surrogate and still fail the real spec. This is why synthesis always reports the \emph{exact} robustness of whatever it finds, and why you re-check \code{phi.robustness(result)} before trusting a synthesized input. Temperature is a knob, not a guarantee; the exact monitor is the guarantee.
+The soft minimum is a strict lower bound on the true minimum at every temperature, so the smooth robustness of a conjunction is always at or below the exact one. That has a consequence you must respect: an input can clear the smooth surrogate and still fail the real spec. This is why synthesis always reports the \emph{exact} robustness of whatever it finds, and why you re-check \code{phi.robustness(result)} before trusting a synthesized input.

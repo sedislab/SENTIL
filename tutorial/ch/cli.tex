@@ -57,7 +57,7 @@ $ echo $?
 10
 \end{lstlisting}
 
-It fails by $1.5$~m, the worst shortfall, and the process exits $10$. That $10$ is not an error; it is the \emph{violated} verdict, distinct from a real failure, so \code{sentil check ... \&\& deploy} runs the deploy only when the spec held.
+It fails by $1.5$~m, the worst shortfall, and the process exits $10$. That $10$ is the code for the \emph{violated} verdict, which is distinct from a real failure, so \code{sentil check ... \&\& deploy} runs the deploy only when the spec held.
 
 \textbf{Step 2, where and how bad.} \code{--violations} gives the failing interval; \code{--signal} gives the margin at every sample.
 

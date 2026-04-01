@@ -107,5 +107,5 @@ nested.robustness(t), nested.depth, nested.is_temporal   # (-1.0, 4, True)
 Rung five is the shape most real specifications take, and it fails here: at $t=3$ the speed is $4$, so the antecedent \code{speed < 5} is true, and the consequent needs \code{speed > 8} somewhere in $[3, 5]$, but the best the trace offers there is $6$, so the property misses by $8 - 6$... clamped by the antecedent's own margin to $-1$. The \code{depth} and \code{is\_temporal} getters, handy when you generate formulas, confirm it is a depth-four temporal tree.
 
 \begin{notebox}
-You do not have to write formulas as strings. The builder from Chapter~\ref{ch:stl} produces the identical tree, which is what you use when a spec is assembled in a loop or parameterized. Strings for a spec you know; the builder for a spec you generate.
+You do not have to write formulas as strings. The builder from Chapter~\ref{ch:stl} produces the identical tree, which is what you use when a spec is assembled in a loop or parameterized.
 \end{notebox}
