@@ -1,0 +1,20 @@
+\chapter{Answers to exercises}
+\label{ch:answers}
+
+Formulas are given in one correct form; equivalent spellings (\code{always} for \code{G}, a different bound style) are equally right.
+
+\section*{Signal temporal logic}
+
+\answer{ex:stl-desc}{
+(a) \code{G[0, 60] (temp < 100)}. (b) \code{G ((alarm > 0) implies F[0, 2] (valve > 0))}, a bounded response. (c) \code{F (G[0, 10] (abs(output - setpoint) < 0.1))}, a stabilization: eventually an always holds.}
+
+\answer{ex:stl-verdict}{
+(a) \code{G[0, 4]} is the minimum over the window, so the dip to $0.5$ sets it: robustness $+0.5$, holds. (b) At $t=0$ the window $[1, 2]$ sees $-1$ and $4$, and \code{F} takes the best, so $+4$, holds; at $t=2$ the window $[3, 4]$ sees only $x_3 = -2$, so $-2$, violated there. (c) \code{y} turns positive at $t=2$ with margin $4$ while \code{x} held with its smallest margin $3$, so the release is $\min(4, 3) = 3$; robustness $+3$, holds.}
+
+\answer{ex:stl-graph}{
+\code{G[0, 1] (x > 2)} at each step is the minimum of $x - 2$ over $[t, t{+}1]$: at $t=0$, $\min(2, -1) = -1$; at $t=1$, $\min(-1, 1) = -1$; at $t=2$, $\min(1, -2) = -2$; at $t=3$ the window has only $x_3 = 0$, so $-2$. The signal is $[-1, -1, -2, -2]$, negative throughout: the property never holds.}
+
+\section*{The monotonic deque}
+
+\answer{ex:deque}{
+Window minima $[7, 4, 4, 3, 3]$. Step by step: $\{7\}\to7$; $\{7,4\}\to4$; $\{7,4,6\}\to4$; at the fourth sample the window is $\{4,6,3\}\to3$; then $\{6,3,5\}\to3$. When the $3$ arrives it dominates and pops both the $6$ and the $4$ off the back, and the $7$ has already aged out, so right after the fourth sample the deque holds a single candidate, $\{3\}$, which is the front and the window minimum.}
