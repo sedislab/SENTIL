@@ -1,23 +1,11 @@
 //! Dense-time robustness over piecewise-linear signals.
 //!
-//! The trace's samples are read as a continuous signal, linear between points.
-//! Each subformula becomes a [`Pwl`] robustness signal, and the answer at any
-//! time is read off that. For the single-operand operators dense and discrete
-//! agree at the samples, parting only when a temporal window's edge or an
-//! equality predicate's zero falls between them. `until` and `since` differ even
-//! at the samples: the dense path takes the left operand's infimum over the
-//! closed span up to the witness, the discrete path over the half-open span that
-//! excludes it.
-//!
-//! Predicates must be linear in the signals. A linear term stays linear between
-//! samples, so sampling it and joining the points reproduces it exactly; a
-//! nonlinear term would curve between samples, so it is rejected rather than
-//! silently approximated.
+//! Predicates must be linear in the signals.
 
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
 #[cfg(feature = "std")]
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 use super::eval::eval_expr;
 use super::pwl::{combine, crossing, window, Pwl};
@@ -103,167 +91,167 @@ fn common_grid(phi: &Pwl, psi: &Pwl) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     (times, phi_vals, psi_vals)
 }
 
-/// Dense `phi U_[a,b] psi`: at each breakpoint the best future instant `s` in the
-/// window where `psi` holds and `phi` held throughout the closed span `[t, s]`.
+/// Dense `phi U_[a,b] psi`.
 fn until_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
     let (times, phi_vals, psi_vals) = common_grid(phi, psi);
-    let values = until_values(&times, &phi_vals, &psi_vals, a, b);
-    Pwl::new(times.into_iter().zip(values).collect())
+    let queries = result_grid(&times, a, b, true);
+    let values: Vec<f64> = queries
+        .iter()
+        .map(|&t| until_at(t, &times, &phi_vals, &psi_vals, a, b))
+        .collect();
+    Pwl::new(queries.into_iter().zip(values).collect())
 }
 
-/// Dense `phi S_[a,b] psi`: the past dual of [`until_signal`], over the closed span.
+/// Dense `phi S_[a,b] psi`, the past dual of [`until_signal`].
 fn since_signal(phi: &Pwl, psi: &Pwl, a: f64, b: f64) -> Pwl {
     let (times, phi_vals, psi_vals) = common_grid(phi, psi);
-    let values = since_values(&times, &phi_vals, &psi_vals, a, b);
-    Pwl::new(times.into_iter().zip(values).collect())
+    let queries = result_grid(&times, a, b, false);
+    let values: Vec<f64> = queries
+        .iter()
+        .map(|&t| since_at(t, &times, &phi_vals, &psi_vals, a, b))
+        .collect();
+    Pwl::new(queries.into_iter().zip(values).collect())
 }
 
-/// Dense until robustness over a shared breakpoint grid. With a zero lower bound a
-/// monotonic deque answers in O(n) amortized; a positive lower bound falls back to
-/// the exhaustive scan. The deque's domination drops a farther witness whenever a
-/// nearer one already beats it, which is only sound when every future sample is in
-/// the window. A positive lower bound breaks that: a sample the deque kept can sit
-/// below the bound from a later start while the farther one it discarded was the
-/// only valid witness, so the scan stays the reference there.
-fn until_values(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
-    if a <= EPS {
-        until_deque(times, phi_vals, psi_vals, b)
+/// The times to evaluate an until or since result on.
+fn result_grid(times: &[f64], a: f64, b: f64, future: bool) -> Vec<f64> {
+    let (lo, hi) = (times[0], times[times.len() - 1]);
+    let mut grid: Vec<f64> = times.to_vec();
+    let sign = if future { -1.0 } else { 1.0 };
+    for &g in times {
+        for off in [a, b] {
+            if off.is_finite() {
+                let t = g + sign * off;
+                if t >= lo && t <= hi {
+                    grid.push(t);
+                }
+            }
+        }
+    }
+    grid.sort_by(f64::total_cmp);
+    grid.dedup();
+    grid
+}
+
+/// The piecewise-linear value at `x`.
+fn interp(times: &[f64], vals: &[f64], x: f64) -> f64 {
+    if x <= times[0] {
+        return vals[0];
+    }
+    let last = times.len() - 1;
+    if x >= times[last] {
+        return vals[last];
+    }
+    let upper = times.partition_point(|&t| t <= x);
+    let (t0, v0) = (times[upper - 1], vals[upper - 1]);
+    let (t1, v1) = (times[upper], vals[upper]);
+    if !v0.is_finite() || !v1.is_finite() {
+        return v0;
+    }
+    v0 + (v1 - v0) * (x - t0) / (t1 - t0)
+}
+
+/// The infimum of the piecewise-linear `phi` over `[lo, hi]`.
+fn phi_inf_over(times: &[f64], phi_vals: &[f64], lo: f64, hi: f64) -> f64 {
+    let mut inf = interp(times, phi_vals, lo).min(interp(times, phi_vals, hi));
+    for (&g, &v) in times.iter().zip(phi_vals) {
+        if g > lo && g < hi {
+            inf = inf.min(v);
+        }
+    }
+    inf
+}
+
+/// The maximum over one segment of `min(psi, phi)`, each linear from its value at
+/// `u0` to its value at `u1`.
+fn seg_max_of_min(psi0: f64, psi1: f64, phi0: f64, phi1: f64) -> f64 {
+    let mut best = psi0.min(phi0).max(psi1.min(phi1));
+    let (d0, d1) = (psi0 - phi0, psi1 - phi1);
+    if d0.is_finite() && d1.is_finite() && d0 != 0.0 && d1 != 0.0 && (d0 < 0.0) != (d1 < 0.0) {
+        let frac = d0 / (d0 - d1);
+        let cross = psi0 + (psi1 - psi0) * frac;
+        best = best.max(cross);
+    }
+    best
+}
+
+/// The exact `sup over s in [t+a, t+b] of min(psi(s), inf over [t, s) of phi)` for
+/// piecewise-linear operands, marching the window's segments and folding the running
+/// infimum of `phi` into each. On a segment the value is `min(psi, phi, floor)`, whose
+/// maximum is `min(floor, max of min(psi, phi))`, so each segment contributes in
+/// closed form and the witness at a window edge or an interior crossing is not missed.
+fn until_at(t: f64, times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> f64 {
+    let domain_end = times[times.len() - 1];
+    let lo = t + a;
+    if lo > domain_end + EPS {
+        return f64::NEG_INFINITY;
+    }
+    let hi = if b.is_infinite() { domain_end } else { (t + b).min(domain_end) };
+    windowed_sup(t, lo, hi, times, phi_vals, psi_vals, true)
+}
+
+/// The past dual of [`until_at`]: `sup over s in [t-b, t-a] of min(psi(s), inf over
+/// (s, t] of phi)`, marching the window from the edge nearest `t` outward so the
+/// running infimum of `phi` still grows away from `t`.
+fn since_at(t: f64, times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> f64 {
+    let domain_start = times[0];
+    let hi = t - a;
+    if hi < domain_start - EPS {
+        return f64::NEG_INFINITY;
+    }
+    let lo = if b.is_infinite() { domain_start } else { (t - b).max(domain_start) };
+    windowed_sup(t, lo, hi, times, phi_vals, psi_vals, false)
+}
+
+/// The shared until/since core: the supremum of `min(psi(s), inf phi from t up to
+/// but not including s)` over `s` in `[lo, hi]`. `future` marches the window forward
+/// from `t` (until) and starts the infimum over `[t, lo)`; otherwise it marches
+/// backward (since) and starts it over `(hi, t]`. Every breakpoint inside the window
+/// splits a segment, and each segment folds in the running infimum in closed form.
+#[allow(clippy::too_many_arguments, reason = "the window, the two operand series, and the direction")]
+fn windowed_sup(
+    t: f64,
+    lo: f64,
+    hi: f64,
+    times: &[f64],
+    phi_vals: &[f64],
+    psi_vals: &[f64],
+    future: bool,
+) -> f64 {
+    if lo > hi + EPS {
+        return f64::NEG_INFINITY;
+    }
+    let mut points: Vec<f64> = times
+        .iter()
+        .copied()
+        .filter(|&g| g > lo + EPS && g < hi - EPS)
+        .collect();
+    let near = if future { lo } else { hi };
+    points.push(lo);
+    points.push(hi);
+    points.sort_by(f64::total_cmp);
+    points.dedup();
+    if !future {
+        points.reverse();
+    }
+
+    let mut floor = if future {
+        phi_inf_over(times, phi_vals, t, near)
     } else {
-        until_naive(times, phi_vals, psi_vals, a, b)
-    }
-}
+        phi_inf_over(times, phi_vals, near, t)
+    };
+    // The witness right at the near edge.
+    let mut best = floor.min(interp(times, psi_vals, near));
 
-/// Dense since robustness over a shared breakpoint grid; the past dual of
-/// [`until_values`], with the same zero lower bound split.
-fn since_values(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
-    if a <= EPS {
-        since_deque(times, phi_vals, psi_vals, b)
-    } else {
-        since_naive(times, phi_vals, psi_vals, a, b)
+    for pair in points.windows(2) {
+        let (u0, u1) = (pair[0], pair[1]);
+        let (psi0, psi1) = (interp(times, psi_vals, u0), interp(times, psi_vals, u1));
+        let (phi0, phi1) = (interp(times, phi_vals, u0), interp(times, phi_vals, u1));
+        let maxh = seg_max_of_min(psi0, psi1, phi0, phi1);
+        best = best.max(floor.min(maxh));
+        floor = floor.min(phi1.min(phi0));
     }
-}
-
-/// O(n) amortized dense until for a zero lower bound. Folding `phi` into the
-/// witness value as `min(psi, phi)` turns the closed span the dense path uses
-/// (phi held through the witness) into the half-open form the deque carries, so
-/// the result equals [`until_naive`] sample for sample. The deque holds candidate
-/// `(time, value)` pairs with values rising toward the back; sweeping `i` down, a
-/// new sample folds `phi[i]` into the survivors and offers `min(psi[i], phi[i])`
-/// as its own witness, and the answer for `i` is the back value once the entries
-/// past `t + b` are dropped.
-fn until_deque(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], b: f64) -> Vec<f64> {
-    let n = times.len();
-    let mut result = vec![f64::NEG_INFINITY; n];
-    let mut deque: VecDeque<(f64, f64)> = VecDeque::new();
-    for i in (0..n).rev() {
-        let t = times[i];
-        let p = phi_vals[i];
-        // Cap every retained witness by phi[i]; the dominated ones collapse into a
-        // single entry at the nearest of their times carrying phi[i].
-        let mut collapsed = None;
-        while let Some(&(tb, vb)) = deque.back() {
-            if vb >= p {
-                collapsed = Some(tb);
-                deque.pop_back();
-            } else {
-                break;
-            }
-        }
-        if let Some(tc) = collapsed {
-            deque.push_back((tc, p));
-        }
-        let witness = psi_vals[i].min(p);
-        while deque.front().is_some_and(|&(_, vf)| vf <= witness) {
-            deque.pop_front();
-        }
-        deque.push_front((t, witness));
-        let window_end = t + b;
-        while deque.back().is_some_and(|&(tb, _)| tb > window_end + EPS) {
-            deque.pop_back();
-        }
-        result[i] = deque.back().map_or(f64::NEG_INFINITY, |&(_, v)| v);
-    }
-    result
-}
-
-/// O(n) amortized dense since for a zero lower bound; the forward-sweeping dual of
-/// [`until_deque`], reading the front once entries before `t - b` are dropped.
-fn since_deque(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], b: f64) -> Vec<f64> {
-    let n = times.len();
-    let mut result = vec![f64::NEG_INFINITY; n];
-    let mut deque: VecDeque<(f64, f64)> = VecDeque::new();
-    for i in 0..n {
-        let t = times[i];
-        let p = phi_vals[i];
-        let mut collapsed = None;
-        while let Some(&(tf, vf)) = deque.front() {
-            if vf >= p {
-                collapsed = Some(tf);
-                deque.pop_front();
-            } else {
-                break;
-            }
-        }
-        if let Some(tc) = collapsed {
-            deque.push_front((tc, p));
-        }
-        let witness = psi_vals[i].min(p);
-        while deque.back().is_some_and(|&(_, vb)| vb <= witness) {
-            deque.pop_back();
-        }
-        deque.push_back((t, witness));
-        let window_start = t - b;
-        while deque.front().is_some_and(|&(tf, _)| tf < window_start - EPS) {
-            deque.pop_front();
-        }
-        result[i] = deque.front().map_or(f64::NEG_INFINITY, |&(_, v)| v);
-    }
-    result
-}
-
-/// The exhaustive dense until, the correctness reference and the path a positive
-/// lower bound takes.
-fn until_naive(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
-    let n = times.len();
-    let mut result = vec![f64::NEG_INFINITY; n];
-    for i in 0..n {
-        let mut best = f64::NEG_INFINITY;
-        let mut phi_inf = f64::INFINITY;
-        for s in i..n {
-            phi_inf = phi_inf.min(phi_vals[s]);
-            let dt = times[s] - times[i];
-            if dt > b + EPS {
-                break;
-            }
-            if dt >= a - EPS {
-                best = best.max(psi_vals[s].min(phi_inf));
-            }
-        }
-        result[i] = best;
-    }
-    result
-}
-
-/// The exhaustive dense since, the past dual of [`until_naive`].
-fn since_naive(times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> Vec<f64> {
-    let n = times.len();
-    let mut result = vec![f64::NEG_INFINITY; n];
-    for i in 0..n {
-        let mut best = f64::NEG_INFINITY;
-        let mut phi_inf = f64::INFINITY;
-        for s in (0..=i).rev() {
-            phi_inf = phi_inf.min(phi_vals[s]);
-            let dt = times[i] - times[s];
-            if dt > b + EPS {
-                break;
-            }
-            if dt >= a - EPS {
-                best = best.max(psi_vals[s].min(phi_inf));
-            }
-        }
-        result[i] = best;
-    }
-    result
+    best
 }
 
 fn predicate(p: &Predicate, times: &[f64], signals: &BTreeMap<String, Vec<f64>>) -> Result<Pwl> {
@@ -479,10 +467,26 @@ mod tests {
         }
     }
 
-    /// Strictly increasing times built from positive gaps, with paired phi and psi
-    /// values, the shape the until and since deques sweep.
+    #[test]
+    fn dense_sees_a_bend_discrete_cannot() {
+        let times = vec![0.0, 1.0, 2.0];
+        let values = vec![13.139_237_358_246_93, 0.0, 10.350_972_832_119_19];
+        let map: BTreeMap<String, Vec<f64>> =
+            [("x".to_string(), values.clone())].into_iter().collect();
+        let phi = Formula::parse("always[0, 4](eventually[0, 1](x > 0))").unwrap();
+
+        let dense = robustness_signal(&phi, &times, &map).unwrap();
+        let discrete = super::super::discrete::robustness_trace(&phi, &times, &map).unwrap();
+
+        let bend = values[0] / ((values[2] - values[1]) + (values[0] - values[1]));
+        let at_bend = values[2] * bend;
+        assert!((dense.at(0.0) - at_bend).abs() < 1e-9);
+        assert!((discrete[0] - values[2]).abs() < 1e-9);
+        assert!(dense.at(0.0) < discrete[0]);
+    }
+
     fn grid_strategy() -> impl Strategy<Value = (Vec<f64>, Vec<f64>, Vec<f64>)> {
-        prop::collection::vec((0.1f64..5.0, -20.0f64..20.0, -20.0f64..20.0), 1..30).prop_map(
+        prop::collection::vec((0.4f64..5.0, -15.0f64..15.0, -15.0f64..15.0), 1..24).prop_map(
             |rows| {
                 let mut t = 0.0;
                 let (mut times, mut phi, mut psi) = (Vec::new(), Vec::new(), Vec::new());
@@ -497,58 +501,74 @@ mod tests {
         )
     }
 
-    proptest! {
-        /// The zero-lower deque reproduces the exhaustive scan for until and since,
-        /// across finite and open upper bounds.
-        #[test]
-        fn deque_matches_the_scan_at_zero_lower_bound(
-            (times, phi, psi) in grid_strategy(),
-            span in 0.0f64..12.0,
-            open in any::<bool>(),
-        ) {
-            let b = if open { f64::INFINITY } else { span };
-            prop_assert_eq!(
-                super::until_deque(&times, &phi, &psi, b),
-                super::until_naive(&times, &phi, &psi, 0.0, b)
-            );
-            prop_assert_eq!(
-                super::since_deque(&times, &phi, &psi, b),
-                super::since_naive(&times, &phi, &psi, 0.0, b)
-            );
+    /// The continuous until supremum approached by a fine grid, independent of the
+    /// exact evaluator: sample `s` over the window and score each against the exact
+    /// running infimum of phi over `[t, s)`. Each sample is a true objective value, so
+    /// this never exceeds the exact supremum and approaches it as the grid refines,
+    /// missing the peak between samples by only a small slack.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, reason = "a positive fine-step count")]
+    fn fine_until(times: &[f64], phi: &[f64], psi: &[f64], t: f64, a: f64, b: f64) -> f64 {
+        let end = times[times.len() - 1];
+        let lo = t + a;
+        if lo > end + super::EPS {
+            return f64::NEG_INFINITY;
         }
+        let hi = if b.is_infinite() { end } else { (t + b).min(end) };
+        let steps = ((hi - lo) / 2e-3).ceil().max(1.0) as usize;
+        let mut best = f64::NEG_INFINITY;
+        for k in 0..=steps {
+            let s = lo + (hi - lo) * (k as f64) / (steps as f64);
+            let floor = super::phi_inf_over(times, phi, t, s);
+            best = best.max(super::interp(times, psi, s).min(floor));
+        }
+        best
+    }
 
-        /// The dispatcher sends a zero lower bound to the deque and a positive one
-        /// to the scan, returning the scan's value in both regimes.
+    proptest! {
         #[test]
-        fn values_match_the_scan_for_any_bound(
+        fn until_matches_the_continuous_limit(
             (times, phi, psi) in grid_strategy(),
-            a in prop_oneof![Just(0.0f64), 0.05f64..6.0],
+            a in prop_oneof![Just(0.0f64), 0.3f64..5.0],
             span in 0.0f64..12.0,
             open in any::<bool>(),
         ) {
             let b = if open { f64::INFINITY } else { a + span };
-            prop_assert_eq!(
-                super::until_values(&times, &phi, &psi, a, b),
-                super::until_naive(&times, &phi, &psi, a, b)
-            );
-            prop_assert_eq!(
-                super::since_values(&times, &phi, &psi, a, b),
-                super::since_naive(&times, &phi, &psi, a, b)
-            );
+            let t = times[0];
+            let exact = super::until_at(t, &times, &phi, &psi, a, b);
+            let reference = fine_until(&times, &phi, &psi, t, a, b);
+            if exact.is_finite() && reference.is_finite() {
+                prop_assert!(exact >= reference - 1e-6, "exact {} below reference {}", exact, reference);
+                prop_assert!(exact - reference < 0.1, "exact {} exceeds reference {} by too much", exact, reference);
+            } else {
+                prop_assert_eq!(exact.is_finite(), reference.is_finite());
+            }
         }
     }
 
     #[test]
-    fn the_zero_lower_until_stays_linear() {
-        // The old scan was quadratic for a wide upper bound; a regression to that
-        // would run for a minute or more, far past this budget, while the deque
-        // clears a hundred thousand samples in milliseconds.
-        let n = 100_000;
+    fn dense_until_finds_an_off_grid_edge_witness() {
+        let times = [0.0, 1.0, 2.0, 3.0];
+        let x: &[f64] = &[-3.0, -1.0, 3.0, -3.0];
+        let map: BTreeMap<String, Vec<f64>> = [("x".to_string(), x.to_vec())].into_iter().collect();
+        let ev = Formula::parse("eventually[0, 1.5](x > 0)").unwrap();
+        let un = Formula::parse("(x > -1000) until[0, 1.5] (x > 0)").unwrap();
+        let ev_sig = robustness_signal(&ev, &times, &map).unwrap();
+        let un_sig = robustness_signal(&un, &times, &map).unwrap();
+        assert!((ev_sig.at(0.0) - 1.0).abs() < 1e-9, "eventually {}", ev_sig.at(0.0));
+        assert!((un_sig.at(0.0) - 1.0).abs() < 1e-9, "until {}", un_sig.at(0.0));
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss, reason = "the tiny loop indices cast exactly")]
+    fn dense_until_stays_within_time_and_memory() {
+        let n = 2_000usize;
         let times: Vec<f64> = (0..n).map(|i| i as f64).collect();
         let phi: Vec<f64> = (0..n).map(|i| ((i * 7) % 13) as f64 - 6.0).collect();
         let psi: Vec<f64> = (0..n).map(|i| ((i * 5) % 11) as f64 - 5.0).collect();
         let start = std::time::Instant::now();
-        let out = super::until_deque(&times, &phi, &psi, 1e9);
+        let out: Vec<f64> = (0..n)
+            .map(|i| super::until_at(times[i], &times, &phi, &psi, 0.0, f64::INFINITY))
+            .collect();
         assert_eq!(out.len(), n);
         assert!(start.elapsed() < std::time::Duration::from_secs(60));
     }

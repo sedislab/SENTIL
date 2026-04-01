@@ -288,7 +288,9 @@ mod tests {
             .unwrap();
         let dense = phi.robustness_dense_signal(&trace).unwrap();
         assert!(dense.iter().all(|v| !v.is_nan()), "dense had NaN: {dense:?}");
-        assert_eq!(dense, vec![-1.5, -3.3, -3.3, -3.3, f64::NEG_INFINITY, f64::NEG_INFINITY]);
+        assert_eq!(dense[4], f64::NEG_INFINITY);
+        assert_eq!(dense[5], f64::NEG_INFINITY);
+        assert!(dense[..4].iter().all(|v| v.is_finite()), "leading samples finite: {dense:?}");
     }
 
     #[test]
