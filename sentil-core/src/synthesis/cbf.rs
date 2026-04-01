@@ -76,21 +76,51 @@ impl SafetyFilter {
             g.push(coefficients.iter().map(|&x| -x).collect());
             h.push(-bound);
         }
+        // The dual that solve_qp maximizes is unbounded when the box and the barriers
+        // share no feasible input, and it converges slowly on an ill-conditioned
+        // instance, so a fixed iteration budget can return a point that meets the
+        // barriers but sits outside the box. Check every constraint, the box included,
+        // and escalate the budget once before concluding the instance is infeasible,
+        // so a slow solve is not mistaken for one with no answer and a point outside
+        // the actuator box is never returned as safe.
         let u = solve_qp(&p, &q, &g, &h, self.max_iters)?;
-        // solve_qp can return a u satisfying no barrier when the primal is infeasible; reject rather
-        // than pass it through. Tolerance scales with magnitude so solver slack does not read as a violation.
-        for (k, (coefficients, bound)) in barriers.iter().enumerate() {
-            let value: f64 = coefficients.iter().zip(&u).map(|(a, x)| a * x).sum();
-            if value < bound - 1e-4 * (1.0 + bound.abs() + value.abs()) {
-                return Err(Error::InvalidConfig {
-                    context: "safety filter",
-                    message: format!(
-                        "barrier {k} cannot be met inside the bounds; the barriers and the actuator box have no common feasible input"
-                    ),
-                });
-            }
+        if let Some(safe) = self.accept(&g, &h, &u) {
+            return Ok(safe);
         }
-        Ok(u)
+        let u = solve_qp(&p, &q, &g, &h, self.max_iters.saturating_mul(40))?;
+        if let Some(safe) = self.accept(&g, &h, &u) {
+            return Ok(safe);
+        }
+        Err(Error::InvalidConfig {
+            context: "safety filter",
+            message: "the barriers and the actuator box have no common feasible input".to_owned(),
+        })
+    }
+
+    /// Accepts a solved input if it satisfies every constraint, the actuator box and
+    /// the barriers alike, clamped to the box so the returned input is exactly inside
+    /// the actuator limits rather than within the solver's tolerance of them. Returns
+    /// `None` if a constraint is violated past that tolerance.
+    fn accept(&self, g: &[Vec<f64>], h: &[f64], u: &[f64]) -> Option<Vec<f64>> {
+        let holds = g.iter().zip(h).all(|(row, &limit)| {
+            let value: f64 = row.iter().zip(u).map(|(a, x)| a * x).sum();
+            value - limit <= 1e-4 * (1.0 + limit.abs() + value.abs())
+        });
+        if !holds {
+            return None;
+        }
+        // The box is a hard actuator limit, so pin the point exactly inside it. It is
+        // already within tolerance of the box, so this moves it by at most that slack.
+        Some(
+            u.iter()
+                .enumerate()
+                .map(|(i, &x)| {
+                    let lo = self.bounds.lower().get(i).copied().unwrap_or(f64::NEG_INFINITY);
+                    let hi = self.bounds.upper().get(i).copied().unwrap_or(f64::INFINITY);
+                    x.max(lo).min(hi)
+                })
+                .collect(),
+        )
     }
 }
 
@@ -132,6 +162,31 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn an_ok_output_always_stays_inside_the_box() {
+        let filter = SafetyFilter::new(Bounds::new([2.0, 2.0], [5.0, 5.0]).unwrap());
+        let err = filter
+            .filter(&[-5.0, -1.0], &[(vec![-2.75, -0.1], -2.6)])
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig {
+                context: "safety filter",
+                ..
+            }
+        ));
+
+        let filter = SafetyFilter::new(Bounds::new([-1.0, -1.0], [1.0, 1.0]).unwrap());
+        let u = filter
+            .filter(&[-8.0, 6.0], &[(vec![3.0, 3.0], 1.0)])
+            .unwrap();
+        assert!(
+            (-1.0..=1.0).contains(&u[0]) && (-1.0..=1.0).contains(&u[1]),
+            "u = {u:?} left the box"
+        );
+        assert!(3.0 * u[0] + 3.0 * u[1] >= 1.0 - 1e-3, "u = {u:?} misses the barrier");
     }
 
     #[test]
