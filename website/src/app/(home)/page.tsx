@@ -156,12 +156,9 @@ fprintf('robustness: %g\\n', phi.robustness(trace));`,
 export default function HomePage() {
   return (
     <div id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-6 pt-14 pb-20 outline-none">
-      <h1 className="font-display text-3xl font-bold tracking-tight">
-        <Rocket className="mr-2 inline size-7 text-fd-primary" />
-        SENTIL
-      </h1>
+      <h1 className="font-display text-3xl font-bold tracking-tight">SENTIL</h1>
       <p className="mt-4 text-lg leading-8 text-fd-muted-foreground">
-        The complete toolkit for Signal Temporal Logic and its Probabilistic extension, PrSTL. Monitor any signal in real time, verify any probabilistic specification, and synthesize the controllers that satisfy it, all from one engine.
+        A tool for Signal Temporal Logic and its Probabilistic extension, PrSTL. It monitors a signal in real time, checks a probabilistic specification, and synthesizes inputs and controllers that satisfy it.
       </p>
       <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
         <Link href="/docs/start" prefetch={false} className="inline-flex items-center gap-1 text-fd-primary">
