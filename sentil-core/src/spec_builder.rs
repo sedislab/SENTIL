@@ -1136,6 +1136,54 @@ output = { model = "Gaussian", mean = 0.0, std_dev = 0.01, interaction = "additi
     }
 
     #[test]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the signal index is a handful, so the index-to-float cast is exact"
+    )]
+    fn every_spec_responds_to_its_signals_and_round_trips() {
+        use crate::{Formula, Trace};
+
+        let registry = SpecRegistry::default();
+        let times: Vec<f64> = (0..=80).map(f64::from).collect();
+        let score = |formula: &Formula, vars: &[&String], seed: f64| -> f64 {
+            let mut trace = Trace::new(times.clone()).unwrap();
+            for (k, v) in vars.iter().enumerate() {
+                let base = seed + (k as f64) * 37.0;
+                let series: Vec<f64> = times
+                    .iter()
+                    .map(|&t| base + (0.1 * (t + base)).sin() * (10.0 + seed.abs()))
+                    .collect();
+                trace.add_signal(v, series).unwrap();
+            }
+            formula.robustness(&trace).unwrap()
+        };
+
+        for name in registry.available() {
+            let template = registry.get(&name).unwrap();
+            let text = registry.builder(&name).unwrap().build_deterministic().unwrap();
+            let formula = Formula::parse(&text).unwrap();
+
+            let reparsed = Formula::parse(&formula.to_string())
+                .unwrap_or_else(|e| panic!("{name} printed form did not re-parse: {e}"));
+            assert_eq!(reparsed, formula, "{name} did not round trip");
+
+            let Some(variables) = &template.variables else {
+                continue;
+            };
+            let vars: Vec<&String> = variables.keys().collect();
+            if vars.is_empty() {
+                continue;
+            }
+            let scores: Vec<f64> = [-500.0, -30.0, 0.0, 30.0, 500.0]
+                .into_iter()
+                .map(|seed| score(&formula, &vars, seed))
+                .collect();
+            let responds = scores.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-9);
+            assert!(responds, "{name} robustness is constant {scores:?} across signal levels");
+        }
+    }
+
+    #[test]
     fn overshoot_scores_an_excess_overshoot_negative() {
         use crate::{Formula, Trace};
 
