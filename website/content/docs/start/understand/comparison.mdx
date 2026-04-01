@@ -1,0 +1,84 @@
+---
+title: "How SENTIL compares"
+description: "SENTIL's cost as compared to other tools in its class like RTAMT, Breach, UPPAAL-SMC, PRISM, and Modest."
+---
+
+The tools SENTIL is measured against fall into two families. RTAMT and Breach are runtime monitors: they take a recorded or streaming trace and compute an STL verdict or robustness. UPPAAL-SMC, PRISM, and Modest are statistical model checkers: they take a stochastic model and estimate the probability that a property holds over its runs. SENTIL spans both duties. It monitors PrSTL over traces and ensembles the way a monitor does, and it estimates satisfaction probabilities over a stochastic system the way a statistical model checker does, with synthesis on top of that. So, we compare against each family of tools.
+
+How the comparison is timed and the other results are set out in [the claims ledger](/docs/start/understand/claims-philosophy).
+
+## What each tool expresses
+
+| Tool | Class | Checks | Probabilistic | Host |
+| --- | --- | --- | --- | --- |
+| SENTIL | monitor and SMC | PrSTL over traces and systems | SMC, SPRT, Bayesian, rare-event splitting | Rust core, seven bindings |
+| RTAMT | monitor | STL over traces, discrete and dense | no | Python |
+| Breach | monitor and falsification | STL over dense-time signals | no | MATLAB and Simulink |
+| UPPAAL-SMC | statistical model checker | MITL over stochastic timed automata | yes | model, GUI and CLI |
+| PRISM | probabilistic model checker | PCTL and CSL over Markov models | exact and statistical | model, its own language |
+| Modest | statistical model checker | properties over stochastic hybrid automata, with rare-event splitting | yes | model, its own language |
+
+There are properties only some tools can express. PRISM checks Markov chains exactly, but it cannot express a continuous-state recurrence, so the biodiesel-reactor and powertrain models run on SENTIL, Modest, and UPPAAL but not on PRISM. Neither FIG nor Modest can express a continuous-score real-valued walk, so they can't represent the AR(1) crossing. RTAMT and Breach have no probabilistic operator at all, so a PrSTL formula has no counterpart there.
+
+## Against the STL monitors
+
+On discrete-time STL, SENTIL and RTAMT compute the same thing and we measure the wall-clock time the full robustness signal takes on the nested formula `G[0,100](F[0,10](x>5))`, on one core of the same node.
+
+| samples | SENTIL | RTAMT | speedup |
+| --- | --- | --- | --- |
+| 1,000 | 0.037 ms | 6.10 ms | 163x |
+| 10,000 | 0.399 ms | 51.4 ms | 129x |
+| 100,000 | 3.64 ms | 514 ms | 141x |
+| 1,000,000 | 37.1 ms | 5381 ms | 145x |
+
+Both are linear in trace length; SENTIL runs about two orders of magnitude faster across the range. Per formula at 2001 samples, the full-signal speedup is about two orders of magnitude across the five benchmark formulas. Online, driven one sample at a time, and SENTIL's median per-update is 1.843 us against RTAMT's 39.614 us, about 21.5x.
+
+![Offline discrete STL, milliseconds to score the whole signal against trace length, SENTIL beside RTAMT, MoonLight, and Banquo](/benchmarks/discrete_offline.png)
+
+*Run on one EPYC 7763 core, SENTIL v0.3.0.*
+
+Breach works in dense time, so the comparison is on the dense robustness value. The robustness matches and on the monitoring question, SENTIL answers in microseconds where Breach needs milliseconds.
+
+| samples | SENTIL | Breach | speedup |
+| --- | --- | --- | --- |
+| 1,000 | 4.5 us | 4.86 ms | 1083x |
+| 10,000 | 4.5 us | 2.11 ms | 473x |
+| 100,000 | 4.5 us | 2.49 ms | 549x |
+| 1,000,000 | 4.6 us | 6.97 ms | 1514x |
+
+<Callout type="warn">
+The Breach ratio is dominated by a fixed MATLAB overhead, but even in that, SENTIL in MATLAB beats it by several orders of magnitude.
+</Callout>
+
+![Dense-time monitoring, milliseconds to answer the monitoring query against trace length, SENTIL beside Breach and RTAMT](/benchmarks/dense_offline.png)
+
+*The dense-time monitoring question at time zero. Same node and same formulas as the discrete evaluation. log scale.*
+
+## Against the statistical model checkers
+
+Comparing against PRISM, Modest, and UPPAAL-SMC needs a model all four can simulate. The Barkai-Leibler circadian CTMC asks whether the activator reaches 100 within 20 time units, a rare-ish event near 0.04. The tandem queue asks whether either queue fills within 50 time units, a common event near 0.72. Both are estimated at 10,000 samples, except UPPAAL, which picks its own count from the requested half-width. The estimates agree across all four tools; the wall times differ by an order of magnitude. The results are `Probability (time)`.
+
+| model | SENTIL | PRISM | Modest | UPPAAL-SMC |
+| --- | --- | --- | --- | --- |
+| circadian | 0.0378 (1016 ms) | 0.0407 (27,575 ms) | 0.038 (73,000 ms) | 0.038084 (19,380 ms) |
+| tandem | 0.7151 (304 ms) | 0.7257 (5,214 ms) | 0.7201 (10,200 ms) | 0.720017 (20,416 ms) |
+
+On the circadian model SENTIL runs roughly an order of magnitude faster than PRISM, UPPAAL-SMC and Modest alike. The speedup comes from the step being a few arithmetic operations against a general model engine, not from a looser estimate: the probabilities land on the same value. Two further models, the biodiesel reactor at 0.192 and the powertrain controller at 0.503, are continuous-state recurrences PRISM cannot express; SENTIL, Modest, and UPPAAL all run them and agree, and SENTIL finishes more than an order of magnitude sooner.
+
+![Statistical model checking the circadian CTMC, seconds at about ten thousand samples per tool](/benchmarks/smc_circadian.png)
+
+*The circadian model at about 10,000 samples: every tool lands on the same probability and the wall times separate by an order of magnitude.*
+
+![Statistical model checking the tandem queue, seconds and estimate per tool](/benchmarks/smc_tandem_queue.png)
+
+*The tandem queue under the same setup; the estimates agree across the four tools.*
+
+For rare events too, the picture still holds. On a two-queue tandem overflow at 5.602e-6 and a three-queue tandem at 1.274e-5, PRISM computes the value exactly, FIG and Modest reach it by importance splitting, and SENTIL by adaptive multilevel splitting. All four reach the value within their stated precision. Among the simulation methods SENTIL is the fastest by a wide margin, tens of milliseconds against tens of seconds, and its estimate is also the tightest, within a fraction of a percent of the truth. PRISM's exact check is quick here only because the state space is small, and it stops being an option once the model is large or continuous, which is exactly where the splitters are needed.
+
+![Rare-event estimation on the two-queue tandem overflow, wall-clock time and accuracy against the exact value for SENTIL, PRISM, Modest, and FIG](/benchmarks/rare_event.png)
+
+*The two-queue overflow at 5.6e-6: SENTIL estimates it in 12 ms against 18 s for Modest and 58 s for FIG, and lands on the exact value.*
+
+![Rare-event estimation on the three-queue tandem overflow, wall-clock time and accuracy against the exact value for SENTIL, PRISM, Modest, and FIG](/benchmarks/rare_event_3tandem.png)
+
+*The three-queue overflow at 1.3e-5, where the gap to the other splitters is the same two orders of magnitude. PRISM's exact check comes in at 40 ms against SENTIL's 46 ms, which is because of the small state space rather than being faster.*
