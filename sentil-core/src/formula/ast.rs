@@ -342,23 +342,50 @@ impl fmt::Display for Predicate {
     }
 }
 
-impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Expr {
+    fn write_prec(&self, f: &mut fmt::Formatter<'_>, ctx: u8) -> fmt::Result {
         match self {
-            Expr::Binary(op, l, r) => write!(f, "({l} {op} {r})"),
+            Expr::Binary(op, l, r) => {
+                let p = match op {
+                    BinaryOp::Add | BinaryOp::Sub => 1,
+                    BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => 2,
+                    BinaryOp::Pow => 3,
+                };
+                let (lctx, rctx) = match op {
+                    BinaryOp::Pow => (p + 1, p),
+                    _ => (p, p + 1),
+                };
+                let wrap = p < ctx;
+                if wrap {
+                    f.write_str("(")?;
+                }
+                l.write_prec(f, lctx)?;
+                write!(f, " {op} ")?;
+                r.write_prec(f, rctx)?;
+                if wrap {
+                    f.write_str(")")?;
+                }
+                Ok(())
+            }
             Expr::Call(name, args) => {
                 write!(f, "{name}(")?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{arg}")?;
+                    arg.write_prec(f, 0)?;
                 }
                 write!(f, ")")
             }
             Expr::Literal(v) => write!(f, "{v}"),
             Expr::Variable(v) => write!(f, "{v}"),
         }
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_prec(f, 0)
     }
 }
 
@@ -500,8 +527,8 @@ mod tests {
     }
 
     #[test]
-    fn nested_arithmetic_term_parenthesizes() {
-        let term = Expr::Binary(
+    fn arithmetic_term_prints_with_minimal_parentheses() {
+        let no_parens = Expr::Binary(
             BinaryOp::Add,
             Box::new(Expr::Variable("x".into())),
             Box::new(Expr::Binary(
@@ -510,8 +537,30 @@ mod tests {
                 Box::new(Expr::Literal(2.0)),
             )),
         );
-        assert_eq!(term.to_string(), "(x + (y * 2))");
-        assert_eq!(term.depth(), 3);
+        assert_eq!(no_parens.to_string(), "x + y * 2");
+        assert_eq!(no_parens.depth(), 3);
+
+        let needs_parens = Expr::Binary(
+            BinaryOp::Mul,
+            Box::new(Expr::Binary(
+                BinaryOp::Add,
+                Box::new(Expr::Variable("x".into())),
+                Box::new(Expr::Variable("y".into())),
+            )),
+            Box::new(Expr::Literal(2.0)),
+        );
+        assert_eq!(needs_parens.to_string(), "(x + y) * 2");
+
+        let left_pow = Expr::Binary(
+            BinaryOp::Pow,
+            Box::new(Expr::Binary(
+                BinaryOp::Pow,
+                Box::new(Expr::Variable("a".into())),
+                Box::new(Expr::Variable("b".into())),
+            )),
+            Box::new(Expr::Variable("c".into())),
+        );
+        assert_eq!(left_pow.to_string(), "(a ^ b) ^ c");
     }
 
     #[test]

@@ -237,12 +237,50 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Formula, ParseError> {
         if matches!(self.peek(), TokenKind::LeftParen) {
+            if self.parenthesized_group_is_operand() {
+                return self.predicate();
+            }
             self.bump();
             let inner = self.formula()?;
             self.expect(&TokenKind::RightParen, "`)` to close the group")?;
             return Ok(inner);
         }
         self.predicate()
+    }
+
+    fn parenthesized_group_is_operand(&self) -> bool {
+        let mut depth = 0usize;
+        for (offset, token) in self.tokens[self.pos..].iter().enumerate() {
+            match token.kind {
+                TokenKind::LeftParen => depth += 1,
+                TokenKind::RightParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let after = self.tokens.get(self.pos + offset + 1).map(|t| &t.kind);
+                        return matches!(
+                            after,
+                            Some(
+                                TokenKind::Less
+                                    | TokenKind::LessEqual
+                                    | TokenKind::Greater
+                                    | TokenKind::GreaterEqual
+                                    | TokenKind::Equal
+                                    | TokenKind::NotEqual
+                                    | TokenKind::Plus
+                                    | TokenKind::Minus
+                                    | TokenKind::Star
+                                    | TokenKind::Slash
+                                    | TokenKind::Percent
+                                    | TokenKind::Caret
+                            )
+                        );
+                    }
+                }
+                TokenKind::End => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     fn predicate(&mut self) -> Result<Formula, ParseError> {
@@ -543,10 +581,31 @@ fn reserved_hint(kind: &TokenKind) -> Option<&'static str> {
 mod tests {
     use super::super::ast::{ComparisonOp, Formula};
     use super::parse;
+    use proptest::prelude::*;
 
     fn round_trip(input: &str, canonical: &str) {
         let f = parse(input).expect("should parse");
         assert_eq!(f.to_string(), canonical);
+        let reparsed = parse(&f.to_string()).expect("printed form should re-parse");
+        assert_eq!(reparsed, f, "round trip changed the tree");
+    }
+
+    #[test]
+    fn arithmetic_predicates_round_trip_through_display() {
+        for input in [
+            "x - y > 0",
+            "2 * x > 5",
+            "x + y * 2 < 10",
+            "x / 2 - 1 >= 0",
+            "x - y > y - x",
+            "abs(x - 1) < 2",
+            "x % 3 == 0",
+        ] {
+            let f = parse(input).expect("should parse");
+            let printed = f.to_string();
+            let reparsed = parse(&printed).expect("printed form should re-parse");
+            assert_eq!(reparsed, f, "{input} did not round trip through {printed}");
+        }
     }
 
     #[test]
@@ -591,14 +650,14 @@ mod tests {
 
     #[test]
     fn arithmetic_precedence_and_unary_minus() {
-        round_trip("x + y * 2 < 10", "(x + (y * 2)) < 10");
-        round_trip("x < -5", "x < (0 - 5)");
-        round_trip("2 ^ 3 ^ 2 > 0", "(2 ^ (3 ^ 2)) > 0");
+        round_trip("x + y * 2 < 10", "x + y * 2 < 10");
+        round_trip("x < -5", "x < 0 - 5");
+        round_trip("2 ^ 3 ^ 2 > 0", "2 ^ 3 ^ 2 > 0");
     }
 
     #[test]
     fn function_calls() {
-        round_trip("abs(x - 1) < 2", "abs((x - 1)) < 2");
+        round_trip("abs(x - 1) < 2", "abs(x - 1) < 2");
         round_trip("max(x, y, 0) > 0", "max(x, y, 0) > 0");
     }
 
@@ -684,6 +743,32 @@ mod tests {
     fn moderately_nested_input_still_parses() {
         let nested = format!("{}x > 0{}", "(".repeat(30), ")".repeat(30));
         assert!(parse(&nested).is_ok());
+    }
+
+    fn arb_expr() -> impl Strategy<Value = String> {
+        let leaf = prop_oneof![
+            Just("x".to_string()),
+            Just("y".to_string()),
+            (-9i32..9).prop_map(|n| n.to_string()),
+        ];
+        leaf.prop_recursive(4, 32, 2, |inner| {
+            prop_oneof![
+                (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("{a} + {b}")),
+                (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("{a} - {b}")),
+                (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("{a} * {b}")),
+                inner.prop_map(|a| format!("abs({a})")),
+            ]
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn display_round_trips_to_the_same_tree(lhs in arb_expr(), rhs in arb_expr()) {
+            let text = format!("always[0, 3](({lhs} > {rhs}) or (eventually[0, 1]({lhs} <= 0)))");
+            let Ok(f) = parse(&text) else { return Ok(()); };
+            let reparsed = parse(&f.to_string()).expect("printed form should re-parse");
+            prop_assert_eq!(reparsed, f);
+        }
     }
 
     #[test]
