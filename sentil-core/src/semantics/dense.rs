@@ -175,11 +175,7 @@ fn seg_max_of_min(psi0: f64, psi1: f64, phi0: f64, phi1: f64) -> f64 {
     best
 }
 
-/// The exact `sup over s in [t+a, t+b] of min(psi(s), inf over [t, s) of phi)` for
-/// piecewise-linear operands, marching the window's segments and folding the running
-/// infimum of `phi` into each. On a segment the value is `min(psi, phi, floor)`, whose
-/// maximum is `min(floor, max of min(psi, phi))`, so each segment contributes in
-/// closed form and the witness at a window edge or an interior crossing is not missed.
+/// The exact `sup over s in [t+a, t+b] of min(psi(s), inf over [t, s) of phi)`.
 fn until_at(t: f64, times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> f64 {
     let domain_end = times[times.len() - 1];
     let lo = t + a;
@@ -190,9 +186,7 @@ fn until_at(t: f64, times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b
     windowed_sup(t, lo, hi, times, phi_vals, psi_vals, true)
 }
 
-/// The past dual of [`until_at`]: `sup over s in [t-b, t-a] of min(psi(s), inf over
-/// (s, t] of phi)`, marching the window from the edge nearest `t` outward so the
-/// running infimum of `phi` still grows away from `t`.
+/// The past dual of [`until_at`], over `s` in `[t-b, t-a]`.
 fn since_at(t: f64, times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b: f64) -> f64 {
     let domain_start = times[0];
     let hi = t - a;
@@ -203,11 +197,8 @@ fn since_at(t: f64, times: &[f64], phi_vals: &[f64], psi_vals: &[f64], a: f64, b
     windowed_sup(t, lo, hi, times, phi_vals, psi_vals, false)
 }
 
-/// The shared until/since core: the supremum of `min(psi(s), inf phi from t up to
-/// but not including s)` over `s` in `[lo, hi]`. `future` marches the window forward
-/// from `t` (until) and starts the infimum over `[t, lo)`; otherwise it marches
-/// backward (since) and starts it over `(hi, t]`. Every breakpoint inside the window
-/// splits a segment, and each segment folds in the running infimum in closed form.
+/// The supremum of `min(psi(s), inf phi from t up to but not including s)` over `s`
+/// in `[lo, hi]`, marching forward from `t` when `future`.
 #[allow(clippy::too_many_arguments, reason = "the window, the two operand series, and the direction")]
 fn windowed_sup(
     t: f64,
@@ -240,8 +231,13 @@ fn windowed_sup(
     } else {
         phi_inf_over(times, phi_vals, near, t)
     };
-    // The witness right at the near edge.
-    let mut best = floor.min(interp(times, psi_vals, near));
+    // The infimum is half-open at the near edge.
+    let near_floor = if (near - t).abs() <= EPS {
+        f64::INFINITY
+    } else {
+        floor
+    };
+    let mut best = near_floor.min(interp(times, psi_vals, near));
 
     for pair in points.windows(2) {
         let (u0, u1) = (pair[0], pair[1]);
@@ -285,7 +281,12 @@ fn abs_margin(times: &[f64], diff: &[f64], equality: bool) -> Pwl {
     for i in 0..times.len().saturating_sub(1) {
         let (d0, d1) = (diff[i], diff[i + 1]);
         if d0 != 0.0 && d1 != 0.0 && (d0 < 0.0) != (d1 < 0.0) {
-            breakpoints.push(times[i] + (times[i + 1] - times[i]) * d0 / (d0 - d1));
+            let crossing = times[i] + (times[i + 1] - times[i]) * d0 / (d0 - d1);
+            // Opposite infinite ends make d0 / (d0 - d1) NaN, which would order
+            // arbitrarily among the breakpoints; the comparison rejects it.
+            if crossing > times[i] && crossing < times[i + 1] {
+                breakpoints.push(crossing);
+            }
         }
     }
     breakpoints.sort_by(f64::total_cmp);
@@ -501,11 +502,7 @@ mod tests {
         )
     }
 
-    /// The continuous until supremum approached by a fine grid, independent of the
-    /// exact evaluator: sample `s` over the window and score each against the exact
-    /// running infimum of phi over `[t, s)`. Each sample is a true objective value, so
-    /// this never exceeds the exact supremum and approaches it as the grid refines,
-    /// missing the peak between samples by only a small slack.
+    /// The continuous until supremum approached by a fine grid.
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, reason = "a positive fine-step count")]
     fn fine_until(times: &[f64], phi: &[f64], psi: &[f64], t: f64, a: f64, b: f64) -> f64 {
         let end = times[times.len() - 1];
@@ -518,7 +515,11 @@ mod tests {
         let mut best = f64::NEG_INFINITY;
         for k in 0..=steps {
             let s = lo + (hi - lo) * (k as f64) / (steps as f64);
-            let floor = super::phi_inf_over(times, phi, t, s);
+            let floor = if (s - t).abs() <= super::EPS {
+                f64::INFINITY
+            } else {
+                super::phi_inf_over(times, phi, t, s)
+            };
             best = best.max(super::interp(times, psi, s).min(floor));
         }
         best
