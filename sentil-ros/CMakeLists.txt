@@ -25,7 +25,65 @@ find_package(rosidl_typesupport_introspection_cpp REQUIRED)
 find_package(rcpputils REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(SentilCpp CONFIG REQUIRED)
+set(SENTIL_VERSION "0.3.0" CACHE STRING "SENTIL release to fetch when no local library is found")
+set(SENTIL_LIB_DIR "" CACHE PATH "Directory holding libsentil; skips every other step when set")
+option(SENTIL_NO_DOWNLOAD "Never fetch a prebuilt libsentil from the release page" OFF)
+
+if(SENTIL_LIB_DIR)
+  find_library(SENTIL_LIBRARY NAMES sentil libsentil HINTS "${SENTIL_LIB_DIR}" NO_DEFAULT_PATH)
+endif()
+
+if(NOT SENTIL_LIBRARY)
+  find_library(SENTIL_LIBRARY NAMES sentil libsentil)
+endif()
+
+if(NOT SENTIL_LIBRARY)
+  find_library(SENTIL_LIBRARY NAMES sentil libsentil
+    HINTS "${CMAKE_CURRENT_SOURCE_DIR}/../target/release" NO_DEFAULT_PATH)
+endif()
+
+if(NOT SENTIL_LIBRARY AND NOT SENTIL_NO_DOWNLOAD)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+    set(_sentil_asset "linux-x86_64")
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(_sentil_asset "aarch64-unknown-linux-gnu")
+  elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+    set(_sentil_asset "macos-arm64")
+  elseif(APPLE)
+    set(_sentil_asset "macos-x86_64")
+  endif()
+
+  if(_sentil_asset)
+    set(_sentil_root "sentil-${SENTIL_VERSION}-${_sentil_asset}")
+    set(_sentil_url "https://github.com/sedislab/SENTIL/releases/download/v${SENTIL_VERSION}/${_sentil_root}.tar.gz")
+    message(STATUS "libsentil not found locally; fetching ${_sentil_url}")
+    file(DOWNLOAD "${_sentil_url}" "${CMAKE_CURRENT_BINARY_DIR}/sentil.tar.gz"
+         STATUS _sentil_dl SHOW_PROGRESS)
+    list(GET _sentil_dl 0 _sentil_dl_code)
+    if(_sentil_dl_code EQUAL 0)
+      file(ARCHIVE_EXTRACT INPUT "${CMAKE_CURRENT_BINARY_DIR}/sentil.tar.gz"
+           DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sentil")
+      find_library(SENTIL_LIBRARY NAMES sentil libsentil
+        HINTS "${CMAKE_CURRENT_BINARY_DIR}/sentil/${_sentil_root}/lib" NO_DEFAULT_PATH)
+    else()
+      list(GET _sentil_dl 1 _sentil_dl_msg)
+      message(STATUS "could not fetch libsentil: ${_sentil_dl_msg}")
+    endif()
+  endif()
+endif()
+
+if(NOT SENTIL_LIBRARY)
+  message(FATAL_ERROR
+    "libsentil was not found and could not be fetched.\n"
+    "Pick one:\n"
+    "  install the package:  sudo apt install ./libsentil-dev_${SENTIL_VERSION}_amd64.deb\n"
+    "  build it yourself:    cargo build --release -p sentil-ffi\n"
+    "  point at a copy:      colcon build --cmake-args -DSENTIL_LIB_DIR=/path/to/lib")
+endif()
+message(STATUS "using libsentil at ${SENTIL_LIBRARY}")
+
+add_library(Sentil::cpp INTERFACE IMPORTED)
+target_link_libraries(Sentil::cpp INTERFACE "${SENTIL_LIBRARY}" ${CMAKE_DL_LIBS})
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Robustness.msg
