@@ -1,0 +1,143 @@
+name: release-apt
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: upload the built packages to Cloudsmith
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CLOUDSMITH_OWNER: sedislab
+  CLOUDSMITH_REPO: sentil
+
+jobs:
+  core:
+    name: libsentil-dev ${{ matrix.codename }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, arch: amd64, codename: jammy }
+          - { runner: ubuntu-22.04-arm, arch: arm64, codename: jammy }
+          - { runner: ubuntu-24.04, arch: amd64, codename: noble }
+          - { runner: ubuntu-24.04-arm, arch: arm64, codename: noble }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deb --locked
+
+      - name: build the library and its package
+        run: |
+          set -euo pipefail
+          cargo build --release -p sentil-ffi
+          sed 's|@PREFIX@|/usr|' sentil-ffi/sentil.pc.in > sentil-ffi/sentil.pc
+          cargo deb -p sentil-ffi --no-build --output "libsentil-dev_${{ matrix.codename }}_${{ matrix.arch }}.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-core-${{ matrix.codename }}-${{ matrix.arch }}
+          path: '*.deb'
+
+  ros:
+    name: ros-${{ matrix.distro }}-sentil-ros ${{ matrix.arch }}
+    needs: core
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, arch: amd64, distro: humble, codename: jammy }
+          - { runner: ubuntu-22.04-arm, arch: arm64, distro: humble, codename: jammy }
+          - { runner: ubuntu-24.04, arch: amd64, distro: jazzy, codename: noble }
+          - { runner: ubuntu-24.04-arm, arch: arm64, distro: jazzy, codename: noble }
+          - { runner: ubuntu-24.04, arch: amd64, distro: rolling, codename: noble }
+          - { runner: ubuntu-24.04-arm, arch: arm64, distro: rolling, codename: noble }
+    runs-on: ${{ matrix.runner }}
+    container: ros:${{ matrix.distro }}-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-core-${{ matrix.codename }}-${{ matrix.arch }}
+          path: core
+
+      - name: install the core so the node can link against it
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y ./core/*.deb
+          apt-get install -y python3-bloom fakeroot debhelper dpkg-dev
+
+      - name: build the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /opt/ros/${{ matrix.distro }}/setup.sh
+          cd sentil-ros
+          rosdep update --rosdistro ${{ matrix.distro }} || true
+          bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.codename }} \
+            --ros-distro ${{ matrix.distro }}
+          echo 'override_dh_auto_configure:' >> debian/rules
+          printf '\tdh_auto_configure -- -DSENTIL_NO_DOWNLOAD=ON\n' >> debian/rules
+          fakeroot debian/rules binary
+          mkdir -p ../out && mv ../*.deb ../out/
+
+      - name: confirm it declares the dependency
+        run: |
+          set -euo pipefail
+          deb=$(ls out/*.deb | head -1)
+          dpkg-deb -f "$deb" Package Version Architecture Depends
+          dpkg-deb -f "$deb" Depends | grep -q libsentil || {
+            echo "the package does not depend on libsentil"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-ros-${{ matrix.distro }}-${{ matrix.arch }}
+          path: out/*.deb
+
+  publish:
+    name: upload to Cloudsmith
+    needs: [core, ros]
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+
+      - name: upload every package to its suite
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CLOUDSMITH_API_KEY" ]; then
+            echo "no CLOUDSMITH_API_KEY; the packages stay as build artifacts"; exit 0
+          fi
+          pip install --quiet cloudsmith-cli
+          target="${CLOUDSMITH_OWNER}/${CLOUDSMITH_REPO}"
+          for deb in incoming/*.deb; do
+            case "$(basename "$deb")" in
+              *jammy*|*humble*) suite=jammy ;;
+              *noble*|*jazzy*|*rolling*) suite=noble ;;
+              *) echo "cannot place $deb in a suite"; exit 1 ;;
+            esac
+            cloudsmith push deb --republish "${target}/ubuntu/${suite}" "$deb"
+          done
+
+      - name: show what the repository now holds
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          set -euo pipefail
+          [ -z "$CLOUDSMITH_API_KEY" ] && exit 0
+          cloudsmith list packages "${CLOUDSMITH_OWNER}/${CLOUDSMITH_REPO}" -F pretty

@@ -1,0 +1,118 @@
+name: release-arduino-mirror
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: build and inspect the mirror without pushing it
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  MIRROR: sedislab/arduino-sentil
+
+jobs:
+  mirror:
+    name: mirror the arduino library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: work out the version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version="0.3.0"
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      - name: fetch the arduino package from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "v${version}" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'sentil-arduino.zip' --dir . --clobber
+          unzip -q sentil-arduino.zip
+          test -f Sentil/library.properties || { echo "the zip has no library at its root"; exit 1; }
+
+      - name: check the registry's requirements against the tree
+        run: |
+          set -euo pipefail
+          cd Sentil
+          grep -q '^name=' library.properties || { echo "library.properties has no name"; exit 1; }
+          grep -q "^version=${version}$" library.properties || {
+            echo "version does not match the tag ${version}"; grep '^version=' library.properties; exit 1; }
+          test -d src || { echo "no src directory"; exit 1; }
+          test -f LICENSE-MIT || { echo "no license in the library"; exit 1; }
+          find . -type l | grep -q . && { echo "symlinks are rejected by the registry"; exit 1; } || true
+
+      - name: publish the mirror
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ secrets.ARDUINO_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then echo "no ARDUINO_REPO_TOKEN; skipping the mirror"; exit 0; fi
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${MIRROR}.git" mirror
+          find mirror -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp -r Sentil/. mirror/
+          cd mirror
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "the mirror already matches this version"
+          else
+            git commit -m "SENTIL ${version}"
+            git push origin HEAD
+          fi
+          if git ls-remote --tags origin | grep -q "refs/tags/${version}$"; then
+            echo "tag ${version} already on the mirror"
+          else
+            git tag "${version}"
+            git push origin "${version}"
+          fi
+
+      - name: make the mirror public
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ secrets.ARDUINO_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -z "$GH_TOKEN" ] && exit 0
+          priv=$(gh api "repos/${MIRROR}" --jq .private 2>/dev/null || echo "")
+          [ "$priv" = "true" ] && gh api -X PATCH "repos/${MIRROR}" -f visibility=public || true
+
+      - name: submit the mirror to the library registry
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -z "$GH_TOKEN" ] && { echo "no REGISTRY_PR_TOKEN; submit the mirror by hand once"; exit 0; }
+          url="https://github.com/${MIRROR}"
+          if curl -sSf https://raw.githubusercontent.com/arduino/library-registry/main/repositories.txt \
+             | grep -qx "${url}"; then
+            echo "already listed; the registry picks up new tags on its own"
+            exit 0
+          fi
+          gh repo fork arduino/library-registry --clone=false --remote=false 2>/dev/null || true
+          owner=$(gh api user --jq .login)
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${owner}/library-registry.git" reg
+          cd reg
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b add-sentil
+          echo "${url}" >> repositories.txt
+          git add repositories.txt
+          git commit -m "Add Sentil"
+          git push -u origin add-sentil
+          gh pr create --repo arduino/library-registry \
+            --head "${owner}:add-sentil" --base main \
+            --title "Add Sentil" \
+            --body "Runtime verification for Signal Temporal Logic on microcontrollers. ${url}"

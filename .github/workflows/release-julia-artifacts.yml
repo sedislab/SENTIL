@@ -1,0 +1,139 @@
+name: release-julia-artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: julia artifact ${{ matrix.triple }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, triple: x86_64-linux-gnu, target: x86_64-unknown-linux-gnu, lib: libsentil.so }
+          - { os: ubuntu-latest, triple: aarch64-linux-gnu, target: aarch64-unknown-linux-gnu, lib: libsentil.so, cross: true }
+          - { os: macos-13, triple: x86_64-apple-darwin, target: x86_64-apple-darwin, lib: libsentil.dylib }
+          - { os: macos-14, triple: aarch64-apple-darwin, target: aarch64-apple-darwin, lib: libsentil.dylib }
+          - { os: windows-latest, triple: x86_64-pc-windows-msvc, target: x86_64-pc-windows-msvc, lib: sentil.dll }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cross linker for aarch64
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: build the core
+        run: cargo build --release -p sentil-ffi --target ${{ matrix.target }}
+
+      - name: stage the tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version="0.3.0"
+          mkdir -p stage
+          cp "target/${{ matrix.target }}/release/${{ matrix.lib }}" stage/
+          tar czf "sentil-${version}-${{ matrix.triple }}-julia.tar.gz" -C stage .
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+
+      - name: hash it the way Pkg will
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="sentil-${version}-${{ matrix.triple }}-julia.tar.gz"
+          julia --color=no -e '
+            using Pkg, SHA
+            tarball = ARGS[1]
+            dir = mktempdir()
+            run(`tar xzf $tarball -C $dir`)
+            tree = bytes2hex(Pkg.GitTools.tree_hash(dir))
+            sha  = open(tarball, "r") do io; bytes2hex(sha256(io)); end
+            write("hashes-" * ARGS[2] * ".txt", "tree=$tree\nsha256=$sha\n")
+          ' "$tarball" "${{ matrix.triple }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: julia-${{ matrix.triple }}
+          path: |
+            sentil-*-julia.tar.gz
+            hashes-*.txt
+
+  assemble:
+    name: fill Artifacts.toml
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+
+      - name: rewrite the placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import pathlib, re
+
+          triples = {
+              'x86_64-linux-gnu': None, 'aarch64-linux-gnu': None,
+              'x86_64-apple-darwin': None, 'aarch64-apple-darwin': None,
+              'x86_64-pc-windows-msvc': None,
+          }
+          for t in triples:
+              f = pathlib.Path('incoming') / f'hashes-{t}.txt'
+              if not f.exists():
+                  raise SystemExit(f'missing hashes for {t}')
+              kv = dict(l.split('=', 1) for l in f.read_text().split())
+              triples[t] = (kv['tree'], kv['sha256'])
+
+          path = pathlib.Path('sentil-jl/Artifacts.toml')
+          text = path.read_text()
+          blocks = text.split('[[libsentil]]')
+          out = [blocks[0]]
+          for b in blocks[1:]:
+              m = re.search(r'sentil-[\d.]+-(?P<t>[a-z0-9_\-]+)-julia\.tar\.gz', b)
+              if not m or m.group('t') not in triples:
+                  raise SystemExit(f'no triple in block:\n{b[:200]}')
+              tree, sha = triples[m.group('t')]
+              b = re.sub(r'git-tree-sha1 = "0+"', f'git-tree-sha1 = "{tree}"', b)
+              b = re.sub(r'sha256 = "0+"', f'sha256 = "{sha}"', b)
+              out.append(b)
+          text = '[[libsentil]]'.join(out)
+          text = text.replace('# The CI will replace these hashes when the artifacts are built.\n\n', '')
+          if '0000000000' in text:
+              raise SystemExit('a placeholder survived the rewrite')
+          path.write_text(text)
+          EOF
+
+      - run: git --no-pager diff -- sentil-jl/Artifacts.toml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Artifacts.toml
+          path: sentil-jl/Artifacts.toml
+
+      - name: attach the tarballs to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: incoming/sentil-*-julia.tar.gz
