@@ -7,6 +7,8 @@ use crate::prelude::*;
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
+use super::WINDOW_EPSILON;
+
 /// For each index `i`, the minimum of `values` over the inclusive window
 /// `[t_i + off_a, t_i + off_b]`, where `t = times`.
 pub(crate) fn sliding_window_min(
@@ -60,7 +62,7 @@ fn sweep(values: &[f64], times: &[f64], off_a: f64, off_b: f64, extremum: Extrem
         let window_left = times[i] + off_a;
         let window_right = times[i] + off_b;
 
-        while right < n && times[right] <= window_right {
+        while right < n && times[right] <= window_right + WINDOW_EPSILON {
             let v = values[right];
             while candidates.back().is_some_and(|&b| extremum.dominated(values[b], v)) {
                 candidates.pop_back();
@@ -69,13 +71,8 @@ fn sweep(values: &[f64], times: &[f64], off_a: f64, off_b: f64, extremum: Extrem
             right += 1;
         }
 
-        // Drop candidates that have fallen off the window's left edge.
-        while let Some(&front) = candidates.front() {
-            if times[front] < window_left {
-                candidates.pop_front();
-            } else {
-                break;
-            }
+        while candidates.front().is_some_and(|&f| times[f] < window_left - WINDOW_EPSILON) {
+            candidates.pop_front();
         }
 
         if let Some(&front) = candidates.front() {
@@ -158,7 +155,7 @@ mod tests {
                 times
                     .iter()
                     .zip(values)
-                    .filter(|(&t, _)| t >= lower && t <= upper)
+                    .filter(|(&t, _)| t >= lower - WINDOW_EPSILON && t <= upper + WINDOW_EPSILON)
                     .fold(
                         init,
                         |acc, (_, &v)| {

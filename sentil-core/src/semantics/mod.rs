@@ -9,6 +9,9 @@ mod robustness;
 mod stream;
 mod window;
 
+/// The slack allowed when deciding whether a timestamp has reached a window edge.
+pub(crate) const WINDOW_EPSILON: f64 = 1e-9;
+
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
 

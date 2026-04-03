@@ -1,11 +1,4 @@
-//! Online monitoring: monitoring of a formula one timed sample at a time and
-//! read its robustness.
-//!
-//! The monitor compiles the formula into a tree of stateful nodes once, then
-//! processes each update by walking the tree. Boolean and atomic structure
-//! resolves immediately; the temporal nodes added later keep their own bounded
-//! state so the per-sample cost stays flat. Signal values are addressed by a
-//! small symbol table, so the hot path reads them from a packed slice.
+//! Online monitoring, folding in one timed sample at a time.
 
 #[cfg(not(feature = "std"))]
 use crate::prelude::*;
@@ -29,9 +22,7 @@ use rand::SeedableRng;
 #[cfg(feature = "statistical")]
 use rand_chacha::ChaCha8Rng;
 
-/// The lower-bound delay added when deciding whether a buffered sample has
-/// matured into a past-time window, absorbing floating-point rounding.
-const MATURITY_EPSILON: f64 = 1e-9;
+use super::WINDOW_EPSILON;
 
 /// Dense indices for a formula's variables, in sorted order.
 #[derive(Debug)]
@@ -151,7 +142,7 @@ impl Node for HistoricallyNode {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let value = extract_concrete(self.child.update(time, state)?)?;
         self.delay.push_back((time, value));
-        let maturity = time - self.offset_lower + MATURITY_EPSILON;
+        let maturity = time - self.offset_lower + WINDOW_EPSILON;
         while let Some(&(t, v)) = self.delay.front() {
             if t <= maturity {
                 self.window.push_min(t, v);
@@ -160,7 +151,7 @@ impl Node for HistoricallyNode {
                 break;
             }
         }
-        self.window.evict_before((time - self.width).max(0.0));
+        self.window.evict_before(time - self.width - WINDOW_EPSILON);
         // Positive infinity reports a property that has never been violated.
         Ok(Robustness::Concrete(
             self.window.front_value().unwrap_or(f64::INFINITY),
@@ -187,7 +178,7 @@ impl Node for OnceNode {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let value = extract_concrete(self.child.update(time, state)?)?;
         self.delay.push_back((time, value));
-        let maturity = time - self.offset_lower + MATURITY_EPSILON;
+        let maturity = time - self.offset_lower + WINDOW_EPSILON;
         while let Some(&(t, v)) = self.delay.front() {
             if t <= maturity {
                 self.window.push_max(t, v);
@@ -196,7 +187,7 @@ impl Node for OnceNode {
                 break;
             }
         }
-        self.window.evict_before((time - self.width).max(0.0));
+        self.window.evict_before(time - self.width - WINDOW_EPSILON);
         Ok(Robustness::Concrete(
             self.window.front_value().unwrap_or(f64::NEG_INFINITY),
         ))
@@ -209,13 +200,7 @@ impl Node for OnceNode {
     }
 }
 
-/// `phi since[a, b] psi`: the past-time mirror of `until`.
-///
-/// Each matured candidate carries the value of `psi` at its time and the running
-/// minimum of `phi` from then to now; the robustness is the best such pair over
-/// the window. Dominated candidates are pruned so the list stays short. Folding the
-/// best over the live candidates is O(window) per step, not the amortized O(1) the
-/// bounded operators reach.
+/// `phi since[a, b] psi`, the past-time mirror of `until`.
 struct SinceNode {
     phi: Box<dyn Node>,
     psi: Box<dyn Node>,
@@ -238,7 +223,7 @@ impl Node for SinceNode {
         }
         self.delay.push_back((time, r_psi, f64::INFINITY));
 
-        let maturity = time - self.offset_lower + MATURITY_EPSILON;
+        let maturity = time - self.offset_lower + WINDOW_EPSILON;
         while let Some(&(t, psi_val, min_phi)) = self.delay.front() {
             if t > maturity {
                 break;
@@ -256,7 +241,7 @@ impl Node for SinceNode {
             self.candidates.push_back((t, psi_val, min_phi));
         }
 
-        let start = (time - self.width).max(0.0);
+        let start = time - self.width - WINDOW_EPSILON;
         while let Some(&(t, _, _)) = self.candidates.front() {
             if t < start {
                 self.candidates.pop_front();
@@ -418,7 +403,7 @@ impl Node for UntilNode {
             // first sample and never moves while it is unresolved, so its best-so-far
             // is a running fold: a sound lower bound that only later samples can
             // raise. Folding here keeps the wide-bound case off the rescan path.
-            if time >= first + self.offset_start - MATURITY_EPSILON {
+            if time >= first + self.offset_start - WINDOW_EPSILON {
                 self.pending_best = self.pending_best.max(r_psi.min(self.pending_min_phi));
             }
             self.pending_min_phi = self.pending_min_phi.min(r_phi);
@@ -453,7 +438,7 @@ impl UntilNode {
         let mut best = f64::NEG_INFINITY;
         let mut min_phi = f64::INFINITY;
         for &(t, phi, psi) in &self.buffer {
-            if t >= lower - MATURITY_EPSILON {
+            if t >= lower - WINDOW_EPSILON {
                 best = best.max(psi.min(min_phi));
             }
             min_phi = min_phi.min(phi);
@@ -555,6 +540,7 @@ pub struct StreamMonitor {
     root: Box<dyn Node>,
     symbols: Arc<SymbolTable>,
     buffer: Vec<f64>,
+    last_time: Option<f64>,
 }
 
 impl StreamMonitor {
@@ -591,6 +577,7 @@ impl StreamMonitor {
             root,
             symbols,
             buffer,
+            last_time: None,
         })
     }
 
@@ -636,7 +623,24 @@ impl StreamMonitor {
             root,
             symbols,
             buffer,
+            last_time: None,
         })
+    }
+
+    fn accept_time(&mut self, time: f64) -> Result<()> {
+        if !time.is_finite() {
+            return Err(Error::NonFiniteSample {
+                kind: "time",
+                value: time,
+            });
+        }
+        if let Some(previous) = self.last_time {
+            if time <= previous {
+                return Err(Error::NonMonotonicTime { previous, time });
+            }
+        }
+        self.last_time = Some(time);
+        Ok(())
     }
 
     /// Folds in one timestep, given the current value of each variable, and
@@ -645,9 +649,11 @@ impl StreamMonitor {
     /// # Errors
     ///
     /// Returns [`Error::UnknownVariable`] if a variable the formula needs has no
-    /// value in `values`, [`Error::NonFiniteSample`] if `time` is not finite, or
-    /// [`Error::NonMonotonicTime`] if it does not follow the previous step.
+    /// value in `values`, [`Error::NonFiniteSample`] if `time` or a reading is not
+    /// finite, or [`Error::NonMonotonicTime`] if the time does not follow the
+    /// previous step.
     pub fn update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Robustness> {
+        self.accept_time(time)?;
         for (idx, name) in self.symbols.names.iter().enumerate() {
             match values.iter().find(|(n, _)| n == name) {
                 Some((_, v)) => self.buffer[idx] = *v,
@@ -667,9 +673,11 @@ impl StreamMonitor {
     /// # Errors
     ///
     /// Returns [`Error::PackedLength`] if `values` is shorter than the number of
-    /// variables the formula needs, [`Error::NonFiniteSample`] if `time` is not
-    /// finite, or [`Error::NonMonotonicTime`] if it does not follow the previous step.
+    /// variables the formula needs, [`Error::NonFiniteSample`] if `time` or a reading
+    /// is not finite, or [`Error::NonMonotonicTime`] if the time does not follow the
+    /// previous step.
     pub fn update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
+        self.accept_time(time)?;
         if values.len() < self.symbols.len() {
             return Err(Error::PackedLength {
                 expected: self.symbols.len(),
@@ -731,6 +739,7 @@ impl StreamMonitor {
     /// Clears all state.
     pub fn reset(&mut self) {
         self.root.reset();
+        self.last_time = None;
     }
 }
 
