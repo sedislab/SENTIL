@@ -200,9 +200,9 @@ fn since(phi: &[f64], psi: &[f64], times: &[f64], a: f64, b: f64) -> Vec<f64> {
     for i in 0..n {
         let window_end = times[i] - a;
         let window_start = if b.is_infinite() {
-            0.0
+            f64::NEG_INFINITY
         } else {
-            (times[i] - b).max(0.0)
+            times[i] - b
         };
         let last = times.partition_point(|&t| t <= window_end + EPSILON);
         let mut min_phi = f64::INFINITY;

@@ -355,9 +355,9 @@ fn soft_since(
     for i in 0..n {
         let window_end = times[i] - a;
         let window_start = if b.is_infinite() {
-            0.0
+            f64::NEG_INFINITY
         } else {
-            (times[i] - b).max(0.0)
+            times[i] - b
         };
         let last = times.partition_point(|&t| t <= window_end + EPS);
         candidates.clear();
