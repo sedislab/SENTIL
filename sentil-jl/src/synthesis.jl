@@ -220,7 +220,7 @@ function synthesize(model::SystemModel, spec::Formula; bounds = nothing, smooth 
     bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
     sref, sptr = _smooth_ref(smooth)
     out = Ref{_SynthesisResult}()
-    code = GC.@preserve model sref ccall((:sentil_synthesize, libsentil[]), Int32,
+    code = GC.@preserve model spec bounds sref ccall((:sentil_synthesize, libsentil[]), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmoothConfig}, Csize_t, Int32, Csize_t, Ptr{_SynthesisResult}),
         _ptr(model), _ptr(spec), bptr, sptr, max_iters, Int32(backend), population, out)
     _rethrow_callback(model.state)
@@ -274,7 +274,7 @@ function Controller(model::SystemModel, spec::Formula, input_width::Integer, bud
     sref, sptr = _smooth_ref(smooth)
     box = model.state
     mptr, spptr = _consume_all!(model, spec)
-    ptr = GC.@preserve sref ccall((:sentil_controller_create, libsentil[]), Ptr{Cvoid},
+    ptr = GC.@preserve bounds sref ccall((:sentil_controller_create, libsentil[]), Ptr{Cvoid},
         (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, UInt64, Ptr{Cvoid}, Ptr{SmoothConfig}),
         mptr, spptr, input_width, budget_ns, bptr, sptr)
     Controller(ptr, box, Int(input_width))
