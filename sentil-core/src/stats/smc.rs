@@ -39,6 +39,34 @@ impl Default for SmcConfig {
     }
 }
 
+impl SmcConfig {
+    /// Rejects a configuration that cannot produce a meaningful verdict.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidConfig`] if `samples` is zero or `confidence` is not in `(0, 1)`.
+    pub fn validate(&self) -> Result<()> {
+        if self.samples == 0 {
+            return Err(Error::InvalidConfig {
+                context: "statistical model checking",
+                message: "samples must be at least 1; a verdict from zero draws has no evidence \
+                          behind it"
+                    .into(),
+            });
+        }
+        if !(self.confidence > 0.0 && self.confidence < 1.0) {
+            return Err(Error::InvalidConfig {
+                context: "statistical model checking",
+                message: format!(
+                    "confidence {} must lie between 0 and 1, exclusive; for a 95% interval use 0.95",
+                    self.confidence
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
 /// The outcome of a statistical check.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SmcResult {
@@ -116,6 +144,7 @@ pub(crate) fn check(
     lifting: &LiftingRegistry,
     config: &SmcConfig,
 ) -> Result<SmcResult> {
+    config.validate()?;
     if trace.is_empty() {
         return Err(Error::EmptyTrace);
     }
@@ -171,6 +200,7 @@ pub(crate) fn check_distribution(
     lifting: &LiftingRegistry,
     config: &SmcConfig,
 ) -> Result<(SmcResult, RobustnessDistribution)> {
+    config.validate()?;
     if trace.is_empty() {
         return Err(Error::EmptyTrace);
     }
