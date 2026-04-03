@@ -834,20 +834,24 @@ impl NoiseModel {
                 "need at least one calibration pair".to_owned(),
             ));
         }
-        Ok(ground_truth
+        let residuals: Vec<f64> = ground_truth
             .iter()
             .zip(sensor)
-            .map(|(&truth, &reading)| match interaction {
-                NoiseInteraction::Additive => reading - truth,
+            .filter_map(|(&truth, &reading)| match interaction {
+                NoiseInteraction::Additive => Some(reading - truth),
                 NoiseInteraction::Multiplicative => {
-                    if truth.abs() < 1e-9 {
-                        1.0
-                    } else {
-                        reading / truth
-                    }
+                    (truth.abs() >= 1e-9).then(|| reading / truth)
                 }
             })
-            .collect())
+            .collect();
+        if residuals.is_empty() {
+            return Err(fit_error(
+                "residual computation",
+                "every ground-truth value is zero, so no multiplicative residual is defined"
+                    .to_owned(),
+            ));
+        }
+        Ok(residuals)
     }
 
     /// Fits a Gaussian to sample residuals by maximum likelihood.
@@ -1395,10 +1399,11 @@ mod tests {
             NoiseModel::residuals(&[2.0, 4.0], &[3.0, 6.0], NoiseInteraction::Multiplicative)
                 .unwrap();
         assert_eq!(mult, vec![1.5, 1.5]);
-        // a near-zero truth reads as no multiplicative deviation
-        let guarded =
-            NoiseModel::residuals(&[0.0], &[5.0], NoiseInteraction::Multiplicative).unwrap();
-        assert_eq!(guarded, vec![1.0]);
+        let dropped =
+            NoiseModel::residuals(&[0.0, 2.0], &[5.0, 3.0], NoiseInteraction::Multiplicative)
+                .unwrap();
+        assert_eq!(dropped, vec![1.5]);
+        assert!(NoiseModel::residuals(&[0.0], &[5.0], NoiseInteraction::Multiplicative).is_err());
         assert!(NoiseModel::residuals(&[1.0, 2.0], &[1.0], NoiseInteraction::Additive).is_err());
         assert!(NoiseModel::residuals(&[], &[], NoiseInteraction::Additive).is_err());
     }
