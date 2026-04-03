@@ -228,8 +228,12 @@ static void mdlStart(SimStruct* S) {
                 set_rich_error(S, "SENTIL: could not build a noise model for probabilistic mode");
                 return;
             }
-            sentil_lifting_registry_register(ctx->lifter, vars->names[i], model,
-                                             SENTIL_NOISE_ADDITIVE);
+            if (sentil_lifting_registry_register(ctx->lifter, vars->names[i], model,
+                                                 SENTIL_NOISE_ADDITIVE) != SENTIL_OK) {
+                mxFree(formula);
+                set_rich_error(S, "SENTIL: could not register the noise model for a signal");
+                return;
+            }
         }
         sentil_formula_t* parsed = sentil_formula_parse(formula);
         if (parsed) {
@@ -330,9 +334,7 @@ static void mdlOutputs(SimStruct* S, int_T tid) {
             y[2] = rob.upper;
         }
     } else {
-        for (int i = 0; i < out_width; ++i) {
-            y[i] = 0.0;
-        }
+        set_rich_error(S, "SENTIL: the monitor update failed");
     }
 }
 
