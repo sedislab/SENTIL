@@ -279,15 +279,7 @@ fn abs_margin(times: &[f64], diff: &[f64], equality: bool) -> Pwl {
     let raw = Pwl::new(times.iter().zip(diff).map(|(&t, &d)| (t, d)).collect());
     let mut breakpoints: Vec<f64> = times.to_vec();
     for i in 0..times.len().saturating_sub(1) {
-        let (d0, d1) = (diff[i], diff[i + 1]);
-        if d0 != 0.0 && d1 != 0.0 && (d0 < 0.0) != (d1 < 0.0) {
-            let crossing = times[i] + (times[i + 1] - times[i]) * d0 / (d0 - d1);
-            // Opposite infinite ends make d0 / (d0 - d1) NaN, which would order
-            // arbitrarily among the breakpoints; the comparison rejects it.
-            if crossing > times[i] && crossing < times[i + 1] {
-                breakpoints.push(crossing);
-            }
-        }
+        breakpoints.extend(crossing(times[i], times[i + 1], diff[i], diff[i + 1]));
     }
     breakpoints.sort_by(f64::total_cmp);
     breakpoints.dedup();
