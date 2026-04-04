@@ -9,7 +9,9 @@ use crate::error::{Error, Result};
 use crate::formula::Formula;
 use crate::signal::Trace;
 
-/// Draws an initial packed sample.
+/// Bound on a violation score.
+const SCORE_CAP: f64 = 1e12;
+
 type InitFn = Box<dyn Fn(&mut dyn RngCore) -> Vec<f64> + Sync>;
 type StepFn = Box<dyn Fn(&[f64], f64, &mut dyn RngCore) -> Vec<f64> + Sync>;
 
@@ -188,7 +190,6 @@ struct WalkState {
 #[derive(Clone, Copy)]
 enum ScoreMode<'a> {
     Always(&'a Formula),
-    Eventually(&'a Formula),
     Full,
 }
 
@@ -196,9 +197,6 @@ fn classify(inner: &Formula) -> ScoreMode<'_> {
     match inner {
         Formula::Always(iv, body) if iv.is_unbounded() && is_atemporal(body) => {
             ScoreMode::Always(body)
-        }
-        Formula::Eventually(iv, body) if iv.is_unbounded() && is_atemporal(body) => {
-            ScoreMode::Eventually(body)
         }
         _ => ScoreMode::Full,
     }
@@ -212,6 +210,26 @@ fn is_atemporal(f: &Formula) -> bool {
             is_atemporal(a) && is_atemporal(b)
         }
         _ => false,
+    }
+}
+
+fn liveness_operator(f: &Formula) -> Option<&'static str> {
+    match f {
+        Formula::Predicate(_) => None,
+        Formula::Not(a) if is_atemporal(a) => None,
+        Formula::Not(_) => Some("not"),
+        Formula::Implies(a, b) if is_atemporal(a) => liveness_operator(b),
+        Formula::Implies(..) => Some("implies"),
+        Formula::And(a, b) | Formula::Or(a, b) | Formula::Since(_, a, b) => {
+            liveness_operator(a).or_else(|| liveness_operator(b))
+        }
+        Formula::Always(_, a) | Formula::Historically(_, a) | Formula::Once(_, a) => {
+            liveness_operator(a)
+        }
+        Formula::Eventually(..) => Some("eventually"),
+        Formula::Until(..) => Some("until"),
+        Formula::Next(_) => Some("next"),
+        Formula::Probabilistic(..) => Some("P"),
     }
 }
 
@@ -233,9 +251,7 @@ impl RareEventSimulator for PrstlWalk<'_> {
                 let score = self.compute_score(&samples);
                 (samples, score)
             }
-            ScoreMode::Always(psi) | ScoreMode::Eventually(psi) => {
-                (Vec::new(), self.point_score(psi, &v0))
-            }
+            ScoreMode::Always(psi) => (Vec::new(), self.point_score(psi, &v0)),
         };
         WalkState {
             samples,
@@ -260,11 +276,7 @@ impl RareEventSimulator for PrstlWalk<'_> {
             }
             ScoreMode::Always(psi) => (
                 Vec::new(),
-                fold_extremum(true, state.score, self.point_violation(psi, &next)),
-            ),
-            ScoreMode::Eventually(psi) => (
-                Vec::new(),
-                fold_extremum(false, state.score, self.point_violation(psi, &next)),
+                fold_violation(state.score, self.point_violation(psi, &next)),
             ),
         };
         WalkState {
@@ -308,7 +320,7 @@ impl PrstlWalk<'_> {
             }
         }
         match self.inner.robustness(&trace) {
-            Ok(rho) => (-rho).clamp(-1e12, 1e12),
+            Ok(rho) => (-rho).clamp(-SCORE_CAP, SCORE_CAP),
             Err(_) => f64::NAN,
         }
     }
@@ -334,23 +346,16 @@ impl PrstlWalk<'_> {
         if v.is_nan() {
             v
         } else {
-            v.clamp(-1e12, 1e12)
+            v.clamp(-SCORE_CAP, SCORE_CAP)
         }
     }
 }
 
-/// Folds a per-sample violation into the running extremum, max for always, min for
-/// eventually. NaN propagates; the clamp matches the full recompute's single clamp.
-fn fold_extremum(is_always: bool, running: f64, term: f64) -> f64 {
+fn fold_violation(running: f64, term: f64) -> f64 {
     if running.is_nan() || term.is_nan() {
         return f64::NAN;
     }
-    let combined = if is_always {
-        running.max(term)
-    } else {
-        running.min(term)
-    };
-    combined.clamp(-1e12, 1e12)
+    running.max(term).clamp(-SCORE_CAP, SCORE_CAP)
 }
 
 impl Formula {
@@ -367,6 +372,18 @@ impl Formula {
         let Formula::Probabilistic(op, threshold, inner) = self else {
             return Err(Error::NotProbabilistic);
         };
+        if let Some(name) = liveness_operator(inner) {
+            return Err(Error::InvalidConfig {
+                context: "rare-event splitting",
+                message: format!(
+                    "the inner formula must be safety shaped, so its robustness can only fall \
+                     as a trajectory grows and a violated prefix settles the run, but `{name}` \
+                     does not qualify; write a shape like `always[0, 10](x < 8)`, or score \
+                     trajectories from `StochasticSystem::simulate` directly to estimate a \
+                     liveness formula"
+                ),
+            });
+        }
         let walk = PrstlWalk {
             inner,
             system,
@@ -498,17 +515,88 @@ mod tests {
     }
 
     #[test]
-    fn an_eventually_inner_takes_the_fast_path() {
-        let inner = Formula::parse("eventually(x > 8.0)").unwrap();
-        assert!(matches!(classify(&inner), ScoreMode::Eventually(_)));
+    fn an_unbounded_always_over_a_predicate_takes_the_fast_path() {
+        assert!(matches!(
+            classify(&Formula::parse("always(x < 8.0)").unwrap()),
+            ScoreMode::Always(_)
+        ));
         assert!(matches!(
             classify(&Formula::parse("always[0, 3](x < 8.0)").unwrap()),
             ScoreMode::Full
         ));
         assert!(matches!(
-            classify(&Formula::parse("always(eventually(x < 8.0))").unwrap()),
+            classify(&Formula::parse("always(historically[0, 2](x < 8.0))").unwrap()),
             ScoreMode::Full
         ));
+    }
+
+    #[test]
+    fn a_liveness_inner_is_refused_rather_than_estimated() {
+        let phi = Formula::parse("P>=0.001(eventually(x > 8.0))").unwrap();
+        let err = phi.check_rare_event(&random_walk(15), &RareEventConfig::default());
+        assert!(
+            matches!(
+                err,
+                Err(Error::InvalidConfig {
+                    context: "rare-event splitting",
+                    ref message,
+                }) if message.contains("`eventually`")
+            ),
+            "a liveness inner must be refused, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn only_a_prefix_monotone_inner_reaches_the_splitter() {
+        for src in [
+            "eventually(x > 8.0)",
+            "eventually[0, 15](x > 8.0)",
+            "always(eventually[0, 2](x > 8.0))",
+            "next(x < 8.0)",
+            "x < 8.0 until[0, 5] x > 2.0",
+            "not(always(x < 8.0))",
+            "always(x < 8.0) implies always(x > -8.0)",
+        ] {
+            let f = Formula::parse(src).unwrap();
+            assert!(liveness_operator(&f).is_some(), "{src} should be refused");
+        }
+        for src in [
+            "x < 8.0",
+            "always(x < 8.0)",
+            "always[0, 3]((x < 8.0) and (x > -8.0))",
+            "always(historically[0, 2](x < 8.0))",
+            "x > 0.0 implies always(x < 8.0)",
+        ] {
+            let f = Formula::parse(src).unwrap();
+            assert!(liveness_operator(&f).is_none(), "{src} should be accepted");
+        }
+    }
+
+    #[test]
+    fn an_accepted_inner_scores_monotonically_along_a_trajectory() {
+        use rand::SeedableRng;
+
+        let inner = Formula::parse("always[0, 3]((x < 8.0) and (x > -8.0))").unwrap();
+        assert!(liveness_operator(&inner).is_none());
+        let system = random_walk(30);
+        let walk = PrstlWalk {
+            inner: &inner,
+            system: &system,
+            margin: 0.0,
+            mode: classify(&inner),
+        };
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(11);
+        let mut state = walk.initial_state(&mut rng);
+        for step in 0..30 {
+            let next = walk.step(&state, &mut rng);
+            assert!(
+                next.score >= state.score,
+                "score fell from {} to {} at step {step}",
+                state.score,
+                next.score
+            );
+            state = next;
+        }
     }
 
     #[test]
