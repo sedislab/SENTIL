@@ -280,6 +280,15 @@ mod tests {
     }
 
     #[test]
+    fn dense_reading_differs_from_discrete_at_a_sample() {
+        let phi = Formula::parse("always[0, 1.5](x > 0)").unwrap();
+        let mut trace = Trace::new(vec![0.0, 1.0, 2.0]).unwrap();
+        trace.add_signal("x", vec![1.0, 1.0, -3.0]).unwrap();
+        assert_eq!(phi.robustness(&trace).unwrap(), 1.0);
+        assert_eq!(phi.robustness_dense(&trace).unwrap(), -1.0);
+    }
+
+    #[test]
     fn dense_until_signal_has_no_nan_next_to_an_empty_window() {
         let phi = Formula::parse("(y > 0) until[1, 3] (x > 0)").unwrap();
         let mut trace = Trace::new(vec![1.8, 3.5, 5.1, 5.5, 7.4, 7.8]).unwrap();

@@ -7,36 +7,19 @@ use std::collections::BTreeMap;
 
 use super::eval::eval_predicate;
 use super::window::{sliding_window_max, sliding_window_min};
+use super::WINDOW_EPSILON as EPSILON;
 use crate::error::{Error, Result};
 use crate::formula::Formula;
-
-/// Tolerance for the time comparisons in `until` and `since`, which compare
-/// shifted timestamps that can differ by a rounding step.
-const EPSILON: f64 = 1e-12;
-
-/// Robustness of `formula` at every sample index of the trace.
-///
-/// `signals` holds one value series per variable, each aligned with `times`.
-pub(crate) fn robustness_trace(
-    formula: &Formula,
-    times: &[f64],
-    signals: &BTreeMap<String, Vec<f64>>,
-) -> Result<Vec<f64>> {
-    eval(formula, times, signals)
-}
 
 /// The largest sample index the robustness of `formula` at index `i` reads.
 pub(crate) fn max_dep_index(formula: &Formula, i: usize, times: &[f64]) -> usize {
     let last = times.len() - 1;
-    // always and eventually admit the window up to `times[i] + upper` exactly;
-    // until and since break one step past the edge, so they pass the EPSILON
-    // slack to land on that step.
-    let horizon = |bound: f64, slack: f64| -> usize {
+    let horizon = |bound: f64| -> usize {
         if bound.is_infinite() {
             last
         } else {
             times
-                .partition_point(|&t| t <= times[i] + bound + slack)
+                .partition_point(|&t| t <= times[i] + bound + EPSILON)
                 .saturating_sub(1)
                 .min(last)
         }
@@ -49,13 +32,11 @@ pub(crate) fn max_dep_index(formula: &Formula, i: usize, times: &[f64]) -> usize
         Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
             max_dep_index(l, i, times).max(max_dep_index(r, i, times))
         }
-        Formula::Always(iv, f) | Formula::Eventually(iv, f) => i.max(max_dep_index(
-            f,
-            horizon(iv.upper_or_infinity(), 0.0),
-            times,
-        )),
+        Formula::Always(iv, f) | Formula::Eventually(iv, f) => {
+            i.max(max_dep_index(f, horizon(iv.upper_or_infinity()), times))
+        }
         Formula::Until(iv, l, r) => {
-            let hi = horizon(iv.upper_or_infinity(), EPSILON);
+            let hi = horizon(iv.upper_or_infinity());
             i.max(max_dep_index(l, hi, times))
                 .max(max_dep_index(r, hi, times))
         }
@@ -65,7 +46,8 @@ pub(crate) fn max_dep_index(formula: &Formula, i: usize, times: &[f64]) -> usize
     }
 }
 
-fn eval(
+/// Robustness of `formula` at every sample index of the trace.
+pub(crate) fn robustness_trace(
     formula: &Formula,
     times: &[f64],
     signals: &BTreeMap<String, Vec<f64>>,
@@ -78,61 +60,64 @@ fn eval(
                 eval_predicate(p, &lookup)
             })
             .collect(),
-        Formula::Not(f) => Ok(eval(f, times, signals)?.into_iter().map(|x| -x).collect()),
+        Formula::Not(f) => Ok(robustness_trace(f, times, signals)?
+            .into_iter()
+            .map(|x| -x)
+            .collect()),
         Formula::And(l, r) => Ok(combine(
-            eval(l, times, signals)?,
-            &eval(r, times, signals)?,
+            robustness_trace(l, times, signals)?,
+            &robustness_trace(r, times, signals)?,
             f64::min,
         )),
         Formula::Or(l, r) => Ok(combine(
-            eval(l, times, signals)?,
-            &eval(r, times, signals)?,
+            robustness_trace(l, times, signals)?,
+            &robustness_trace(r, times, signals)?,
             f64::max,
         )),
         Formula::Implies(l, r) => Ok(combine(
-            eval(l, times, signals)?,
-            &eval(r, times, signals)?,
+            robustness_trace(l, times, signals)?,
+            &robustness_trace(r, times, signals)?,
             |x, y| (-x).max(y),
         )),
         Formula::Always(interval, f) => Ok(sliding_window_min(
-            &eval(f, times, signals)?,
+            &robustness_trace(f, times, signals)?,
             times,
             interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Eventually(interval, f) => Ok(sliding_window_max(
-            &eval(f, times, signals)?,
+            &robustness_trace(f, times, signals)?,
             times,
             interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Historically(interval, f) => Ok(sliding_window_min(
-            &eval(f, times, signals)?,
+            &robustness_trace(f, times, signals)?,
             times,
             -interval.upper_or_infinity(),
             -interval.lower(),
         )),
         Formula::Once(interval, f) => Ok(sliding_window_max(
-            &eval(f, times, signals)?,
+            &robustness_trace(f, times, signals)?,
             times,
             -interval.upper_or_infinity(),
             -interval.lower(),
         )),
         Formula::Until(interval, l, r) => Ok(until(
-            &eval(l, times, signals)?,
-            &eval(r, times, signals)?,
+            &robustness_trace(l, times, signals)?,
+            &robustness_trace(r, times, signals)?,
             times,
             interval.lower(),
             interval.upper_or_infinity(),
         )),
         Formula::Since(interval, l, r) => Ok(since(
-            &eval(l, times, signals)?,
-            &eval(r, times, signals)?,
+            &robustness_trace(l, times, signals)?,
+            &robustness_trace(r, times, signals)?,
             times,
             interval.lower(),
             interval.upper_or_infinity(),
         )),
-        Formula::Next(f) => Ok(next(&eval(f, times, signals)?)),
+        Formula::Next(f) => Ok(next(&robustness_trace(f, times, signals)?)),
         Formula::Probabilistic(..) => Err(Error::ProbabilisticOperator),
     }
 }
@@ -331,6 +316,28 @@ mod tests {
                 (times, signals)
             },
         )
+    }
+
+    #[test]
+    fn the_horizon_prefix_keeps_the_sample_the_window_admits() {
+        let mut t = 0.0;
+        let times: Vec<f64> = (0..24)
+            .map(|_| {
+                let now = t;
+                t += 0.1;
+                now
+            })
+            .collect();
+        let mut ys = vec![7.0; 24];
+        ys[20] = -9.0;
+        let mut signals = BTreeMap::new();
+        signals.insert("y".to_string(), ys);
+        let phi = Formula::parse("always[0, 2](y > 0)").unwrap();
+        let full = robustness_trace(&phi, &times, &signals).unwrap();
+        let m = max_dep_index(&phi, 0, &times) + 1;
+        let prefix = robustness_trace(&phi, &times[..m], &signals).unwrap();
+        assert_eq!(full[0].to_bits(), (-9.0f64).to_bits());
+        assert_eq!(prefix[0].to_bits(), full[0].to_bits());
     }
 
     proptest! {
