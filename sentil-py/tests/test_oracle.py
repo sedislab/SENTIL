@@ -1,10 +1,4 @@
-"""The shared deterministic oracle, the same fixture every other binding runs.
-
-Python is the one binding that does not go through the C ABI, so a marshalling
-divergence here would be caught by nothing else. Values are compared bit for bit,
-not with a tolerance, because the oracle records the exact robustness including the
-signed zeros and the infinities an empty window produces.
-"""
+"""The shared deterministic oracle, the same fixture every other binding runs."""
 
 import json
 import math
@@ -21,7 +15,7 @@ ORACLE = os.path.join(
 )
 
 def decode(token):
-    """One oracle value. They are written as strings so `inf` and `nan` survive."""
+    """One oracle value."""
     if token == "inf":
         return math.inf
     if token == "-inf":
