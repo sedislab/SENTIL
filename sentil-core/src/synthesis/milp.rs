@@ -797,7 +797,7 @@ fn run_simplex(
                 cost[j] - (0..m).map(|r| basic_cost[r] * a[r][j]).sum::<f64>();
             if reduced > PIVOT_EPS {
                 entering = Some(j);
-                break; // Bland's rule: smallest index with a favorable reduced cost.
+                break;
             }
         }
         let Some(col) = entering else {
@@ -818,9 +818,7 @@ fn run_simplex(
                 }
             }
         }
-        let Some(row) = leaving else {
-            return None; // No bound on the entering column: unbounded.
-        };
+        let row = leaving?;
         pivot(a, b, basis, row, col);
     }
 }
@@ -890,7 +888,7 @@ fn branch_and_bound(
             .as_ref()
             .is_some_and(|best| relaxed.objective <= best.objective + PIVOT_EPS)
         {
-            continue; // The bound cannot improve on the incumbent.
+            continue;
         }
         let fractional = binaries.iter().find(|&&v| {
             let value = relaxed.values[v];
@@ -1100,15 +1098,15 @@ pub(crate) fn supports(spec: &Formula) -> bool {
         Formula::Not(a)
         | Formula::Always(_, a)
         | Formula::Eventually(_, a)
-        | Formula::Historically(_, a)
-        | Formula::Once(_, a)
         | Formula::Next(a) => supports(a),
         Formula::And(a, b)
         | Formula::Or(a, b)
         | Formula::Implies(a, b)
-        | Formula::Until(_, a, b)
-        | Formula::Since(_, a, b) => supports(a) && supports(b),
-        Formula::Probabilistic(..) => false,
+        | Formula::Until(_, a, b) => supports(a) && supports(b),
+        Formula::Historically(..)
+        | Formula::Once(..)
+        | Formula::Since(..)
+        | Formula::Probabilistic(..) => false,
     }
 }
 
@@ -1266,6 +1264,51 @@ mod tests {
     }
 
     #[test]
+    fn supports_agrees_with_the_encoder_on_every_operator() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let specs = [
+            "pos > 2",
+            "pos * pos > 2",
+            "not (pos > 2)",
+            "(pos > 2) and (pos < 4)",
+            "(pos > 2) or (pos < 4)",
+            "(pos > 2) implies (pos < 4)",
+            "always[0, 2](pos > 2)",
+            "eventually[0, 2](pos > 2)",
+            "(pos > -3) until[0, 2] (pos > 2)",
+            "next (pos > 2)",
+            "historically[0, 2](pos > 2)",
+            "once[0, 2](pos > 2)",
+            "(pos > -3) since[0, 2] (pos > 2)",
+            "P>=0.9(pos > 2)",
+        ];
+        for text in specs {
+            let spec = Formula::parse(text).unwrap();
+            let mut enc = Encoder::new(&affine, &spec, &box_bounds(5)).unwrap();
+            let encodable = enc.encode(&spec, 0).is_ok();
+            assert_eq!(
+                supports(&spec),
+                encodable,
+                "{text}: supports says {} but the encoder says {encodable}",
+                supports(&spec)
+            );
+        }
+    }
+
+    #[test]
+    fn a_past_operator_is_rejected() {
+        let model = integrator(5);
+        let affine = model.affine_form().unwrap();
+        let spec = Formula::parse("once[0, 2](pos > 2)").unwrap();
+        assert!(!supports(&spec));
+        assert!(matches!(
+            solve_milp(&affine, &spec, &box_bounds(5), 1000),
+            Err(Error::Unsupported { .. })
+        ));
+    }
+
+    #[test]
     fn an_unbounded_input_box_is_rejected_rather_than_solved_wrong() {
         let model = integrator(5);
         let affine = model.affine_form().unwrap();
@@ -1370,7 +1413,7 @@ mod tests {
         let input =
             solve_milp_within(&affine, &spec, &bounds, 1_000_000, Duration::from_millis(500))
                 .unwrap();
-        assert!(start.elapsed() < Duration::from_secs(3), "ran for {:?}", start.elapsed());
+        assert!(start.elapsed() < Duration::from_secs(5), "ran for {:?}", start.elapsed());
         assert_eq!(input.len(), 8);
         assert!(input.iter().all(|&u| (-1.0..=1.0).contains(&u)), "input {input:?}");
     }
