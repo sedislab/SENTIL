@@ -57,7 +57,28 @@ if(NOT SENTIL_LIBRARY AND NOT SENTIL_NO_DOWNLOAD)
     set(_sentil_root "sentil-${SENTIL_VERSION}-${_sentil_asset}")
     set(_sentil_url "https://github.com/sedislab/SENTIL/releases/download/v${SENTIL_VERSION}/${_sentil_root}.tar.gz")
     message(STATUS "libsentil not found locally; fetching ${_sentil_url}")
+
+    set(_sentil_sums "https://github.com/sedislab/SENTIL/releases/download/v${SENTIL_VERSION}/SHA256SUMS")
+    file(DOWNLOAD "${_sentil_sums}" "${CMAKE_CURRENT_BINARY_DIR}/SHA256SUMS" STATUS _sentil_sums_dl)
+    list(GET _sentil_sums_dl 0 _sentil_sums_code)
+    set(_sentil_expected "")
+    if(_sentil_sums_code EQUAL 0)
+      file(STRINGS "${CMAKE_CURRENT_BINARY_DIR}/SHA256SUMS" _sentil_sum_lines
+           REGEX "  ${_sentil_root}\\.tar\\.gz$")
+      if(_sentil_sum_lines)
+        list(GET _sentil_sum_lines 0 _sentil_sum_line)
+        string(REGEX MATCH "^[0-9a-fA-F]+" _sentil_expected "${_sentil_sum_line}")
+      endif()
+    endif()
+    if(NOT _sentil_expected)
+      message(FATAL_ERROR
+        "could not read a checksum for ${_sentil_root}.tar.gz from ${_sentil_sums}.\n"
+        "Build the library instead:  cargo build --release -p sentil-ffi\n"
+        "or configure with -DSENTIL_NO_DOWNLOAD=ON and point -DSENTIL_LIB_DIR at it.")
+    endif()
+
     file(DOWNLOAD "${_sentil_url}" "${CMAKE_CURRENT_BINARY_DIR}/sentil.tar.gz"
+         EXPECTED_HASH "SHA256=${_sentil_expected}"
          STATUS _sentil_dl SHOW_PROGRESS)
     list(GET _sentil_dl 0 _sentil_dl_code)
     if(_sentil_dl_code EQUAL 0)
