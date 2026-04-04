@@ -42,6 +42,7 @@ struct VarNames {
 struct MonitorContext {
     sentil_stream_monitor_t* handle;
     sentil_lifting_registry_t* lifter;
+    sentil_smc_config_t config;
     int mode;
     size_t total_symbols;
     size_t* port_to_symbol_map;
@@ -132,7 +133,7 @@ static void mdlInitializeSizes(SimStruct* S) {
     }
 
     int mode = (int)safeGetScalar(ssGetSFcnParam(S, P_MODE), 0.0);
-    int out_width = (mode == 0) ? 1 : 3;
+    int out_width = (mode == 0) ? 1 : 4;
 
     ssSetNumContStates(S, 0);
     ssSetNumDiscStates(S, 0);
@@ -206,6 +207,7 @@ static void mdlStart(SimStruct* S) {
     ctx->handle = NULL;
     ctx->port_to_symbol_map = NULL;
     ctx->packed_buffer = NULL;
+    ctx->config = sentil_smc_config_default();
 
     if (mode > 0) {
         ctx->lifter = sentil_lifting_registry_create();
@@ -235,11 +237,10 @@ static void mdlStart(SimStruct* S) {
                 return;
             }
         }
+        ctx->config.samples = samples;
         sentil_formula_t* parsed = sentil_formula_parse(formula);
         if (parsed) {
-            sentil_smc_config_t config = sentil_smc_config_default();
-            config.samples = samples;
-            ctx->handle = sentil_stream_monitor_with_lifting(parsed, ctx->lifter, &config);
+            ctx->handle = sentil_stream_monitor_with_lifting(parsed, ctx->lifter, &ctx->config);
             sentil_formula_destroy(parsed);
         }
     } else {
@@ -296,6 +297,11 @@ static void mdlStart(SimStruct* S) {
 
 static void mdlOutputs(SimStruct* S, int_T tid) {
     (void)tid;
+    /* A minor step is a provisional solver stage, not a point on the trajectory. */
+    if (!ssIsMajorTimeStep(S)) {
+        return;
+    }
+
     MonitorContext* ctx = (MonitorContext*)ssGetPWork(S)[0];
     VarNames* vars = (VarNames*)ssGetPWork(S)[1];
     if (!ctx || !vars) {
@@ -327,11 +333,23 @@ static void mdlOutputs(SimStruct* S, int_T tid) {
         if (out_width >= 1) {
             y[0] = rob.value;
         }
-        if (out_width >= 2) {
-            y[1] = rob.lower;
-        }
-        if (out_width >= 3) {
-            y[2] = rob.upper;
+        if (ctx->mode > 0 && out_width >= 4) {
+            double p = sentil_stream_monitor_last_probability(ctx->handle);
+            y[1] = p;
+            if (isnan(p)) {
+                y[2] = p;
+                y[3] = p;
+            } else if (!rob.resolved) {
+                y[2] = 0.0;
+                y[3] = 1.0;
+            } else {
+                uint64_t satisfactions = (uint64_t)llround(p * (double)ctx->config.samples);
+                sentil_confidence_interval_t ci =
+                    sentil_interval(ctx->config.interval_method, satisfactions,
+                                    ctx->config.samples, ctx->config.confidence);
+                y[2] = ci.lower;
+                y[3] = ci.upper;
+            }
         }
     } else {
         set_rich_error(S, "SENTIL: the monitor update failed");
