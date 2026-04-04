@@ -6,6 +6,10 @@ use super::model::Bounds;
 use super::qp::solve_qp;
 use crate::error::{Error, Result};
 
+const BARRIER_SLACK: f64 = 32.0 * f64::EPSILON;
+
+const RESTORE_MARGIN: f64 = 8.0 * f64::EPSILON;
+
 /// A least-restrictive control-barrier safety filter over a fixed input box.
 pub struct SafetyFilter {
     bounds: Bounds,
@@ -35,34 +39,33 @@ impl SafetyFilter {
         reason = "standard quadratic-program notation: cost P/q, constraints G/h"
     )]
     pub fn filter(&self, nominal: &[f64], barriers: &[(Vec<f64>, f64)]) -> Result<Vec<f64>> {
-        let n = nominal.len();
+        let n = self.bounds.dimension();
+        if nominal.len() != n {
+            let actual = nominal.len();
+            return Err(Error::InvalidConfig {
+                context: "safety filter",
+                message: format!(
+                    "the nominal input has width {actual} but the filter's bounds have \
+                     width {n}; pass a nominal input of width {n}, or build the filter \
+                     with bounds of width {actual}"
+                ),
+            });
+        }
+        if let Some((i, value)) = nominal.iter().copied().enumerate().find(|(_, x)| !x.is_finite())
+        {
+            return Err(Error::InvalidConfig {
+                context: "safety filter",
+                message: format!(
+                    "the nominal input is {value} at index {i}; every coordinate must be finite"
+                ),
+            });
+        }
         let p: Vec<Vec<f64>> = (0..n)
             .map(|i| (0..n).map(|j| if i == j { 1.0 } else { 0.0 }).collect())
             .collect();
         let q: Vec<f64> = nominal.iter().map(|&x| -x).collect();
 
-        let mut g: Vec<Vec<f64>> = Vec::new();
-        let mut h: Vec<f64> = Vec::new();
-        for (i, (&lo, &hi)) in self
-            .bounds
-            .lower()
-            .iter()
-            .zip(self.bounds.upper())
-            .enumerate()
-        {
-            if hi.is_finite() {
-                let mut row = vec![0.0; n];
-                row[i] = 1.0;
-                g.push(row);
-                h.push(hi);
-            }
-            if lo.is_finite() {
-                let mut row = vec![0.0; n];
-                row[i] = -1.0;
-                g.push(row);
-                h.push(-lo);
-            }
-        }
+        let (mut g, mut h) = self.bounds.constraint_rows();
         for (k, (coefficients, bound)) in barriers.iter().enumerate() {
             if coefficients.len() != n {
                 return Err(Error::InvalidConfig {
@@ -73,23 +76,37 @@ impl SafetyFilter {
                     ),
                 });
             }
+            if let Some((j, value)) = coefficients
+                .iter()
+                .copied()
+                .enumerate()
+                .find(|(_, x)| !x.is_finite())
+            {
+                return Err(Error::InvalidConfig {
+                    context: "safety filter",
+                    message: format!(
+                        "barrier {k} is {value} at coefficient {j}; every coefficient \
+                         and bound must be finite"
+                    ),
+                });
+            }
+            if !bound.is_finite() {
+                return Err(Error::InvalidConfig {
+                    context: "safety filter",
+                    message: format!(
+                        "barrier {k} has a bound of {bound}; every coefficient and \
+                         bound must be finite"
+                    ),
+                });
+            }
             g.push(coefficients.iter().map(|&x| -x).collect());
             h.push(-bound);
         }
-        // The dual that solve_qp maximizes is unbounded when the box and the barriers
-        // share no feasible input, and it converges slowly on an ill-conditioned
-        // instance, so a fixed iteration budget can return a point that meets the
-        // barriers but sits outside the box. Check every constraint, the box included,
-        // and escalate the budget once before concluding the instance is infeasible,
-        // so a slow solve is not mistaken for one with no answer and a point outside
-        // the actuator box is never returned as safe.
-        let u = solve_qp(&p, &q, &g, &h, self.max_iters)?;
-        if let Some(safe) = self.accept(&g, &h, &u) {
-            return Ok(safe);
-        }
-        let u = solve_qp(&p, &q, &g, &h, self.max_iters.saturating_mul(40))?;
-        if let Some(safe) = self.accept(&g, &h, &u) {
-            return Ok(safe);
+        for iters in [self.max_iters, self.max_iters.saturating_mul(40)] {
+            let u = solve_qp(&p, &q, &g, &h, iters)?;
+            if let Some(safe) = self.accept(barriers, &u, iters) {
+                return Ok(safe);
+            }
         }
         Err(Error::InvalidConfig {
             context: "safety filter",
@@ -97,30 +114,55 @@ impl SafetyFilter {
         })
     }
 
-    /// Accepts a solved input if it satisfies every constraint, the actuator box and
-    /// the barriers alike, clamped to the box so the returned input is exactly inside
-    /// the actuator limits rather than within the solver's tolerance of them. Returns
-    /// `None` if a constraint is violated past that tolerance.
-    fn accept(&self, g: &[Vec<f64>], h: &[f64], u: &[f64]) -> Option<Vec<f64>> {
-        let holds = g.iter().zip(h).all(|(row, &limit)| {
-            let value: f64 = row.iter().zip(u).map(|(a, x)| a * x).sum();
-            value - limit <= 1e-4 * (1.0 + limit.abs() + value.abs())
-        });
+    /// The clamped and restored input, when it clears every barrier to within
+    /// [`BARRIER_SLACK`].
+    fn accept(&self, barriers: &[(Vec<f64>, f64)], u: &[f64], passes: usize) -> Option<Vec<f64>> {
+        let mut safe = u.to_vec();
+        self.bounds.clamp(&mut safe);
+        self.restore(barriers, &mut safe, passes);
+        let holds = safe.iter().all(|x| x.is_finite())
+            && barriers.iter().all(|(coefficients, bound)| {
+                let value: f64 = coefficients.iter().zip(&safe).map(|(a, x)| a * x).sum();
+                bound - value <= BARRIER_SLACK * (1.0 + bound.abs() + value.abs())
+            });
         if !holds {
             return None;
         }
-        // The box is a hard actuator limit, so pin the point exactly inside it. It is
-        // already within tolerance of the box, so this moves it by at most that slack.
-        Some(
-            u.iter()
-                .enumerate()
-                .map(|(i, &x)| {
-                    let lo = self.bounds.lower().get(i).copied().unwrap_or(f64::NEG_INFINITY);
-                    let hi = self.bounds.upper().get(i).copied().unwrap_or(f64::INFINITY);
-                    x.max(lo).min(hi)
-                })
-                .collect(),
-        )
+        Some(safe)
+    }
+
+    /// Projects a clamped point onto each barrier it misses, within the active face,
+    /// for at most `passes` rounds.
+    fn restore(&self, barriers: &[(Vec<f64>, f64)], safe: &mut [f64], passes: usize) {
+        let (lower, upper) = (self.bounds.lower(), self.bounds.upper());
+        let free = |i: usize, x: f64, a: f64| (a > 0.0 && x < upper[i]) || (a < 0.0 && x > lower[i]);
+        for _ in 0..passes {
+            let mut moved = false;
+            for (coefficients, bound) in barriers {
+                let value: f64 = coefficients.iter().zip(safe.iter()).map(|(a, x)| a * x).sum();
+                let gap = bound - value;
+                let mut square = 0.0;
+                for (i, &a) in coefficients.iter().enumerate() {
+                    if free(i, safe[i], a) {
+                        square += a * a;
+                    }
+                }
+                if gap > 0.0 && square > 0.0 {
+                    let overshoot = RESTORE_MARGIN * (1.0 + bound.abs() + value.abs());
+                    let step = (gap + overshoot) / square;
+                    for (i, &a) in coefficients.iter().enumerate() {
+                        if free(i, safe[i], a) {
+                            safe[i] += step * a;
+                        }
+                    }
+                    moved = true;
+                }
+            }
+            self.bounds.clamp(safe);
+            if !moved {
+                break;
+            }
+        }
     }
 }
 
@@ -190,6 +232,57 @@ mod tests {
     }
 
     #[test]
+    fn a_nominal_of_the_wrong_width_is_named_in_the_error() {
+        let wide = SafetyFilter::new(Bounds::new([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]).unwrap());
+        let err = wide.filter(&[0.0], &[]).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig { context: "safety filter", ref message }
+                if message.contains("nominal input has width 1")
+                    && message.contains("bounds have width 3")
+        ));
+
+        let narrow = SafetyFilter::new(Bounds::new([-1.0], [1.0]).unwrap());
+        let err = narrow.filter(&[0.0, 0.0], &[(vec![1.0, 1.0], 0.0)]).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig { context: "safety filter", ref message }
+                if message.contains("nominal input has width 2")
+                    && message.contains("bounds have width 1")
+        ));
+    }
+
+    #[test]
+    fn a_wide_box_never_reports_success_for_an_input_that_misses_a_barrier() {
+        let filter = SafetyFilter::new(Bounds::new([-1e6, -1e6], [1e6, 1e6]).unwrap());
+        for &(gap, push) in &[(5.0, 10.0), (50.0, 2.0), (50.0, 100.0), (500.0, 2.0), (500.0, 100.0)]
+        {
+            match filter.filter(&[push * 1e6, 1e6], &[(vec![1.0, -1.0], gap)]) {
+                Ok(u) => {
+                    let value = u[0] - u[1];
+                    assert!(
+                        gap - value <= BARRIER_SLACK * (1.0 + gap + value.abs()),
+                        "gap {gap}, push {push}: {u:?} gives u0 - u1 = {value}"
+                    );
+                }
+                Err(Error::InvalidConfig {
+                    context: "safety filter",
+                    ..
+                }) => {}
+                Err(e) => panic!("gap {gap}, push {push}: unexpected error: {e}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_barrier_far_from_the_origin_is_met_and_not_merely_approached() {
+        let filter = SafetyFilter::new(Bounds::new([-1e6, -1e6], [1e6, 1e6]).unwrap());
+        let u = filter.filter(&[2e6, -1.5e6], &[(vec![2.0, 1.5], 8e5)]).unwrap();
+        assert!(2.0 * u[0] + 1.5 * u[1] >= 8e5, "u = {u:?} misses the barrier");
+        assert!((u[0] - 1e6).abs() < 1e-6 && (u[1] + 8e5).abs() < 1e-6, "u = {u:?}");
+    }
+
+    #[test]
     fn a_barrier_of_the_wrong_width_is_named_in_the_error() {
         let filter = SafetyFilter::new(Bounds::unbounded(2));
         let err = filter
@@ -199,6 +292,56 @@ mod tests {
             err,
             Error::InvalidConfig { context: "safety filter", ref message }
                 if message.contains("barrier 1") && message.contains("width 2")
+        ));
+    }
+
+    #[test]
+    fn a_non_finite_nominal_is_refused_rather_than_clamped() {
+        let filter =
+            SafetyFilter::new(Bounds::new([0.0, 0.0, -100.0], [100.0, 100.0, 100.0]).unwrap());
+        for nominal in [
+            [f64::NAN, 0.5, 0.0],
+            [0.0, f64::INFINITY, 0.0],
+            [0.0, 0.5, f64::NEG_INFINITY],
+        ] {
+            let err = filter.filter(&nominal, &[]).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    Error::InvalidConfig { context: "safety filter", ref message }
+                        if message.contains("nominal input")
+                ),
+                "a non-finite nominal must be refused, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shallow_barrier_is_met_against_an_actuator_face() {
+        let filter = SafetyFilter::new(Bounds::new([-1.0, -1.0], [1.0, 1.0]).unwrap());
+        let u = filter.filter(&[0.0, 0.0], &[(vec![-1.28, 0.02], 1.29)]).unwrap();
+        assert!(-1.28 * u[0] + 0.02 * u[1] >= 1.29, "u = {u:?} misses the barrier");
+        assert!((-1.0..=1.0).contains(&u[0]) && (-1.0..=1.0).contains(&u[1]), "u = {u:?}");
+    }
+
+    #[test]
+    fn a_non_finite_barrier_is_refused() {
+        let filter = SafetyFilter::new(Bounds::unbounded(2));
+        let err = filter
+            .filter(&[0.0, 0.0], &[(vec![1.0, f64::NAN], 0.0)])
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig { context: "safety filter", ref message }
+                if message.contains("barrier 0") && message.contains("coefficient 1")
+        ));
+        let err = filter
+            .filter(&[0.0, 0.0], &[(vec![1.0, 0.0], f64::INFINITY)])
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidConfig { context: "safety filter", ref message }
+                if message.contains("barrier 0") && message.contains("bound")
         ));
     }
 }
