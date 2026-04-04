@@ -89,33 +89,93 @@ impl Node for NotNode {
     }
 }
 
-/// Shared shape for the binary boolean operators, differing only in how they
-/// combine the two child robustness values.
+/// Holds a branch's output back until the other branch reaches the same instant.
+struct DelayLine {
+    lag: f64,
+    seen: VecDeque<(f64, Robustness)>,
+}
+
+impl DelayLine {
+    fn new(lag: f64) -> Self {
+        Self {
+            lag,
+            seen: VecDeque::new(),
+        }
+    }
+
+    fn push_read(&mut self, time: f64, value: Robustness) -> Robustness {
+        self.seen.push_back((time, value));
+        let target = time - self.lag + WINDOW_EPSILON;
+        while self.seen.len() > 1 && self.seen[1].0 <= target {
+            self.seen.pop_front();
+        }
+        let (seen_at, held) = self.seen[0];
+        if seen_at <= target {
+            held
+        } else {
+            Robustness::UNKNOWN
+        }
+    }
+
+    fn reset(&mut self) {
+        self.seen.clear();
+    }
+}
+
+/// Whether a junction's branches describe the same instant, and which one waits.
+enum Align {
+    Ready,
+    Unknown,
+    Left(DelayLine),
+    Right(DelayLine),
+}
+
 struct BinaryNode {
     left: Box<dyn Node>,
     right: Box<dyn Node>,
     combine: fn(Robustness, Robustness) -> Robustness,
+    align: Align,
 }
 
 impl Node for BinaryNode {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let l = self.left.update(time, state)?;
         let r = self.right.update(time, state)?;
-        Ok((self.combine)(l, r))
+        Ok(match &mut self.align {
+            Align::Ready => (self.combine)(l, r),
+            Align::Unknown => Robustness::UNKNOWN,
+            Align::Left(delay) => (self.combine)(delay.push_read(time, l), r),
+            Align::Right(delay) => (self.combine)(l, delay.push_read(time, r)),
+        })
     }
 
     fn reset(&mut self) {
         self.left.reset();
         self.right.reset();
+        match &mut self.align {
+            Align::Ready | Align::Unknown => {}
+            Align::Left(delay) | Align::Right(delay) => delay.reset(),
+        }
     }
 }
 
-/// Extracts the settled value an immediate-output operator needs from a child.
-///
-/// Past-time operators and the operands of until and since must see a concrete
-/// value each step. A child that still returns an interval is a future-time
-/// operator nested where only present data is available; the monitor rejects
-/// that composition when it is built, so this is a guard rather than a usual path.
+fn alignment(left: &Formula, right: &Formula) -> Align {
+    match (settle_lag(left), settle_lag(right)) {
+        (Some((lt, ls)), Some((rt, rs))) if ls == rs => {
+            if lt < rt {
+                Align::Left(DelayLine::new(rt - lt))
+            } else if rt < lt {
+                Align::Right(DelayLine::new(lt - rt))
+            } else {
+                Align::Ready
+            }
+        }
+        (None, Some(_)) | (Some(_), None) => Align::Unknown,
+        _ => Align::Ready,
+    }
+}
+
+/// The settled value a past-time operator or an until operand needs each step.
 fn extract_concrete(robustness: Robustness) -> Result<f64> {
     match robustness {
         Robustness::Concrete(v) => Ok(v),
@@ -125,71 +185,32 @@ fn extract_concrete(robustness: Robustness) -> Result<f64> {
     }
 }
 
-/// `historically[a, b] phi`: the past-time mirror of `always`.
-///
-/// A sample only enters the window once it has aged past the lower bound `a`, so
-/// it sits in a delay buffer until mature, then joins a monotonic deque that
-/// holds the running minimum over the window's far edge `[t - b, t - a]`.
-struct HistoricallyNode {
+/// `historically[a, b] phi` and `once[a, b] phi`.
+struct PastWindowNode {
     child: Box<dyn Node>,
     delay: VecDeque<(f64, f64)>,
     window: MonotonicDeque,
+    push: fn(&mut MonotonicDeque, f64, f64),
+    neutral: f64,
     offset_lower: f64,
     width: f64,
 }
 
-impl Node for HistoricallyNode {
+impl Node for PastWindowNode {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let value = extract_concrete(self.child.update(time, state)?)?;
         self.delay.push_back((time, value));
         let maturity = time - self.offset_lower + WINDOW_EPSILON;
         while let Some(&(t, v)) = self.delay.front() {
-            if t <= maturity {
-                self.window.push_min(t, v);
-                self.delay.pop_front();
-            } else {
+            if t > maturity {
                 break;
             }
-        }
-        self.window.evict_before(time - self.width - WINDOW_EPSILON);
-        // Positive infinity reports a property that has never been violated.
-        Ok(Robustness::Concrete(
-            self.window.front_value().unwrap_or(f64::INFINITY),
-        ))
-    }
-
-    fn reset(&mut self) {
-        self.delay.clear();
-        self.window.clear();
-        self.child.reset();
-    }
-}
-
-/// `once[a, b] phi`: the past-time mirror of `eventually`.
-struct OnceNode {
-    child: Box<dyn Node>,
-    delay: VecDeque<(f64, f64)>,
-    window: MonotonicDeque,
-    offset_lower: f64,
-    width: f64,
-}
-
-impl Node for OnceNode {
-    fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
-        let value = extract_concrete(self.child.update(time, state)?)?;
-        self.delay.push_back((time, value));
-        let maturity = time - self.offset_lower + WINDOW_EPSILON;
-        while let Some(&(t, v)) = self.delay.front() {
-            if t <= maturity {
-                self.window.push_max(t, v);
-                self.delay.pop_front();
-            } else {
-                break;
-            }
+            (self.push)(&mut self.window, t, v);
+            self.delay.pop_front();
         }
         self.window.evict_before(time - self.width - WINDOW_EPSILON);
         Ok(Robustness::Concrete(
-            self.window.front_value().unwrap_or(f64::NEG_INFINITY),
+            self.window.front_value().unwrap_or(self.neutral),
         ))
     }
 
@@ -242,12 +263,8 @@ impl Node for SinceNode {
         }
 
         let start = time - self.width - WINDOW_EPSILON;
-        while let Some(&(t, _, _)) = self.candidates.front() {
-            if t < start {
-                self.candidates.pop_front();
-            } else {
-                break;
-            }
+        while self.candidates.front().is_some_and(|&(t, _, _)| t < start) {
+            self.candidates.pop_front();
         }
 
         let best = self
@@ -273,46 +290,51 @@ struct FutureAlwaysNode {
     offset_start: f64,
     offset_end: f64,
     bounded: bool,
-    first_time: Option<f64>,
+    /// First update at which the child returned a settled value.
+    settled_at: Option<f64>,
     global_min: f64,
 }
 
 impl Node for FutureAlwaysNode {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let child = self.child.update(time, state)?;
-        let concrete = matches!(child, Robustness::Concrete(_));
-        let (lo, hi) = bounds(child);
-        let first = *self.first_time.get_or_insert(time);
+        let (lo, hi) = (child.lower(), child.upper());
+        if self.bounded {
+            self.window.push_min(time, lo);
+        }
 
-        self.window.push_min(time, lo);
-        self.global_min = self.global_min.min(hi);
+        if self.settled_at.is_none() && child.is_resolved() {
+            self.settled_at = Some(time);
+        }
+        let Some(anchor) = self.settled_at else {
+            return Ok(Robustness::UNKNOWN);
+        };
 
         if !self.bounded {
+            if time >= anchor + self.offset_start - WINDOW_EPSILON {
+                self.global_min = self.global_min.min(hi);
+            }
             return Ok(Robustness::Interval(f64::NEG_INFINITY, self.global_min));
         }
 
         let query_time = time - self.offset_end;
-        if query_time < first {
-            // samples before first + offset_start belong to no query yet, so evict before the front read
-            self.window.evict_before(first + self.offset_start);
+        if query_time < anchor - WINDOW_EPSILON {
+            self.window
+                .evict_before(anchor + self.offset_start - WINDOW_EPSILON);
             let partial = self.window.front_value().unwrap_or(f64::INFINITY);
             return Ok(Robustness::Interval(f64::NEG_INFINITY, partial));
         }
 
         let window_start = query_time + self.offset_start;
-        self.window.evict_before(window_start);
-        let min_rob = self.window.front_value().unwrap_or(f64::INFINITY);
-
-        if concrete {
-            Ok(Robustness::Concrete(min_rob))
-        } else {
-            Ok(Robustness::Interval(min_rob, self.global_min))
-        }
+        self.window.evict_before(window_start - WINDOW_EPSILON);
+        Ok(Robustness::Concrete(
+            self.window.front_value().unwrap_or(f64::INFINITY),
+        ))
     }
 
     fn reset(&mut self) {
         self.window.clear();
-        self.first_time = None;
+        self.settled_at = None;
         self.global_min = f64::INFINITY;
         self.child.reset();
     }
@@ -325,46 +347,51 @@ struct FutureEventuallyNode {
     offset_start: f64,
     offset_end: f64,
     bounded: bool,
-    first_time: Option<f64>,
+    /// See [`FutureAlwaysNode::settled_at`].
+    settled_at: Option<f64>,
     global_max: f64,
 }
 
 impl Node for FutureEventuallyNode {
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let child = self.child.update(time, state)?;
-        let concrete = matches!(child, Robustness::Concrete(_));
-        let (lo, hi) = bounds(child);
-        let first = *self.first_time.get_or_insert(time);
+        let (lo, hi) = (child.lower(), child.upper());
+        if self.bounded {
+            self.window.push_max(time, hi);
+        }
 
-        self.window.push_max(time, hi);
-        self.global_max = self.global_max.max(lo);
+        if self.settled_at.is_none() && child.is_resolved() {
+            self.settled_at = Some(time);
+        }
+        let Some(anchor) = self.settled_at else {
+            return Ok(Robustness::UNKNOWN);
+        };
 
         if !self.bounded {
+            if time >= anchor + self.offset_start - WINDOW_EPSILON {
+                self.global_max = self.global_max.max(lo);
+            }
             return Ok(Robustness::Interval(self.global_max, f64::INFINITY));
         }
 
         let query_time = time - self.offset_end;
-        if query_time < first {
-            // dual of always: drop samples ahead of the oldest query's window
-            self.window.evict_before(first + self.offset_start);
+        if query_time < anchor - WINDOW_EPSILON {
+            self.window
+                .evict_before(anchor + self.offset_start - WINDOW_EPSILON);
             let partial = self.window.front_value().unwrap_or(f64::NEG_INFINITY);
             return Ok(Robustness::Interval(partial, f64::INFINITY));
         }
 
         let window_start = query_time + self.offset_start;
-        self.window.evict_before(window_start);
-        let max_rob = self.window.front_value().unwrap_or(f64::NEG_INFINITY);
-
-        if concrete {
-            Ok(Robustness::Concrete(max_rob))
-        } else {
-            Ok(Robustness::Interval(self.global_max, max_rob))
-        }
+        self.window.evict_before(window_start - WINDOW_EPSILON);
+        Ok(Robustness::Concrete(
+            self.window.front_value().unwrap_or(f64::NEG_INFINITY),
+        ))
     }
 
     fn reset(&mut self) {
         self.window.clear();
-        self.first_time = None;
+        self.settled_at = None;
         self.global_max = f64::NEG_INFINITY;
         self.child.reset();
     }
@@ -389,7 +416,9 @@ impl Node for UntilNode {
         let r_phi = extract_concrete(self.phi.update(time, state)?)?;
         let r_psi = extract_concrete(self.psi.update(time, state)?)?;
         let first = *self.first_time.get_or_insert(time);
-        self.buffer.push_back((time, r_phi, r_psi));
+        if self.bounded {
+            self.buffer.push_back((time, r_phi, r_psi));
+        }
 
         if !self.bounded {
             // Maler-Nickovic recurrence.
@@ -398,11 +427,7 @@ impl Node for UntilNode {
         }
 
         let query_time = time - self.offset_end;
-        if query_time < first {
-            // The oldest query's window has not fully arrived. Its phi base is the
-            // first sample and never moves while it is unresolved, so its best-so-far
-            // is a running fold: a sound lower bound that only later samples can
-            // raise. Folding here keeps the wide-bound case off the rescan path.
+        if query_time < first - WINDOW_EPSILON {
             if time >= first + self.offset_start - WINDOW_EPSILON {
                 self.pending_best = self.pending_best.max(r_psi.min(self.pending_min_phi));
             }
@@ -410,12 +435,9 @@ impl Node for UntilNode {
             return Ok(Robustness::Interval(self.pending_best, f64::INFINITY));
         }
 
-        while let Some(&(t, _, _)) = self.buffer.front() {
-            if t < query_time {
-                self.buffer.pop_front();
-            } else {
-                break;
-            }
+        let trim = query_time - WINDOW_EPSILON;
+        while self.buffer.front().is_some_and(|&(t, _, _)| t < trim) {
+            self.buffer.pop_front();
         }
         Ok(Robustness::Concrete(self.resolve(query_time)))
     }
@@ -491,6 +513,7 @@ impl Node for ProbabilisticNode {
     )]
     fn update(&mut self, time: f64, state: &[f64]) -> Result<Robustness> {
         let mut satisfied = 0u64;
+        let mut possible = 0u64;
         for p in 0..self.particles.len() {
             for (i, name) in self.symbols.names.iter().enumerate() {
                 self.scratch[i] = match self.lifting.model_for(name) {
@@ -500,18 +523,22 @@ impl Node for ProbabilisticNode {
                     None => state[i],
                 };
             }
-            if self.particles[p].update(time, &self.scratch)?.lower() >= 0.0 {
+            let rho = self.particles[p].update(time, &self.scratch)?;
+            if rho.lower() >= 0.0 {
                 satisfied += 1;
             }
+            if rho.upper() >= 0.0 {
+                possible += 1;
+            }
         }
-        let estimate = satisfied as f64 / self.particles.len() as f64;
-        self.last_estimate = Some(estimate);
-        let holds = match self.op {
-            ProbabilityOp::GreaterEqual => estimate >= self.threshold,
-            ProbabilityOp::Greater => estimate > self.threshold,
-            ProbabilityOp::LessEqual => estimate <= self.threshold,
-            ProbabilityOp::Less => estimate < self.threshold,
-        };
+        let count = self.particles.len() as f64;
+        let low = satisfied as f64 / count;
+        let high = possible as f64 / count;
+        self.last_estimate = Some(low);
+        let holds = crate::stats::decides(self.op, low, self.threshold);
+        if holds != crate::stats::decides(self.op, high, self.threshold) {
+            return Ok(Robustness::UNKNOWN);
+        }
         Ok(Robustness::Concrete(if holds {
             f64::INFINITY
         } else {
@@ -529,10 +556,6 @@ impl Node for ProbabilisticNode {
     fn probability_estimate(&self) -> Option<f64> {
         self.last_estimate
     }
-}
-
-fn bounds(robustness: Robustness) -> (f64, f64) {
-    (robustness.lower(), robustness.upper())
 }
 
 /// An online monitor that evaluates a formula incrementally.
@@ -595,6 +618,7 @@ impl StreamMonitor {
         lifting: &LiftingRegistry,
         config: &SmcConfig,
     ) -> Result<Self> {
+        config.validate()?;
         validate_streaming(formula)?;
         let symbols = Arc::new(SymbolTable::from_formula(formula));
         let root: Box<dyn Node> = match formula {
@@ -653,17 +677,19 @@ impl StreamMonitor {
     /// finite, or [`Error::NonMonotonicTime`] if the time does not follow the
     /// previous step.
     pub fn update(&mut self, time: f64, values: &[(&str, f64)]) -> Result<Robustness> {
-        self.accept_time(time)?;
         for (idx, name) in self.symbols.names.iter().enumerate() {
             match values.iter().find(|(n, _)| n == name) {
-                Some((_, v)) => self.buffer[idx] = *v,
+                Some(&(_, v)) => {
+                    accept_value(v)?;
+                    self.buffer[idx] = v;
+                }
                 None => return Err(Error::UnknownVariable { name: name.clone() }),
             }
         }
-        // Detach the buffer borrow from `self` so the node can borrow it shared.
-        let mut buffer = core::mem::take(&mut self.buffer);
+        self.accept_time(time)?;
+        let buffer = core::mem::take(&mut self.buffer);
         let result = self.root.update(time, &buffer);
-        core::mem::swap(&mut self.buffer, &mut buffer);
+        self.buffer = buffer;
         result
     }
 
@@ -677,13 +703,16 @@ impl StreamMonitor {
     /// is not finite, or [`Error::NonMonotonicTime`] if the time does not follow the
     /// previous step.
     pub fn update_packed(&mut self, time: f64, values: &[f64]) -> Result<Robustness> {
-        self.accept_time(time)?;
         if values.len() < self.symbols.len() {
             return Err(Error::PackedLength {
                 expected: self.symbols.len(),
                 found: values.len(),
             });
         }
+        for &value in &values[..self.symbols.len()] {
+            accept_value(value)?;
+        }
+        self.accept_time(time)?;
         self.root.update(time, values)
     }
 
@@ -755,7 +784,17 @@ fn is_temporal(formula: &Formula) -> bool {
     }
 }
 
-/// Builds a node for a maximal non-temporal subformula.
+fn accept_value(value: f64) -> Result<()> {
+    if value.is_finite() {
+        Ok(())
+    } else {
+        Err(Error::NonFiniteSample {
+            kind: "value",
+            value,
+        })
+    }
+}
+
 fn atomic_node(formula: &Formula, names: &[String]) -> Result<Box<dyn Node>> {
     let program = Program::compile(formula, names)?;
     let scratch = program.scratch();
@@ -797,6 +836,20 @@ fn future_cap(offset_end: f64, bounded: bool) -> usize {
     }
 }
 
+fn junction_node(
+    l: &Formula,
+    r: &Formula,
+    symbols: &Arc<SymbolTable>,
+    combine: fn(Robustness, Robustness) -> Robustness,
+) -> Result<Box<dyn Node>> {
+    Ok(Box::new(BinaryNode {
+        left: build_node(l, symbols)?,
+        right: build_node(r, symbols)?,
+        combine,
+        align: alignment(l, r),
+    }))
+}
+
 fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn Node>> {
     if !is_temporal(formula) {
         return atomic_node(formula, &symbols.names);
@@ -805,32 +858,24 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
         Formula::Not(inner) => Ok(Box::new(NotNode {
             child: build_node(inner, symbols)?,
         })),
-        Formula::And(l, r) => Ok(Box::new(BinaryNode {
-            left: build_node(l, symbols)?,
-            right: build_node(r, symbols)?,
-            combine: Robustness::min,
-        })),
-        Formula::Or(l, r) => Ok(Box::new(BinaryNode {
-            left: build_node(l, symbols)?,
-            right: build_node(r, symbols)?,
-            combine: Robustness::max,
-        })),
-        Formula::Implies(l, r) => Ok(Box::new(BinaryNode {
-            left: build_node(l, symbols)?,
-            right: build_node(r, symbols)?,
-            combine: Robustness::implies,
-        })),
-        Formula::Historically(interval, inner) => Ok(Box::new(HistoricallyNode {
+        Formula::And(l, r) => junction_node(l, r, symbols, Robustness::min),
+        Formula::Or(l, r) => junction_node(l, r, symbols, Robustness::max),
+        Formula::Implies(l, r) => junction_node(l, r, symbols, Robustness::implies),
+        Formula::Historically(interval, inner) => Ok(Box::new(PastWindowNode {
             child: build_node(inner, symbols)?,
             delay: VecDeque::with_capacity(prealloc_for(interval.lower())),
             window: MonotonicDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
+            push: MonotonicDeque::push_min,
+            neutral: f64::INFINITY,
             offset_lower: interval.lower(),
             width: interval.upper_or_infinity(),
         })),
-        Formula::Once(interval, inner) => Ok(Box::new(OnceNode {
+        Formula::Once(interval, inner) => Ok(Box::new(PastWindowNode {
             child: build_node(inner, symbols)?,
             delay: VecDeque::with_capacity(prealloc_for(interval.lower())),
             window: MonotonicDeque::with_capacity(prealloc_for(interval.upper_or_infinity())),
+            push: MonotonicDeque::push_max,
+            neutral: f64::NEG_INFINITY,
             offset_lower: interval.lower(),
             width: interval.upper_or_infinity(),
         })),
@@ -851,7 +896,7 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
                 offset_start,
                 offset_end,
                 bounded,
-                first_time: None,
+                settled_at: None,
                 global_min: f64::INFINITY,
             }))
         }
@@ -864,7 +909,7 @@ fn build_node(formula: &Formula, symbols: &Arc<SymbolTable>) -> Result<Box<dyn N
                 offset_start,
                 offset_end,
                 bounded,
-                first_time: None,
+                settled_at: None,
                 global_max: f64::NEG_INFINITY,
             }))
         }
@@ -913,9 +958,33 @@ fn contains_future(formula: &Formula) -> bool {
     }
 }
 
-/// Rejects compositions the online monitor cannot evaluate: a future-time
-/// operator inside a past-time operator or inside the operand of until, since,
-/// or next, where only present data is available.
+/// How far behind the present a formula's verdict settles, as a time offset and a
+/// count of whole samples, or `None` when it never settles.
+fn settle_lag(formula: &Formula) -> Option<(f64, usize)> {
+    match formula {
+        Formula::Predicate(_)
+        | Formula::Historically(..)
+        | Formula::Once(..)
+        | Formula::Since(..) => Some((0.0, 0)),
+        Formula::Not(g) | Formula::Probabilistic(_, _, g) => settle_lag(g),
+        Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
+            let (lt, ls) = settle_lag(l)?;
+            let (rt, rs) = settle_lag(r)?;
+            Some((lt.max(rt), ls.max(rs)))
+        }
+        Formula::Always(interval, g) | Formula::Eventually(interval, g) => {
+            let (time, samples) = settle_lag(g)?;
+            Some((time + interval.upper()?, samples))
+        }
+        Formula::Until(interval, ..) => Some((interval.upper()?, 0)),
+        Formula::Next(g) => {
+            let (time, samples) = settle_lag(g)?;
+            Some((time, samples + 1))
+        }
+    }
+}
+
+/// Rejects compositions the online monitor cannot evaluate.
 fn validate_streaming(formula: &Formula) -> Result<()> {
     let present = |f: &Formula| -> Result<()> {
         if contains_future(f) {
@@ -934,7 +1003,15 @@ fn validate_streaming(formula: &Formula) -> Result<()> {
         }
         Formula::And(l, r) | Formula::Or(l, r) | Formula::Implies(l, r) => {
             validate_streaming(l)?;
-            validate_streaming(r)
+            validate_streaming(r)?;
+            match (settle_lag(l), settle_lag(r)) {
+                (Some((_, ls)), Some((_, rs))) if ls != rs => Err(Error::Unsupported {
+                    feature: "a boolean junction mixing a next-delayed branch with a \
+                              time-delayed one; monitor them as separate formulas, or \
+                              evaluate this one offline",
+                }),
+                _ => Ok(()),
+            }
         }
         Formula::Historically(_, g) | Formula::Once(_, g) | Formula::Next(g) => {
             present(g)?;
@@ -1051,8 +1128,27 @@ mod tests {
         assert!(StreamMonitor::new("always[0, 2](historically[0, 1](x > 0))").is_ok());
     }
 
-    /// Once a future window has fully arrived, the online verdict for that past
-    /// time is concrete and must equal the offline robustness there.
+    #[test]
+    fn a_junction_aligns_its_branches_and_refuses_only_mixed_units() {
+        for formula in [
+            "always[0, 1](x > 0) and always[0, 3](y > 0)",
+            "(x > 0) and eventually[0, 2](y > 0)",
+            "always[0, 2]((x > 0) implies eventually[0, 2](y > 0))",
+            "eventually[0, 1](x > 2) or always[0, 3](x > 0)",
+            "always[0, 2](x > 0) and always[0, 2](y > 0)",
+            "historically[0, 4](x > 0) and (y > 0)",
+            "always(x > 0) and always(y > 0)",
+        ] {
+            assert!(StreamMonitor::new(formula).is_ok(), "{formula} should stream");
+        }
+        for formula in ["next(x > 0) and always[0, 1](y > 0)", "always[0, 1](next(x > 0)) or eventually[0, 1](y > 0)"] {
+            assert!(
+                matches!(StreamMonitor::new(formula), Err(Error::Unsupported { .. })),
+                "{formula} mixes a sample delay with a time delay and cannot be aligned"
+            );
+        }
+    }
+
     fn future_resolves_to_offline(
         formula: &str,
         delay: usize,
@@ -1101,7 +1197,70 @@ mod tests {
         );
     }
 
-    /// Streams a formula and collects each step's robustness value.
+    fn accumulated_times(n: usize, step: f64) -> Vec<f64> {
+        let mut times = Vec::with_capacity(n);
+        let mut t = 0.0;
+        for _ in 0..n {
+            times.push(t);
+            t += step;
+        }
+        times
+    }
+
+    #[test]
+    fn a_drifted_window_edge_keeps_the_sample_on_it() {
+        let times = accumulated_times(8, 0.1);
+        let dip = [-5.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0];
+        future_resolves_to_offline("always[0, 0.3](x > 0)", 3, &times, &[("x", &dip)]);
+        let peak = [7.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0];
+        future_resolves_to_offline("eventually[0, 0.3](x > 0)", 3, &times, &[("x", &peak)]);
+    }
+
+    #[test]
+    fn a_delayed_window_start_survives_the_unresolved_phase() {
+        let times = accumulated_times(20, 0.1);
+        let mut x = [10.0; 20];
+        x[8] = -5.0;
+        future_resolves_to_offline("always[0.8, 1.4](x > 0)", 14, &times, &[("x", &x)]);
+    }
+
+    #[test]
+    fn a_query_time_that_drifts_below_zero_still_resolves() {
+        let times = accumulated_times(12, 0.2);
+        let mut x = [5.0; 12];
+        x[3] = -2.0;
+        future_resolves_to_offline("always[0.6000000000000001, 1.4000000000000001](x > 0)", 7, &times, &[("x", &x)]);
+        let mut y = [-5.0; 12];
+        y[3] = 2.0;
+        future_resolves_to_offline(
+            "eventually[0.6000000000000001, 1.4000000000000001](y > 0)",
+            7,
+            &times,
+            &[("y", &y)],
+        );
+    }
+
+    #[test]
+    fn until_keeps_the_sample_its_query_starts_on() {
+        let times = accumulated_times(8, 0.1);
+        let dip = [-3.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0];
+        let late = [-1.0, -1.0, -1.0, 7.0, -1.0, -1.0, -1.0, -1.0];
+        future_resolves_to_offline(
+            "x > 0 until[0, 0.3] y > 0",
+            3,
+            &times,
+            &[("x", &dip), ("y", &late)],
+        );
+        let flat = [10.0; 8];
+        let early = [7.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0];
+        future_resolves_to_offline(
+            "x > 0 until[0, 0.3] y > 0",
+            3,
+            &times,
+            &[("x", &flat), ("y", &early)],
+        );
+    }
+
     fn stream_values(formula: &str, times: &[f64], signals: &[(&str, &[f64])]) -> Vec<f64> {
         let mut monitor = StreamMonitor::new(formula).unwrap();
         let slots: Vec<usize> = signals
@@ -1212,6 +1371,21 @@ mod tests {
                 ("x > 0 until[0, 3] y > 0", 3, &[("x", x), ("y", y)][..]),
                 ("x > 0 until[1, 4] y > 0", 4, &[("x", x), ("y", y)][..]),
                 ("x > 0 until[2, 2] y > 0", 2, &[("x", x), ("y", y)][..]),
+                ("always[0, 1](eventually[0, 1](x > 0))", 2, &[("x", x)][..]),
+                ("eventually[0, 1](always[0, 1](x > 0))", 2, &[("x", x)][..]),
+                ("always[0, 2](always[0, 1](x > 0))", 3, &[("x", x)][..]),
+                ("eventually[0, 1](eventually[0, 1](x > 0))", 2, &[("x", x)][..]),
+                ("always[1, 2](eventually[0, 1](x > 0))", 3, &[("x", x)][..]),
+                ("always[0, 1](next(x > 0))", 2, &[("x", x)][..]),
+                ("always[0, 1](x > 0 until[0, 2] y > 0)", 3, &[("x", x), ("y", y)][..]),
+                ("eventually[0, 2](x > 0 until[1, 2] y > 0)", 4, &[("x", x), ("y", y)][..]),
+                ("always[0, 2](always[0, 1](eventually[0, 1](x > 0)))", 4, &[("x", x)][..]),
+                ("always[0, 2]((x > 0) and (eventually[0, 2](y > 0)))", 4, &[("x", x), ("y", y)][..]),
+                ("always[0, 2]((x > 0) implies (eventually[0, 2](y > 0)))", 4, &[("x", x), ("y", y)][..]),
+                ("always[0, 1]((x > 0) and (eventually[0, 3](y > 0)))", 4, &[("x", x), ("y", y)][..]),
+                ("(always[0, 1](x > 0)) and (always[0, 3](y > 0))", 3, &[("x", x), ("y", y)][..]),
+                ("(x > 0) and (eventually[0, 2](y > 0))", 2, &[("x", x), ("y", y)][..]),
+                ("(eventually[0, 2](x > 0)) or (always[0, 1](y > 0))", 2, &[("x", x), ("y", y)][..]),
             ] {
                 let offline = offline_values(formula, &times, signals);
                 let mut monitor = StreamMonitor::new(formula).unwrap();
@@ -1223,10 +1397,41 @@ mod tests {
                         packed[slots[s]] = vals[i];
                     }
                     let robustness = monitor.update_packed(t, &packed).unwrap();
-                    if i >= delay {
-                        prop_assert_eq!(robustness.lower(), robustness.upper(), "{} unresolved at {}", formula, i);
-                        prop_assert_eq!(robustness.value(), offline[i - delay], "{} at {}", formula, i);
+                    if i < delay {
+                        prop_assert!(!robustness.is_resolved(), "{} settled at {}, before its window closed", formula, i);
+                        continue;
                     }
+                    prop_assert!(robustness.is_resolved(), "{} unresolved at {}", formula, i);
+                    prop_assert_eq!(robustness.value(), offline[i - delay], "{} at {}", formula, i);
+                }
+            }
+        }
+
+        #[test]
+        fn unbounded_future_operators_bracket_the_offline_value(
+            xs in prop::collection::vec(-20.0f64..20.0, 4..40),
+        ) {
+            let times: Vec<f64> = (0..xs.len()).map(|i| i as f64).collect();
+            let signals = &[("x", &xs[..])][..];
+            for formula in [
+                "always[2, inf](x > 0)",
+                "eventually[2, inf](x > 0)",
+                "always[0, inf](x > 0)",
+                "eventually[1, inf](x > 5)",
+            ] {
+                let offline = offline_values(formula, &times, signals);
+                let mut monitor = StreamMonitor::new(formula).unwrap();
+                let slot = monitor.symbol_index("x").unwrap();
+                let mut packed = vec![0.0; monitor.variable_count()];
+                for (i, &t) in times.iter().enumerate() {
+                    packed[slot] = xs[i];
+                    let robustness = monitor.update_packed(t, &packed).unwrap();
+                    prop_assert!(!robustness.is_resolved(), "{} settled at {}", formula, i);
+                    prop_assert!(
+                        robustness.lower() <= offline[0] && offline[0] <= robustness.upper(),
+                        "{} at {}: [{}, {}] excludes the answer {}",
+                        formula, i, robustness.lower(), robustness.upper(), offline[0]
+                    );
                 }
             }
         }
@@ -1333,6 +1538,72 @@ mod tests {
 
     #[cfg(feature = "statistical")]
     #[test]
+    fn a_probabilistic_verdict_waits_for_its_window() {
+        use crate::stats::{LiftingRegistry, NoiseInteraction, NoiseModel, SmcConfig};
+        let mut lifting = LiftingRegistry::new();
+        lifting.register("x", NoiseModel::gaussian(0.0, 0.05).unwrap(), NoiseInteraction::Additive);
+        let config = SmcConfig {
+            samples: 200,
+            confidence: 0.95,
+            seed: 11,
+            ..Default::default()
+        };
+        for (formula, settled) in [
+            ("P>=0.95(always[0, 4](x > 0.35))", f64::INFINITY),
+            ("P<=0.05(always[0, 4](x > 0.35))", f64::NEG_INFINITY),
+        ] {
+            let phi = Formula::parse(formula).unwrap();
+            let mut monitor = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
+            for t in 0..4 {
+                let rho = monitor.update(f64::from(t), &[("x", 1.0)]).unwrap();
+                assert!(!rho.is_resolved(), "{formula} settled at t={t}: {rho:?}");
+                assert_eq!(monitor.last_probability(), Some(0.0));
+            }
+            let rho = monitor.update(4.0, &[("x", 1.0)]).unwrap();
+            assert_eq!(rho.concrete(), Some(settled), "{formula} at t=4");
+            assert_eq!(monitor.last_probability(), Some(1.0));
+        }
+        let phi = Formula::parse("P>=0.5(always[0, 2](x > 0))").unwrap();
+        let mut early = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
+        assert_eq!(early.update(0.0, &[("x", -4.0)]).unwrap().concrete(), Some(f64::NEG_INFINITY));
+        let phi = Formula::parse("P>=0.95(always(x > 0.35))").unwrap();
+        let mut open = StreamMonitor::with_lifting(&phi, &lifting, &config).unwrap();
+        for t in 0..4 {
+            let rho = open.update(f64::from(t), &[("x", 1.0)]).unwrap();
+            assert!(!rho.is_resolved(), "unbounded always settled at t={t}");
+        }
+    }
+
+    #[test]
+    fn a_non_finite_reading_is_refused_as_the_trace_refuses_it() {
+        for formula in ["historically[0, 2](x > 0)", "always[0, 2](x > 0)"] {
+            let mut monitor = StreamMonitor::new(formula).unwrap();
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert!(matches!(
+                    monitor.update(0.0, &[("x", bad)]),
+                    Err(Error::NonFiniteSample { kind: "value", .. })
+                ));
+                assert!(matches!(
+                    monitor.update_packed(0.0, &[bad]),
+                    Err(Error::NonFiniteSample { kind: "value", .. })
+                ));
+            }
+            assert!(monitor.update(0.0, &[("x", 4.0)]).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_junction_with_one_branch_that_never_settles_reports_no_bound() {
+        let mut monitor = StreamMonitor::new("eventually(x > 0) or (y > 0)").unwrap();
+        for (t, x, y) in [(0.0, -5.0, 1.0), (1.0, -5.0, 100.0)] {
+            let rho = monitor.update(t, &[("x", x), ("y", y)]).unwrap();
+            assert!(!rho.is_resolved(), "settled at t={t}");
+            assert_eq!(rho, Robustness::UNKNOWN, "at t={t}");
+        }
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
     fn a_nested_probabilistic_operator_is_rejected() {
         use crate::stats::{LiftingRegistry, SmcConfig};
         let phi = Formula::parse("always[0, 2](P>=0.5(x > 0))").unwrap();
@@ -1345,6 +1616,29 @@ mod tests {
         assert!(matches!(
             StreamMonitor::with_lifting(&phi, &LiftingRegistry::new(), &config),
             Err(Error::Unsupported { .. })
+        ));
+    }
+
+    #[cfg(feature = "statistical")]
+    #[test]
+    fn an_unusable_config_is_rejected_online_as_it_is_offline() {
+        use crate::stats::{LiftingRegistry, SmcConfig};
+        let phi = Formula::parse("P>=0.5(x > 0)").unwrap();
+        let empty = SmcConfig {
+            samples: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            StreamMonitor::with_lifting(&phi, &LiftingRegistry::new(), &empty),
+            Err(Error::InvalidConfig { .. })
+        ));
+        let certain = SmcConfig {
+            confidence: 1.0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            StreamMonitor::with_lifting(&phi, &LiftingRegistry::new(), &certain),
+            Err(Error::InvalidConfig { .. })
         ));
     }
 }
