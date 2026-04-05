@@ -26,15 +26,12 @@ namespace sentil {
 
 namespace detail {
 
-/// Holds a host callback and the first exception it threw. The wrapper rethrows
-/// after the C call returns, since an exception cannot unwind through the engine.
 template <typename Fn>
 struct CallbackState {
     Fn fn;
     std::exception_ptr error = nullptr;
 };
 
-/// The same for a callback the core runs on several threads; first exception wins.
 template <typename Fn>
 struct SyncCallbackState {
     explicit SyncCallbackState(Fn callback) : fn(std::move(callback)) {}
@@ -51,8 +48,21 @@ struct SyncCallbackState {
     }
 };
 
-/// Return p, or throw the error the core recorded if it is null. Wraps the C
-/// create calls that signal failure with a null handle.
+template <typename Fn>
+inline bool draw_bernoulli(void* userdata) {
+    auto& s = *static_cast<CallbackState<Fn>*>(userdata);
+    if (s.error) {
+        return false;
+    }
+    try {
+        return s.fn();
+    } catch (...) {
+        s.error = std::current_exception();
+        return false;
+    }
+}
+
+/// The C create calls signal failure with a null handle.
 template <typename T>
 inline T* must(T* p) {
     if (!p) {
@@ -70,8 +80,7 @@ inline std::string owned_string(char* s) {
     return out;
 }
 
-/// A null return with no error set is an empty list, not a failure: the C ABI
-/// clears the error on entry to every call.
+/// A null return with no error set is an empty list, not a failure.
 inline std::vector<std::string> owned_string_array(char** array, std::size_t count) {
     if (!array) {
         if (sentil_get_last_error_code() != SENTIL_OK) {
@@ -116,11 +125,8 @@ inline std::vector<Interval> owned_intervals(sentil_interval_t* array, std::size
     return out;
 }
 
-/// Fold one named sample into a monitor through a C update function. Builds the
-/// parallel name and value arrays the C ABI expects from a name-to-value map.
-template <typename HandleT, typename UpdateFn>
-inline Robustness update_named(HandleT* handle, UpdateFn update, double time,
-                               const std::map<std::string, double>& values) {
+inline std::pair<std::vector<const char*>, std::vector<double>> unzip(
+    const std::map<std::string, double>& values) {
     std::vector<const char*> names;
     std::vector<double> data;
     names.reserve(values.size());
@@ -129,6 +135,33 @@ inline Robustness update_named(HandleT* handle, UpdateFn update, double time,
         names.push_back(entry.first.c_str());
         data.push_back(entry.second);
     }
+    return {std::move(names), std::move(data)};
+}
+
+inline std::vector<const char*> c_strs(const std::vector<std::string>& names) {
+    std::vector<const char*> out;
+    out.reserve(names.size());
+    for (const std::string& name : names) {
+        out.push_back(name.c_str());
+    }
+    return out;
+}
+
+inline std::vector<std::vector<double>> unflatten(const std::vector<double>& flat, std::size_t rows,
+                                                  std::size_t cols) {
+    std::vector<std::vector<double>> out;
+    out.reserve(rows);
+    for (std::size_t i = 0; i < rows; ++i) {
+        auto start = flat.begin() + static_cast<std::ptrdiff_t>(i * cols);
+        out.emplace_back(start, start + static_cast<std::ptrdiff_t>(cols));
+    }
+    return out;
+}
+
+template <typename HandleT, typename UpdateFn>
+inline Robustness update_named(HandleT* handle, UpdateFn update, double time,
+                               const std::map<std::string, double>& values) {
+    auto [names, data] = unzip(values);
     sentil_robustness_t out;
     ensure(update(handle, time, names.data(), data.data(), names.size(), &out));
     return from_c(out);
@@ -150,8 +183,6 @@ inline std::vector<Robustness> owned_robustness(sentil_robustness_t* array, std:
     return out;
 }
 
-/// The array is freed before the throw so a failed formula cannot leak it, and
-/// the error names the id rather than leaving a silent NaN in the map.
 inline std::map<std::string, double> bank_results(sentil_bank_result_t* array, std::size_t count) {
     if (!array) {
         if (sentil_get_last_error_code() != SENTIL_OK) {
@@ -179,7 +210,6 @@ inline std::map<std::string, double> bank_results(sentil_bank_result_t* array, s
     return out;
 }
 
-/// A ragged row is rejected here so the C side cannot read past the end.
 inline std::vector<double> flatten(const std::vector<std::vector<double>>& matrix,
                                    std::size_t expected_cols) {
     std::vector<double> flat;
@@ -750,6 +780,11 @@ inline std::optional<Sample> to_optional(const sentil_sample_t& s) {
     return from_c(s);
 }
 
+/// The C ABI reports "no estimate yet" as a NaN probability.
+inline std::optional<double> to_optional(double p) {
+    return std::isnan(p) ? std::nullopt : std::optional<double>(p);
+}
+
 }  // namespace detail
 
 /// A fixed-capacity rolling window over the most recent timed samples, keeping
@@ -953,13 +988,7 @@ inline std::pair<double, std::vector<std::vector<double>>> Formula::smooth_value
     std::vector<double> flat(n_vars * n_samples);
     ensure(sentil_formula_smooth_value_and_gradient(get(), trace.get(), &c, &value, flat.data(),
                                                     n_vars, n_samples));
-    std::vector<std::vector<double>> gradient(n_vars, std::vector<double>(n_samples));
-    for (std::size_t i = 0; i < n_vars; ++i) {
-        for (std::size_t j = 0; j < n_samples; ++j) {
-            gradient[i][j] = flat[i * n_samples + j];
-        }
-    }
-    return {value, std::move(gradient)};
+    return {value, detail::unflatten(flat, n_vars, n_samples)};
 }
 
 /// A monitor configuration.
@@ -1057,8 +1086,7 @@ public:
 
     /// The last satisfaction probability the streaming monitor estimated.
     std::optional<double> last_probability() const {
-        double p = sentil_monitor_last_probability(get());
-        return std::isnan(p) ? std::nullopt : std::optional<double>(p);
+        return detail::to_optional(sentil_monitor_last_probability(get()));
     }
 
     /// Check this monitor's probabilistic formula using its configured SMC
@@ -1133,8 +1161,7 @@ public:
 
     /// The last satisfaction probability the streaming monitor estimated.
     std::optional<double> last_probability() const {
-        double p = sentil_stream_monitor_last_probability(get());
-        return std::isnan(p) ? std::nullopt : std::optional<double>(p);
+        return detail::to_optional(sentil_stream_monitor_last_probability(get()));
     }
 
     explicit OnlineMonitor(sentil_stream_monitor_t* handle) : handle_(handle) {}
@@ -1186,14 +1213,7 @@ public:
     /// Advance every monitor at this sample, returning the verdict for each id.
     std::map<std::string, Robustness> update(double time,
                                              const std::map<std::string, double>& values) {
-        std::vector<const char*> names;
-        std::vector<double> data;
-        names.reserve(values.size());
-        data.reserve(values.size());
-        for (const auto& entry : values) {
-            names.push_back(entry.first.c_str());
-            data.push_back(entry.second);
-        }
+        auto [names, data] = detail::unzip(values);
         std::size_t count = 0;
         sentil_named_robustness_t* raw = sentil_multi_monitor_update(get(), time, names.data(),
                                                                      data.data(), names.size(),
@@ -1214,11 +1234,7 @@ public:
 
     /// The last satisfaction probability for the formula with this id.
     std::optional<double> probability(const std::string& id) const {
-        double p = sentil_multi_monitor_probability(get(), id.c_str());
-        if (std::isnan(p)) {
-            return std::nullopt;
-        }
-        return p;
+        return detail::to_optional(sentil_multi_monitor_probability(get(), id.c_str()));
     }
 
     /// Each formula's last probability, in insertion order, paired with its id.
@@ -1358,6 +1374,10 @@ public:
 
     /// A weighted mixture of component models.
     static NoiseModel mixture(const std::vector<double>& weights, std::vector<NoiseModel> models) {
+        if (weights.size() != models.size()) {
+            detail::raise_with(SENTIL_ERR_INVALID_CONFIG,
+                               "a mixture needs one weight per component model");
+        }
         std::vector<sentil_noise_model_t*> raw;
         raw.reserve(models.size());
         for (NoiseModel& model : models) {
@@ -1613,21 +1633,10 @@ using BernoulliSource = std::function<bool()>;
 /// Run Wald's SPRT over a caller-supplied Bernoulli source.
 inline SprtResult sequential_test(const SprtConfig& config, BernoulliSource draw) {
     detail::CallbackState<BernoulliSource> state{std::move(draw)};
-    auto trampoline = +[](void* userdata) -> bool {
-        auto& s = *static_cast<detail::CallbackState<BernoulliSource>*>(userdata);
-        if (s.error) {
-            return false;
-        }
-        try {
-            return s.fn();
-        } catch (...) {
-            s.error = std::current_exception();
-            return false;
-        }
-    };
     sentil_sprt_config_t c = detail::to_c(config);
     sentil_sprt_result_t out;
-    sentil_error_t code = sentil_sequential_test(&c, trampoline, &state, &out);
+    sentil_error_t code =
+        sentil_sequential_test(&c, detail::draw_bernoulli<BernoulliSource>, &state, &out);
     if (state.error) {
         std::rethrow_exception(state.error);
     }
@@ -1638,21 +1647,10 @@ inline SprtResult sequential_test(const SprtConfig& config, BernoulliSource draw
 /// Run a Bayesian sequential test over a caller-supplied Bernoulli source.
 inline BayesResult bayes_sequential_test(const BayesConfig& config, BernoulliSource draw) {
     detail::CallbackState<BernoulliSource> state{std::move(draw)};
-    auto trampoline = +[](void* userdata) -> bool {
-        auto& s = *static_cast<detail::CallbackState<BernoulliSource>*>(userdata);
-        if (s.error) {
-            return false;
-        }
-        try {
-            return s.fn();
-        } catch (...) {
-            s.error = std::current_exception();
-            return false;
-        }
-    };
     sentil_bayes_config_t c = detail::to_c(config);
     sentil_bayes_result_t out;
-    sentil_error_t code = sentil_bayes_sequential_test(&c, trampoline, &state, &out);
+    sentil_error_t code =
+        sentil_bayes_sequential_test(&c, detail::draw_bernoulli<BernoulliSource>, &state, &out);
     if (state.error) {
         std::rethrow_exception(state.error);
     }
@@ -1765,9 +1763,6 @@ inline SimExpr max(SimExpr left, SimExpr right) {
 
 namespace detail {
 
-/// Heap-owned because the engine calls these from several threads after the
-/// wrapper hands over its handle. An exception is captured rather than unwound,
-/// then resurfaced when the run ends.
 struct SystemCallbackState {
     std::function<std::vector<double>(std::uint64_t seed)> init;
     std::function<std::vector<double>(const std::vector<double>& prev, double time,
@@ -1830,11 +1825,7 @@ public:
                 }
             }
         };
-        std::vector<const char*> names;
-        names.reserve(variables.size());
-        for (const std::string& name : variables) {
-            names.push_back(name.c_str());
-        }
+        std::vector<const char*> names = detail::c_strs(variables);
         sentil_stochastic_system_t* handle = detail::must(
             sentil_stochastic_system_create(names.data(), names.size(), dt, horizon, callbacks));
         return StochasticSystem(handle, std::move(state));
@@ -1923,11 +1914,7 @@ private:
     static sentil_sim_model_t* build(const std::vector<std::string>& variables, double dt,
                                      std::size_t horizon, std::vector<SimExpr>& init,
                                      std::vector<SimExpr>& advance, std::vector<NoiseModel>& noise) {
-        std::vector<const char*> names;
-        names.reserve(variables.size());
-        for (const std::string& name : variables) {
-            names.push_back(name.c_str());
-        }
+        std::vector<const char*> names = detail::c_strs(variables);
         std::vector<sentil_sim_expr_t*> init_raw;
         std::vector<sentil_sim_expr_t*> advance_raw;
         std::vector<sentil_noise_model_t*> noise_raw;
@@ -2011,9 +1998,6 @@ private:
 
 namespace detail {
 
-/// Shared so the rollout survives the model being consumed into a controller. An
-/// exception is captured rather than unwound, then resurfaced where the model is
-/// used. initial_state lives here because the C vtable holds a pointer into it.
 struct ModelCallbackState {
     std::function<std::vector<std::vector<double>>(const std::vector<double>& initial,
                                                    const std::vector<double>& input)>
@@ -2050,11 +2034,7 @@ public:
         std::size_t b_cols = b.empty() ? 0 : b.front().size();
         std::vector<double> a_flat = detail::flatten(a, n);
         std::vector<double> b_flat = detail::flatten(b, b_cols);
-        std::vector<const char*> names;
-        names.reserve(variables.size());
-        for (const std::string& name : variables) {
-            names.push_back(name.c_str());
-        }
+        std::vector<const char*> names = detail::c_strs(variables);
         return SystemModel(detail::must(sentil_linear_model_create(
             a_flat.data(), n, b_flat.data(), b_cols, x0.data(), names.data(), names.size(), dt,
             horizon)));
@@ -2097,11 +2077,7 @@ public:
                 }
             }
         };
-        std::vector<const char*> names;
-        names.reserve(variables.size());
-        for (const std::string& name : variables) {
-            names.push_back(name.c_str());
-        }
+        std::vector<const char*> names = detail::c_strs(variables);
         sentil_system_model_t* handle = detail::must(sentil_system_model_create_custom(
             names.data(), names.size(), dt, horizon, vtable));
         return SystemModel(handle, std::move(state));
@@ -2164,6 +2140,12 @@ inline std::vector<double> solve_qp(const std::vector<std::vector<double>>& p,
                                     const std::vector<double>& h, std::size_t max_iters = 200) {
     std::size_t n = p.size();
     std::size_t m = g.size();
+    if (q.size() != n) {
+        detail::raise_with(SENTIL_ERR_INVALID_CONFIG, "q must have one entry per column of P");
+    }
+    if (h.size() != m) {
+        detail::raise_with(SENTIL_ERR_INVALID_CONFIG, "h must have one entry per row of G");
+    }
     std::vector<double> p_flat = detail::flatten(p, n);
     std::vector<double> g_flat = detail::flatten(g, n);
     std::vector<double> out(n);
@@ -2176,6 +2158,9 @@ inline std::vector<double> solve_qp(const std::vector<std::vector<double>>& p,
 inline std::vector<double> solve_spd(const std::vector<std::vector<double>>& matrix,
                                      const std::vector<double>& rhs) {
     std::size_t n = matrix.size();
+    if (rhs.size() != n) {
+        detail::raise_with(SENTIL_ERR_INVALID_CONFIG, "the right-hand side must match A's order");
+    }
     std::vector<double> flat = detail::flatten(matrix, n);
     std::vector<double> out(n);
     ensure(sentil_solve_spd(flat.data(), n, rhs.data(), out.data()));
@@ -2190,13 +2175,7 @@ inline std::pair<std::vector<double>, std::vector<std::vector<double>>> symmetri
     std::vector<double> values(n);
     std::vector<double> vectors_flat(n * n);
     ensure(sentil_symmetric_eigen(flat.data(), n, values.data(), vectors_flat.data()));
-    std::vector<std::vector<double>> vectors(n, std::vector<double>(n));
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = 0; j < n; ++j) {
-            vectors[i][j] = vectors_flat[i * n + j];
-        }
-    }
-    return {std::move(values), std::move(vectors)};
+    return {std::move(values), detail::unflatten(vectors_flat, n, n)};
 }
 
 /// Find an input sequence for the model that best satisfies the spec.
@@ -2514,7 +2493,6 @@ inline Witness Formula::find_counterexample(const SystemModel& model, const Boun
     sentil_witness_t out{};
     sentil_error_t code = sentil_formula_find_counterexample(get(), model.get(), bounds.get(),
                                                              max_iters, sc_ptr, &out);
-    // Take ownership before any throw so the rollout-error path cannot leak it.
     Witness witness = code == SENTIL_OK ? detail::pack_witness(out) : Witness{{}, 0.0, Trace(nullptr)};
     model.rethrow_callback_error();
     ensure(code);
