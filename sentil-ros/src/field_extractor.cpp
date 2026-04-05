@@ -1,6 +1,7 @@
 #include "sentil_ros/field_extractor.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -62,14 +63,39 @@ const Members * as_members(const rosidl_message_type_support_t * type_support)
   return members;
 }
 
-const Member * find_member(const Members * members, const std::string & name)
+const Member * lookup_member(const Members * members, const std::string & name)
 {
   for (uint32_t i = 0; i < members->member_count_; ++i) {
     if (name == members->members_[i].name_) {
       return &members->members_[i];
     }
   }
-  throw FieldExtractorError("field not found: " + name);
+  return nullptr;
+}
+
+const Member * find_member(const Members * members, const std::string & name)
+{
+  const Member * member = lookup_member(members, name);
+  if (member == nullptr) {
+    throw FieldExtractorError("field not found: " + name);
+  }
+  return member;
+}
+
+struct SubMessage
+{
+  const unsigned char * data = nullptr;
+  const Members * members = nullptr;
+};
+
+SubMessage step_into(const void * data, const Members * members, const std::string & name)
+{
+  const Member * member = lookup_member(members, name);
+  if (member == nullptr || member->type_id_ != intro::ROS_TYPE_MESSAGE || member->is_array_) {
+    return {};
+  }
+  const auto * nested = static_cast<const rosidl_message_type_support_t *>(member->members_);
+  return {static_cast<const unsigned char *>(data) + member->offset_, as_members(nested)};
 }
 
 double read_scalar(const void * data, const Member * member)
@@ -173,6 +199,32 @@ double extract_double_from_field(
     throw FieldExtractorError("empty field path");
   }
   return walk(msg_data, type_support, tokens, 0);
+}
+
+std::optional<double> extract_header_stamp(
+  const void * msg_data, const rosidl_message_type_support_t * type_support)
+{
+  if (msg_data == nullptr) {
+    throw FieldExtractorError("null message data");
+  }
+  const SubMessage header = step_into(msg_data, as_members(type_support), "header");
+  if (header.members == nullptr) {
+    return std::nullopt;
+  }
+  const SubMessage stamp = step_into(header.data, header.members, "stamp");
+  if (stamp.members == nullptr) {
+    return std::nullopt;
+  }
+  const Member * sec = lookup_member(stamp.members, "sec");
+  const Member * nanosec = lookup_member(stamp.members, "nanosec");
+  if (sec == nullptr || sec->type_id_ != intro::ROS_TYPE_INT32 ||
+    nanosec == nullptr || nanosec->type_id_ != intro::ROS_TYPE_UINT32)
+  {
+    return std::nullopt;
+  }
+  const auto seconds = *reinterpret_cast<const int32_t *>(stamp.data + sec->offset_);
+  const auto nanoseconds = *reinterpret_cast<const uint32_t *>(stamp.data + nanosec->offset_);
+  return static_cast<double>(seconds) + 1e-9 * static_cast<double>(nanoseconds);
 }
 
 }  // namespace introspection

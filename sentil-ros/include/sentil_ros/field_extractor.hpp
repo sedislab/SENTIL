@@ -1,6 +1,7 @@
 #ifndef SENTIL_ROS_FIELD_EXTRACTOR_HPP
 #define SENTIL_ROS_FIELD_EXTRACTOR_HPP
 
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -24,6 +25,11 @@ double extract_double_from_field(
   const void * msg_data,
   const rosidl_message_type_support_t * type_support,
   const std::string & field_name);
+
+/// Reads `header.stamp` as seconds.
+std::optional<double> extract_header_stamp(
+  const void * msg_data,
+  const rosidl_message_type_support_t * type_support);
 
 }  // namespace introspection
 

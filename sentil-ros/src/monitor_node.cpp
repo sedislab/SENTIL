@@ -3,6 +3,8 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -144,8 +146,9 @@ private:
     std::string topic;
     std::string field;
     TypeSupport type_support;
-    std::vector<uint8_t> scratch;  // reused message storage, sized once at configure
+    std::vector<uint8_t> scratch;
     rclcpp::GenericSubscription::SharedPtr subscription;
+    bool clock_warned = false;
   };
 
   template<typename T>
@@ -313,10 +316,15 @@ private:
 
     auto formula = sentil::Formula::parse(formula_text);
     if (probabilistic) {
+      const int particles = declare_once<int>(base + ".config.particles", 1000);
+      if (particles < 1) {
+        throw std::runtime_error(
+          "formula '" + id + "': config.particles must be a count of at least 1, got " +
+          std::to_string(particles));
+      }
       sentil::SmcConfig config;
-      config.samples = static_cast<std::uint64_t>(
-        declare_parameter<int>(base + ".config.particles", 1000));
-      config.confidence = declare_parameter<double>(base + ".config.confidence", 0.95);
+      config.samples = static_cast<std::uint64_t>(particles);
+      config.confidence = declare_once<double>(base + ".config.confidence", 0.95);
       monitor_->add_probabilistic(id, formula, lifting, config);
       prob_samples_[id] = config.samples;
       prob_confidence_[id] = config.confidence;
@@ -354,6 +362,24 @@ private:
     return qos;
   }
 
+  double sample_time(Binding & binding, std::optional<double> header_stamp)
+  {
+    // ROS reads an unfilled stamp as zero.
+    if (header_stamp && *header_stamp > 0.0) {
+      return *header_stamp;
+    }
+    if (!binding.clock_warned) {
+      binding.clock_warned = true;
+      RCLCPP_WARN(
+        get_logger(),
+        "%s on %s has %s, so its samples are timed by the node clock; under use_sim_time the "
+        "readings that share a /clock tick fold into one evaluation",
+        binding.name.c_str(), binding.topic.c_str(),
+        header_stamp ? "an unset (zero) header stamp" : "no header stamp");
+    }
+    return now().seconds();
+  }
+
   void on_sample(Binding & binding, std::shared_ptr<rclcpp::SerializedMessage> msg)
   {
     if (!active_) {
@@ -364,6 +390,7 @@ private:
     uint8_t * buffer = binding.scratch.data();
     members->init_function(buffer, rosidl_runtime_cpp::MessageInitialization::ZERO);
     double value = 0.0;
+    std::optional<double> header_stamp;
     bool ok = true;
     try {
       if (rmw_deserialize(
@@ -373,6 +400,7 @@ private:
       }
       value = introspection::extract_double_from_field(
         buffer, binding.type_support.introspection, binding.field);
+      header_stamp = introspection::extract_header_stamp(buffer, binding.type_support.introspection);
     } catch (const std::exception & e) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "sample on %s: %s", binding.name.c_str(), e.what());
       ok = false;
@@ -382,24 +410,39 @@ private:
       return;
     }
 
-    state_[binding.name] = value;
-    if (state_.size() < bindings_.size()) {
-      return;  // hold until every distinct variable has been seen at least once
-    }
-    const double stamp = now().seconds();
-    if (stamp <= last_stamp_) {
-      // The streaming monitor needs strictly increasing time; under a stalled or rewound
-      // clock skip the sample rather than feed it a non-monotonic stamp.
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "non-monotonic stamp %.6f, skipping", stamp);
+    const double stamp = sample_time(binding, header_stamp);
+    if (stamp < pending_stamp_) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "%s on %s is stamped %.6f, behind the instant being gathered at %.6f; folding it into "
+        "the next sample instead", binding.name.c_str(), binding.topic.c_str(), stamp, pending_stamp_);
+      state_[binding.name] = value;
       return;
     }
-    last_stamp_ = stamp;
+    if (stamp > pending_stamp_) {
+      evaluate_pending();
+      pending_stamp_ = stamp;
+    }
+    state_[binding.name] = value;
+    pending_.insert(binding.name);
+    if (pending_.size() == bindings_.size()) {
+      evaluate_pending();
+    }
+  }
+
+  void evaluate_pending()
+  {
+    if (pending_.empty() || state_.size() < bindings_.size()) {
+      pending_.clear();
+      return;
+    }
+    pending_.clear();
     try {
-      const auto verdicts = monitor_->update(stamp, state_);
+      const auto verdicts = monitor_->update(pending_stamp_, state_);
       for (const auto & [id, robustness] : verdicts) {
         last_verdict_[id] = robustness;
         publish(id, robustness);
-        publish_probability(id);
+        publish_probability(id, robustness);
       }
     } catch (const std::exception & e) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "update failed: %s", e.what());
@@ -418,10 +461,7 @@ private:
     publishers_.at(id)->publish(out);
   }
 
-  /// Publish the running satisfaction probability of a P~p formula, the estimate the
-  /// streaming monitor maintains over its lifted ensemble. Deterministic formulas have
-  /// no probability publisher and are skipped.
-  void publish_probability(const std::string & id)
+  void publish_probability(const std::string & id, const sentil::Robustness & robustness)
   {
     const auto pub = prob_publishers_.find(id);
     if (pub == prob_publishers_.end()) {
@@ -432,18 +472,24 @@ private:
       return;
     }
     const std::uint64_t samples = prob_samples_.at(id);
+    const double confidence = prob_confidence_.at(id);
     msg::Probability out;
     out.header.stamp = now();
     out.formula_id = id;
     out.estimate = *estimate;
+    out.is_concrete = robustness.resolved;
     out.samples = samples;
-    out.satisfactions = static_cast<std::uint64_t>(std::llround(*estimate * static_cast<double>(samples)));
-    // The running estimate is the satisfying fraction over the lifted ensemble, so a
-    // Wilson interval over those counts is the same band the offline SMC reports.
-    const auto interval = sentil::stats::wilson_interval(out.satisfactions, samples, prob_confidence_.at(id));
-    out.ci_lower = interval.lower;
-    out.ci_upper = interval.upper;
-    out.ci_confidence = interval.level;
+    out.ci_confidence = confidence;
+    if (robustness.resolved) {
+      out.satisfactions = static_cast<std::uint64_t>(std::llround(*estimate * static_cast<double>(samples)));
+      const auto interval = sentil::stats::wilson_interval(out.satisfactions, samples, confidence);
+      out.ci_lower = interval.lower;
+      out.ci_upper = interval.upper;
+    } else {
+      out.satisfactions = 0;
+      out.ci_lower = 0.0;
+      out.ci_upper = 1.0;
+    }
     pub->second->publish(out);
   }
 
@@ -485,7 +531,8 @@ private:
     labels_.clear();
     state_.clear();
     last_verdict_.clear();
-    last_stamp_ = -std::numeric_limits<double>::infinity();
+    pending_stamp_ = -std::numeric_limits<double>::infinity();
+    pending_.clear();
   }
 
   // Callbacks all run on the node's default mutually exclusive group.
@@ -500,7 +547,8 @@ private:
   std::vector<std::string> labels_;
   std::map<std::string, double> state_;
   std::map<std::string, sentil::Robustness> last_verdict_;
-  double last_stamp_ = -std::numeric_limits<double>::infinity();
+  double pending_stamp_ = -std::numeric_limits<double>::infinity();
+  std::set<std::string> pending_;
   bool active_ = false;
 };
 

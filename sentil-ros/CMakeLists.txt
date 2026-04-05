@@ -153,6 +153,7 @@ install(DIRECTORY launch config examples DESTINATION share/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(geometry_msgs REQUIRED)
+  find_package(launch_testing_ament_cmake REQUIRED)
 
   ament_add_gtest(test_field_extractor
     test/test_field_extractor.cpp
@@ -160,6 +161,8 @@ if(BUILD_TESTING)
   target_include_directories(test_field_extractor PRIVATE include)
   ament_target_dependencies(test_field_extractor
     rclcpp rosidl_typesupport_introspection_cpp geometry_msgs sensor_msgs)
+
+  add_launch_test(test/test_pairing.py TIMEOUT 180)
 endif()
 
 ament_package()

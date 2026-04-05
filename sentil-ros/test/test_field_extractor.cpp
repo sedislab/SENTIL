@@ -9,6 +9,7 @@
 
 using sentil_ros::FieldExtractorError;
 using sentil_ros::introspection::extract_double_from_field;
+using sentil_ros::introspection::extract_header_stamp;
 
 template<typename T>
 const rosidl_message_type_support_t * introspection_handle()
@@ -53,6 +54,24 @@ TEST(FieldExtractor, RejectsBadPaths)
   EXPECT_THROW(extract_double_from_field(&twist, ts, "nope.x"), FieldExtractorError);
   EXPECT_THROW(extract_double_from_field(&twist, ts, "linear"), FieldExtractorError);
   EXPECT_THROW(extract_double_from_field(&twist, ts, "linear.x[0]"), FieldExtractorError);
+}
+
+TEST(FieldExtractor, ReadsTheHeaderStamp)
+{
+  sensor_msgs::msg::LaserScan scan;
+  scan.header.stamp.sec = 12;
+  scan.header.stamp.nanosec = 500000000U;
+  const auto * ts = introspection_handle<sensor_msgs::msg::LaserScan>();
+  const auto stamp = extract_header_stamp(&scan, ts);
+  ASSERT_TRUE(stamp.has_value());
+  EXPECT_NEAR(*stamp, 12.5, 1e-9);
+}
+
+TEST(FieldExtractor, ReportsNoStampOnAHeaderlessMessage)
+{
+  geometry_msgs::msg::Twist twist;
+  const auto * ts = introspection_handle<geometry_msgs::msg::Twist>();
+  EXPECT_FALSE(extract_header_stamp(&twist, ts).has_value());
 }
 
 int main(int argc, char ** argv)

@@ -1,0 +1,18 @@
+sentil_monitor:
+  ros__parameters:
+    use_sim_time: false
+    formulas: ["nested"]
+    formulas.nested:
+      formula: "always[0, 2]((x > 0) and (eventually[0, 2](y > 0)))"
+      verification:
+        method: "robustness"
+      signal_names: ["x", "y"]
+      variables:
+        x:
+          topic: "/probe/x"
+          field: "point.x"
+          type: "geometry_msgs/msg/PointStamped"
+        y:
+          topic: "/probe/y"
+          field: "point.x"
+          type: "geometry_msgs/msg/PointStamped"
