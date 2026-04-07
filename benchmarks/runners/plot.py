@@ -420,14 +420,16 @@ def main():
         print("no results found under", RESULTS)
         return
     for figure in (discrete_offline, dense_offline, dense_cost, streaming_online,
-                   scaling, memory, smc_throughput, smc_accuracy, smc_circadian,
-                   smc_tandem_queue, smc_biodiesel, smc_powertrain, particles, rare_event, rare_event_gpu, synthesis):
+                   scaling, memory, smc_throughput, smc_accuracy):
+        figure(records)
+    for bench, title, out in SMC_MODELS:
+        smc_model(records, bench, title, out)
+    for figure in (particles, rare_event, rare_event_gpu, synthesis):
         figure(records)
     for lang, label in (("c", "C ABI"), ("cpp", "C++"), ("python", "Python"),
                         ("julia", "Julia"), ("java", "Java"), ("matlab", "MATLAB")):
         scaling_compare(records, lang, label, f"scaling_{lang}.png")
         streaming_compare(records, lang, label, f"streaming_{lang}.png")
-        memory_compare(records, label, f"memory_{lang}.png")
 
 if __name__ == "__main__":
     main()
