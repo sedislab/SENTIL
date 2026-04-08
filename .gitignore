@@ -3,6 +3,10 @@ target/
 *.rs.bk
 *.pdb
 
+# proptest writes a seed file per crate when it finds a failing case. The cases worth
+# keeping are promoted into named tests, so the seeds themselves are scratch.
+proptest-regressions/
+
 # Lean proof build output (lake-manifest.json is committed)
 .lake/
 
