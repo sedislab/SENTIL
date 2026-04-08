@@ -80,7 +80,7 @@ jobs:
           export SENTIL_VERSION="$version" NFPM_ARCH=amd64
           cd sentil-autosar-adaptive
           mkdir -p ../dist
-          ln -s ../../pkgroot pkgroot
+          ln -s ../pkgroot pkgroot
           "$(go env GOPATH)/bin/nfpm" package --config packaging/nfpm.yaml --packager deb --target ../dist/
           "$(go env GOPATH)/bin/nfpm" package --config packaging/nfpm.yaml --packager rpm --target ../dist/
       - uses: actions/upload-artifact@v4
@@ -99,4 +99,6 @@ jobs:
           path: assets
       - uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          draft: true
           files: assets/**/*

@@ -1,9 +1,8 @@
 name: release-arduino-mirror
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -52,7 +51,7 @@ jobs:
           find . -type l | grep -q . && { echo "symlinks are rejected by the registry"; exit 1; } || true
 
       - name: publish the mirror
-        if: github.event_name == 'push' || inputs.dry_run == false
+        if: github.event_name == 'release' || inputs.dry_run == false
         env:
           GH_TOKEN: ${{ secrets.ARDUINO_REPO_TOKEN }}
         run: |
@@ -79,7 +78,7 @@ jobs:
           fi
 
       - name: make the mirror public
-        if: github.event_name == 'push' || inputs.dry_run == false
+        if: github.event_name == 'release' || inputs.dry_run == false
         env:
           GH_TOKEN: ${{ secrets.ARDUINO_REPO_TOKEN }}
         run: |
@@ -89,7 +88,7 @@ jobs:
           [ "$priv" = "true" ] && gh api -X PATCH "repos/${MIRROR}" -f visibility=public || true
 
       - name: submit the mirror to the library registry
-        if: github.event_name == 'push' || inputs.dry_run == false
+        if: github.event_name == 'release' || inputs.dry_run == false
         env:
           GH_TOKEN: ${{ secrets.REGISTRY_PR_TOKEN }}
         run: |
