@@ -20,7 +20,7 @@ The last is probabilistic: it lifts each reading by the CGM's Gaussian error and
 
 ## Result
 
-SENTIL flags the missed-bolus controller and clears the tuned one. With the lunch bolus skipped, glucose climbs past 180 and stays there for nearly an hour, so `euglycemia` is violated (robustness about -10 mg/dL) with the excursion reported as an interval; the tuned controller keeps every meal inside the target band (robustness about +16). Both stay clear of hypoglycemia, and the probabilistic check confirms the hypoglycemia risk is low under sensor noise. The plot shows both days with the SENTIL-flagged excursion shaded.
+SENTIL flags the missed-bolus controller and clears the tuned one. With the lunch bolus skipped, glucose leaves the target band at minute 809 and does not come back inside it until minute 1424, close to the end of the day, peaking near 285 mg/dL. That puts `euglycemia` at robustness -105.02, with the excursion reported as the interval [809, 1424] minutes, and the peak is high enough to break `bounded_hyper` too, at -35.02. The tuned controller keeps every meal inside the target band (robustness +7.95). Both stay clear of hypoglycemia, and the probabilistic check confirms the hypoglycemia risk is low under sensor noise. The plot shows both days with the SENTIL-flagged excursion shaded.
 
 ## Run it
 

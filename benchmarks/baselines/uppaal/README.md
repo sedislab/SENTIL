@@ -1,6 +1,6 @@
 # UPPAAL-SMC baseline model
 
-The circadian network as a model for UPPAAL-SMC. SENTIL, PRISM and Modest check the same network with the same property, so you can compare their numbers directly.
+The circadian network as a model for UPPAAL-SMC.
 
 ## The model
 
@@ -18,4 +18,4 @@ VERIFYTA=<path>/verifyta bash benchmarks/runners/uppaal_runner.sh benchmarks/bas
 
 You can also use `make bench-uppaal` to run it and it'll write `benchmarks/results/uppaal_smc.jsonl`.
 
-If you do not install UPPAAL, the runner prints a message and stops with success.
+UPPAAL selects its own number of runs and stops when the interval is as narrow as the specification requires.

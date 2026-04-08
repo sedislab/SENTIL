@@ -92,7 +92,7 @@ sentil_monitor:
         confidence: 0.95
 ```
 
-This publishes a `sentil_ros/msg/Probability` on `~/following_distance/probability` next to the robustness topic: the `estimate`, how many of the `samples` trajectories currently satisfy the formula, and `ci_lower` and `ci_upper` at `ci_confidence`.
+This publishes a `sentil_ros/msg/Probability` on `~/following_distance/probability` next to the robustness topic: the `estimate`, how many of the `samples` trajectories currently satisfy the formula, and `ci_lower` and `ci_upper` at `ci_confidence`. `is_concrete` says whether the lifted ensemble has decided the threshold yet. While it is false the estimate counts only the trajectories that have settled, `satisfactions` reads 0, and the interval spans the whole range from 0.0 to 1.0, since a trajectory whose window is still open has not answered and counting it as a failure would put a confidence level on nothing.
 
 The noise family is set by `noise.type`, one of `gaussian` (`mean`, `std_dev`), `uniform` (`low`, `high`), `log_normal` (`mu`, `sigma`), `exponential` (`rate`), `gamma` (`shape`, `scale`), `beta` (`alpha`, `beta`), or `none`, each reading its own parameters under `noise`.
 
@@ -144,9 +144,9 @@ The streaming and online numbers, measured against other tools, are in [`benchma
 
 ## Install
 
-### Package manager
+### apt
 
-Install the released package through apt (or your distribution's package manager):
+One line to add the repository, then install the package for your ROS 2 distribution:
 
 ```bash
 curl -sLf 'https://dl.cloudsmith.io/public/sedislab/sentil/cfg/setup/bash.deb.sh' | sudo bash
@@ -227,7 +227,7 @@ The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the ROS guide, the formula syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The `config/` and `examples/` directories ship the configs and launch files shown here, plus the mobile-robot monitor in `config/robot_nav.yaml` and the robot-arm controller in `config/arm_control.yaml`.
+The [documentation site](https://sentil.pages.dev) carries the ROS guide, the formula syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The `config/` and `examples/` directories ship the configs and launch files shown here, plus the mobile-robot monitor in `config/robot_nav.yaml` and the robot-arm controller in `config/arm_control.yaml`.
 
 ## Citation
 
@@ -235,7 +235,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

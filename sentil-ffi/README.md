@@ -136,7 +136,7 @@ Per-sample streaming cost across the bindings, C and the Rust core in front. The
 
 Offline cost over the trace length, the C ABI and the core against RTAMT, MoonLight, and Banquo. C tracks the core, and both stay an order of magnitude below the baselines.
 
-![Memory: SENTIL (C ABI) streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory_c.png)
+![Memory: the SENTIL engine streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory.png)
 
 Peak memory over the length of the stream.
 
@@ -240,7 +240,7 @@ The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ## Documentation
 
-The header is the reference; the [documentation site](https://sentil.pages.dev) carries the C and C++ guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The C++ wrapper `sentil.hpp` over this header lives in [`sentil-cpp`](../sentil-cpp).
+The header is the reference; the [documentation site](https://sentil.pages.dev) carries the C and C++ guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The C++ wrapper `sentil.hpp` over this header lives in [`sentil-cpp`](../sentil-cpp).
 
 ## Citation
 
@@ -248,7 +248,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

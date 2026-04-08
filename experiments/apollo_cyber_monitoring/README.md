@@ -23,14 +23,14 @@ The full per-cycle verdict stream the reader received is in [results/verdicts.cs
 
 The deterministic speed limit is a bounded-future property over a 5 second window, so it stays provisional until 5 seconds of data accumulate, then resolves concrete at robustness 5.0 (the ego at 15 holds 5 under the 20 limit) and stays satisfied.
 
-The probabilistic follow distance tells the more interesting story. Its 2 second look-ahead window keeps it provisional at first, then it resolves to probability 1.0 with the interval `[0.9934, 1.0000]` while the lead is far. As the lead closes, the probability falls: it drops to 0.9370 with the interval `[0.9142, 0.9541]`, crossing below the 0.99 threshold so the verdict turns to violated, then collapses toward zero as the gap closes inside 5 meters. The confidence interval reported alongside each estimate is the Wilson score interval over the 1000 sampled trajectories.
+The probabilistic follow distance tells the more interesting story. Its 2 second look-ahead window keeps it provisional at first, then it resolves to probability 1.0 with the interval `[0.9934, 1.0000]` while the lead is far. As the lead closes, the probability falls: at 4.3 seconds it drops to 0.9830 with the interval `[0.9688, 0.9908]`, crossing below the 0.99 threshold so the verdict turns to violated, then collapses toward zero as the gap closes inside 5 meters. The confidence interval reported alongside each estimate is the Wilson score interval over the 1000 sampled trajectories.
 
 | quantity | value |
 | --- | --- |
 | verdicts delivered over cyber | 71 |
 | speed limit, once resolved | robustness 5.0, satisfied |
 | follow distance while safe | P = 1.0000, interval [0.9934, 1.0000] |
-| follow distance at the onset | P = 0.9370, interval [0.9142, 0.9541], below the 0.99 threshold |
+| follow distance at the onset | P = 0.9830, interval [0.9688, 0.9908], below the 0.99 threshold |
 
 A downstream planner subscribing to `/apollo/sentil/status` (the [safety planner example](../../sentil-apollo/examples/safety_planner_subscriber.cc)) brakes the moment the probabilistic verdict crosses its threshold.
 

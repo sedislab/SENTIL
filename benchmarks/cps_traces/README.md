@@ -1,17 +1,17 @@
 # CPS trace corpus
 
-Recorded and high-fidelity traces from the case studies, each paired with the specifications it was checked against and the intervals where a specification is violated. The corpus serves two purposes: a realistic monitoring workload drawn from real systems rather than synthetic signals, and a ground truth the monitor is validated against, since every annotated verdict has to agree with what SENTIL computes.
+This directory contains recorded traces from real-world case studies and it is used as a realistic monitoring benchmark drawn from real systems rather than synthetic ones.
 
 ## The traces
 
 | File | Domain | Source | Contains a violation |
 | --- | --- | --- | --- |
-| `carla_urban_drive.json` | automotive | CARLA drive on Town10HD | clearance and speed events |
+| `carla_urban_drive.json` | automotive | CARLA drive on Town10HD | lane and clearance events |
 | `glucose_missed_lunch_bolus.json` | medical | artificial pancreas, lunch bolus skipped | euglycemia excursion |
 | `glucose_tuned.json` | medical | artificial pancreas, every meal dosed | none |
 | `circadian_oscillation.json` | systems biology | circadian gene network | none |
 
-The two glucose traces are the same patient under two controllers, so the corpus carries a matched violated and clean pair, and the circadian trace is a clean case where the property (sustained oscillation) holds.
+The two glucose traces are the same patient under two controllers, so the corpus has both a clean and a violataed trace.
 
 ## Format
 
@@ -22,6 +22,7 @@ Each file is one trace:
   "id": "glucose_missed_lunch_bolus",
   "domain": "medical",
   "source": "experiments/glucose_control",
+  "description": "A 24 h artificial-pancreas run (missed lunch bolus), checked against clinical safety bands.",
   "dt": 1.0,
   "unit_time": "minutes",
   "length": 1441,
@@ -37,11 +38,11 @@ Each file is one trace:
 }
 ```
 
-An annotation marks a window where the pointwise predicate fails, which is where the violation lies. `expected_satisfied` is the verdict the whole-trace formula should return.
+An annotation marks a window where the predicate fails and the violation occurs. `expected_satisfied` is the boolean verdict the whole-trace formula should return.
 
 ## Regenerating and validating
 
-`build.py` derives the corpus from the case studies: the CARLA signals come from the recorded drive, the glucose traces from rerunning the simulation, and the circadian trace from the ensemble mean. `validate.py` loads every trace, runs each specification through SENTIL, and fails if a verdict disagrees with its annotation.
+`build.py` regenerates the corpus from the case studies and `validate.py` loads and runs each trace through SENTIL, and fails if a verdict disagrees with its annotation.
 
 ```
 python benchmarks/cps_traces/build.py

@@ -11,7 +11,7 @@
 
 </div>
 
-SENTIL is a complete tool for working with Signal Temporal Logic (STL) and it's Probabilistic extension PrSTL. The following are its main capabilities. Deterministic STL monitoring, that is offline over a recorded trace or streaming one sample at a time. Probabilistic monitoring, which fits a noise model to sensor data and estimates satisfaction probability with confidence bounds. And synthesis, which turns a specification into a control input and then into an online controller. They compose, so you can do monitoring and synthesis in turn or some other combination.
+SENTIL is a complete tool for working with Signal Temporal Logic (STL) and its probabilistic extension PrSTL. The following are its main capabilities. Deterministic STL monitoring, that is offline over a recorded trace or streaming one sample at a time. Probabilistic monitoring, which fits a noise model to sensor data and estimates satisfaction probability with confidence bounds. And synthesis, which turns a specification into a control input and then into an online controller. They compose, so you can do monitoring and synthesis in turn or some other combination.
 
 ## Your first monitor
 
@@ -65,7 +65,6 @@ fn main() -> sentil::Result<()> {
     let mut trace = Trace::new(times)?;
     trace.add_signal("x", (0..20).map(|i| 0.4 + 0.05 * f64::from(i)).collect::<Vec<_>>())?;
 
-    // The sensor reads x with additive Gaussian noise; lift it into an ensemble.
     let mut lifting = LiftingRegistry::new();
     lifting.register("x", NoiseModel::gaussian(0.0, 0.3)?, NoiseInteraction::Additive);
 
@@ -95,7 +94,6 @@ fn main() -> sentil::Result<()> {
         .with_param("rho", 1.0)? // the follower's reaction time, in seconds
         .build_formula()?;
 
-    // phi now monitors `gap`, `v_r`, and `v_f` against the RSS safe-distance bound.
     println!("{phi}");
     Ok(())
 }
@@ -182,7 +180,7 @@ cargo run --example synthesis
 
 ## Documentation
 
-The full API reference is on [docs.rs](https://docs.rs/sentil). The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and a per-language tutorial for each binding, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial) walks through monitoring, probabilistic checking, and synthesis end to end. The Python, C and C++, Java, Julia, MATLAB, CLI, ROS, and embedded packages all wrap this crate and reproduce its numbers against a shared deterministic oracle.
+The full API reference is on [docs.rs](https://docs.rs/sentil). The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and a per-language tutorial for each binding, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial) walks through monitoring, probabilistic checking, and synthesis end to end. The Python, C and C++, Java, Julia, MATLAB, CLI, ROS, and embedded packages all wrap this crate and reproduce its numbers against a shared deterministic oracle.
 
 ## Contributing
 
@@ -201,7 +199,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

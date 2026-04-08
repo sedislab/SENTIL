@@ -70,7 +70,7 @@ Both read whether a formula is probabilistic from its leading `P`, so the `algor
 The control component turns a specification into a command. Set `mode` in `control/conf/sentil_control.pb.txt`:
 
 - `SHIELD` (default, safest): take Apollo's nominal command off `nominal_channel` and project the throttle, brake, and steering into the configured bounds before they reach the vehicle. SENTIL guards Apollo's controller rather than replacing it.
-- `SYNTHESIZE`: SENTIL is the controller. It builds the state from localization and chassis, plans over the horizon within a per-tick deadline, and writes a `ControlCommand`. `examples/synthesize_control.pb.txt` is a runnable one, a double integrator held between 1 and 9 metres.
+- `SYNTHESIZE`: SENTIL is the controller. It builds the state from localization and chassis, plans over the horizon within a per-tick deadline, and writes a `ControlCommand`. `examples/synthesize_control.pb.txt` is a runnable one, a double integrator held between 1 and 9 metres once it has accelerated into the band.
 - `ADVISORY`: synthesize as above but publish to `/apollo/sentil/control_advice` with no actuation authority, so a synthesized controller can be evaluated against a live drive before it is trusted.
 
 The control component runs on a timer at `control_period_ms` and emits on its deadline even if an input goes quiet; its launch file sets `exception_handler: respawn`, so a failure degrades rather than dies. Pair it with the monitor running the same spec and you have a synthesize, monitor, and re-plan loop in one dag.
@@ -97,7 +97,7 @@ Apollo has no package registry, so the module installs by dropping into a worksp
 
 ### The Apollo workspace
 
-First supply the core as the `@sentil_cpp` external repository. Build it once and stage an install tree with the C header, the `sentil.hpp` surface, and `libsentil.so`:
+First supply the core as the `@sentil_cpp` external repository. Build it once and stage an install tree with the C header, the `sentil.hpp` surface, `libsentil.so`, and the deterministic oracle the parity test replays:
 
 ```
 cargo build --release -p sentil-ffi
@@ -129,15 +129,17 @@ In the Apollo dev container the flow is `aem start`, the two `buildtool` command
 
 ### From a GitHub release
 
-To take a tagged release without cloning, download its source archive, unpack it, and drop `sentil-apollo` in as `modules/sentil`:
+To take a tagged release without cloning, download its source archive and the binary bundle for your platform, unpack both, and drop `sentil-apollo` in as `modules/sentil`:
 
 ```
 curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -o sentil.tar.gz
+curl -L https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-linux-x86_64.tar.gz -o sentil-bin.tar.gz
 tar -xzf sentil.tar.gz
+tar -xzf sentil-bin.tar.gz
 cp -r SENTIL-0.3.0/sentil-apollo modules/sentil
 ```
 
-Wire up `@sentil_cpp` and run the same `buildtool build -p sentil` and `buildtool install sentil` as above.
+The bundle already carries the headers, the shared object, and the oracle in the layout `bzl/sentil_cpp.BUILD` expects, so point `@sentil_cpp` at the unpacked `sentil-0.3.0-linux-x86_64` directory with no further staging and run the same `buildtool build -p sentil` and `buildtool install sentil` as above.
 
 ## Documentation
 
@@ -160,7 +162,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

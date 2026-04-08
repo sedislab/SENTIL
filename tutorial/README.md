@@ -10,13 +10,13 @@ With a TeX Live installation:
 make
 ```
 
-That runs `latexmk` and writes `sentil-tutorial.pdf`. Without latexmk, two passes of any modern engine work:
+That runs `latexmk -xelatex` and writes `sentil-tutorial.pdf`. Without latexmk, two passes work:
 
 ```sh
-pdflatex sentil-tutorial.tex && pdflatex sentil-tutorial.tex
+xelatex sentil-tutorial.tex && xelatex sentil-tutorial.tex
 ```
 
-It also builds with `xelatex` or `lualatex`.
+The preamble loads `fontspec` for the Inter and JetBrains Mono faces under `fonts/`, which needs XeTeX or LuaTeX; `lualatex` works in place of `xelatex`, and pdfTeX does not.
 
 ## Layout
 

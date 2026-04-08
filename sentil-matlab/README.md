@@ -99,7 +99,7 @@ set_param('my_model/Monitor', ...
     'mode_sel', 'Deterministic');   % or 'Probabilistic/SMC' with a Monte Carlo sample count
 ```
 
-Wire the monitored signals to the input port in the order named. In deterministic mode the output port carries the running robustness at each step; in probabilistic mode it lifts the signal and carries the estimate with its bounds.
+Wire the monitored signals to the input port in the order named. In deterministic mode the output port carries the running robustness at each step; in probabilistic mode it lifts the signal and carries four values, the robustness verdict, the running satisfaction probability, and the confidence bounds on that probability. The probability and its bounds belong to a `P[~p]` operator, so a formula written without one still reports robustness on the first output and holds the other three at NaN.
 
 The worked example is the artificial-pancreas case study. `run_fda_insulin_benchmark` drives the block over the UVA/Padova insulin model across a 1000-patient cohort, checking that blood glucose stays in range with high probability and rarely goes hypoglycemic:
 
@@ -122,7 +122,7 @@ Per-sample streaming cost across the bindings, with the Rust core in front. The 
 
 Offline cost over the trace length, MATLAB and the core against RTAMT, MoonLight, and Banquo.
 
-![Memory: SENTIL (MATLAB) streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory_matlab.png)
+![Memory: the SENTIL engine streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory.png)
 
 Peak memory over the length of the stream.
 
@@ -167,7 +167,7 @@ cd('sentil-matlab'); build_sentil; addpath(pwd); runtests('tests')
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The `examples/` directory ships one script per capability, the same set the other bindings carry, plus the Simulink insulin benchmark.
+The [documentation site](https://sentil.pages.dev) has the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The `examples/` directory has example scripts, plus the Simulink insulin benchmark.
 
 ## Citation
 
@@ -175,7 +175,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

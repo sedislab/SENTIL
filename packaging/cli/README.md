@@ -10,7 +10,7 @@
 
 </div>
 
-The `sentil` command-line tool, packaged for Homebrew, Scoop, and Winget. It runs the SENTIL engine directly, with no library boundary, so it is as fast as the Rust core.
+The `sentil` command-line tool, available from Homebrew, Scoop, and Winget. It allows you to run the SENTIL engine directly.
 
 SENTIL is a runtime verification engine for Signal Temporal Logic and its probabilistic extension PrSTL. This tool checks a trace against a formula, monitors a live signal, estimates how likely a probabilistic specification holds, and synthesizes a control input that satisfies one.
 

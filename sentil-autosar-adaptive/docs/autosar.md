@@ -12,14 +12,14 @@ sidebar_position: 5
 
 The package ships an open-source ara::com over vsomeip, so the apps and the examples run on a plain Linux box with no Adaptive Platform license:
 
-```
+```bash
 cmake -B build -G Ninja -DSENTIL_AP_VENDOR=stub \
   -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86_64-stub.cmake -DSENTIL_ROOT=/path/to/sentil
 ninja -C build
 ctest --test-dir build
 ```
 
-A vendor AP is a toolchain swap, not a code fork: `-DSENTIL_AP_VENDOR=vector|eb|apex` with the vendor toolchain points `FindAraCom` at the vendor binding and runs the vendor generator on the same `model/*.arxml`. The app source is unchanged.
+A vendor AP is a toolchain swap: `-DSENTIL_AP_VENDOR=vector|eb|apex` with the vendor toolchain points `FindAraCom` at the vendor binding and runs the vendor generator on the same `model/*.arxml`.
 
 ## The deployment
 
@@ -27,4 +27,4 @@ Three ARXML interfaces in `model/` (signal, verdict, control) are separate from 
 
 ## Health and safety
 
-The monitor is a Platform Health Management Supervised Entity: it reports a checkpoint each cycle and raises a Diagnostic Event Management event on a sustained violation, so a falsified property or a blown deadline reaches the platform's health machinery. SENTIL is a verdict source and a synthesis engine, not the safety case. The core is a QM element, a downstream safety monitor acts on the verdict, and the integrator owns the ISO 26262 argument. The Lean-proved monotonic deque is formal-methods evidence for the streaming monitor, not a certification.
+The monitor is a Platform Health Management Supervised Entity and it reports a checkpoint each cycle and raises a Diagnostic Event Management event on a sustained violation, so a falsified property or a blown deadline reaches the platform's health machinery. SENTIL is a verdict source and a synthesis engine, not the safety case. The core is a QM element, a downstream safety monitor acts on the verdict, and the integrator owns the ISO 26262 argument. The Lean-proved monotonic deque is formal-methods evidence for the streaming monitor, not a certification.

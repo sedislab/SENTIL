@@ -45,7 +45,7 @@ int main(void) {
 
     sentil_embedded_monitor_t *monitor = NULL;
     if (sentil_embedded_create("historically (x > 0)", &monitor) != SENTIL_EMBEDDED_OK) {
-        return 1;  // sentil_embedded_status_message() turns a code into a string
+        return 1;
     }
 
     double t = 0.0;
@@ -53,7 +53,7 @@ int main(void) {
         double values[1] = { read_sensor() };
         sentil_embedded_robustness_t r;
         if (sentil_embedded_update(monitor, t, values, 1, &r) == SENTIL_EMBEDDED_OK) {
-            // r.value is the margin, r.satisfied whether it holds, r.resolved whether the verdict is settled
+            // act on r.satisfied and r.value
         }
         t += 1.0;
     }

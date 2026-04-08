@@ -73,7 +73,7 @@ The deployment is three manifests per app, authored as JSON in `manifest/`, with
 
 ## Safety framing
 
-The monitor is a Platform Health Management Supervised Entity: it reports a checkpoint each cycle and raises a Diagnostic Event Management event on a sustained violation, so a blown deadline or a falsified property reaches the platform's health machinery. The controller reports its cycle checkpoints the same way.
+The monitor publishes a verdict every cycle and a separate event on the edge where a property turns from satisfied to violated, both over the service interface below. Wiring those to Platform Health Management or to Diagnostic Event Management is the integrator's step: a Supervised Entity can report its checkpoint from the cycle verdict, and a DEM event can be raised from the violation edge. The monitor does not do either itself, so nothing here assumes a particular health machinery.
 
 SENTIL is a verdict source and a synthesis engine, not the safety case. The core is a QM element; a downstream safety monitor decides what to do with a verdict, and the integrator owns the ISO 26262 argument. The Lean-proved monotonic deque is offered as formal-methods evidence for the streaming monitor, not as a safety certification. The apps monitor at the core's per-sample cost; the measured numbers are in [`benchmarks/`](../benchmarks) and [`docs/CLAIMS.md`](../docs/CLAIMS.md).
 
@@ -103,6 +103,8 @@ The stub build and the examples are Linux only. macOS and Windows are reached th
 
 A vendor platform is a toolchain swap, not a code change. Set `-DSENTIL_AP_VENDOR=vector|eb|apex` with the vendor toolchain file and point `ARA_COM_ROOT` at the vendor ara::com. The app source is unchanged. `cmake/FindAraCom.cmake` locates the vendor binding and `codegen/generate.sh` runs the vendor generator on `model/*.arxml`.
 
+The vendor include root supplies `ara/com/service.h`, `ara/log/log.h`, and `ara/exec/execution_client.h`; the stub tree under `ara_stub/` is off the include path in a vendor build, and the payload structs the apps share come from `include/sentil_ap/payloads.h`, which carries no transport. `test/vendor_contract` declares the exact ara surface the two applications call, and the `vendor_contract_check` target compiles them against it in every configuration, so a transport type cannot reach an application source.
+
 ### From a GitHub release
 
 To build without cloning, download the source archive for the tag you want and build it the same way. Tags are on the [releases page](https://github.com/sedislab/SENTIL/releases).
@@ -117,7 +119,7 @@ For an on-ECU layout, the packaging under `packaging/opt-layout` places the apps
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the guides and the [AUTOSAR integration overview](https://sentil.pages.dev/docs/autosar). The `examples/adas_fca_monitor` directory holds the full forward-collision demo, a perception publisher, the monitor, and a planner that consumes the verdict, all over the stub on one box with its own vsomeip config and a one-command `run.sh`.
+The [documentation site](https://sentil.pages.dev) carries the guides and the [AUTOSAR integration overview](https://sentil.pages.dev/docs/languages/autosar). The `examples/adas_fca_monitor` directory holds the full forward-collision demo, a perception publisher, the monitor, and a planner that consumes the verdict, all over the stub on one box with its own vsomeip config and a one-command `run.sh`.
 
 ## Contributing
 
@@ -137,7 +139,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

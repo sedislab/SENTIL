@@ -10,7 +10,7 @@
 
 </div>
 
-The `sentil` command-line tool. It runs the SENTIL engine directly, and it is built for a pipe: data on stdout, logs on stderr, a verdict you can branch on, and a stable JSON contract.
+The `sentil` command-line tool.
 
 SENTIL is a runtime verification engine for Signal Temporal Logic and its probabilistic extension PrSTL. This tool checks a trace against a formula, monitors a live signal, estimates how likely a probabilistic specification holds, and synthesizes a control input that satisfies one.
 
@@ -45,7 +45,7 @@ cargo build --release -p sentil-cli
 sentil check -f 'always[0,5] (speed < 30)' -t run.csv
 
 # online: one JSON sample per line in, one verdict per line out
-sensor | sentil monitor -f 'always (temp < 80)' -o ndjson | alerter
+sensor | sentil monitor -f 'historically (temp < 80)' -o ndjson | alerter
 
 # statistical: how likely does a probabilistic spec hold
 sentil smc -f 'P>=0.95(always[0,10] (x > 0))' -t base.csv --samples 1e5
@@ -76,7 +76,7 @@ Join predicates with `not`, `and`, `or`, and `implies`, and reach across time wi
 | `once phi` | `phi` has held at some step so far |
 | `phi since psi` | `phi` has held since `psi` was last true |
 
-A temporal operator takes an optional window `[a, b]` that bounds it to the interval from `a` to `b` around now, so `always[0, 10] (speed < 30)` checks the next ten seconds and `eventually[0, 5] (gap > 2)` asks the gap to clear within five. The bounded and past forms settle to a verdict from the samples already seen, which suits a live alarm; an unbounded future operator resolves only once its window has passed.
+A temporal operator takes an optional window `[a, b]` that bounds it to the interval from `a` to `b` around now, so `always[0, 10] (speed < 30)` checks the next ten seconds and `eventually[0, 5] (gap > 2)` asks the gap to clear within five. A past form settles at every step and a bounded future form settles once its window has passed. Either way the verdict is reported the moment it is decided rather than when the window closes: a sample that breaks an `always` fixes the answer for every window still open over it, so the alarm fires there and the margin it carries is the one that decided it, marked `~` while the exact value can still fall further. An unbounded future operator depends on every sample still to come, so it never settles and never reads as satisfied on a stream, but a violation still lands as soon as one arrives.
 
 The probabilistic operator `P` turns a formula into a chance constraint. `P>=0.95 (always[0, 10] (gap > 5))` asks whether the inner formula holds with probability at least `0.95` once each reading is lifted into a noise ensemble. Use `P>=`, `P>`, `P<=`, or `P<` with a probability, and describe the sensor noise with `--noise`, or fit it from data with `sentil fit`.
 
@@ -162,7 +162,7 @@ An alias is a named preset for a command line you run often. Define aliases unde
 ```toml
 [alias]
 highway = "check --spec automotive/lane_keeping --semantics dense"
-glucose = ["smc", "--spec", "medical/glucose", "--samples", "1e5"]
+glucose = ["smc", "--spec", "medical/euglycemia_band", "--samples", "1e5"]
 ```
 
 When you run `sentil <name>` and `<name>` is not a built-in verb, the tool looks it up in `[alias]`, splits the value with shell quoting honored, and runs it with your extra arguments appended, so `sentil highway -t drive.csv` expands to `sentil check --spec automotive/lane_keeping --semantics dense -t drive.csv`. A built-in verb always wins over an alias of the same name, and `sentil config` lists the aliases in effect.
@@ -171,7 +171,7 @@ Plugins add whole new verbs in any language. When `sentil <name>` is neither a b
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the full reference for every verb and flag, the formula and specification syntax, worked examples, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). At the terminal, `sentil <verb> --help` prints a verb's usage and `sentil explain <operator>` gives an operator's robustness semantics.
+The [documentation site](https://sentil.pages.dev) carries the full reference for every verb and flag, the formula and specification syntax, worked examples, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). At the terminal, `sentil <verb> --help` prints a verb's usage and `sentil explain <operator>` gives an operator's robustness semantics.
 
 ## Contributing
 
@@ -189,7 +189,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

@@ -98,7 +98,7 @@ Per-sample streaming cost across the bindings, with the Rust core in front. The 
 
 Offline cost over the trace length, Julia and the core against RTAMT, MoonLight, and Banquo.
 
-![Memory: SENTIL (Julia) streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory_julia.png)
+![Memory: the SENTIL engine streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory.png)
 
 Peak memory over the length of the stream.
 
@@ -177,7 +177,7 @@ The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The whole engine is here: offline and online monitoring, the statistical layer, synthesis, and the specifications library. The hooks that run a Julia callback (a custom objective, a system model whose dynamics are your function, a Bernoulli source for a sequential test) run on the calling thread; the declarative equivalents cover the rest.
+The [documentation site](https://sentil.pages.dev) has the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The `examples/` directory has several examples to get you started.
 
 ## Citation
 
@@ -185,7 +185,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

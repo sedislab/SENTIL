@@ -43,7 +43,7 @@ SENTIL lives in your language. Each package ships the compiled engine, so none o
 | Julia | `] add Sentil` | [sentil-jl](sentil-jl) |
 | MATLAB and Simulink | the File Exchange | [sentil-matlab](sentil-matlab) |
 | Command line | Homebrew, Scoop, Winget, or a release | [sentil-cli](sentil-cli) |
-| ROS 2 | `apt install ros-<distro>-sentil-ros` | [sentil-ros](sentil-ros) |
+| ROS 2 | `apt install ros-$ROS_DISTRO-sentil-ros` | [sentil-ros](sentil-ros) |
 | Microcontrollers | Arduino, PlatformIO, ESP-IDF, Zephyr, bare metal | [sentil-embedded](sentil-embedded) |
 | Apollo | a Cyber RT module in your workspace | [sentil-apollo](sentil-apollo) |
 | AUTOSAR Adaptive | a CMake build against your platform | [sentil-autosar-adaptive](sentil-autosar-adaptive) |
@@ -71,7 +71,7 @@ The deterministic-oracle set under [benchmarks/](benchmarks) is the cross-langua
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries a guide for each language, the formula and specification syntax, interactive lessons, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The Rust API reference is on [docs.rs](https://docs.rs/sentil), and every package ships the same worked programs in its own `examples/` directory: offline monitoring in discrete and dense time, an online streaming run, a probabilistic check, and a synthesis run.
+The [documentation site](https://sentil.pages.dev) carries a guide for each language, the formula and specification syntax, interactive lessons, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The Rust API reference is on [docs.rs](https://docs.rs/sentil), and every package ships the same worked programs in its own `examples/` directory: offline monitoring in discrete and dense time, an online streaming run, a probabilistic check, and a synthesis run.
 
 ## Citation
 
@@ -79,7 +79,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

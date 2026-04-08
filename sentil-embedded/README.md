@@ -32,7 +32,7 @@ static unsigned long step = 0;
 void setup() {
   Serial.begin(115200);
   sentil_embedded_init(sentil_heap, sizeof(sentil_heap));
-  monitor.begin("historically (x > 0)");  // has x stayed positive so far
+  monitor.begin("historically (x > 0)");
 }
 
 void loop() {
@@ -84,7 +84,7 @@ sentil_embedded_controller_t* controller;  // takes ownership of the model and s
 sentil_embedded_controller_create(model, spec, 1, 150, nullptr, &controller);
 
 double state[1] = {x}, u[1];
-sentil_embedded_controller_control(controller, state, 1, u);  // u[0] is the input to apply
+sentil_embedded_controller_control(controller, state, 1, u);
 ```
 
 For the single integrator `x_{t+1} = x_t + u_t` under a spec asking `x` to stay above zero, the controller emits an input near the upper edge of its bounds to counter a disturbance pulling `x` down, and holds `x` positive step after step. The `Controller` example sketch runs this loop on a board. The step budget is a gradient-step count, not a clock, because a board has none; pick it for the per-step time the chip can spare. Synthesis needs more heap than the bare monitor, so reserve a few more kilobytes; the example reserves eight.
@@ -157,7 +157,7 @@ The engine runs on any 32-bit ARM or RISC-V core with a heap and a C toolchain. 
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The full C ABI and the `SentilMonitor` class are documented inline in [`include/Sentil.h`](include/Sentil.h), each packaging has its own README under `packaging/`, and `extras/cross_compile.md` covers bringing up a new core.
+The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The full C ABI and the `SentilMonitor` class are documented inline in [`include/Sentil.h`](include/Sentil.h), each packaging has its own README under `packaging/`, and `extras/cross_compile.md` covers bringing up a new core.
 
 ## Contributing
 
@@ -175,7 +175,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

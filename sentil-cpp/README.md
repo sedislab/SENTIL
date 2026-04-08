@@ -107,7 +107,7 @@ Per-sample streaming cost across the bindings, C++ and the Rust core in front. T
 
 Offline cost over the trace length, C++ and the core against RTAMT, MoonLight, and Banquo, an order of magnitude below them.
 
-![Memory: SENTIL (C++) streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory_cpp.png)
+![Memory: the SENTIL engine streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory.png)
 
 Peak memory over the length of the stream.
 
@@ -119,17 +119,17 @@ The C++ library needs two pieces: `libsentil` and its header (from the SENTIL C 
 
 ### Package managers
 
-vcpkg and Conan carry the C++ wrapper on Linux, macOS, and Windows:
+vcpkg and Conan carry the C ABI and this header together, on Linux, macOS, and Windows:
 
 ```bash
-vcpkg install sentil-cpp
+vcpkg install sentil
 ```
 
 ```bash
-conan install --requires=sentil-cpp/0.3.0
+conan install --requires=sentil/0.3.0
 ```
 
-On Linux, the C library also ships as a distro package; the header then comes from vcpkg, Conan, or a checkout:
+On Linux, the C library also ships as a distro package; the C++ header then comes from vcpkg, Conan, the release bundle, or a checkout:
 
 ```bash
 sudo apt install ./libsentil-dev_0.3.0_amd64.deb      # Debian, Ubuntu
@@ -138,7 +138,7 @@ sudo dnf install ./libsentil-devel-0.3.0.x86_64.rpm   # Fedora, RHEL
 
 ### Prebuilt release
 
-The `sentil-0.3.0-<os>-<arch>.tar.gz` bundle on the [GitHub release](https://github.com/sedislab/SENTIL/releases) carries the C ABI (the libraries, `sentil.h`, the pkg-config and CMake files). The C++ header is not in it; bring `sentil/sentil.hpp` from vcpkg, Conan, or a checkout of `sentil-cpp`. Extract the bundle and point `CMAKE_PREFIX_PATH` at it so the C library resolves.
+The `sentil-0.3.0-<os>-<arch>.tar.gz` bundle on the [GitHub release](https://github.com/sedislab/SENTIL/releases) carries the C ABI (the libraries, `sentil.h`, the pkg-config and CMake files) and this header under `include/sentil/`. Extract the bundle and point `CMAKE_PREFIX_PATH` at it so the C library resolves.
 
 #### Linux
 
@@ -198,7 +198,7 @@ The build under Build from source compiles `libsentil` first, so `ctest --test-d
 
 ## Documentation
 
-The header is the reference; the [documentation site](https://sentil.pages.dev) carries the C and C++ guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial). The wrapper covers the whole engine: deterministic and probabilistic monitoring, synthesis, the specifications library, and the host-callback hooks (your own objective, a stochastic system whose dynamics are your function, your own simulator for rare-event splitting).
+The header is the reference; the [documentation site](https://sentil.pages.dev) carries the C and C++ guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial). The wrapper covers the whole engine: deterministic and probabilistic monitoring, synthesis, the specifications library, and the host-callback hooks (your own objective, a stochastic system whose dynamics are your function, your own simulator for rare-event splitting).
 
 ## Citation
 
@@ -206,7 +206,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},

@@ -104,7 +104,7 @@ Per-sample streaming cost across the bindings, with the Rust core in front. The 
 
 Offline cost over the trace length, Python and the core against RTAMT, MoonLight, and Banquo.
 
-![Memory: SENTIL (Python) streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory_python.png)
+![Memory: the SENTIL engine streams while the offline tools hold the whole trace](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/memory.png)
 
 Peak memory over the length of the stream.
 
@@ -155,7 +155,7 @@ You need a Rust toolchain and [maturin](https://www.maturin.rs).
 ```bash
 git clone https://github.com/sedislab/SENTIL
 cd SENTIL/sentil-py
-maturin develop --release   # build and install into the active environment
+maturin develop --release
 python -m pytest tests
 ```
 
@@ -172,7 +172,7 @@ The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ## Documentation
 
-The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/tutorial).
+The [documentation site](https://sentil.pages.dev) carries the guides, the specification syntax, and the long-form [tutorial](https://sentil.pages.dev/docs/start/tutorial).
 
 ## Citation
 
@@ -180,7 +180,7 @@ If SENTIL is useful in your work, please cite the paper:
 
 ```bibtex
 @misc{quansah2026sentilruntimeverificationtool,
-    title={SENTIL: A Runtime Verification Tool for Probabilistic Signal Temporal Logic},
+    title={SENTIL: A Runtime Verification Tool for Probabilistic Temporal Logic},
     author={Paapa Kwesi Quansah and Ernest Bonnah},
     year={2026},
     eprint={2605.21676},
