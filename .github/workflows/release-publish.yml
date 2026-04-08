@@ -1,0 +1,53 @@
+name: release-publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: publish the release once every asset is attached
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: wait for the asset workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          for wf in release-ffi release-cli release-embedded release-autosar \
+                    release-julia-artifacts release-pi tutorial; do
+            done=""
+            for _ in $(seq 1 200); do
+              state=$(gh run list --workflow "${wf}.yml" --commit "${GITHUB_SHA}" \
+                        --json status,conclusion \
+                        --jq '.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || true)
+              case "${state}" in
+                "completed success") done=yes; break ;;
+                "completed skipped") done=yes; break ;;
+                completed*) echo "${wf} finished as: ${state}"; exit 1 ;;
+                *) sleep 20 ;;
+              esac
+            done
+            [ -n "${done}" ] || { echo "${wf} did not finish inside the budget"; exit 1; }
+            echo "${wf} ok"
+          done
+
+      - name: publish the draft
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          HAS_PAT: ${{ secrets.RELEASE_EVENT_TOKEN != '' }}
+        run: |
+          set -eu
+          if [ "${HAS_PAT}" != "true" ]; then
+            echo "RELEASE_EVENT_TOKEN is unset, so publishing raises no event and the"
+            echo "packaging workflows stay manual. See docs/RELEASING.md."
+          fi
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
