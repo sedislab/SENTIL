@@ -1,12 +1,12 @@
 # Claims
 
-Every performance and correctness claim SENTIL makes, with the command that reproduces it, the value to expect, the tolerance, and the tier it runs in. A claim marked confirmed is a test that passes or an artifact that regenerates. Where a number is bound to hardware we do not have, the expected value and the conditions are recorded rather than a measurement invented.
+In writing the paper, we make several claims related to the validity, correctness and the excellence of SENTIL. To make it easy to verify, we gather all the claims we make along with commands to reproduce, the value(s) to expect and the acceptable tolerances in this document.
 
-The tiers are CPU (runs anywhere, including in continuous integration), GPU (needs a device, skipped cleanly without one), tool-bound (needs a baseline tool we may not redistribute, skipped cleanly without it), and hardware-bound (tied to a specific machine).
+To make it easy to verify several claims at once, we stratify the claims into 4 tiers, namely, the CPU tier (covers all claims that can be run on a CPU), the GPU tier (covers all claims that need a GPU to run), the tool-bound tier (covers all claims that needs a baseline tool to run like PRISM, Modest, UPPAAL-SMC, etc.) and the hardware-bound tier (covers all claims that are tied to a specific hardware device like an Arduino, Raspberry Pi, etc.).
 
-The artifact-based claims below are checked automatically by `scripts/check_claims.py`, which reads the committed benchmark and experiment results and fails if a value falls outside its tolerance here. Run `python scripts/check_claims.py` directly, or get it as part of `make verify`. The exact claims (the deque equivalence, the interval coverage, the SPRT error rates, the oracle values) are guarded by the Rust test suite instead.
+Note that the results we have were measured on a cluster node (AMD EPYC, single core, release build with fat link-time optimization) and the GPU tests were run on an NVIDIA A40.
 
-## How the speed numbers are read
+## Correctness Claims
 
 1. Prefix scoring equals full scoring. `Formula::robustness` reads only the dependency prefix, and its value at the first sample matches scoring the whole trace, to the bit, over random formulas and traces.
 Command: `cargo test --offline -p sentil prefix_robustness_equals_full_at_index_zero` (and `PROPTEST_CASES=20000` for the deep run).
@@ -14,33 +14,33 @@ Expected: every case equal by `to_bits`.
 Tolerance: exact.
 Tier: CPU.
 
-Deque equals naive. The monotonic-deque sliding window matches the exhaustive scan on bounded and unbounded windows, both extrema. This is the equivalence the Lean proof formalizes.
+2. Deque equals naive. The monotonic-deque sliding window matches the exhaustive scan on bounded and unbounded windows, both extrema.
 Command: `cargo test --offline -p sentil deque_equals_naive`.
 Expected: all equal.
 Tolerance: exact.
 Tier: CPU.
 
-Monte Carlo reuse changes no count. The reused per-worker trace buffer gives the same satisfaction count, bit for bit, as a fresh lift scored over the whole signal, including with several registered noise signals where the draw order matters.
+3. The reused per-worker trace buffer gives the same satisfaction count, as a fresh lift scored over the whole signal, including with several registered noise signals where the draw order matters.
 Command: `cargo test --offline -p sentil count_matches_the_fresh_lift_full_robustness_baseline`.
 Expected: identical count.
 Tolerance: exact.
 Tier: CPU.
 
-Oracle robustness. SENTIL reproduces the known robustness of every canonical formula on the fixed oracle trace.
+4. SENTIL reproduces the known robustness of every canonical formula on the fixed oracle trace.
 Command: `cargo test --offline -p sentil-benchmarks sentil_reproduces_every_oracle_value`.
 Expected: phi1 = -7.622064772118447, phi2 = 4.993604045622577, phi3 = 1.0, phi4 = 1.0, phi5 = -1.0.
 Tolerance: exact.
 Tier: CPU.
 
-Wilson and Clopper-Pearson reference values. The interval functions return the published values on a known input.
+5. The interval functions return the published values on a known input.
 Command: `cargo test --offline -p sentil --features statistical confidence`.
 Expected: wilson(50, 100, 0.95) = [0.403831, 0.596169], cp(50, 100, 0.95) = [0.398321, 0.601679] (R's binom.test), z(0.95) = 1.959964.
 Tolerance: 1e-6 for Wilson and z, 1e-3 for Clopper-Pearson.
 Tier: CPU.
 
-## Speed: full-signal track, against RTAMT
+## Discrete-time STL evaluation speed claims
 
-Discrete STL, whole robustness signal, formula `always[0, 100](eventually[0, 10](x > 5))`, same node, same trace, identical robustness.
+6. SENTIL matches RTAMT's robustness value on `always[0, 100](eventually[0, 10](x > 5))` when evaluated on the same trace at a >100x speedup.
 Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- scalability` and `python benchmarks/runners/rtamt_runner.py scalability`, then `python benchmarks/runners/plot.py`.
 
 | samples | SENTIL | RTAMT | speedup |
@@ -55,11 +55,9 @@ Tolerance: At least 100x speedup.
 Tier: CPU.
 Artifact: `benchmarks/results/`.
 
-Per formula at 2001 samples, the full-signal speedup over RTAMT ranges from about 100x (phi1) to about 220x (phi5), recorded in `benchmarks/results/sentil_deterministic.jsonl` and `rtamt_deterministic.jsonl`.
+## Monitoring speed claims
 
-## Speed: monitoring track
-
-The monitoring value costs the same whatever the length of trace behind it, because only the samples within the formula's horizon are read. For the bounded formula above, the time per evaluation is flat near 0.005 ms from one thousand to ten million samples, while the full-signal cost grows with length.
+7. For a bounded formula, the time per evaluation is flat regardless of the number of samples. It is tested on `always[0, 100](eventually[0, 10](x > 5))` on traces with length 1000 to 10 million.
 
 | samples | monitoring | full signal |
 | --- | --- | --- |
@@ -71,9 +69,9 @@ Expected: Flat in trace length, low single-digit microseconds for a bounded form
 Tolerance: It does not grow with length.
 Tier: CPU.
 
-Breach is a dense-time tool, so the comparison is on the dense robustness value and on the monitoring question its `STL_Eval`/`CheckSpec` answers at time zero. The robustness matches bit for bit: on the length sweep formula both read -18.0736, and on the five oracle formulas SENTIL and Breach agree to the value.
+## Dense-time STL evaluation speed claims 
 
-On the monitoring question SENTIL answers in microseconds where Breach needs milliseconds, because Breach carries a fixed MATLAB and mex call overhead of a couple of milliseconds that dominates at these sizes while SENTIL reads only the formula's horizon.
+8. SENTIL matches Breach's robustness value on several formulas when dense-time evaluated on the same trace with the speedup in the thousands.
 
 | samples | SENTIL | Breach | speedup |
 | --- | --- | --- | --- |
@@ -88,7 +86,7 @@ Tolerance: 0 tolerance for the robustness.
 Tier: CPU.
 Artifact: `benchmarks/results/sentil_scalability.jsonl`, `breach_scalability.jsonl`, `breach_deterministic.jsonl`.
 
-Computing the whole dense robustness signal, SENTIL's cost grows linearly with length and runs about 7x to 12x the discrete full-signal cost, the price of the segment interpolation dense time needs.
+9. Dense-time evaluation runs at 8-12x the discrete-time evaluation cost.
 
 | samples | dense full signal | discrete full signal |
 | --- | --- | --- |
@@ -102,7 +100,7 @@ Tolerance:
 Tier: CPU.
 Artifact: `benchmarks/results/sentil_dense.jsonl`.
 
-## Streaming
+## Streaming/Online monitoring claims
 
 Per-sample latency on the online monitor, the nested formula `always[0, 100](eventually[0, 10](x > 5))` driven one sample at a time through `StreamMonitor::update_packed`.
 Command: `cargo run --release -p sentil-benchmarks --bin sentil_runner -- streaming`.
@@ -112,7 +110,7 @@ Memory is proportional to the largest temporal window, not the trace length, so 
 
 ## Cross-language call overhead
 
-The same streaming monitor driven one sample at a time from each binding, on the nested formula above, every binding reading the identical robustness -17.99212. The per-sample time is the cost of one call across the language boundary into the core plus the update itself.
+11. The per-sample time is the cost of one call across the language boundary into the core plus the update itself, and this is indicated by the table below.
 
 | binding | per-sample update |
 | --- | --- |
@@ -132,7 +130,7 @@ Artifact: `benchmarks/results/sentil_streaming_*.jsonl`.
 
 ## Synthesis
 
-Open-loop trajectory synthesis finds an input sequence that satisfies the spec on a linear model, and the receding-horizon controller plans one online within a hard step deadline.
+12. Open-loop trajectory synthesis finds an input sequence that satisfies the spec on a linear model, and the receding-horizon controller plans one online within a hard step deadline.
 
 | case | backend | robustness | time |
 | --- | --- | --- | --- |
@@ -142,7 +140,6 @@ Open-loop trajectory synthesis finds an input sequence that satisfies the spec o
 | hold, offline | CMA-ES | 0.50 | 5.87 ms |
 | integrator hold, online | gradient | 0.50 | 0.099 ms/step |
 
-The online controller ran 200 steps against a 5 ms deadline with a p99 of 0.112 ms and no misses, so it plans each input in about a tenth of a millisecond with room to spare.
 Command: `cargo run --release -p sentil-benchmarks --bin sentil_synth_runner`.
 Expected: every offline case reaches a positive robustness (the spec holds on the model), the online controller misses no deadline.
 Tolerance: robustness within 1e-3 of the recorded value with zero deadline misses.
@@ -151,7 +148,7 @@ Artifact: `benchmarks/results/sentil_synth.jsonl`.
 
 ## Confidence intervals and sequential testing
 
-Coverage on synthetic ground truth. Over 4000 batches of 100 Bernoulli draws at a known p of 0.3, counting how often the 95 percent interval contains p, the Wilson interval covers within 0.03 of its nominal 0.95 and the Clopper-Pearson interval covers at least 0.94, the conservative behavior it is built for. The seed is fixed, so the run is deterministic.
+13. Coverage on synthetic ground truth. Over 4000 batches of 100 Bernoulli draws at a known p of 0.3, counting how often the 95 percent interval contains p, the Wilson interval covers within 0.03 of its nominal 0.95 and the Clopper-Pearson interval covers at least 0.94, the conservative behavior it is built for. The seed is fixed, so the run is deterministic.
 Command: `cargo test --offline -p sentil --features statistical wilson_and_clopper_pearson_cover_at_their_nominal_rate`.
 Expected: Wilson coverage within 0.03 of 0.95, Clopper-Pearson at least 0.94. Tolerance: as stated in the assertion. Tier: CPU, every commit.
 
@@ -171,7 +168,7 @@ Modest runs it once the reference models are ported to the v3.1.301 grammar, whi
 Command: `MODEST=<modest> bash benchmarks/runners/modest_runner.sh benchmarks/baselines/modest/circadian.modest`, or `make bench-modest` for all four.
 Expected: near 0.04 within the interval, SENTIL more than an order of magnitude faster. Tolerance: the estimates agree within the intervals; Modest's wall time ranged from about 43 to 73 seconds across runs on a shared machine, so the ratio is an order-of-magnitude statement rather than a fixed figure. Tier: CPU and tool-bound. Artifact: `benchmarks/results/modest_smc.jsonl`.
 
-UPPAAL-SMC runs it once the model is rebuilt for the fragment it samples, which `benchmarks/baselines/uppaal` carries. It estimates 0.034 on the circadian model in about 19 seconds and 0.719 on the tandem queue in about 21 seconds, agreeing with the other three. Two faults had to go. The reference model raced the seven reactions with probability weights on ordinary edges, which UPPAAL ignores, selecting each edge with equal chance instead, so the rebuilt model races them through a branch point; a two-edge test with weights 9 and 1 returns a 1 to 1 split on ordinary edges and 9 to 1 through a branch point. It also carried a peak-detection sub-automaton whose general expression guards sit outside the samplable fragment, which is what produced the earlier degenerate verdict. It also runs the two continuous-state models, as stochastic hybrid automata that hold the reactor state in rate-zero clocks and step the Euler recurrence one interval at a time, estimating 0.193 on the biodiesel reactor and 0.497 on the powertrain controller, both agreeing with Modest. UPPAAL picks its own run count from the requested half-width rather than taking a fixed sample size, so it used about 9000 runs on the circadian model and 48000 on the higher-variance tandem queue, against the fixed 10,000 of the others; read its times with that in mind.
+UPPAAL-SMC runs it once the model is rebuilt for the fragment it samples, which `benchmarks/baselines/uppaal` carries. It estimates 0.038 on the circadian model in about 19 seconds and 0.720 on the tandem queue in about 20 seconds, agreeing with the other three. Two faults had to go. The reference model raced the seven reactions with probability weights on ordinary edges, which UPPAAL ignores, selecting each edge with equal chance instead, so the rebuilt model races them through a branch point; a two-edge test with weights 9 and 1 returns a 1 to 1 split on ordinary edges and 9 to 1 through a branch point. It also carried a peak-detection sub-automaton whose general expression guards sit outside the samplable fragment, which is what produced the earlier degenerate verdict. It also runs the two continuous-state models, as stochastic hybrid automata that hold the reactor state in rate-zero clocks and step the Euler recurrence one interval at a time, estimating 0.193 on the biodiesel reactor and 0.497 on the powertrain controller, both agreeing with Modest. UPPAAL picks its own run count from the requested half-width rather than taking a fixed sample size, so it used about 9000 runs on the circadian model and 48000 on the higher-variance tandem queue, against the fixed 10,000 of the others; read its times with that in mind.
 Command: `VERIFYTA=<verifyta> make bench-uppaal`.
 Expected: near 0.04 within the interval, SENTIL more than an order of magnitude faster. Tolerance: the estimates agree within the intervals; the run count is UPPAAL's own and the wall time is machine and load dependent. Tier: CPU and tool-bound. Artifact: `benchmarks/results/uppaal_smc.jsonl`.
 
@@ -239,9 +236,9 @@ The latency is CPU work on the monitoring machine, not the GPU node that runs th
 | Closed-loop deadline | 2 ms |
 
 Command: record with `experiments/carla_driving/record_drive.py` against a CARLA 0.9.15 server, then `python experiments/carla_driving/monitor_drive.py --trace experiments/carla_driving/results/drive.json`.
-Reference (STORM paper, Apollo on an A100 node): median 0.64 ms, 99th 1.83 ms, end to end 2.1 ms per frame; an RTAMT monitor on the same workload about 47 ms. Tolerance: the deterministic streaming stays sub-microsecond and the probabilistic check stays inside the 2 ms deadline at the median and the tail; absolute figures are machine-dependent. Tier: CPU (the recording step is GPU-bound and not part of the regenerated number).
+Reference (the SENTIL paper, Apollo on an A100 node): median 0.64 ms, 99th 1.83 ms, end to end 2.1 ms per frame; an RTAMT monitor on the same workload about 47 ms. Tolerance: the deterministic streaming stays sub-microsecond and the probabilistic check stays inside the 2 ms deadline at the median and the tail; absolute figures are machine-dependent. Tier: CPU (the recording step is GPU-bound and not part of the regenerated number).
 
-The probabilistic conjunct is what the deterministic checks cannot do. At the pedestrian encounter near t = 146 s the deterministic clearance still reads 5.7 m, above the 5 m bound, while the collision-free probability over the lookahead falls to essentially zero, because the pedestrian's predicted path under its uncertainty meets the car's recorded path inside ten seconds. The probabilistic verdict holds near 1.0 across the rest of the drive and drops only at the few real encounters. This mirrors the STORM paper's intersection event, where deterministic bounds held and the collision-free probability fell to 0.94. Tier: CPU.
+The probabilistic conjunct is what the deterministic checks cannot do. At the pedestrian encounter near t = 146 s the deterministic clearance still reads 5.7 m, above the 5 m bound, while the collision-free probability over the lookahead falls to essentially zero, because the pedestrian's predicted path under its uncertainty meets the car's recorded path inside ten seconds. The probabilistic verdict holds near 1.0 across the rest of the drive and drops only at the few real encounters. This mirrors the SENTIL paper's intersection event, where deterministic bounds held and the collision-free probability fell to 0.94. Tier: CPU.
 
 ## Medical device, artificial-pancreas glucose control
 
