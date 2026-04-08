@@ -1,13 +1,3 @@
-"""Every package declares the same version as the workspace.
-
-The version is written into roughly seventy tracked files, and each ecosystem keeps
-it in its own manifest, so a bump that misses one produces a Julia package that
-fetches a release tarball that does not exist or a CMake config that reports the old
-version to `find_package`. The workspace `Cargo.toml` is the source of truth.
-
-Run as `python scripts/check_version.py` from anywhere.
-"""
-
 import os
 import re
 import sys
@@ -29,10 +19,24 @@ MANIFESTS = [
     ("sentil-ros/CMakeLists.txt", r'^set\(SENTIL_VERSION "([^"]+)"'),
 ]
 
+IMAGE_REFS = ["docker/docker-compose.yml", "docker/README.md"]
+IMAGE_TAG = re.compile(r"sentil-artifact:(\S+)")
+ARTIFACT_REFS = ["sentil-jl/Artifacts.toml"]
+ARTIFACT_VERSION = re.compile(r"/releases/download/v(\S+?)/sentil-(\S+?)-")
+
 def declared(path, pattern):
     with open(os.path.join(ROOT, path), encoding="utf-8") as handle:
         found = re.search(pattern, handle.read(), re.MULTILINE)
     return found.group(1).strip() if found else None
+
+def image_tags(path):
+    with open(os.path.join(ROOT, path), encoding="utf-8") as handle:
+        found = IMAGE_TAG.findall(handle.read())
+    return [tag.removesuffix("-gpu") for tag in found if tag != "latest" and tag != "latest-gpu"]
+
+def artifact_versions(path):
+    with open(os.path.join(ROOT, path), encoding="utf-8") as handle:
+        return [v for pair in ARTIFACT_VERSION.findall(handle.read()) for v in pair]
 
 def main():
     expected = declared("Cargo.toml", r'^version = "([^"]+)"')
@@ -48,12 +52,32 @@ def main():
         elif actual != expected:
             mismatched.append(f"{path}: {actual}")
 
+    tags = 0
+    for path in IMAGE_REFS:
+        found = image_tags(path)
+        if not found:
+            mismatched.append(f"{path}: no image tag found")
+        for tag in found:
+            tags += 1
+            if tag != expected:
+                mismatched.append(f"{path}: image tag {tag}")
+
+    artifacts = 0
+    for path in ARTIFACT_REFS:
+        found = artifact_versions(path)
+        if not found:
+            mismatched.append(f"{path}: no download URL found")
+        for version in found:
+            artifacts += 1
+            if version != expected:
+                mismatched.append(f"{path}: download URL {version}")
+
     if mismatched:
         print(f"workspace version is {expected}, but:")
         for line in mismatched:
             print(f"  {line}")
         sys.exit(1)
-    print(f"all {len(MANIFESTS)} manifests declare {expected}")
+    print(f"all {len(MANIFESTS)} manifests, {tags} image tags and {artifacts} artifact URLs declare {expected}")
 
 if __name__ == "__main__":
     main()
