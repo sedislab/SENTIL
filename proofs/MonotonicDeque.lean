@@ -659,13 +659,6 @@ theorem deque_sliding_window_max_correct (stream : Deque Nat) (w : Nat)
 
 namespace Exec
 
-structure MinDeque where
-  data : Array (Sample Nat)
-  deriving Repr
-
-def MinDeque.empty : MinDeque := ⟨#[]⟩
-def MinDeque.front (d : MinDeque) : Option Nat := d.data[0]?.map (·.value)
-
 partial def popFrontImpl (arr : Array (Sample Nat)) (cutoff : Nat) : Array (Sample Nat) :=
   if h : arr.size > 0 then
     if (arr[0]'(by omega)).time < cutoff then
@@ -673,64 +666,37 @@ partial def popFrontImpl (arr : Array (Sample Nat)) (cutoff : Nat) : Array (Samp
     else arr
   else arr
 
-partial def popBackImpl (arr : Array (Sample Nat)) (v : Nat) : Array (Sample Nat) :=
+partial def popBackImpl (evict : Nat → Nat → Bool) (arr : Array (Sample Nat)) (v : Nat) :
+    Array (Sample Nat) :=
   if arr.size > 0 then
-    if arr.back!.value ≥ v then popBackImpl arr.pop v else arr
+    if evict arr.back!.value v then popBackImpl evict arr.pop v else arr
   else arr
 
-def MinDeque.step (d : MinDeque) (s : Sample Nat) (w : Nat) : MinDeque :=
-  ⟨(popBackImpl (popFrontImpl d.data (s.time - w)) s.value).push s⟩
+def step (evict : Nat → Nat → Bool) (arr : Array (Sample Nat)) (s : Sample Nat) (w : Nat) :
+    Array (Sample Nat) :=
+  (popBackImpl evict (popFrontImpl arr (s.time - w)) s.value).push s
 
-def naiveMinAt (stream : Array (Sample Nat)) (t w : Nat) : Option Nat :=
-  let active := stream.filter (fun s => decide (t - w ≤ s.time) && decide (s.time ≤ t))
+def naiveAt (pick : Nat → Nat → Nat) (stream : Array (Sample Nat)) (t w : Nat) : Option Nat :=
+  let active := stream.filter (windowPred t w)
   if h : active.size > 0
-  then some (active.foldl (fun acc s => min acc s.value) (active[0]'(by omega)).value)
+  then some (active.foldl (fun acc s => pick acc s.value) (active[0]'(by omega)).value)
   else none
 
-def verify (stream : Array (Sample Nat)) (w : Nat) : IO Unit := do
-  let mut d := MinDeque.empty
+def check (evict : Nat → Nat → Bool) (pick : Nat → Nat → Nat)
+    (stream : Array (Sample Nat)) (w : Nat) : IO Unit := do
+  let mut d : Array (Sample Nat) := #[]
   let mut ok := true
   for s in stream do
-    d := d.step s w
-    let dv := d.front
-    let nv := naiveMinAt stream s.time w
+    d := step evict d s w
+    let dv := d[0]?.map (·.value)
+    let nv := naiveAt pick stream s.time w
     if dv != nv then
       IO.println s!"FAIL t={s.time}: deque={dv} naive={nv}"
       ok := false
   IO.println (if ok then "PASS" else "FAIL")
 
-structure MaxDeque where
-  data : Array (Sample Nat)
-  deriving Repr
-
-def MaxDeque.empty : MaxDeque := ⟨#[]⟩
-def MaxDeque.front (d : MaxDeque) : Option Nat := d.data[0]?.map (·.value)
-
-partial def popBackMaxImpl (arr : Array (Sample Nat)) (v : Nat) : Array (Sample Nat) :=
-  if arr.size > 0 then
-    if arr.back!.value ≤ v then popBackMaxImpl arr.pop v else arr
-  else arr
-
-def MaxDeque.step (d : MaxDeque) (s : Sample Nat) (w : Nat) : MaxDeque :=
-  ⟨(popBackMaxImpl (popFrontImpl d.data (s.time - w)) s.value).push s⟩
-
-def naiveMaxAt (stream : Array (Sample Nat)) (t w : Nat) : Option Nat :=
-  let active := stream.filter (fun s => decide (t - w ≤ s.time) && decide (s.time ≤ t))
-  if h : active.size > 0
-  then some (active.foldl (fun acc s => max acc s.value) (active[0]'(by omega)).value)
-  else none
-
-def verifyMax (stream : Array (Sample Nat)) (w : Nat) : IO Unit := do
-  let mut d := MaxDeque.empty
-  let mut ok := true
-  for s in stream do
-    d := d.step s w
-    let dv := d.front
-    let nv := naiveMaxAt stream s.time w
-    if dv != nv then
-      IO.println s!"FAIL t={s.time}: deque={dv} naive={nv}"
-      ok := false
-  IO.println (if ok then "PASS" else "FAIL")
+def verify : Array (Sample Nat) → Nat → IO Unit := check (fun back v => decide (back ≥ v)) min
+def verifyMax : Array (Sample Nat) → Nat → IO Unit := check (fun back v => decide (back ≤ v)) max
 
 end Exec
 

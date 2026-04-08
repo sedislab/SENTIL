@@ -1,20 +1,18 @@
 # Proofs
 
-A formalization of the monotonic deque that answers a sliding-window minimum in amortized O(1) per sample. `MonotonicDeque.lean` proves it computes the same answer as a naive scan. This is implemented in [`sentil-core/src/semantics/window.rs`](../sentil-core/src/semantics/window.rs).
+A Lean proof that asserts that the monotonic deque that we implement in [`sentil-core/src/semantics/window.rs`](../sentil-core/src/semantics/window.rs) computes the same answer as a naive scan.
 
-## What exactly is proven
+## What exactly we prove
 
-For a stream of timestamped values processed in time order, `deque_sliding_window_min_correct` states that after the k-th sample the deque's front value equals the minimum value over the window `[t_k - w, t_k]` inclusive. `deque_sliding_window_max_correct` is the dual, for the eventually operator's supremum.
+For a stream of timestamped values processed in time order, `deque_sliding_window_min_correct` states that after the k-th sample the deque's front value equals the minimum value over the window `[t_k - w, t_k]` inclusive. `deque_sliding_window_max_correct` also proves that after the k-th sample the deque's front value equals the maximum value over the window `[t_k - w, t_k]` inclusive.
 
-The deque keeps timestamps strictly increasing from front to back and values non-decreasing from front to back. It evicts from the front while the front timestamp falls strictly below `t_k - w`, and evicts from the back while the back value is at least the incoming value. That back rule is `>=`, so a run of equal values keeps only the newest; the minimum is the same either way, and `popBack_val_lt` proves the surviving tail stays strictly below the value being pushed.
+The deque keeps timestamps strictly increasing from front to back and values non-decreasing from front to back. It evicts from the front while the front timestamp falls strictly below `t_k - w`, and evicts from the back while the back value is at least the incoming value.
 
 ## Verifying it
 
-The toolchain is pinned in `lean-toolchain` (Lean 4.31.0). With [elan](https://github.com/leanprover/elan) installed:
+The toolchain is pinned in `lean-toolchain` (Lean 4.31.0). With [elan](https://github.com/leanprover/elan) installed, run
 
-```
+```bash
 cd proofs
 lake build
 ```
-
-The `#eval` lines run the executable deque against the naive scan on a handful of streams and print `PASS`.
