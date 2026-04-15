@@ -48,7 +48,6 @@ synthesis-gpu = ["synthesis", "gpu"]
 thiserror = { version = "2.0", default-features = false }
 num-traits = { version = "0.2.19", default-features = false, features = ["libm"] }
 libm = { version = "0.2", optional = true }
-
 rand = { workspace = true, optional = true }
 rand_distr = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }

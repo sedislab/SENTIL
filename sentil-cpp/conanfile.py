@@ -3,7 +3,6 @@ import os
 from conan import ConanFile
 from conan.tools.files import copy
 
-
 class SentilCppConan(ConanFile):
     name = "sentil-cpp"
     version = "0.3.0"

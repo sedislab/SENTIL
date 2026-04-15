@@ -618,6 +618,7 @@ pub extern "C" fn sentil_noise_destroy(handle: *mut c_void) {
     clear_error();
     ffi_panic_boundary((), || unsafe { drop_handle::<NoiseModel>(handle) });
 }
+
 #[no_mangle]
 pub extern "C" fn sentil_lifting_registry_create() -> *mut c_void {
     clear_error();

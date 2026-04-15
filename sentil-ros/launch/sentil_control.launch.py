@@ -11,7 +11,6 @@ from launch_ros.events.lifecycle import ChangeState
 from launch_ros.substitutions import FindPackageShare
 from lifecycle_msgs.msg import Transition
 
-
 def generate_launch_description():
     params_file = LaunchConfiguration("params_file")
     autostart = LaunchConfiguration("autostart")

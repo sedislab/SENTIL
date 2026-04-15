@@ -26,7 +26,7 @@ arduino-cli lib install Sentil
 
 ### Prebuilt release
 
-Download [`sentil-arduino.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-arduino.zip) from the Releases tab, then choose Sketch, Include Library, Add .ZIP Library, and pick the file. The bundled sketches then appear under File, Examples, Sentil. 
+Download [`sentil-arduino.zip`](https://github.com/sedislab/SENTIL/releases/latest/download/sentil-arduino.zip) from the Releases tab, then choose Sketch, Include Library, Add .ZIP Library, and pick the file. The bundled sketches then appear under File, Examples, Sentil.
 
 From a terminal, point `arduino-cli` at the downloaded archive:
 

@@ -18,11 +18,11 @@ function run_fda_insulin_benchmark()
     banner('SENTIL medical-device benchmark: UVA/Padova insulin pump');
 
     num_samples = 1000;
-    sim_time    = 86400;         % seconds (24 h)
-    dt_fixed    = 1;             % fixed-step ode3 size (s)
+    sim_time    = 86400; % seconds (24 h)
+    dt_fixed    = 1; % fixed-step ode3 size (s)
     slx_model   = 'sentil_fda_insulin_benchmark';
 
-    target_bg   = 120;           % controller setpoint (mg/dL)
+    target_bg   = 120; % controller setpoint (mg/dL)
     Kp_baseline = 0.050;
     Kp_retuned  = 0.038;
 
@@ -43,11 +43,11 @@ function run_fda_insulin_benchmark()
     patients.CGM_sigma = 1.0 + (5.0 - 1.0) * X(:,7); % CGM noise SD (mg/dL)
 
     meal_times = [8*3600, 12*3600, 18*3600];
-    meal_cho   = [60, 80, 70];                % grams of CHO
-    pulse_dur  = 300;                         % 5 min, in seconds
+    meal_cho   = [60, 80, 70]; % grams of CHO
+    pulse_dur  = 300; % 5 min, in seconds
 
     t_meal    = (0:10:sim_time)';
-    carb_flux = zeros(size(t_meal));          % g/min
+    carb_flux = zeros(size(t_meal)); % g/min
     for k = 1:numel(meal_times)
         inside = t_meal >= meal_times(k) & t_meal < meal_times(k) + pulse_dur;
         carb_flux(inside) = meal_cho(k) / (pulse_dur/60);

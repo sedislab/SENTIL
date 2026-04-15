@@ -285,6 +285,7 @@ fn transform(eigenvectors: &[Vec<f64>], scales: &[f64], vector: &[f64]) -> Vec<f
     }
     out
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,7 +5,6 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
-
 def main(root):
     ok = True
 
@@ -41,7 +40,6 @@ def main(root):
     print("arxml_validate: {} interfaces, {} provided instances, {}".format(
         len(interfaces), len(provided), "ok" if ok else "FAILED"))
     return 0 if ok else 1
-
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "."))

@@ -547,6 +547,7 @@ impl Monitor {
         SmcResult::from_core(py, result)
     }
 }
+
 /// The verdict of a sequential probability ratio test.
 #[pyclass(eq, eq_int)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -737,6 +738,7 @@ impl Monitor {
         Ok(SprtResult::from_core(result.map_err(pyerr)?))
     }
 }
+
 fn to_sim_expr(value: &Bound<'_, PyAny>) -> PyResult<CoreSimExpr> {
     if let Ok(expr) = value.extract::<PyRef<SimExpr>>() {
         Ok(expr.inner.clone())

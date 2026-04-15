@@ -4,7 +4,6 @@ from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.files import copy, download, get
 
-
 class SentilConan(ConanFile):
     name = "sentil"
     version = "0.3.0"

@@ -45,11 +45,11 @@ fn advance_circadian(state: &[f64], rng: &mut dyn rand::RngCore) -> Vec<f64> {
     loop {
         let rates = [
             if a < CAP { 1.0 * (1.0 + a) } else { 0.0 }, // transcription A -> ma
-            if ma > 0.0 { 0.5 * ma } else { 0.0 },       // translation A -> a
-            if a > 0.0 { 0.2 * a } else { 0.0 },         // degradation A
+            if ma > 0.0 { 0.5 * ma } else { 0.0 }, // translation A -> a
+            if a > 0.0 { 0.2 * a } else { 0.0 }, // degradation A
             if r < CAP { 1.0 * (1.0 + a) } else { 0.0 }, // transcription R -> mr
-            if mr > 0.0 { 0.5 * mr } else { 0.0 },       // translation R -> r
-            if r > 0.0 { 0.2 * r } else { 0.0 },         // degradation R
+            if mr > 0.0 { 0.5 * mr } else { 0.0 }, // translation R -> r
+            if r > 0.0 { 0.2 * r } else { 0.0 }, // degradation R
             if a > 0.0 && r > 0.0 { 10.0 * a * r } else { 0.0 }, // complex formation
         ];
         let Some(which) = fire(&rates, &mut clock, rng) else {
@@ -79,9 +79,9 @@ fn advance_tandem(state: &[f64], rng: &mut dyn rand::RngCore) -> Vec<f64> {
     let mut clock = 0.0;
     loop {
         let rates = [
-            if q1 < QUEUE_CAP { 4.8 } else { 0.0 },             // arrival
+            if q1 < QUEUE_CAP { 4.8 } else { 0.0 }, // arrival
             if q1 > 0.0 && q2 < QUEUE_CAP { 5.0 } else { 0.0 }, // serve into queue 2
-            if q2 > 0.0 { 5.0 } else { 0.0 },                   // departure
+            if q2 > 0.0 { 5.0 } else { 0.0 }, // departure
         ];
         let Some(which) = fire(&rates, &mut clock, rng) else {
             break;

@@ -74,7 +74,7 @@ def _basal():
     ipb = ib * VI
     m3 = HEB * M1 / (1.0 - HEB)
     ilb = M2 * ipb / (M1 + m3)
-    basal_iir = (M2 + M4) * ipb - M1 * ilb       # pmol/kg/min
+    basal_iir = (M2 + M4) * ipb - M1 * ilb  # pmol/kg/min
     return dict(ipb=ipb, ilb=ilb, gtb=gt, m3=m3, ib=ib, basal_iir=basal_iir)
 
 
