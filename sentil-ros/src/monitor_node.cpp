@@ -44,15 +44,26 @@ struct TypeSupport
   const rosidl_message_type_support_t * rmw = nullptr;
 };
 
+// rclcpp 28 renamed this and 29 dropped the old spelling
+const rosidl_message_type_support_t * typesupport_handle(
+  const std::string & type_name, const char * identifier, rcpputils::SharedLibrary & library)
+{
+#ifdef SENTIL_ROS_MESSAGE_TYPESUPPORT_HANDLE
+  return rclcpp::get_message_typesupport_handle(type_name, identifier, library);
+#else
+  return rclcpp::get_typesupport_handle(type_name, identifier, library);
+#endif
+}
+
 TypeSupport load_type_support(const std::string & type_name)
 {
   TypeSupport ts;
   ts.introspection_lib =
     rclcpp::get_typesupport_library(type_name, "rosidl_typesupport_introspection_cpp");
-  ts.introspection = rclcpp::get_typesupport_handle(
+  ts.introspection = typesupport_handle(
     type_name, "rosidl_typesupport_introspection_cpp", *ts.introspection_lib);
   ts.rmw_lib = rclcpp::get_typesupport_library(type_name, "rosidl_typesupport_cpp");
-  ts.rmw = rclcpp::get_typesupport_handle(type_name, "rosidl_typesupport_cpp", *ts.rmw_lib);
+  ts.rmw = typesupport_handle(type_name, "rosidl_typesupport_cpp", *ts.rmw_lib);
   return ts;
 }
 

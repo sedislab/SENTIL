@@ -125,6 +125,9 @@ ament_target_dependencies(sentil_monitor_node
   diagnostic_updater diagnostic_msgs rcpputils
   rosidl_typesupport_introspection_cpp std_msgs)
 target_link_libraries(sentil_monitor_node Sentil::cpp ${CMAKE_DL_LIBS})
+if(rclcpp_VERSION VERSION_GREATER_EQUAL "28.0.0")
+  target_compile_definitions(sentil_monitor_node PRIVATE SENTIL_ROS_MESSAGE_TYPESUPPORT_HANDLE)
+endif()
 rosidl_target_interfaces(sentil_monitor_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 rclcpp_components_register_node(sentil_monitor_node
   PLUGIN "sentil_ros::MonitorNode"

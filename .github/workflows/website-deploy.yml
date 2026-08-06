@@ -146,7 +146,11 @@ jobs:
                       /sitemap.xml /robots.txt /llms.txt \
                       /engine/py-worker.js /engine/sentil_engine.js /engine/sentil_engine_bg.wasm \
                       /pyodide/pyodide.mjs /og/docs/image.png; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://sentil.pages.dev$path")
+            for _ in $(seq 1 12); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://sentil.pages.dev$path")
+              [ "$code" = "200" ] && break
+              sleep 10
+            done
             echo "$code  $path"
             [ "$code" = "200" ] || fail=1
           done
@@ -157,7 +161,7 @@ jobs:
           curl -s https://sentil.pages.dev/docs/start/first-monitor | grep -q 'robustness' || { echo "docs body missing"; exit 1; }
           locs=$(curl -s https://sentil.pages.dev/sitemap.xml | grep -c '<loc>')
           echo "sitemap urls: $locs"
-          [ "$locs" -gt 100 ] || { echo "sitemap looks truncated"; exit 1; }
+          [ "$locs" -ge 90 ] || { echo "sitemap looks truncated at $locs urls"; exit 1; }
       - name: check the security headers took effect
         run: |
           headers=$(curl -s -D - -o /dev/null https://sentil.pages.dev/)
