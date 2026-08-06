@@ -95,8 +95,10 @@ jobs:
           rosdep install --from-paths . --ignore-src -y
           bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.codename }} \
             --ros-distro ${{ matrix.distro }}
+          sed -i '/^Depends:/ s/$/, libsentil-dev/' debian/control
           echo 'override_dh_auto_configure:' >> debian/rules
           printf '\tdh_auto_configure -- -DSENTIL_NO_DOWNLOAD=ON\n' >> debian/rules
+          echo 'override_dh_usrlocal:' >> debian/rules
           fakeroot debian/rules binary
           mkdir -p ../out && mv ../*.deb ../out/
 

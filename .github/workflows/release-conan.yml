@@ -75,8 +75,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$GH_TOKEN" ]; then echo "no REGISTRY_PR_TOKEN; the recipe stays staged as an artifact"; exit 0; fi
-          gh repo fork conan-io/conan-center-index --clone=false --remote=false 2>/dev/null || true
+          gh repo fork conan-io/conan-center-index --clone=false --remote=false
           owner=$(gh api user --jq .login)
+          for _ in $(seq 1 30); do
+            gh api "repos/${owner}/conan-center-index" >/dev/null 2>&1 && break
+            sleep 10
+          done
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${owner}/conan-center-index.git" fork
           cd fork
           git config user.name "github-actions[bot]"

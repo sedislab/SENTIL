@@ -39,6 +39,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: mingw for mex
+        if: env.MLM_LICENSE_TOKEN != '' && matrix.artifact == 'windows'
+        run: |
+          C:\msys64\usr\bin\pacman -S --noconfirm --needed mingw-w64-x86_64-gcc
+          echo "MW_MINGW64_LOC=C:\msys64\mingw64" >> $env:GITHUB_ENV
       - uses: matlab-actions/setup-matlab@v2
         if: env.MLM_LICENSE_TOKEN != ''
         with:
