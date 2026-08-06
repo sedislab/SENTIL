@@ -32,7 +32,9 @@ target_include_directories(sentil_jni PRIVATE
     "${SENTIL_HEADER_DIR}"
     "${SENTIL_JNI_HEADERS}")
 target_link_libraries(sentil_jni PRIVATE ${SENTIL_CORE})
-target_compile_options(sentil_jni PRIVATE -Wall -Wextra)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(sentil_jni PRIVATE -Wall -Wextra)
+endif()
 
 if(APPLE)
     set_target_properties(sentil_jni PROPERTIES INSTALL_RPATH "@loader_path" BUILD_WITH_INSTALL_RPATH ON)

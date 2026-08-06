@@ -92,6 +92,7 @@ jobs:
           set -u
           cd sentil-ros
           rosdep update --rosdistro ${{ matrix.distro }} || true
+          rosdep install --from-paths . --ignore-src -y
           bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.codename }} \
             --ros-distro ${{ matrix.distro }}
           echo 'override_dh_auto_configure:' >> debian/rules

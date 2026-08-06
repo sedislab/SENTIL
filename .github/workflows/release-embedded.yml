@@ -149,7 +149,8 @@ jobs:
             exit 0
           fi
           mkdir lib && (cd lib && unzip -q ../out/sentil-platformio.zip)
-          pio pkg publish lib --no-interactive
+          pio pkg publish lib --no-interactive > pio.log 2>&1 || grep -q "already published" pio.log
+          cat pio.log
 
   publish-espidf:
     name: publish to the esp component registry
@@ -171,4 +172,5 @@ jobs:
           fi
           pip install idf-component-manager
           mkdir comp && (cd comp && unzip -q ../out/sentil-esp-idf.zip)
-          compote component upload --namespace "$IDF_COMPONENT_NAMESPACE" --name sentil --project-dir comp/sentil
+          compote component upload --namespace "$IDF_COMPONENT_NAMESPACE" --name sentil --project-dir comp/sentil > esp.log 2>&1 || grep -q "is already on the" esp.log
+          cat esp.log
