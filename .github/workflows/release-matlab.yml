@@ -5,6 +5,10 @@ on:
     types: [published]
   workflow_dispatch:
 
+concurrency:
+  group: release-assets-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   gateway:
     name: gateway on ${{ matrix.artifact }}

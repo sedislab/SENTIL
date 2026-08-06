@@ -27,7 +27,7 @@ cp sentil-cli/README.md "$root/" 2>/dev/null || true
 
 mkdir -p assets
 if [ "$fmt" = "zip" ]; then
-  (cd "$(dirname "$root")" && zip -r "${OLDPWD}/assets/${root}.zip" "$(basename "$root")" >/dev/null)
+  (cd "$(dirname "$root")" && 7z a -tzip "${OLDPWD}/assets/${root}.zip" "$(basename "$root")" >/dev/null)
   echo "assets/${root}.zip"
 else
   tar czf "assets/${root}.tar.gz" "$root"

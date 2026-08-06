@@ -44,7 +44,6 @@ struct TypeSupport
   const rosidl_message_type_support_t * rmw = nullptr;
 };
 
-// rclcpp 28 renamed this and 29 dropped the old spelling
 const rosidl_message_type_support_t * typesupport_handle(
   const std::string & type_name, const char * identifier, rcpputils::SharedLibrary & library)
 {
