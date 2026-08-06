@@ -3,7 +3,7 @@ title: "ROS 2"
 description: "Run SENTIL as ROS 2 lifecycle nodes: bind formula variables to topics and fields in YAML, stream verdicts and live probabilities, and synthesize control."
 ---
 
-The `sentil_ros` package ships two managed lifecycle nodes for the SENTIL engine. `sentil_monitor` watches topics against a specification and reports how close the system is to breaking it. `sentil_control` runs the synthesis subsystem the other way around, turning a specification into a control input and actuating it on a topic. Both are composable components, so you can load them into the same process as the nodes they watch. The package builds against Humble, Jazzy, and Rolling.
+The `sentil_ros` package ships two managed lifecycle nodes for the SENTIL engine. `sentil_monitor` watches topics against a specification and reports how close the system is to breaking it. `sentil_control` runs the synthesis subsystem the other way around, turning a specification into a control input and actuating it on a topic. Both are composable components, so you can load them into the same process as the nodes they watch. The package builds against Humble, Jazzy, Kilted, and Lyrical.
 
 You describe a monitor in a YAML parameters file. Name the formulas, bind each variable to a topic and a message field, and pick deterministic or probabilistic checking. Messages of any type resolve through introspection at runtime, so you watch topics you already publish without changing their types.
 
@@ -16,7 +16,7 @@ Two routes. The distribution package from apt is the short one and needs no tool
 <Steps>
 <Step>
 
-Install the package for your distribution: `ros-humble-sentil-ros`, `ros-jazzy-sentil-ros`, or `ros-rolling-sentil-ros`. rosdistro publishes Debian packages, so this route is Ubuntu and Debian only.
+Install the package for your distribution: `ros-humble-sentil-ros`, `ros-jazzy-sentil-ros`, `ros-kilted-sentil-ros`, or `ros-lyrical-sentil-ros`. rosdistro publishes Debian packages, so this route is Ubuntu and Debian only.
 
 ```bash
 sudo apt install ros-humble-sentil-ros
@@ -43,7 +43,7 @@ The last two lines are `<name>sentil_ros</name>` and `<version>0.3.0</version>`.
 <OsTabs>
 <OsTab value="Linux">
 
-The covered combination. Continuous integration runs this same colcon build on every push in the `ros:humble-ros-base-jammy`, `ros:jazzy-ros-base-noble`, and `ros:rolling-ros-base-noble` containers. ROS 2 and the compiler come from your distribution's repositories.
+The covered combination. Continuous integration runs this same colcon build on every push in the `ros:humble-ros-base-jammy`, `ros:jazzy-ros-base-noble`, `ros:kilted-ros-base-noble`, and `ros:lyrical-ros-base-resolute` containers. ROS 2 and the compiler come from your distribution's repositories.
 
 </OsTab>
 <OsTab value="macOS">

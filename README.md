@@ -15,7 +15,7 @@
 
 SENTIL decides whether a system meets a Signal Temporal Logic specification, and it does three things you can use on their own or chain together. Deterministic STL monitoring computes the quantitative robustness of a trace, offline or one streaming sample at a time. Probabilistic monitoring fits a noise model to sensor data and estimates how likely a PrSTL specification holds, with a confidence bound. Synthesis turns a specification into a control input and then into an online controller. It is a Rust engine with a stable C ABI, wrapped by a package in every major language and a command-line tool, and each package carries the compiled engine inside it, so a Python user with no Rust and no GPU installs a wheel and it runs.
 
-![Offline discrete STL robustness, SENTIL against the baseline tools](https://raw.githubusercontent.com/sedislab/SENTIL/main/benchmarks/results/discrete_offline.png)
+![Offline discrete STL robustness, SENTIL against the baseline tools](benchmarks/results/discrete_offline.png)
 
 Offline robustness over a long discrete-time trace, SENTIL against the STL baseline tools. The streaming monitor holds a flat per-sample cost and memory proportional to the formula's windows, not the length of the stream, so it sustains a real-time loop where a whole-trace monitor cannot. The numbers, and how to regenerate them, are in [docs/CLAIMS.md](docs/CLAIMS.md).
 

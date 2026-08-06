@@ -20,7 +20,8 @@ jobs:
         include:
           - { distro: humble, image: "ros:humble-ros-base-jammy" }
           - { distro: jazzy, image: "ros:jazzy-ros-base-noble" }
-          - { distro: rolling, image: "ros:rolling-ros-base-noble" }
+          - { distro: kilted, image: "ros:kilted-ros-base-noble" }
+          - { distro: lyrical, image: "ros:lyrical-ros-base-resolute" }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

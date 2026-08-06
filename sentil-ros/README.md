@@ -4,7 +4,7 @@
 
 #### The ROS 2 nodes for Probabilistic Signal Temporal Logic
 
-[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Rolling-blue.svg)](https://docs.ros.org)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Kilted%20%7C%20Lyrical-blue.svg)](https://docs.ros.org)
 [![Website](https://img.shields.io/badge/docs-sentil.pages.dev-blue.svg)](https://sentil.pages.dev)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
@@ -12,7 +12,7 @@
 
 ROS 2 nodes for the [`sentil`](../sentil-core) engine. You write a small YAML file that names each formula and binds its variables to topics and message fields; the node subscribes to those topics, evaluates the formulas as messages arrive, and publishes a verdict per formula. Messages of any type resolve at runtime, so you watch topics you already have without touching them.
 
-Two managed lifecycle nodes ship in the package. `sentil_monitor` watches topics against a specification and reports how close the system is to breaking it. `sentil_control` runs the synthesis subsystem the other way around, turning a specification into a control input and actuating it on a topic. Both are composable components, so you can load them into the same process as the nodes they watch. The package builds against Humble, Jazzy, and Rolling.
+Two managed lifecycle nodes ship in the package. `sentil_monitor` watches topics against a specification and reports how close the system is to breaking it. `sentil_control` runs the synthesis subsystem the other way around, turning a specification into a control input and actuating it on a topic. Both are composable components, so you can load them into the same process as the nodes they watch. The package builds against Humble, Jazzy, Kilted, and Lyrical.
 
 ## Your first monitor
 
@@ -153,7 +153,7 @@ curl -sLf 'https://dl.cloudsmith.io/public/sedislab/sentil/cfg/setup/bash.deb.sh
 sudo apt install ros-$ROS_DISTRO-sentil-ros
 ```
 
-Built for `humble` on Ubuntu 22.04 and for `jazzy` and `rolling` on Ubuntu 24.04, on amd64 and arm64. The SENTIL core arrives as `libsentil-dev` from the same repository, so apt resolves it for you, and upgrades and removal work the way they do for any package.
+Built for `humble` on Ubuntu 22.04, for `jazzy` and `kilted` on Ubuntu 24.04, and for `lyrical` on Ubuntu 26.04, on amd64 and arm64. The SENTIL core arrives as `libsentil-dev` from the same repository, so apt resolves it for you, and upgrades and removal work the way they do for any package.
 
 The repository is hosted on Cloudsmith rather than in the official ROS distribution. The ROS build farm builds offline with no Rust toolchain and needs every dependency to be a rosdep key in the Ubuntu or ROS archives, which a Rust library is not. Distributing the packages ourselves is what makes a real `apt install` possible.
 

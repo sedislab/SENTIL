@@ -29,6 +29,8 @@ jobs:
           - { runner: ubuntu-22.04-arm, arch: arm64, codename: jammy }
           - { runner: ubuntu-24.04, arch: amd64, codename: noble }
           - { runner: ubuntu-24.04-arm, arch: arm64, codename: noble }
+          - { runner: ubuntu-26.04, arch: amd64, codename: resolute }
+          - { runner: ubuntu-26.04-arm, arch: arm64, codename: resolute }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -59,8 +61,10 @@ jobs:
           - { runner: ubuntu-22.04-arm, arch: arm64, distro: humble, codename: jammy }
           - { runner: ubuntu-24.04, arch: amd64, distro: jazzy, codename: noble }
           - { runner: ubuntu-24.04-arm, arch: arm64, distro: jazzy, codename: noble }
-          - { runner: ubuntu-24.04, arch: amd64, distro: rolling, codename: noble }
-          - { runner: ubuntu-24.04-arm, arch: arm64, distro: rolling, codename: noble }
+          - { runner: ubuntu-24.04, arch: amd64, distro: kilted, codename: noble }
+          - { runner: ubuntu-24.04-arm, arch: arm64, distro: kilted, codename: noble }
+          - { runner: ubuntu-26.04, arch: amd64, distro: lyrical, codename: resolute }
+          - { runner: ubuntu-26.04-arm, arch: arm64, distro: lyrical, codename: resolute }
     runs-on: ${{ matrix.runner }}
     container: ros:${{ matrix.distro }}-ros-base
     steps:
@@ -128,7 +132,8 @@ jobs:
           for deb in incoming/*.deb; do
             case "$(basename "$deb")" in
               *jammy*|*humble*) suite=jammy ;;
-              *noble*|*jazzy*|*rolling*) suite=noble ;;
+              *noble*|*jazzy*|*kilted*) suite=noble ;;
+              *resolute*|*lyrical*) suite=resolute ;;
               *) echo "cannot place $deb in a suite"; exit 1 ;;
             esac
             cloudsmith push deb --republish "${target}/ubuntu/${suite}" "$deb"
