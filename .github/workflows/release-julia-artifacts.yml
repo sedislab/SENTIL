@@ -131,6 +131,22 @@ jobs:
           name: Artifacts.toml
           path: sentil-jl/Artifacts.toml
 
+      - name: carry the filled hashes back to main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          filled=$(mktemp)
+          cp sentil-jl/Artifacts.toml "$filled"
+          git config user.name "Paapa Quansah"
+          git config user.email "officialpaapa@gmail.com"
+          git fetch --depth 1 origin main
+          git checkout -B main FETCH_HEAD
+          cp "$filled" sentil-jl/Artifacts.toml
+          git add sentil-jl/Artifacts.toml
+          git diff --cached --quiet && exit 0
+          git commit -m "julia artifact hashes for ${GITHUB_REF_NAME}"
+          git push origin main
+
       - name: attach the tarballs to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
