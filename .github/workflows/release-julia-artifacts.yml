@@ -9,10 +9,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-assets-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
     name: julia artifact ${{ matrix.triple }}

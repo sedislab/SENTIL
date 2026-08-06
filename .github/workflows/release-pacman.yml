@@ -54,6 +54,7 @@ jobs:
 
       - name: validate
         working-directory: packaging/aur
+        shell: bash
         run: |
           useradd -m builder
           chown -R builder .

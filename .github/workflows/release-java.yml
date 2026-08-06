@@ -32,6 +32,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust }}
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - if: runner.os == 'Windows'
+        run: echo "CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV
       - name: build the native library
         working-directory: sentil-java
         run: mvn -B -DskipTests package

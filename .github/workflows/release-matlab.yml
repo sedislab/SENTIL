@@ -5,9 +5,8 @@ on:
     types: [published]
   workflow_dispatch:
 
-concurrency:
-  group: release-assets-${{ github.ref }}
-  cancel-in-progress: false
+permissions:
+  contents: write
 
 jobs:
   gateway:

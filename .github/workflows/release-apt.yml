@@ -77,6 +77,7 @@ jobs:
           path: core
 
       - name: install the core so the node can link against it
+        shell: bash
         run: |
           set -euo pipefail
           apt-get update
@@ -86,8 +87,9 @@ jobs:
       - name: build the package
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           . /opt/ros/${{ matrix.distro }}/setup.sh
+          set -u
           cd sentil-ros
           rosdep update --rosdistro ${{ matrix.distro }} || true
           bloom-generate rosdebian --os-name ubuntu --os-version ${{ matrix.codename }} \
@@ -98,6 +100,7 @@ jobs:
           mkdir -p ../out && mv ../*.deb ../out/
 
       - name: confirm it declares the dependency
+        shell: bash
         run: |
           set -euo pipefail
           deb=$(ls out/*.deb | head -1)
