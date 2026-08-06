@@ -114,13 +114,23 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
+function(sentil_link_ros target)
+  if(COMMAND ament_target_dependencies)
+    ament_target_dependencies(${target} ${ARGN})
+  else()
+    foreach(pkg IN LISTS ARGN)
+      target_link_libraries(${target} ${${pkg}_TARGETS})
+    endforeach()
+  endif()
+endfunction()
+
 add_library(sentil_monitor_node SHARED
   src/monitor_node.cpp
   src/field_extractor.cpp)
 target_include_directories(sentil_monitor_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(sentil_monitor_node
+sentil_link_ros(sentil_monitor_node
   rclcpp rclcpp_lifecycle rclcpp_components lifecycle_msgs
   diagnostic_updater diagnostic_msgs rcpputils
   rosidl_typesupport_introspection_cpp std_msgs)
@@ -138,7 +148,7 @@ add_library(sentil_control_node SHARED
 target_include_directories(sentil_control_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(sentil_control_node
+sentil_link_ros(sentil_control_node
   rclcpp rclcpp_lifecycle rclcpp_components lifecycle_msgs std_msgs)
 target_link_libraries(sentil_control_node Sentil::cpp ${CMAKE_DL_LIBS})
 rosidl_target_interfaces(sentil_control_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
@@ -162,7 +172,7 @@ if(BUILD_TESTING)
     test/test_field_extractor.cpp
     src/field_extractor.cpp)
   target_include_directories(test_field_extractor PRIVATE include)
-  ament_target_dependencies(test_field_extractor
+  sentil_link_ros(test_field_extractor
     rclcpp rosidl_typesupport_introspection_cpp geometry_msgs sensor_msgs)
 
   add_launch_test(test/test_pairing.py TIMEOUT 180)

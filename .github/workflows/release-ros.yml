@@ -51,6 +51,7 @@ jobs:
             exit 1
           fi
       - name: generate the rosdebian metadata
+        shell: bash
         run: |
           source "/opt/ros/${{ matrix.distro }}/setup.bash"
           cd sentil-ros
