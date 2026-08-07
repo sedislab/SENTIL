@@ -100,7 +100,7 @@ jobs:
             echo "already listed; the registry picks up new tags on its own"
             exit 0
           fi
-          gh repo fork arduino/library-registry --clone=false --remote=false 2>/dev/null || true
+          gh repo fork arduino/library-registry --clone=false
           owner=$(gh api user --jq .login)
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${owner}/library-registry.git" reg
           cd reg
