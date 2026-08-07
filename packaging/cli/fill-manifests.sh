@@ -45,6 +45,10 @@ for manifest in SEDIS.SENTIL.yaml SEDIS.SENTIL.installer.yaml SEDIS.SENTIL.local
       "packaging/cli/winget/${manifest}" > "$out/${manifest}"
 done
 
+for manifest in "$out"/SEDIS.SENTIL*.yaml; do
+  [ -s "$manifest" ] && [ "$(tail -c1 "$manifest" | wc -l)" -eq 0 ] && printf '\n' >> "$manifest"
+done
+
 if grep -rq "REPLACE_WITH" "$out"; then
   echo "a checksum placeholder was left unfilled" >&2
   exit 1
