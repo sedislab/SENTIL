@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      submit:
+        description: open the winget pull request
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -141,3 +146,33 @@ jobs:
         with:
           name: winget-manifests
           path: winget-staged/**
+
+      - name: open the winget pull request
+        if: startsWith(github.ref, 'refs/tags/') || inputs.submit
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then echo "no REGISTRY_PR_TOKEN; the manifests stay staged as an artifact"; exit 0; fi
+          version="${GITHUB_REF_NAME#v}"
+          gh repo fork microsoft/winget-pkgs --clone=false
+          owner=$(gh api user --jq .login)
+          for _ in $(seq 1 30); do
+            gh api "repos/${owner}/winget-pkgs" >/dev/null 2>&1 && break
+            sleep 10
+          done
+          git clone --depth 1 --filter=blob:none --sparse \
+            "https://x-access-token:${GH_TOKEN}@github.com/${owner}/winget-pkgs.git" fork
+          cd fork
+          git sparse-checkout set manifests/s/SEDIS
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "sentil-${version}"
+          mkdir -p "manifests/s/SEDIS/SENTIL/${version}"
+          cp ../winget-staged/*.yaml "manifests/s/SEDIS/SENTIL/${version}/"
+          git add -A && git commit -m "New version: SEDIS.SENTIL version ${version}"
+          git push -u origin "sentil-${version}"
+          gh pr create --repo microsoft/winget-pkgs \
+            --head "${owner}:sentil-${version}" --base master \
+            --title "New version: SEDIS.SENTIL version ${version}" \
+            --body "Adds SEDIS.SENTIL at ${version}. Runtime verification for Signal Temporal Logic and its probabilistic extension. Manifests generated from the release archives and validated in CI"
