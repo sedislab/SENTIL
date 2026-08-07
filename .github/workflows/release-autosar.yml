@@ -18,7 +18,7 @@ jobs:
       - name: pack the service model, manifests, and app source
         run: |
           version="${GITHUB_REF_NAME#v}"
-          [ "$GITHUB_REF_NAME" = "$version" ] && version="0.3.0"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           out="sentil-autosar-adaptive-${version}-ap-deliverable"
           mkdir -p "$out"
           cd sentil-autosar-adaptive
@@ -76,7 +76,7 @@ jobs:
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0
           version="${GITHUB_REF_NAME#v}"
-          [ "$GITHUB_REF_NAME" = "$version" ] && version="0.3.0"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           export SENTIL_VERSION="$version" NFPM_ARCH=amd64
           cd sentil-autosar-adaptive
           mkdir -p ../dist
