@@ -1,0 +1,102 @@
+name: ci-vcpkg
+
+on:
+  push:
+    paths:
+      - 'packaging/vcpkg/**'
+      - '.github/workflows/ci-vcpkg.yml'
+  pull_request:
+    paths:
+      - 'packaging/vcpkg/**'
+      - '.github/workflows/ci-vcpkg.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  overlay-install:
+    name: vcpkg ${{ matrix.triplet }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, triplet: x64-linux }
+          - { os: macos-14, triplet: arm64-osx }
+          - { os: macos-15-intel, triplet: x64-osx }
+          - { os: windows-latest, triplet: x64-windows }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check out vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: vcpkg
+          fetch-depth: 1
+
+      - name: bootstrap vcpkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./vcpkg/bootstrap-vcpkg.bat
+          else
+            ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          fi
+
+      - name: install the port from the overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=./vcpkg/vcpkg
+          [ "$RUNNER_OS" = "Windows" ] && exe=./vcpkg/vcpkg.exe
+          "$exe" install sentil --overlay-ports=packaging/vcpkg/ports \
+            --triplet ${{ matrix.triplet }}
+
+      - name: check the installed layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="vcpkg/installed/${{ matrix.triplet }}"
+          for f in include/sentil.h include/sentil/sentil.hpp \
+                   share/sentil/SentilConfig.cmake share/sentil/usage share/sentil/copyright \
+                   share/sentilcpp/SentilCppConfig.cmake; do
+            [ -f "$root/$f" ] || { echo "missing $f"; exit 1; }
+          done
+          echo "done with installed layout"
+
+      - name: build a consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p consumer
+          cat > consumer/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.21)
+          project(sentil_consumer LANGUAGES CXX)
+          find_package(SentilCpp CONFIG REQUIRED)
+          add_executable(main main.cpp)
+          target_link_libraries(main PRIVATE Sentil::cpp)
+          EOF
+          cat > consumer/main.cpp <<'EOF'
+          #include <sentil/sentil.hpp>
+
+          #include <iostream>
+
+          int main() {
+              sentil::Trace trace({0, 1, 2, 3, 4}, "speed", {12.0, 9.0, 7.0, 4.0, 6.0});
+              sentil::Formula phi = sentil::Formula::parse("always (speed > 5)");
+
+              std::cout << "robustness: " << phi.robustness(trace) << "\n";
+              std::cout << "dense robustness: " << phi.robustness_dense(trace) << "\n";
+              return 0;
+          }
+          EOF
+          ws="$PWD"
+          [ "$RUNNER_OS" = "Windows" ] && ws=$(cygpath -m "$PWD")
+          cmake -S consumer -B consumer/build \
+            -DCMAKE_TOOLCHAIN_FILE="$ws/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_BUILD_TYPE=Release
+          cmake --build consumer/build --config Release
