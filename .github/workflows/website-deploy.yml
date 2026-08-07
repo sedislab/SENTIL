@@ -101,10 +101,15 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy out --project-name=sentil --branch=main
       - name: tell indexnow what changed
+        continue-on-error: true
         run: |
+          if ! curl -sS -o /dev/null --max-time 15 https://api.indexnow.org/; then
+            echo "indexnow is not answering; skipping the ping"
+            exit 0
+          fi
           key=$(ls out | grep -E '^[0-9a-f]{32}\.txt$' | head -1 | sed 's/\.txt$//')
           python3 - "$key" <<'EOF'
-          import json, re, sys, urllib.request
+          import json, re, sys, urllib.error, urllib.request
           key = sys.argv[1]
           urls = re.findall(r'<loc>([^<]+)</loc>', open('out/sitemap.xml').read())
           body = json.dumps({
@@ -118,7 +123,10 @@ jobs:
               data=body,
               headers={'Content-Type': 'application/json; charset=utf-8'},
           )
-          print('indexnow', urllib.request.urlopen(req, timeout=30).status, f'({len(urls)} urls)')
+          try:
+              print('indexnow', urllib.request.urlopen(req, timeout=30).status, f'({len(urls)} urls)')
+          except (urllib.error.URLError, OSError) as e:
+              print('indexnow declined the ping:', e)
           EOF
 
   verify:

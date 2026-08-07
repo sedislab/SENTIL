@@ -175,4 +175,4 @@ jobs:
           gh pr create --repo microsoft/winget-pkgs \
             --head "${owner}:sentil-${version}" --base master \
             --title "New version: SEDIS.SENTIL version ${version}" \
-            --body "Adds SEDIS.SENTIL at ${version}. Runtime verification for Signal Temporal Logic and its probabilistic extension. Manifests generated from the release archives and validated in CI"
+            --body "Adds SEDIS.SENTIL at ${version}. SENTIL is a tool for runtime verification of Signal Temporal Logic and its probabilistic extension, PrSTL."

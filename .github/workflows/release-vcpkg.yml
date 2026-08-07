@@ -120,4 +120,4 @@ jobs:
           gh pr create --repo microsoft/vcpkg \
             --head "${owner}:sentil-${version}" --base master \
             --title "[sentil] add new port ${version}" \
-            --body "Adds the \`sentil\` port at ${version}. Runtime verification for Signal Temporal Logic and its probabilistic extension. Validated with an overlay install on x64-linux in CI."
+            --body "Adds the \`sentil\` port at ${version}. And regarding the question from the previous submission, this is consumed as a C and C++ library. This port has a C-ABI header over a Rust core and it's used as any regular C or C++ library."
