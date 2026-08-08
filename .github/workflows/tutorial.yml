@@ -23,7 +23,7 @@ jobs:
       - name: stage the benchmark figures
         run: sh tutorial/sync-figures.sh
       - name: compile to pdf
-        uses: xu-cheng/latex-action@v3
+        uses: xu-cheng/latex-action@v4
         with:
           working_directory: tutorial
           root_file: sentil-tutorial.tex
