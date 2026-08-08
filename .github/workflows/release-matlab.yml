@@ -34,7 +34,7 @@ jobs:
       - name: build the core
         if: env.MLM_LICENSE_TOKEN != ''
         run: cargo build --release -p sentil-ffi
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         if: env.MLM_LICENSE_TOKEN != '' && matrix.artifact == 'macos'
         with:
           distribution: temurin
