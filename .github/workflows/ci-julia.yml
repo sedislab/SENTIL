@@ -26,3 +26,24 @@ jobs:
         env:
           SENTIL_LIB: ${{ github.workspace }}/target/release/libsentil.so
         run: julia --project=sentil-jl -e 'using Pkg; Pkg.test()'
+
+  artifact:
+    name: load from the published artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+      - uses: julia-actions/cache@v2
+      - name: load the way a registry user does, with no local build
+        run: |
+          julia --project=sentil-jl -e '
+            using Pkg, TOML
+            Pkg.instantiate()
+            using Sentil
+            want = VersionNumber(TOML.parsefile("sentil-jl/Project.toml")["version"])
+            got = Sentil.version()
+            got == (want.major, want.minor, want.patch) ||
+                error("the artifact reports $got but Project.toml declares $want")
+            println("loaded from the artifact, version ", got)'

@@ -5,7 +5,7 @@
   "homepage": "https://github.com/sedislab/SENTIL",
   "documentation": "https://sentil.pages.dev",
   "license": "MIT OR Apache-2.0",
-  "supports": "(linux & x64) | (osx & (x64 | arm64)) | (windows & x64 & !uwp & !mingw)",
+  "supports": "((linux & x64) | (osx & (x64 | arm64)) | (windows & x64 & !uwp & !mingw)) & !(static & staticcrt)",
   "dependencies": [
     {
       "name": "vcpkg-cmake",

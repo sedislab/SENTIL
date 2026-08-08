@@ -71,10 +71,10 @@ Each tagged release attaches one archive per platform. Inside is `bin/sentil`, o
 
 | Platform | Asset |
 | --- | --- |
-| Linux x86_64 | `sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz` |
-| macOS Apple silicon | `sentil-0.3.0-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `sentil-0.3.0-x86_64-apple-darwin.tar.gz` |
-| Windows x86_64 | `sentil-0.3.0-x86_64-pc-windows-msvc.zip` |
+| Linux x86_64 | [`sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-unknown-linux-gnu.tar.gz) |
+| macOS Apple silicon | [`sentil-0.3.0-aarch64-apple-darwin.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-apple-darwin.tar.gz) |
+| macOS Intel | [`sentil-0.3.0-x86_64-apple-darwin.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-apple-darwin.tar.gz) |
+| Windows x86_64 | [`sentil-0.3.0-x86_64-pc-windows-msvc.zip`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-pc-windows-msvc.zip) |
 | ARM Linux, Raspberry Pi included | three archives, [below](#on-a-raspberry-pi) |
 
 No checksum file is published beside the archives. The Homebrew formula, the Scoop manifest, the winget manifest, and the AUR PKGBUILD each pin the SHA-256 of the exact file they fetch, so a package-manager install verifies itself and a hand download does not.
@@ -258,9 +258,9 @@ The same release page carries the Pi archives. The gnu builds bundle more than t
 
 | Board and OS | Archive |
 | --- | --- |
-| 64-bit Pi OS on a Pi 3, 4, 5, or Zero 2 W | `sentil-0.3.0-aarch64-unknown-linux-gnu.tar.gz` |
-| Any 64-bit ARM, static single-file CLI only | `sentil-0.3.0-aarch64-unknown-linux-musl.tar.gz` |
-| 32-bit Pi OS | `sentil-0.3.0-armv7-unknown-linux-gnueabihf.tar.gz` |
+| 64-bit Pi OS on a Pi 3, 4, 5, or Zero 2 W | [`sentil-0.3.0-aarch64-unknown-linux-gnu.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-unknown-linux-gnu.tar.gz) |
+| Any 64-bit ARM, static single-file CLI only | [`sentil-0.3.0-aarch64-unknown-linux-musl.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-unknown-linux-musl.tar.gz) |
+| 32-bit Pi OS | [`sentil-0.3.0-armv7-unknown-linux-gnueabihf.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-armv7-unknown-linux-gnueabihf.tar.gz) |
 
 The static musl build is one file with no library dependencies, the right shape for a sensor loop you copy onto a board and forget. From inside the extracted archive:
 

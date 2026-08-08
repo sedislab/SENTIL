@@ -7,14 +7,14 @@ The C ABI is the smallest surface SENTIL ships, basically a header file and a co
 
 ## Install
 
-On Debian, Ubuntu, Fedora, and RHEL the distro package is the easiest way to install  one: it drops the shared and static libraries, `sentil.h`, and `sentil.pc` under `/usr`. vcpkg and Conan carry the same prebuilt library on Linux, macOS, and Windows alike, and add a CMake package on top of it, so reach for one of those if your project already uses either. The release archive is a plain prefix you unpack wherever you like, for a project that uses neither. Build from source for an unreleased change or a platform the prebuilt bundles skip. Linux on arm64 is the one to know about: the library and header for a Raspberry Pi ride along in the ARM archives described on the [CLI page](/docs/languages/cli#on-a-raspberry-pi), built with `--no-default-features`, so the 19 GPU symbols the [reference](#reference) marks as gated are absent from that library.
+On Debian, Ubuntu, Fedora, and RHEL the distro package is the easiest way to install it. It drops the shared and static libraries, `sentil.h`, and `sentil.pc` under `/usr`. vcpkg and Conan carry the same prebuilt library on Linux, macOS, and Windows alike, and add a CMake package on top of it, so reach for one of those if your project already uses either. The release archive is a plain prefix you unpack wherever you like, for a project that uses neither. Build from source for an unreleased change or a platform the prebuilt bundles skip. Linux on ARM is the one to know about: the release attaches arm64 and armhf debs, and the library and header also ride along in the ARM archives described on the [CLI page](/docs/languages/cli#on-a-raspberry-pi). The ARM builds that carry the library are compiled with `--no-default-features`, so the 19 GPU symbols the [reference](#reference) marks as gated are absent from them.
 
 ### From apt or dnf
 
 <Steps>
 <Step>
 
-Download the package for your distribution from the [release page](https://github.com/sedislab/SENTIL/releases). Both are x86_64: `libsentil-dev_0.3.0_amd64.deb` for apt, `libsentil-devel-0.3.0.x86_64.rpm` for dnf.
+Download the package for your distribution: [`libsentil-dev_0.3.0-1_amd64.deb`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/libsentil-dev_0.3.0-1_amd64.deb) for apt, [`libsentil-devel-0.3.0-1.x86_64.rpm`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/libsentil-devel-0.3.0-1.x86_64.rpm) for dnf. Those two are x86_64. Debian and Ubuntu on ARM have [`libsentil-dev_0.3.0-1_arm64.deb`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/libsentil-dev_0.3.0-1_arm64.deb) for 64-bit and [`libsentil-dev_0.3.0-1_armhf.deb`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/libsentil-dev_0.3.0-1_armhf.deb) for 32-bit; the [releases page](https://github.com/sedislab/SENTIL/releases) has no ARM rpm.
 
 </Step>
 <Step>
@@ -22,11 +22,11 @@ Download the package for your distribution from the [release page](https://githu
 Install the file you downloaded. The leading `./` is what tells apt and dnf they are looking at a path rather than a package name.
 
 ```bash
-sudo apt install ./libsentil-dev_0.3.0_amd64.deb      # Debian, Ubuntu
-sudo dnf install ./libsentil-devel-0.3.0.x86_64.rpm   # Fedora, RHEL
+sudo apt install ./libsentil-dev_0.3.0-1_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./libsentil-devel-0.3.0-1.x86_64.rpm   # Fedora, RHEL
 ```
 
-Four files land: `/usr/lib/libsentil.so`, `/usr/lib/libsentil.a`, `/usr/include/sentil.h`, and `/usr/lib/pkgconfig/sentil.pc`. Neither package carries a CMake package config, so `find_package(Sentil)` has nothing to find on this route. pkg-config is the discovery path here; the archive and the two package managers below ship the CMake config as well.
+Six files land: `/usr/lib/libsentil.so`, `/usr/lib/libsentil.a`, `/usr/include/sentil.h`, `/usr/lib/pkgconfig/sentil.pc`, and `SentilConfig.cmake` beside `SentilConfigVersion.cmake` under `/usr/lib/cmake/Sentil`. Both discovery paths work on this route, so `find_package(Sentil)` and pkg-config each resolve without extra hints.
 
 </Step>
 <Step>
@@ -119,12 +119,12 @@ The archive is a prefix rather than an installer. Inside are `include/sentil.h`,
 <Steps>
 <Step>
 
-Download the archive for your platform from the [release page](https://github.com/sedislab/SENTIL/releases) and unpack it.
+Download the archive for your platform and unpack it. [`SHA256SUMS`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/SHA256SUMS) in the same release lists these four archives and the two x86_64 distro packages above.
 
 <OsTabs>
 <OsTab value="Linux">
 
-`sentil-0.3.0-linux-x86_64.tar.gz`, carrying `libsentil.so`.
+[`sentil-0.3.0-linux-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-linux-x86_64.tar.gz), carrying `libsentil.so`.
 
 ```bash
 tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
@@ -134,7 +134,7 @@ prefix=$PWD/sentil-0.3.0-linux-x86_64
 </OsTab>
 <OsTab value="macOS">
 
-`sentil-0.3.0-macos-arm64.tar.gz` on Apple silicon, `sentil-0.3.0-macos-x86_64.tar.gz` on Intel. The shared library is `libsentil.dylib`.
+[`sentil-0.3.0-macos-arm64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-arm64.tar.gz) on Apple silicon, [`sentil-0.3.0-macos-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-x86_64.tar.gz) on Intel. The shared library is `libsentil.dylib`.
 
 ```bash
 tar -xzf sentil-0.3.0-macos-arm64.tar.gz
@@ -144,7 +144,7 @@ prefix=$PWD/sentil-0.3.0-macos-arm64
 </OsTab>
 <OsTab value="Windows">
 
-`sentil-0.3.0-windows-x86_64.tar.gz`, carrying `sentil.dll` with its `sentil.dll.lib` import library. `tar` ships with Windows 10 and later.
+[`sentil-0.3.0-windows-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-windows-x86_64.tar.gz), carrying `sentil.dll` with its `sentil.dll.lib` import library. `tar` ships with Windows 10 and later.
 
 ```powershell
 tar -xzf sentil-0.3.0-windows-x86_64.tar.gz

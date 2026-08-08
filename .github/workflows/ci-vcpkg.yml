@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'packaging/vcpkg/**'
+      - 'scripts/refresh_vcpkg_hashes.py'
       - '.github/workflows/ci-vcpkg.yml'
   pull_request:
     paths:
       - 'packaging/vcpkg/**'
+      - 'scripts/refresh_vcpkg_hashes.py'
       - '.github/workflows/ci-vcpkg.yml'
   workflow_dispatch:
 
@@ -27,6 +29,8 @@ jobs:
           - { os: macos-14, triplet: arm64-osx }
           - { os: macos-15-intel, triplet: x64-osx }
           - { os: windows-latest, triplet: x64-windows }
+          - { os: windows-latest, triplet: x64-windows-release }
+          - { os: windows-latest, triplet: x64-windows-static-md }
     steps:
       - uses: actions/checkout@v4
 
@@ -54,7 +58,7 @@ jobs:
           exe=./vcpkg/vcpkg
           [ "$RUNNER_OS" = "Windows" ] && exe=./vcpkg/vcpkg.exe
           "$exe" install sentil --overlay-ports=packaging/vcpkg/ports \
-            --triplet ${{ matrix.triplet }}
+            --triplet ${{ matrix.triplet }} --enforce-port-checks
 
       - name: check the installed layout
         shell: bash
@@ -100,3 +104,133 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$ws/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_BUILD_TYPE=Release
           cmake --build consumer/build --config Release
+
+  supports-matrix:
+    name: supports across vcpkg's pull request triplets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check out vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: vcpkg
+          fetch-depth: 1
+
+      - name: the thirteen triplets vcpkg builds on a pull request are still the ones we plan for
+        run: |
+          set -euo pipefail
+          expected="arm-neon-android arm64-android arm64-linux arm64-osx arm64-windows arm64-windows-static-md x64-android x64-linux x64-windows x64-windows-release x64-windows-static x64-windows-static-md x86-windows"
+          actual=$(grep -oP '^\s+jobName:\s+\K\S+' vcpkg/scripts/azure-pipelines/azure-pipelines.yml | tr '_' '-' | LC_ALL=C sort | tr '\n' ' ' || true)
+          if [ "$(echo $actual)" != "$expected" ]; then
+            echo "vcpkg changed its pull request triplets"
+            echo "  expected: $expected"
+            echo "  actual:   $(echo $actual)"
+            exit 1
+          fi
+
+      - name: bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: each of those triplets is accepted or declined as intended
+        run: |
+          set -uo pipefail
+          accepted="x64-linux arm64-osx x64-windows x64-windows-release x64-windows-static-md"
+          declined="x86-windows arm64-windows arm64-windows-static-md x64-windows-static arm64-linux arm-neon-android x64-android arm64-android"
+          status=0
+          plan() {
+            ./vcpkg/vcpkg install sentil --overlay-ports=packaging/vcpkg/ports \
+              --triplet "$1" --dry-run 2>&1 || true
+          }
+          for triplet in $accepted; do
+            log=$(plan "$triplet")
+            if printf '%s' "$log" | grep -q "sentil:${triplet}@"; then
+              echo "  $triplet accepted"
+            else
+              echo "  $triplet was NOT accepted:"
+              printf '%s\n' "$log" | tail -5 | sed 's/^/      /'
+              status=1
+            fi
+          done
+          for triplet in $declined; do
+            log=$(plan "$triplet")
+            if printf '%s' "$log" | grep -q "sentil is only supported on"; then
+              echo "  $triplet declined on supports"
+            else
+              echo "  $triplet did NOT decline on supports:"
+              printf '%s\n' "$log" | tail -5 | sed 's/^/      /'
+              status=1
+            fi
+          done
+          exit $status
+
+  registry-shape:
+    name: portfile, manifest and version database
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check out vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: vcpkg
+          fetch-depth: 1
+
+      - name: bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: the portfile calls no helper vcpkg has retired
+        run: |
+          set -euo pipefail
+          retired='vcpkg_install_cmake|vcpkg_build_cmake|vcpkg_configure_cmake|vcpkg_fixup_cmake_targets'
+          deprecated='vcpkg_apply_patches|vcpkg_build_msbuild|vcpkg_extract_source_archive_ex'
+          if grep -nE "$retired|$deprecated" packaging/vcpkg/ports/sentil/portfile.cmake; then
+            echo "vcpkg's pull request bot rejects a portfile that calls these"
+            exit 1
+          fi
+
+      - name: the hash refresher round-trips and refuses bad input
+        run: |
+          set -euo pipefail
+          port=packaging/vcpkg/ports/sentil/portfile.cmake
+          cp "$port" /tmp/port.orig
+          mapfile -t d < <(grep -oE '[0-9a-f]{128}' "$port")
+          [ "${#d[@]}" -eq 5 ] || { echo "expected 5 digests, found ${#d[@]}"; exit 1; }
+          python3 scripts/refresh_vcpkg_hashes.py "$port" "${d[0]}" "${d[1]}" "${d[2]}" "${d[3]}" "${d[4]}"
+          cmp "$port" /tmp/port.orig
+          if python3 scripts/refresh_vcpkg_hashes.py "$port" "" "${d[1]}" "${d[2]}" "${d[3]}" "${d[4]}"; then
+            echo "an empty digest was accepted"
+            exit 1
+          fi
+          cmp "$port" /tmp/port.orig
+
+      - name: the manifest is already canonically formatted
+        run: |
+          set -euo pipefail
+          cp packaging/vcpkg/ports/sentil/vcpkg.json /tmp/before.json
+          ./vcpkg/vcpkg format-manifest packaging/vcpkg/ports/sentil/vcpkg.json
+          if ! cmp -s /tmp/before.json packaging/vcpkg/ports/sentil/vcpkg.json; then
+            echo "vcpkg format-manifest would rewrite the manifest:"
+            diff /tmp/before.json packaging/vcpkg/ports/sentil/vcpkg.json || true
+            exit 1
+          fi
+
+      - name: the port carries a version entry vcpkg accepts
+        run: |
+          set -euo pipefail
+          cd vcpkg
+          git config user.name sentil-ci
+          git config user.email sentil-ci@example.invalid
+          mkdir -p ports/sentil
+          cp -r ../packaging/vcpkg/ports/sentil/. ports/sentil/
+          git add ports/sentil
+          git commit -q -m "stage the port"
+          ./vcpkg x-add-version sentil --overwrite-version
+          git add versions
+          git diff --cached --quiet || git commit -q -m "record the version"
+          ./vcpkg x-add-version sentil | tee /tmp/recheck.log
+          grep -q "No files were updated" /tmp/recheck.log

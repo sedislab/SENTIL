@@ -11,7 +11,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   stage:
@@ -25,7 +25,6 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           [ "$GITHUB_REF_NAME" = "$version" ] && version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          if [ "$version" = "$GITHUB_REF_NAME" ]; then version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2); fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: download the release assets
@@ -41,36 +40,23 @@ jobs:
               --dir assets
           done
 
-      - name: fill the portfile tokens
+      - name: refresh the portfile hashes
         run: |
+          set -euo pipefail
           version="${{ steps.ver.outputs.version }}"
-          port=packaging/vcpkg/ports/sentil/portfile.cmake
+
+          curl -fsSL -o assets/source.tar.gz \
+            "https://github.com/sedislab/SENTIL/archive/v${version}.tar.gz"
 
           sha512() { sha512sum "$1" | awk '{print $1}'; }
 
-          linux="$(sha512 "assets/sentil-${version}-linux-x86_64.tar.gz")"
-          mac_x86="$(sha512 "assets/sentil-${version}-macos-x86_64.tar.gz")"
-          mac_arm="$(sha512 "assets/sentil-${version}-macos-arm64.tar.gz")"
-          windows="$(sha512 "assets/sentil-${version}-windows-x86_64.tar.gz")"
-
-          curl -fsSL "https://raw.githubusercontent.com/sedislab/SENTIL/v${version}/LICENSE-MIT" -o LICENSE-MIT
-          curl -fsSL "https://raw.githubusercontent.com/sedislab/SENTIL/v${version}/LICENSE-APACHE" -o LICENSE-APACHE
-          lic_mit="$(sha512 LICENSE-MIT)"
-          lic_apache="$(sha512 LICENSE-APACHE)"
-
-          sed -i \
-            -e "s/SENTIL_SHA512_LINUX/${linux}/" \
-            -e "s/SENTIL_SHA512_MACOS_X86_64/${mac_x86}/" \
-            -e "s/SENTIL_SHA512_MACOS_ARM64/${mac_arm}/" \
-            -e "s/SENTIL_SHA512_WINDOWS/${windows}/" \
-            -e "s/SENTIL_SHA512_LICENSE_MIT/${lic_mit}/" \
-            -e "s/SENTIL_SHA512_LICENSE_APACHE/${lic_apache}/" \
-            "$port"
-
-          if grep -q 'SENTIL_SHA512_' "$port"; then
-            echo "a SHA512 token was left unfilled" >&2
-            exit 1
-          fi
+          python3 scripts/refresh_vcpkg_hashes.py \
+            packaging/vcpkg/ports/sentil/portfile.cmake \
+            "$(sha512 assets/source.tar.gz)" \
+            "$(sha512 "assets/sentil-${version}-linux-x86_64.tar.gz")" \
+            "$(sha512 "assets/sentil-${version}-macos-arm64.tar.gz")" \
+            "$(sha512 "assets/sentil-${version}-macos-x86_64.tar.gz")" \
+            "$(sha512 "assets/sentil-${version}-windows-x86_64.tar.gz")"
 
       - name: get vcpkg
         run: |
@@ -81,7 +67,7 @@ jobs:
         run: |
           ./vcpkg/vcpkg install sentil \
             --overlay-ports=packaging/vcpkg/ports \
-            --triplet x64-linux
+            --triplet x64-linux --enforce-port-checks
 
       - name: stage the port for the registry PR
         run: |
@@ -93,32 +79,46 @@ jobs:
           name: vcpkg-port
           path: staged/ports/**
 
-      - name: open the vcpkg pull request
+      - name: open or update the vcpkg pull request
         if: startsWith(github.ref, 'refs/tags/') || inputs.submit
         env:
           GH_TOKEN: ${{ secrets.REGISTRY_PR_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "$GH_TOKEN" ]; then echo "no REGISTRY_PR_TOKEN; the port stays staged as an artifact"; exit 0; fi
-          version="${GITHUB_REF_NAME#v}"
-          [ "$GITHUB_REF_NAME" = "$version" ] && version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          version="${{ steps.ver.outputs.version }}"
+          branch="sentil-${version}"
           gh repo fork microsoft/vcpkg --clone=false
           owner=$(gh api user --jq .login)
           for _ in $(seq 1 30); do
             gh api "repos/${owner}/vcpkg" >/dev/null 2>&1 && break
             sleep 10
           done
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${owner}/vcpkg.git" fork
+          git clone --filter=blob:none "https://x-access-token:${GH_TOKEN}@github.com/${owner}/vcpkg.git" fork
           cd fork
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "sentil-${version}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git checkout -B "$branch" "origin/${branch}"
+          else
+            git checkout -B "$branch"
+          fi
           mkdir -p ports/sentil
           cp -r ../staged/ports/sentil/. ports/sentil/
-          ./bootstrap-vcpkg.sh -disableMetrics || echo "vcpkg bootstrap failed" >&2
-          git add -A && git commit -m "[sentil] add new port ${version}"
-          git push -u origin "sentil-${version}"
+          ./bootstrap-vcpkg.sh -disableMetrics
+          ./vcpkg format-manifest ports/sentil/vcpkg.json
+          git add ports/sentil
+          git diff --cached --quiet || git commit -m "[sentil] add new port ${version}"
+          ./vcpkg x-add-version sentil --overwrite-version
+          git add versions
+          git diff --cached --quiet || git commit -m "[sentil] record ${version} in the version database"
+          git push origin "$branch"
+          open=$(gh api "repos/microsoft/vcpkg/pulls?head=${owner}:${branch}&state=open" --jq 'length')
+          if [ "$open" -gt 0 ]; then
+            echo "pushed to the open pull request for ${branch}"
+            exit 0
+          fi
           gh pr create --repo microsoft/vcpkg \
-            --head "${owner}:sentil-${version}" --base master \
+            --head "${owner}:${branch}" --base master \
             --title "[sentil] add new port ${version}" \
             --body "Adds the \`sentil\` port at ${version}. And regarding the question from the previous submission, this is consumed as a C and C++ library. This port has a C-ABI header over a Rust core and it's used as any regular C or C++ library."

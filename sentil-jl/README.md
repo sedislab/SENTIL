@@ -4,13 +4,13 @@
 
 #### The Julia package for Probabilistic Signal Temporal Logic
 
-[![Julia](https://img.shields.io/badge/Julia-%E2%89%A51.6-blue.svg)](https://julialang.org)
+[![Julia](https://img.shields.io/badge/Julia-%E2%89%A51.10-blue.svg)](https://julialang.org)
 [![Website](https://img.shields.io/badge/docs-sentil.pages.dev-blue.svg)](https://sentil.pages.dev)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 </div>
 
-Julia bindings for the [`sentil`](../sentil-core) engine. `] add Sentil` and `using Sentil`.
+Julia bindings for the [`sentil`](https://github.com/sedislab/SENTIL/tree/main/sentil-core) engine. `] add Sentil` and `using Sentil`.
 
 SENTIL has three main capabilities. Deterministic STL monitoring, offline over a recorded trace or streaming one sample at a time. Probabilistic monitoring, which fits a noise model to sensor data and estimates satisfaction probability with confidence bounds. And synthesis, from a specification to a control input to an online controller.
 
@@ -84,7 +84,7 @@ spec = SpecBuilder("automotive/safe_following_distance")
 phi = build_formula(with_param(spec, "rho", 1.0))
 ```
 
-List them with `available_specs()`, or browse them under [`specifications/`](../specifications).
+List them with `available_specs()`, or browse them under [`specifications/`](https://github.com/sedislab/SENTIL/tree/main/specifications).
 
 ## Benchmarks
 
@@ -102,7 +102,7 @@ Offline cost over the trace length, Julia and the core against RTAMT, MoonLight,
 
 Peak memory over the length of the stream.
 
-The full set, including the dense-time, statistical model checking, rare-event, and synthesis benchmarks, is in [`benchmarks/`](../benchmarks), and all the results are in [`docs/CLAIMS.md`](../docs/CLAIMS.md).
+The full set, including the dense-time, statistical model checking, rare-event, and synthesis benchmarks, is in [`benchmarks/`](https://github.com/sedislab/SENTIL/tree/main/benchmarks), and all the results are in [`docs/CLAIMS.md`](https://github.com/sedislab/SENTIL/blob/main/docs/CLAIMS.md).
 
 ## Install
 
@@ -125,7 +125,7 @@ That pulls the compiled core in as a per-platform artifact, so there is nothing 
 
 ### Prebuilt release
 
-To load a core you fetched yourself, download `sentil-0.3.0-<os>-<arch>.tar.gz` from the [GitHub release](https://github.com/sedislab/SENTIL/releases), unpack it, and point `SENTIL_LIB` at the library before `using Sentil`.
+To load a core you fetched yourself, download the archive for your platform from the [releases page](https://github.com/sedislab/SENTIL/releases), named `sentil-<version>-<triple>-julia.tar.gz` so the x86_64 Linux one is `sentil-<version>-x86_64-linux-gnu-julia.tar.gz`, unpack it, and point `SENTIL_LIB` at the library before `using Sentil`.
 
 #### Linux
 
@@ -173,7 +173,7 @@ import Pkg
 Pkg.test("Sentil")
 ```
 
-The pull-request flow is in the repository [CONTRIBUTING.md](../CONTRIBUTING.md).
+The pull-request flow is in the repository [CONTRIBUTING.md](https://github.com/sedislab/SENTIL/blob/main/CONTRIBUTING.md).
 
 ## Documentation
 
@@ -197,4 +197,4 @@ If SENTIL is useful in your work, please cite the paper:
 
 ## License
 
-SENTIL is by Paapa Kwesi Quansah and Ernest Bonnah at the SEDIS lab, Baylor University. It is dual licensed under either [MIT](../LICENSE-MIT) or [Apache-2.0](../LICENSE-APACHE), at your option.
+SENTIL is by Paapa Kwesi Quansah and Ernest Bonnah at the SEDIS lab, Baylor University. It is dual licensed under either [MIT](https://github.com/sedislab/SENTIL/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/sedislab/SENTIL/blob/main/LICENSE-APACHE), at your option.

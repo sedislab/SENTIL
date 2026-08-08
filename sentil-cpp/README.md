@@ -129,11 +129,11 @@ vcpkg install sentil
 conan install --requires=sentil/0.3.0
 ```
 
-On Linux, the C library also ships as a distro package; the C++ header then comes from vcpkg, Conan, the release bundle, or a checkout:
+On Linux, the C library also ships as a distro package and the C++ header then comes from vcpkg, Conan, the release bundle, or a checkout:
 
 ```bash
-sudo apt install ./libsentil-dev_0.3.0_amd64.deb      # Debian, Ubuntu
-sudo dnf install ./libsentil-devel-0.3.0.x86_64.rpm   # Fedora, RHEL
+sudo apt install ./libsentil-dev_0.3.0-1_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./libsentil-devel-0.3.0-1.x86_64.rpm   # Fedora, RHEL
 ```
 
 ### Prebuilt release

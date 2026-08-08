@@ -7,7 +7,7 @@ The C++ binding is one header, `sentil/sentil.hpp`, over the [C ABI](/docs/langu
 
 ## Install
 
-The wrapper is header-only, so an install is two things in place: `libsentil` with its C header where the linker looks, and `sentil/sentil.hpp` on your include path. vcpkg and Conan do both at once through the `sentil-cpp` package, which is the route to reach for. The releases page has no C++ archive; the bundle published there is the C ABI alone, so that route means the bundle plus the headers from a checkout. A build from source produces both halves out of one tree.
+The wrapper is header-only, so an install is two things in place: `libsentil` with its C header where the linker looks, and `sentil/sentil.hpp` on your include path. vcpkg and Conan do both at once through the `sentil-cpp` package, which is the route to reach for. The [releases page](https://github.com/sedislab/SENTIL/releases) has no C++ archive; the bundle published there is the C ABI alone, so that route means the bundle plus the headers from a checkout. A build from source produces both halves out of one tree.
 
 ### From vcpkg or Conan
 
@@ -89,13 +89,13 @@ sentil 0.3.0
 <Steps>
 <Step>
 
-Download the bundle for your platform from the [releases page](https://github.com/sedislab/SENTIL/releases) and unpack it. Four are published: `sentil-0.3.0-linux-x86_64.tar.gz`, `sentil-0.3.0-macos-x86_64.tar.gz`, `sentil-0.3.0-macos-arm64.tar.gz`, and `sentil-0.3.0-windows-x86_64.tar.gz`. Each unpacks into a prefix holding `include/sentil.h`, the libraries under `lib/`, `lib/pkgconfig/sentil.pc`, and `lib/cmake/Sentil/`.
+Download the bundle for your platform and unpack it. Four are published: [`sentil-0.3.0-linux-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-linux-x86_64.tar.gz), [`sentil-0.3.0-macos-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-x86_64.tar.gz), [`sentil-0.3.0-macos-arm64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-arm64.tar.gz), and [`sentil-0.3.0-windows-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-windows-x86_64.tar.gz). Each unpacks into a prefix holding `include/sentil.h`, the libraries under `lib/`, `lib/pkgconfig/sentil.pc`, and `lib/cmake/Sentil/`. [`SHA256SUMS`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/SHA256SUMS) in the same release covers all four.
 
 ```bash
 tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
 ```
 
-`tar` ships with Windows 10 and later, so the same line works from PowerShell. On Debian, Ubuntu, Fedora, and RHEL the C half can come from the distro packages on that same page, `libsentil-dev` or `libsentil-devel`, which the [C page](/docs/languages/c) covers.
+`tar` ships with Windows 10 and later, so the same line works from PowerShell. On Debian, Ubuntu, Fedora, and RHEL the C half can come from the distro packages in the same release, `libsentil-dev` or `libsentil-devel`, which the [C page](/docs/languages/c) covers.
 
 </Step>
 <Step>
