@@ -36,7 +36,7 @@ serde_json = "1.0"
 csv = { workspace = true }
 anstyle = "1.0"
 figment = { version = "0.10", features = ["toml", "env"] }
-directories = "5.0"
+directories = "6.0"
 exitcode = "1.1"
 indicatif = "0.18"
 inquire = "0.9"
