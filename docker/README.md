@@ -5,13 +5,13 @@ We've prepared a Docker image that allows you to reproduce SENTIL's claims. The 
 ## Pull the image
 
 ```bash
-docker run --rm ghcr.io/sedislab/sentil-artifact:0.3.0
+docker run --rm ghcr.io/sedislab/sentil-artifact:0.3.1
 ```
 
 To run the gpu stage, you need to append the command with the `-gpu` suffix. Use `latest` and `latest-gpu` track the most recent release:
 
 ```bash
-docker run --rm --gpus all ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
+docker run --rm --gpus all ghcr.io/sedislab/sentil-artifact:0.3.1-gpu
 ```
 
 You can also compose the image yourself to run specific tests or benchmarks. Instructions for that are below.
@@ -37,8 +37,8 @@ docker compose -f docker/docker-compose.yml run --rm sentil-gpu
 or, with plain docker:
 
 ```bash
-docker build -f docker/Dockerfile --target gpu -t ghcr.io/sedislab/sentil-artifact:0.3.0-gpu .
-docker run --gpus all ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
+docker build -f docker/Dockerfile --target gpu -t ghcr.io/sedislab/sentil-artifact:0.3.1-gpu .
+docker run --gpus all ghcr.io/sedislab/sentil-artifact:0.3.1-gpu
 ```
 
 ## Statistical Model Checking verification

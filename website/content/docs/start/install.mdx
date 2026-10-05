@@ -72,7 +72,7 @@ vcpkg install sentil
 ```
 
 ```bash
-conan install --requires=sentil/0.3.0
+conan install --requires=sentil/0.3.1
 ```
 
 Verify the toolchain sees it:
@@ -82,7 +82,7 @@ pkg-config --modversion sentil
 ```
 
 ```text
-0.3.0
+0.3.1
 ```
 
 The [C page](/docs/languages/c) wires it into CMake or pkg-config, gives the full API reference, and covers the `.deb` and `.rpm` packages and the release archives.
@@ -97,7 +97,7 @@ vcpkg install sentil-cpp
 ```
 
 ```bash
-conan install --requires=sentil-cpp/0.3.0
+conan install --requires=sentil-cpp/0.3.1
 ```
 
 Verify the toolchain sees it:
@@ -107,7 +107,7 @@ pkg-config --modversion sentil
 ```
 
 ```text
-0.3.0
+0.3.1
 ```
 
 The [C++ page](/docs/languages/cpp) wires it into CMake or pkg-config, gives the full API reference, and covers the `.deb` and `.rpm` packages and the release archives.
@@ -121,11 +121,11 @@ Requires JDK 11 or later.
 <dependency>
   <groupId>io.github.sedislab</groupId>
   <artifactId>sentil</artifactId>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
-For Gradle: `implementation("io.github.sedislab:sentil:0.3.0")`.
+For Gradle: `implementation("io.github.sedislab:sentil:0.3.1")`.
 
 Verify:
 
@@ -208,7 +208,7 @@ sentil --version
 ```
 
 ```text
-sentil 0.3.0
+sentil 0.3.1
 ```
 
 The [CLI page](/docs/languages/cli) has every subcommand, the Raspberry Pi install, and the output formats.

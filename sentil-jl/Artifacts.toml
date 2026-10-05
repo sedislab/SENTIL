@@ -7,7 +7,7 @@ lazy = true
 
     [[libsentil.download]]
     sha256 = "13bf4989ca29ed52781dc09e8fd81de979ca6f97a9de5acf1b830b31d6242c76"
-    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-linux-gnu-julia.tar.gz"
+    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-x86_64-linux-gnu-julia.tar.gz"
 
 [[libsentil]]
 arch = "aarch64"
@@ -18,7 +18,7 @@ lazy = true
 
     [[libsentil.download]]
     sha256 = "c77e64091848683bb21a0ab7c9a5f9500419548990ff93686af7df07fb98434e"
-    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-linux-gnu-julia.tar.gz"
+    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-aarch64-linux-gnu-julia.tar.gz"
 
 [[libsentil]]
 arch = "x86_64"
@@ -28,7 +28,7 @@ lazy = true
 
     [[libsentil.download]]
     sha256 = "32dfc9f84c5140efc15f9699cffe0735405dd56f872ba54e28998b6970ea83a2"
-    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-apple-darwin-julia.tar.gz"
+    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-x86_64-apple-darwin-julia.tar.gz"
 
 [[libsentil]]
 arch = "aarch64"
@@ -38,7 +38,7 @@ lazy = true
 
     [[libsentil.download]]
     sha256 = "63a20b5484b1e8d167c2088d8f31eb0bfa822e4f5880fabbc2665cc3d02e64fa"
-    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-aarch64-apple-darwin-julia.tar.gz"
+    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-aarch64-apple-darwin-julia.tar.gz"
 
 [[libsentil]]
 arch = "x86_64"
@@ -48,4 +48,4 @@ lazy = true
 
     [[libsentil.download]]
     sha256 = "aea5ed241883db6b3a1cb841bb663f19a491c6f7776470c17d08bd089774afcf"
-    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-x86_64-pc-windows-msvc-julia.tar.gz"
+    url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-x86_64-pc-windows-msvc-julia.tar.gz"

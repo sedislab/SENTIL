@@ -15,14 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      - uses: actions/checkout@v4
       - name: wait for the asset workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -eu
-          for wf in release-ffi release-cli release-embedded release-autosar \
-                    release-julia-artifacts release-pi tutorial; do
+          for wf in release-ffi release-cli release-embedded release-autosar release-java \
+                    release-python release-matlab release-pi tutorial; do
             done=""
             for _ in $(seq 1 200); do
               state=$(gh run list --workflow "${wf}.yml" --commit "${GITHUB_SHA}" \
@@ -38,6 +39,18 @@ jobs:
             [ -n "${done}" ] || { echo "${wf} did not finish inside the budget"; exit 1; }
             echo "${wf} ok"
           done
+
+      - name: checksum every asset
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          gh release download "${GITHUB_REF_NAME}" --dir assets
+          rm -f assets/SHA256SUMS
+          (cd assets && sha256sum -- *) > SHA256SUMS
+          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS --clobber
+          packaging/check-release.sh "${GITHUB_REF_NAME}"
 
       - name: publish the draft
         env:

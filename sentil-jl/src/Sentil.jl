@@ -5,7 +5,7 @@ import Statistics: mean, var, std
 
 include("loader.jl")
 
-const libsentil = Ref{String}()
+global libsentil::String = ""
 
 include("errors.jl")
 include("enums.jl")
@@ -23,7 +23,7 @@ include("synthesis.jl")
 include("specs.jl")
 
 function __init__()
-    libsentil[] = _Loader.resolve()
+    global libsentil = _Loader.resolve()
     _C_BERNOULLI[] = @cfunction(_bernoulli_trampoline, Bool, (Ptr{Cvoid},))
     _C_SYSTEM_INIT[] = @cfunction(_system_init_trampoline, Cvoid,
                                   (Ptr{Cvoid}, UInt64, Ptr{Float64}, Csize_t))
@@ -48,7 +48,7 @@ function version()
     major = Ref{UInt32}(0)
     minor = Ref{UInt32}(0)
     patch = Ref{UInt32}(0)
-    ccall((:sentil_version, libsentil[]), Cvoid,
+    ccall((:sentil_version, libsentil), Cvoid,
           (Ptr{UInt32}, Ptr{UInt32}, Ptr{UInt32}), major, minor, patch)
     return (Int(major[]), Int(minor[]), Int(patch[]))
 end

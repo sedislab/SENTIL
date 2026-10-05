@@ -27,7 +27,7 @@ vcpkg install sentil-cpp
 <Tab value="Conan">
 
 ```bash
-conan install --requires=sentil-cpp/0.3.0
+conan install --requires=sentil-cpp/0.3.1
 ```
 
 </Tab>
@@ -78,7 +78,7 @@ Build it with the wiring from the previous step, then run it:
 ```
 
 ```text
-sentil 0.3.0
+sentil 0.3.1
 ```
 
 </Step>
@@ -89,10 +89,10 @@ sentil 0.3.0
 <Steps>
 <Step>
 
-Download the bundle for your platform and unpack it. Four are published: [`sentil-0.3.0-linux-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-linux-x86_64.tar.gz), [`sentil-0.3.0-macos-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-x86_64.tar.gz), [`sentil-0.3.0-macos-arm64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-macos-arm64.tar.gz), and [`sentil-0.3.0-windows-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-windows-x86_64.tar.gz). Each unpacks into a prefix holding `include/sentil.h`, the libraries under `lib/`, `lib/pkgconfig/sentil.pc`, and `lib/cmake/Sentil/`. [`SHA256SUMS`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/SHA256SUMS) in the same release covers all four.
+Download the bundle for your platform and unpack it. Four are published: [`sentil-0.3.1-linux-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-linux-x86_64.tar.gz), [`sentil-0.3.1-macos-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-macos-x86_64.tar.gz), [`sentil-0.3.1-macos-arm64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-macos-arm64.tar.gz), and [`sentil-0.3.1-windows-x86_64.tar.gz`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-windows-x86_64.tar.gz). Each unpacks into a prefix holding `include/sentil.h`, the libraries under `lib/`, `lib/pkgconfig/sentil.pc`, and `lib/cmake/Sentil/`. [`SHA256SUMS`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/SHA256SUMS) in the same release covers all four.
 
 ```bash
-tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
+tar -xzf sentil-0.3.1-linux-x86_64.tar.gz
 ```
 
 `tar` ships with Windows 10 and later, so the same line works from PowerShell. On Debian, Ubuntu, Fedora, and RHEL the C half can come from the distro packages in the same release, `libsentil-dev` or `libsentil-devel`, which the [C page](/docs/languages/c) covers.
@@ -112,7 +112,7 @@ git clone https://github.com/sedislab/SENTIL
 Point the compiler at both directories and build the same `check_install.cpp` as above. The bundled `sentil.pc` records `prefix=/usr/local`, the path a system install would use, so override that prefix on the command line or pkg-config answers with `-L/usr/local/lib` and loses the extracted copy entirely. `-Wl,-rpath` records where the loader should look for the shared library at run time, a job `LD_LIBRARY_PATH`, or `DYLD_LIBRARY_PATH` on macOS, does instead.
 
 ```bash
-prefix=$PWD/sentil-0.3.0-linux-x86_64
+prefix=$PWD/sentil-0.3.1-linux-x86_64
 export PKG_CONFIG_PATH=$prefix/lib/pkgconfig:$PKG_CONFIG_PATH
 c++ -std=c++17 check_install.cpp -I SENTIL/sentil-cpp/include \
     $(pkg-config --define-variable=prefix=$prefix --cflags --libs sentil) \
@@ -121,7 +121,7 @@ c++ -std=c++17 check_install.cpp -I SENTIL/sentil-cpp/include \
 ```
 
 ```text
-sentil 0.3.0
+sentil 0.3.1
 ```
 
 Windows has no pkg-config: point `-DCMAKE_PREFIX_PATH` at the extracted bundle so `find_package(Sentil CONFIG)` resolves, and add the C++ include directory to your target.
@@ -196,7 +196,7 @@ c++ -std=c++17 check_install.cpp -I sentil-cpp/include -I sentil-ffi/include \
 ```
 
 ```text
-sentil 0.3.0
+sentil 0.3.1
 ```
 
 </Step>
@@ -459,7 +459,7 @@ The complete surface of `sentil.hpp`, `types.hpp`, and `errors.hpp`. Signatures 
 | Item | Signature | What it is |
 |---|---|---|
 | `Version` | `struct { uint32_t major, minor, patch }` | The core's semantic version |
-| `version` | `version() -> Version` | Reads the version of the linked `libsentil`, 0.3.0 here |
+| `version` | `version() -> Version` | Reads the version of the linked `libsentil`, 0.3.1 here |
 
 ### Enums
 
@@ -745,7 +745,7 @@ The objective aliases: `GradientObjective` returns a value and its gradient, `Ob
 
 ### The specifications library
 
-The embedded registry ships 54 cited PrSTL specifications in 0.3.0, browsable under [specifications](/docs/reference/specifications/catalog); `SpecBuilder` resolves one by name.
+The embedded registry ships 54 cited PrSTL specifications in 0.3.1, browsable under [specifications](/docs/reference/specifications/catalog); `SpecBuilder` resolves one by name.
 
 ```cpp title="specs.cpp"
 std::printf("%zu specifications\n", sentil::SpecBuilder::available().size());

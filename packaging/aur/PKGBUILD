@@ -1,7 +1,7 @@
 # Maintainer: Paapa Kwesi Quansah <paapa_quansah1@baylor.edu>
 
 pkgname=sentil
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc="Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL, with a C library and the sentil CLI"
 arch=('x86_64')

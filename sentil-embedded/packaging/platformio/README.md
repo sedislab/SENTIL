@@ -26,7 +26,7 @@ platform = https://github.com/maxgerhardt/platform-raspberrypi.git
 board = pico
 framework = arduino
 board_build.core = earlephilhower
-lib_deps = sentil/Sentil@^0.3.0
+lib_deps = sentil/Sentil@^0.3.1
 build_flags = -L${PROJECT_DIR}/.pio/libdeps/pico/Sentil/src/cortex-m0plus -lsentil_embedded
 ```
 

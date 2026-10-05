@@ -185,7 +185,7 @@ On Linux or macOS:
 
 ```bash
 cd ~/ros2_ws/src
-curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz | tar xz
+curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.tar.gz | tar xz
 cd ~/ros2_ws
 colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH="$SENTIL_PREFIX"
 source install/setup.bash
@@ -195,7 +195,7 @@ On Windows, from a command prompt with ROS 2 sourced:
 
 ```bash
 cd %USERPROFILE%\ros2_ws\src
-curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.zip
+curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.zip
 tar xf sentil.zip
 cd %USERPROFILE%\ros2_ws
 colcon build --packages-select sentil_ros --cmake-args -DCMAKE_PREFIX_PATH=%SENTIL_PREFIX%

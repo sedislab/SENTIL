@@ -12,7 +12,7 @@ RareEventConfig(; particles::Integer = 4096, margin::Real = 0.0, seed::Integer =
 function check_rare_event(f::Formula, system::StochasticSystem; config::RareEventConfig = RareEventConfig())
     cfg = Ref(config)
     out = Ref{RareEventResult}()
-    code = GC.@preserve system ccall((:sentil_formula_check_rare_event, libsentil[]), Int32,
+    code = GC.@preserve system ccall((:sentil_formula_check_rare_event, libsentil), Int32,
                                      (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{RareEventConfig}, Ptr{RareEventResult}),
                                      _ptr(f), _ptr(system), cfg, out)
     _rethrow_callback(system.state)
@@ -23,7 +23,7 @@ end
 """The same over a monitor, with the monitor's configured defaults."""
 function check_rare_event(m::Monitor, system::StochasticSystem)
     out = Ref{RareEventResult}()
-    code = GC.@preserve system ccall((:sentil_monitor_check_rare, libsentil[]), Int32,
+    code = GC.@preserve system ccall((:sentil_monitor_check_rare, libsentil), Int32,
                                      (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{RareEventResult}), _ptr(m), _ptr(system), out)
     _rethrow_callback(system.state)
     check_error(code)
@@ -34,14 +34,14 @@ end
 function check_rare_event_gpu(f::Formula, model::SimModel; config::RareEventConfig = RareEventConfig())
     cfg = Ref(config)
     out = Ref{GpuSplittingEstimate}()
-    check_error(ccall((:sentil_formula_check_rare_event_gpu, libsentil[]), Int32,
+    check_error(ccall((:sentil_formula_check_rare_event_gpu, libsentil), Int32,
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{RareEventConfig}, Ptr{GpuSplittingEstimate}),
                       _ptr(f), _ptr(model), cfg, out))
     return out[]
 end
 
 """Whether a usable GPU device is present."""
-gpu_available() = ccall((:sentil_gpu_is_available, libsentil[]), Bool, ())
+gpu_available() = ccall((:sentil_gpu_is_available, libsentil), Bool, ())
 
 export RareEventConfig, check_rare_event, check_rare_event_gpu, gpu_available
 
@@ -124,7 +124,7 @@ function adaptive_multilevel_splitting(; state_type::Type, initial_state, step, 
     interface = _AmsInterface(sizeof(state_type), pointer_from_objref(box),
         _C_AMS_INIT[], _C_AMS_STEP[], _C_AMS_TERMINAL[], _C_AMS_SCORE[])
     out = Ref{RareEventEstimate}()
-    code = GC.@preserve box ccall((:sentil_adaptive_multilevel_splitting, libsentil[]), Int32,
+    code = GC.@preserve box ccall((:sentil_adaptive_multilevel_splitting, libsentil), Int32,
         (_AmsInterface, Csize_t, Cdouble, UInt64, UInt64, Ptr{RareEventEstimate}),
         interface, particles, target_score, max_steps, seed, out)
     box.err === nothing || throw(box.err)

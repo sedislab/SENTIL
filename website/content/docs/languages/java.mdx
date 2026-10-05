@@ -9,14 +9,14 @@ Types that hold a native handle, `Formula`, `Trace`, `OnlineMonitor`, `NoiseMode
 
 ## Install
 
-Two ways in. The jar from Maven Central is the one to reach for, since it carries the compiled engine and a project with a JDK needs nothing else. A build from a checkout covers an unreleased change, a platform the published jar does not carry, or work on the binding itself. There is no download route: the releases page carries no Java asset, because Maven Central is where the jar is published.
+Two ways in. The jar from Maven Central is the one to reach for, since it carries the compiled engine and a project with a JDK needs nothing else. A build from a checkout covers an unreleased change, a platform the published jar does not carry, or work on the binding itself. The same jar is also attached to each GitHub release, for a project that puts it on the class path by hand.
 
 ### From Maven Central
 
 <Steps>
 <Step>
 
-Add the coordinate `io.github.sedislab:sentil:0.3.0`. SENTIL needs Java 11 or newer; the test suite runs on 11, 17, and 21.
+Add the coordinate `io.github.sedislab:sentil:0.3.1`. SENTIL needs Java 11 or newer; the test suite runs on 11, 17, and 21.
 
 <Tabs groupId="jvm-build" persist items={["Maven", "Gradle"]}>
 <Tab value="Maven">
@@ -24,13 +24,13 @@ Add the coordinate `io.github.sedislab:sentil:0.3.0`. SENTIL needs Java 11 or ne
 <dependency>
   <groupId>io.github.sedislab</groupId>
   <artifactId>sentil</artifactId>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 </Tab>
 <Tab value="Gradle">
 ```groovy title="build.gradle"
-implementation 'io.github.sedislab:sentil:0.3.0'
+implementation 'io.github.sedislab:sentil:0.3.1'
 ```
 </Tab>
 </Tabs>
@@ -38,14 +38,14 @@ implementation 'io.github.sedislab:sentil:0.3.0'
 </Step>
 <Step>
 
-Add this class to your project and run it however your build runs a main class. It prints the version the native engine reports, so a line reading `0.3.0` means the jar found its native library and linked it.
+Add this class to your project and run it however your build runs a main class. It prints the version the native engine reports, so a line reading `0.3.1` means the jar found its native library and linked it.
 
 ```java title="Check.java"
 import io.github.sedislab.sentil.Sentil;
 
 public class Check {
     public static void main(String[] args) {
-        System.out.println(Sentil.version());   // 0.3.0
+        System.out.println(Sentil.version());   // 0.3.1
     }
 }
 ```
@@ -55,7 +55,9 @@ public class Check {
 </Step>
 </Steps>
 
-The jar carries two shared libraries per platform under `native/<os>-<arch>/`, the engine and the JNI shim, each named the way its own platform names libraries: `libsentil.so` and `libsentil_jni.so` on Linux, the same pair with `.dylib` on macOS, `sentil.dll` and `sentil_jni.dll` on Windows. The first time you touch a native-backed type, both are extracted to a temporary directory and loaded, engine first, so the shim resolves the engine sitting beside it. There is nothing to configure, and no system property or environment variable overrides that path. Four platforms are inside the published jar: Linux x86_64, macOS x86_64, macOS arm64, and Windows x86_64. On anything else, Linux on arm64 included, the load throws an `UncheckedIOException` naming the folder it looked for, and the source build below is the way in.
+On JDK 24 and newer, the JVM prints a warning when a library on the class path loads native code, and a later JDK will refuse the load unless native access is enabled. Start `java` with `--enable-native-access=ALL-UNNAMED` to enable it. JDK 23 and older need no flag.
+
+The jar carries two shared libraries per platform under `native/<os>-<arch>/`, the engine and the JNI shim, each named the way its own platform names libraries: `libsentil.so` and `libsentil_jni.so` on Linux, the same pair with `.dylib` on macOS, `sentil.dll` and `sentil_jni.dll` on Windows. The first time you touch a native-backed type, both are extracted to a temporary directory and loaded, engine first, so the shim resolves the engine sitting beside it. There is nothing to configure, and no system property or environment variable overrides that path. Five platforms are inside the published jar: Linux x86_64 and arm64, macOS x86_64 and arm64, and Windows x86_64. On anything else, Windows on arm64 included, the load throws an `UncheckedIOException` naming the folder it looked for, and the source build below is the way in.
 
 ### From source
 
@@ -104,7 +106,7 @@ Build the jar.
 mvn -DskipTests package
 ```
 
-The result is `target/sentil-0.3.0.jar` with the engine and the shim inside under `native/<os>-<arch>/`. One run covers the machine it ran on; the published jar is built once per operating system and the `native/` trees merged. The shim links against `../target/release`, which is where a [build at the repository root](/docs/start/install#from-source) already leaves the engine. If yours sits somewhere else, point `-Dsentil.lib.dir=/path/to/lib` at it.
+The result is `target/sentil-0.3.1.jar` with the engine and the shim inside under `native/<os>-<arch>/`. One run covers the machine it ran on; the published jar is built once per operating system and the `native/` trees merged. The shim links against `../target/release`, which is where a [build at the repository root](/docs/start/install#from-source) already leaves the engine. If yours sits somewhere else, point `-Dsentil.lib.dir=/path/to/lib` at it.
 
 </Step>
 <Step>
@@ -123,8 +125,8 @@ The suite includes the oracle test, which replays `benchmarks/deterministic/orac
 Then the same version check as the Maven Central route, compiled against the jar you built. Save `Check.java` from above in `sentil-java/` first.
 
 ```bash
-javac -cp target/sentil-0.3.0.jar Check.java
-java -cp target/sentil-0.3.0.jar:. Check    # prints 0.3.0; on Windows the classpath separator is ;
+javac -cp target/sentil-0.3.1.jar Check.java
+java -cp target/sentil-0.3.1.jar:. Check    # prints 0.3.1; on Windows the classpath separator is ;
 ```
 
 </Step>

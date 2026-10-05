@@ -11,7 +11,7 @@ end
 
 function _destroy(f::Formula)
     if f.ptr != C_NULL
-        ccall((:sentil_formula_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), f.ptr)
+        ccall((:sentil_formula_destroy, libsentil), Cvoid, (Ptr{Cvoid},), f.ptr)
         f.ptr = C_NULL
     end
 end
@@ -20,33 +20,33 @@ close!(f::Formula) = _destroy(f)
 
 """Parse a PrSTL formula from its textual form."""
 Base.parse(::Type{Formula}, text::AbstractString) =
-    Formula(ccall((:sentil_formula_parse, libsentil[]), Ptr{Cvoid}, (Cstring,), text))
+    Formula(ccall((:sentil_formula_parse, libsentil), Ptr{Cvoid}, (Cstring,), text))
 
 formula(text::AbstractString) = parse(Formula, text)
 
 """The formula as JSON, the form `from_json` reads back."""
 to_json(f::Formula) =
-    _take_string(ccall((:sentil_formula_to_json, libsentil[]), Ptr{UInt8}, (Ptr{Cvoid},), _ptr(f)))
+    _take_string(ccall((:sentil_formula_to_json, libsentil), Ptr{UInt8}, (Ptr{Cvoid},), _ptr(f)))
 
 """Rebuild a formula from the output of `to_json`."""
 from_json(::Type{Formula}, json::AbstractString) =
-    Formula(ccall((:sentil_formula_from_json, libsentil[]), Ptr{Cvoid}, (Cstring,), json))
+    Formula(ccall((:sentil_formula_from_json, libsentil), Ptr{Cvoid}, (Cstring,), json))
 
 """An independent duplicate of `f`."""
 Base.copy(f::Formula) = from_json(Formula, to_json(f))
 
 """The nesting depth, where a predicate is 1."""
 depth(f::Formula) =
-    Int(ccall((:sentil_formula_depth, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(f)))
+    Int(ccall((:sentil_formula_depth, libsentil), Csize_t, (Ptr{Cvoid},), _ptr(f)))
 
 """Whether the formula carries a temporal operator."""
 is_temporal(f::Formula) =
-    ccall((:sentil_formula_has_temporal, libsentil[]), Bool, (Ptr{Cvoid},), _ptr(f))
+    ccall((:sentil_formula_has_temporal, libsentil), Bool, (Ptr{Cvoid},), _ptr(f))
 
 """The variable names the formula references, sorted and unique."""
 function variables(f::Formula)
     count = Ref{Csize_t}(0)
-    ptr = ccall((:sentil_formula_variables, libsentil[]), Ptr{Ptr{UInt8}},
+    ptr = ccall((:sentil_formula_variables, libsentil), Ptr{Ptr{UInt8}},
                 (Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), count)
     return _take_string_array(ptr, count[])
 end
@@ -78,7 +78,7 @@ end
 
 function _destroy(e::Expr)
     if e.ptr != C_NULL
-        ccall((:sentil_expr_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), e.ptr)
+        ccall((:sentil_expr_destroy, libsentil), Cvoid, (Ptr{Cvoid},), e.ptr)
         e.ptr = C_NULL
     end
 end
@@ -87,11 +87,11 @@ close!(e::Expr) = _destroy(e)
 
 """A term that reads the signal named `name`."""
 variable(name::AbstractString) =
-    Expr(ccall((:sentil_expr_variable, libsentil[]), Ptr{Cvoid}, (Cstring,), name))
+    Expr(ccall((:sentil_expr_variable, libsentil), Ptr{Cvoid}, (Cstring,), name))
 
 """A constant term."""
 literal(value::Real) =
-    Expr(ccall((:sentil_expr_literal, libsentil[]), Ptr{Cvoid}, (Cdouble,), value))
+    Expr(ccall((:sentil_expr_literal, libsentil), Ptr{Cvoid}, (Cdouble,), value))
 
 export variable, literal
 
@@ -105,7 +105,7 @@ const _BIN_POW = Int32(5)
 
 function _binary(op::Int32, left::Expr, right::Expr)
     l, r = _consume_all!(left, right)
-    Expr(ccall((:sentil_expr_binary, libsentil[]), Ptr{Cvoid},
+    Expr(ccall((:sentil_expr_binary, libsentil), Ptr{Cvoid},
                (Int32, Ptr{Cvoid}, Ptr{Cvoid}), op, l, r))
 end
 
@@ -136,7 +136,7 @@ export pow
 
 function _call(name::AbstractString, args::Expr...)
     ptrs = collect(Ptr{Cvoid}, _consume_all!(args...))
-    Expr(ccall((:sentil_expr_call, libsentil[]), Ptr{Cvoid},
+    Expr(ccall((:sentil_expr_call, libsentil), Ptr{Cvoid},
                (Cstring, Ptr{Ptr{Cvoid}}, Csize_t), name, ptrs, length(ptrs)))
 end
 
@@ -166,7 +166,7 @@ const _CMP_NE = Int32(5)
 
 function _predicate(lhs::Expr, op::Int32, rhs::Expr)
     l, r = _consume_all!(lhs, rhs)
-    Formula(ccall((:sentil_formula_predicate, libsentil[]), Ptr{Cvoid},
+    Formula(ccall((:sentil_formula_predicate, libsentil), Ptr{Cvoid},
                   (Ptr{Cvoid}, Int32, Ptr{Cvoid}), l, op, r))
 end
 
@@ -180,17 +180,17 @@ for (op, code) in ((:<, _CMP_LT), (:(<=), _CMP_LE), (:>, _CMP_GT),
 end
 
 Base.:!(f::Formula) =
-    Formula(ccall((:sentil_formula_not, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
+    Formula(ccall((:sentil_formula_not, libsentil), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
 Base.:~(f::Formula) = !f
 
 function Base.:&(a::Formula, b::Formula)
     l, r = _consume_all!(a, b)
-    Formula(ccall((:sentil_formula_and, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
+    Formula(ccall((:sentil_formula_and, libsentil), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
 end
 
 function Base.:|(a::Formula, b::Formula)
     l, r = _consume_all!(a, b)
-    Formula(ccall((:sentil_formula_or, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
+    Formula(ccall((:sentil_formula_or, libsentil), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
 end
 
 and(a::Formula, b::Formula) = a & b
@@ -199,13 +199,13 @@ or(a::Formula, b::Formula) = a | b
 """The formula `a -> b`, equal to `!a | b`."""
 function implies(a::Formula, b::Formula)
     l, r = _consume_all!(a, b)
-    Formula(ccall((:sentil_formula_implies, libsentil[]), Ptr{Cvoid},
+    Formula(ccall((:sentil_formula_implies, libsentil), Ptr{Cvoid},
                   (Ptr{Cvoid}, Ptr{Cvoid}), l, r))
 end
 
 """The formula holds at the next step."""
 next(f::Formula) =
-    Formula(ccall((:sentil_formula_next, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
+    Formula(ccall((:sentil_formula_next, libsentil), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(f)))
 
 export and, or, implies, next
 
@@ -214,7 +214,7 @@ for (jl, c) in ((:always, :sentil_formula_always), (:eventually, :sentil_formula
     @eval function $jl(f::Formula; lower::Real = 0.0, upper = nothing)
         has_upper = upper !== nothing
         u = has_upper ? Float64(upper) : 0.0
-        Formula(ccall(($(QuoteNode(c)), libsentil[]), Ptr{Cvoid},
+        Formula(ccall(($(QuoteNode(c)), libsentil), Ptr{Cvoid},
                       (Cdouble, Cdouble, Bool, Ptr{Cvoid}),
                       Float64(lower), u, has_upper, _consume!(f)))
     end
@@ -225,7 +225,7 @@ for (jl, c) in ((:until, :sentil_formula_until), (:since, :sentil_formula_since)
         has_upper = upper !== nothing
         u = has_upper ? Float64(upper) : 0.0
         l, r = _consume_all!(a, b)
-        Formula(ccall(($(QuoteNode(c)), libsentil[]), Ptr{Cvoid},
+        Formula(ccall(($(QuoteNode(c)), libsentil), Ptr{Cvoid},
                       (Cdouble, Cdouble, Bool, Ptr{Cvoid}, Ptr{Cvoid}),
                       Float64(lower), u, has_upper, l, r))
     end
@@ -236,7 +236,7 @@ function probability(f::Formula, op::ProbabilityOp.T, threshold::Real)
     0.0 <= threshold <= 1.0 ||
         throw(SemanticError(SENTIL_ERR_INVALID_CONFIG,
                             "probability threshold $threshold is outside [0, 1]"))
-    Formula(ccall((:sentil_formula_probabilistic, libsentil[]), Ptr{Cvoid},
+    Formula(ccall((:sentil_formula_probabilistic, libsentil), Ptr{Cvoid},
                   (Int32, Cdouble, Ptr{Cvoid}), Int32(op), Float64(threshold), _consume!(f)))
 end
 
@@ -246,10 +246,10 @@ export always, eventually, historically, once, until, since, probability
 function robustness(f::Formula, trace::Trace; dense::Bool = false)
     out = Ref{Float64}(0.0)
     code = if dense
-        ccall((:sentil_formula_robustness_dense, libsentil[]), Int32,
+        ccall((:sentil_formula_robustness_dense, libsentil), Int32,
               (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}), _ptr(f), _ptr(trace), out)
     else
-        ccall((:sentil_formula_robustness, libsentil[]), Int32,
+        ccall((:sentil_formula_robustness, libsentil), Int32,
               (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}), _ptr(f), _ptr(trace), out)
     end
     check_error(code)
@@ -260,10 +260,10 @@ end
 function robustness_signal(f::Formula, trace::Trace; dense::Bool = false)
     n = Ref{Csize_t}(0)
     ptr = if dense
-        ccall((:sentil_formula_robustness_dense_signal, libsentil[]), Ptr{Float64},
+        ccall((:sentil_formula_robustness_dense_signal, libsentil), Ptr{Float64},
               (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), _ptr(trace), n)
     else
-        ccall((:sentil_formula_robustness_signal, libsentil[]), Ptr{Float64},
+        ccall((:sentil_formula_robustness_signal, libsentil), Ptr{Float64},
               (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), _ptr(trace), n)
     end
     ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
@@ -273,7 +273,7 @@ end
 """The time spans over which `f` does not hold."""
 function violations(f::Formula, trace::Trace)
     n = Ref{Csize_t}(0)
-    ptr = ccall((:sentil_formula_violations, libsentil[]), Ptr{Interval},
+    ptr = ccall((:sentil_formula_violations, libsentil), Ptr{Interval},
                 (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Csize_t}), _ptr(f), _ptr(trace), n)
     ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()
     return _take_intervals(ptr, n[])
@@ -284,7 +284,7 @@ function violation_intervals(times::AbstractVector{<:Real}, values::AbstractVect
     tt = convert(Vector{Float64}, times)
     vv = convert(Vector{Float64}, values)
     n = Ref{Csize_t}(0)
-    ptr = ccall((:sentil_violation_intervals, libsentil[]), Ptr{Interval},
+    ptr = ccall((:sentil_violation_intervals, libsentil), Ptr{Interval},
                 (Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Csize_t}),
                 tt, length(tt), vv, length(vv), n)
     ptr == C_NULL && _last_error_code() != SENTIL_OK && _raise_last()

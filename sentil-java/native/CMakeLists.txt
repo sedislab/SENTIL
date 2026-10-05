@@ -12,6 +12,11 @@ set(SENTIL_RESOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE PATH "Jar resource r
 
 find_package(JNI REQUIRED)
 find_library(SENTIL_CORE NAMES sentil HINTS "${SENTIL_LIB_DIR}" REQUIRED)
+if(WIN32)
+    find_file(SENTIL_CORE_RUNTIME sentil.dll HINTS "${SENTIL_LIB_DIR}" REQUIRED)
+else()
+    set(SENTIL_CORE_RUNTIME "${SENTIL_CORE}")
+endif()
 
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" SENTIL_OS)
 if(NOT SENTIL_OS STREQUAL "darwin" AND NOT SENTIL_OS STREQUAL "windows")
@@ -46,4 +51,4 @@ set_target_properties(sentil_jni PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${SENTIL_OUT}")
 
 add_custom_command(TARGET sentil_jni POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy "${SENTIL_CORE}" "${SENTIL_OUT}/")
+    COMMAND ${CMAKE_COMMAND} -E copy "${SENTIL_CORE_RUNTIME}" "${SENTIL_OUT}/")

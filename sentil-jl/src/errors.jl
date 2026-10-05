@@ -47,17 +47,17 @@ Base.showerror(io::IO, e::SentilError) = print(io, nameof(typeof(e)), '(', e.cod
 export SentilError, ParseError, SemanticError, EvaluationError
 
 function _last_error_message()
-    n = ccall((:sentil_get_last_error_message, libsentil[]), Csize_t,
+    n = ccall((:sentil_get_last_error_message, libsentil), Csize_t,
               (Ptr{UInt8}, Csize_t), C_NULL, 0)
     n == 0 && return ""
     buf = Vector{UInt8}(undef, n)
-    ccall((:sentil_get_last_error_message, libsentil[]), Csize_t,
+    ccall((:sentil_get_last_error_message, libsentil), Csize_t,
           (Ptr{UInt8}, Csize_t), buf, n)
     return GC.@preserve buf unsafe_string(pointer(buf))
 end
 
 _last_error_code() =
-    SentilErrorCode(ccall((:sentil_get_last_error_code, libsentil[]), Int32, ()))
+    SentilErrorCode(ccall((:sentil_get_last_error_code, libsentil), Int32, ()))
 
 function _error(code::SentilErrorCode, msg::AbstractString)
     if code == SENTIL_ERR_PARSE

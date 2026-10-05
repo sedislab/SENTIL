@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
+if(POLICY CMP0144)
+    cmake_policy(SET CMP0144 NEW)
+endif()
 project(SentilCpp
-    VERSION 0.3.0
+    VERSION 0.3.1
     DESCRIPTION "C++ bindings for SENTIL, runtime verification for STL and PrSTL"
     LANGUAGES CXX)
 
@@ -26,6 +29,9 @@ if(NOT TARGET Sentil::sentil)
         IMPORTED_LOCATION
             "${SENTIL_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}sentil${CMAKE_SHARED_LIBRARY_SUFFIX}"
         INTERFACE_INCLUDE_DIRECTORIES "${SENTIL_INCLUDE_DIR}")
+    if(WIN32)
+        set_target_properties(Sentil::sentil PROPERTIES IMPORTED_IMPLIB "${SENTIL_LIB_DIR}/sentil.dll.lib")
+    endif()
 endif()
 
 find_package(Threads REQUIRED)

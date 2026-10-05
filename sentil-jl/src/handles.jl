@@ -33,7 +33,7 @@ end
 function _take_string(ptr::Ptr{UInt8})
     ptr == C_NULL && return ""
     s = unsafe_string(ptr)
-    ccall((:sentil_free_string, libsentil[]), Cvoid, (Ptr{UInt8},), ptr)
+    ccall((:sentil_free_string, libsentil), Cvoid, (Ptr{UInt8},), ptr)
     return s
 end
 
@@ -43,7 +43,7 @@ function _take_string_array(ptr::Ptr{Ptr{UInt8}}, count::Integer)
     for i in 1:count
         out[i] = unsafe_string(unsafe_load(ptr, i))
     end
-    ccall((:sentil_free_string_array, libsentil[]), Cvoid,
+    ccall((:sentil_free_string_array, libsentil), Cvoid,
           (Ptr{Ptr{UInt8}}, Csize_t), ptr, count)
     return out
 end
@@ -52,7 +52,7 @@ function _take_doubles(ptr::Ptr{Float64}, count::Integer)
     ptr == C_NULL && return Float64[]
     out = Vector{Float64}(undef, count)
     unsafe_copyto!(pointer(out), ptr, count)
-    ccall((:sentil_free_doubles, libsentil[]), Cvoid, (Ptr{Float64}, Csize_t), ptr, count)
+    ccall((:sentil_free_doubles, libsentil), Cvoid, (Ptr{Float64}, Csize_t), ptr, count)
     return out
 end
 
@@ -67,7 +67,7 @@ function _take_intervals(ptr::Ptr{Interval}, count::Integer)
     ptr == C_NULL && return Interval[]
     out = Vector{Interval}(undef, count)
     unsafe_copyto!(pointer(out), ptr, count)
-    ccall((:sentil_free_intervals, libsentil[]), Cvoid, (Ptr{Interval}, Csize_t), ptr, count)
+    ccall((:sentil_free_intervals, libsentil), Cvoid, (Ptr{Interval}, Csize_t), ptr, count)
     return out
 end
 
@@ -75,7 +75,7 @@ function _take_samples(ptr::Ptr{Sample}, count::Integer)
     ptr == C_NULL && return Sample[]
     out = Vector{Sample}(undef, count)
     unsafe_copyto!(pointer(out), ptr, count)
-    ccall((:sentil_free_samples, libsentil[]), Cvoid, (Ptr{Sample}, Csize_t), ptr, count)
+    ccall((:sentil_free_samples, libsentil), Cvoid, (Ptr{Sample}, Csize_t), ptr, count)
     return out
 end
 
@@ -83,6 +83,6 @@ function _take_robustness(ptr::Ptr{Robustness}, count::Integer)
     ptr == C_NULL && return Robustness[]
     out = Vector{Robustness}(undef, count)
     unsafe_copyto!(pointer(out), ptr, count)
-    ccall((:sentil_free_robustness, libsentil[]), Cvoid, (Ptr{Robustness}, Csize_t), ptr, count)
+    ccall((:sentil_free_robustness, libsentil), Cvoid, (Ptr{Robustness}, Csize_t), ptr, count)
     return out
 end

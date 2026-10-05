@@ -126,32 +126,32 @@ vcpkg install sentil
 ```
 
 ```bash
-conan install --requires=sentil/0.3.0
+conan install --requires=sentil/0.3.1
 ```
 
 On Linux, the C library also ships as a distro package and the C++ header then comes from vcpkg, Conan, the release bundle, or a checkout:
 
 ```bash
-sudo apt install ./libsentil-dev_0.3.0-1_amd64.deb      # Debian, Ubuntu
-sudo dnf install ./libsentil-devel-0.3.0-1.x86_64.rpm   # Fedora, RHEL
+sudo apt install ./libsentil-dev_0.3.1-1_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./libsentil-devel-0.3.1-1.x86_64.rpm   # Fedora, RHEL
 ```
 
 ### Prebuilt release
 
-The `sentil-0.3.0-<os>-<arch>.tar.gz` bundle on the [GitHub release](https://github.com/sedislab/SENTIL/releases) carries the C ABI (the libraries, `sentil.h`, the pkg-config and CMake files) and this header under `include/sentil/`. Extract the bundle and point `CMAKE_PREFIX_PATH` at it so the C library resolves.
+The `sentil-0.3.1-<os>-<arch>.tar.gz` bundle on the [GitHub release](https://github.com/sedislab/SENTIL/releases) carries the C ABI (the libraries, `sentil.h`, the pkg-config and CMake files) and this header under `include/sentil/`. Extract the bundle and point `CMAKE_PREFIX_PATH` at it so the C library resolves.
 
 #### Linux
 
 ```bash
-tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/sentil-0.3.0-linux-x86_64"
+tar -xzf sentil-0.3.1-linux-x86_64.tar.gz
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/sentil-0.3.1-linux-x86_64"
 ```
 
 #### macOS
 
 ```bash
-tar -xzf sentil-0.3.0-macos-arm64.tar.gz
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/sentil-0.3.0-macos-arm64"
+tar -xzf sentil-0.3.1-macos-arm64.tar.gz
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/sentil-0.3.1-macos-arm64"
 ```
 
 #### Windows
@@ -159,8 +159,8 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/sentil-0.3.0-macos-arm64"
 `tar` ships in Windows 10 and later; pass the prefix from PowerShell.
 
 ```bash
-tar -xzf sentil-0.3.0-windows-x86_64.tar.gz
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD\sentil-0.3.0-windows-x86_64"
+tar -xzf sentil-0.3.1-windows-x86_64.tar.gz
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD\sentil-0.3.1-windows-x86_64"
 ```
 
 ### Build from source

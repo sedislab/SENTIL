@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(sentil_autosar_adaptive VERSION 0.3.0 LANGUAGES CXX)
+project(sentil_autosar_adaptive VERSION 0.3.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,13 +14,15 @@ set(SENTIL_ROOT "" CACHE PATH "SENTIL install tree (include/ and lib/libsentil)"
 add_library(sentil::cpp SHARED IMPORTED)
 set_target_properties(sentil::cpp PROPERTIES
   IMPORTED_LOCATION "${SENTIL_ROOT}/lib/libsentil.so"
+  IMPORTED_NO_SONAME TRUE
   INTERFACE_INCLUDE_DIRECTORIES "${SENTIL_ROOT}/include")
 
 if(SENTIL_AP_VENDOR STREQUAL "stub")
   find_package(vsomeip3 REQUIRED)
+  find_package(Threads REQUIRED)
   add_library(ara_com ara_stub/src/service.cpp)
   target_include_directories(ara_com PUBLIC ara_stub/include)
-  target_link_libraries(ara_com PUBLIC vsomeip3)
+  target_link_libraries(ara_com PUBLIC vsomeip3 Threads::Threads)
 elseif(NOT SENTIL_AP_VENDOR STREQUAL "none")
   include(cmake/FindAraCom.cmake)
 endif()

@@ -2,6 +2,11 @@
 Changelog for package sentil_ros
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.3.1
+-----
+* The error shown when libsentil cannot be found names the Debian package file
+  as it is published, with its revision suffix.
+
 0.3.0
 -----
 * First release. A lifecycle monitor node that watches ROS 2 topic streams against

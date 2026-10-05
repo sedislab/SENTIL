@@ -1,6 +1,6 @@
 set -euo pipefail
 
-VERSION="${SENTIL_VERSION:-0.3.0}"
+VERSION="${SENTIL_VERSION:-0.3.1}"
 REPO="sedislab/SENTIL"
 DEST="${1:-prebuilt-core}"
 

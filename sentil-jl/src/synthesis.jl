@@ -11,7 +11,7 @@ SmoothConfig(; temperature::Real = 10.0, kind::SoftKind.T = SoftKind.LogSumExp) 
 function smooth_robustness(f::Formula, trace::Trace; config::SmoothConfig = SmoothConfig())
     cfg = Ref(config)
     out = Ref{Float64}(0.0)
-    check_error(ccall((:sentil_formula_smooth_robustness, libsentil[]), Int32,
+    check_error(ccall((:sentil_formula_smooth_robustness, libsentil), Int32,
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmoothConfig}, Ptr{Float64}),
                       _ptr(f), _ptr(trace), cfg, out))
     return out[]
@@ -25,7 +25,7 @@ function smooth_value_and_gradient(f::Formula, trace::Trace; config::SmoothConfi
     cfg = Ref(config)
     value = Ref{Float64}(0.0)
     grad = Vector{Float64}(undef, nv * ns)
-    check_error(ccall((:sentil_formula_smooth_value_and_gradient, libsentil[]), Int32,
+    check_error(ccall((:sentil_formula_smooth_value_and_gradient, libsentil), Int32,
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmoothConfig}, Ptr{Float64}, Ptr{Float64}, Csize_t, Csize_t),
                       _ptr(f), _ptr(trace), cfg, value, grad, nv, ns))
     # The gradient comes back variable-major.
@@ -41,13 +41,13 @@ export SmoothConfig, smooth_robustness, smooth_value_and_gradient
 """The soft minimum of `values` at the given temperature."""
 function soft_min(values::AbstractVector{<:Real}, temperature::Real)
     v = convert(Vector{Float64}, values)
-    ccall((:sentil_soft_min, libsentil[]), Cdouble, (Ptr{Float64}, Csize_t, Cdouble), v, length(v), temperature)
+    ccall((:sentil_soft_min, libsentil), Cdouble, (Ptr{Float64}, Csize_t, Cdouble), v, length(v), temperature)
 end
 
 """The soft maximum of `values` at the given temperature."""
 function soft_max(values::AbstractVector{<:Real}, temperature::Real)
     v = convert(Vector{Float64}, values)
-    ccall((:sentil_soft_max, libsentil[]), Cdouble, (Ptr{Float64}, Csize_t, Cdouble), v, length(v), temperature)
+    ccall((:sentil_soft_max, libsentil), Cdouble, (Ptr{Float64}, Csize_t, Cdouble), v, length(v), temperature)
 end
 
 # C reads row-major, Julia stores column-major.
@@ -61,7 +61,7 @@ function solve_qp(P::AbstractMatrix{<:Real}, q::AbstractVector{<:Real},
     size(P) == (n, n) || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "P must be $n by $n"))
     size(G) == (m, n) || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "G must be $m by $n"))
     out = Vector{Float64}(undef, n)
-    check_error(ccall((:sentil_solve_qp, libsentil[]), Int32,
+    check_error(ccall((:sentil_solve_qp, libsentil), Int32,
                       (Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Float64}),
                       _rowmajor(P), n, convert(Vector{Float64}, q), _rowmajor(G), m,
                       convert(Vector{Float64}, h), max_iters, out))
@@ -73,7 +73,7 @@ function solve_spd(matrix::AbstractMatrix{<:Real}, rhs::AbstractVector{<:Real})
     n = length(rhs)
     size(matrix) == (n, n) || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "matrix must be $n by $n"))
     out = Vector{Float64}(undef, n)
-    check_error(ccall((:sentil_solve_spd, libsentil[]), Int32,
+    check_error(ccall((:sentil_solve_spd, libsentil), Int32,
                       (Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}),
                       _rowmajor(matrix), n, convert(Vector{Float64}, rhs), out))
     return out
@@ -85,7 +85,7 @@ function symmetric_eigen(matrix::AbstractMatrix{<:Real})
     size(matrix) == (n, n) || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "matrix must be square"))
     values = Vector{Float64}(undef, n)
     vectors = Vector{Float64}(undef, n * n)
-    check_error(ccall((:sentil_symmetric_eigen, libsentil[]), Int32,
+    check_error(ccall((:sentil_symmetric_eigen, libsentil), Int32,
                       (Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}),
                       _rowmajor(matrix), n, values, vectors))
     # vectors comes back row-major with one eigenvector per row.
@@ -106,7 +106,7 @@ end
 
 function _destroy(b::Bounds)
     if b.ptr != C_NULL
-        ccall((:sentil_bounds_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), b.ptr)
+        ccall((:sentil_bounds_destroy, libsentil), Cvoid, (Ptr{Cvoid},), b.ptr)
         b.ptr = C_NULL
     end
 end
@@ -120,31 +120,31 @@ function Bounds(lower::AbstractVector{<:Real}, upper::AbstractVector{<:Real})
     length(lo) == length(hi) ||
         throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG,
                               "lower has $(length(lo)) entries but upper has $(length(hi))"))
-    Bounds(ccall((:sentil_bounds_create, libsentil[]), Ptr{Cvoid},
+    Bounds(ccall((:sentil_bounds_create, libsentil), Ptr{Cvoid},
                  (Ptr{Float64}, Ptr{Float64}, Csize_t), lo, hi, length(lo)))
 end
 
 """A box with no limits in any of `dimension` coordinates."""
 unbounded_bounds(dimension::Integer) =
-    Bounds(ccall((:sentil_bounds_unbounded, libsentil[]), Ptr{Cvoid}, (Csize_t,), dimension))
+    Bounds(ccall((:sentil_bounds_unbounded, libsentil), Ptr{Cvoid}, (Csize_t,), dimension))
 
-dimension(b::Bounds) = Int(ccall((:sentil_bounds_dimension, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(b)))
+dimension(b::Bounds) = Int(ccall((:sentil_bounds_dimension, libsentil), Csize_t, (Ptr{Cvoid},), _ptr(b)))
 
 function lower(b::Bounds)
     out = Vector{Float64}(undef, dimension(b))
-    ccall((:sentil_bounds_lower, libsentil[]), Cvoid, (Ptr{Cvoid}, Ptr{Float64}), _ptr(b), out)
+    ccall((:sentil_bounds_lower, libsentil), Cvoid, (Ptr{Cvoid}, Ptr{Float64}), _ptr(b), out)
     return out
 end
 
 function upper(b::Bounds)
     out = Vector{Float64}(undef, dimension(b))
-    ccall((:sentil_bounds_upper, libsentil[]), Cvoid, (Ptr{Cvoid}, Ptr{Float64}), _ptr(b), out)
+    ccall((:sentil_bounds_upper, libsentil), Cvoid, (Ptr{Cvoid}, Ptr{Float64}), _ptr(b), out)
     return out
 end
 
 """Project a point into the box in place."""
 function Base.clamp!(b::Bounds, point::Vector{Float64})
-    ccall((:sentil_bounds_clamp, libsentil[]), Cvoid,
+    ccall((:sentil_bounds_clamp, libsentil), Cvoid,
           (Ptr{Cvoid}, Ptr{Float64}, Csize_t), _ptr(b), point, length(point))
     return point
 end
@@ -165,7 +165,7 @@ end
 
 function _destroy(m::SystemModel)
     if m.ptr != C_NULL
-        ccall((:sentil_system_model_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), m.ptr)
+        ccall((:sentil_system_model_destroy, libsentil), Cvoid, (Ptr{Cvoid},), m.ptr)
         m.ptr = C_NULL
     end
 end
@@ -179,7 +179,7 @@ function linear_model(A::AbstractMatrix{<:Real}, B::AbstractMatrix{<:Real},
     size(A) == (n, n) || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "A must be $n by $n"))
     size(B, 1) == n || throw(EvaluationError(SENTIL_ERR_INVALID_CONFIG, "B must have $n rows"))
     names = String[String(v) for v in variables]
-    SystemModel(ccall((:sentil_linear_model_create, libsentil[]), Ptr{Cvoid},
+    SystemModel(ccall((:sentil_linear_model_create, libsentil), Ptr{Cvoid},
                       (Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{Float64},
                        Ptr{Cstring}, Csize_t, Cdouble, Csize_t),
                       _rowmajor(A), n, _rowmajor(B), size(B, 2), convert(Vector{Float64}, x0),
@@ -188,7 +188,7 @@ end
 
 """The total number of input values the model takes over the horizon."""
 input_dimension(m::SystemModel) =
-    Int(ccall((:sentil_system_model_input_dimension, libsentil[]), Csize_t, (Ptr{Cvoid},), _ptr(m)))
+    Int(ccall((:sentil_system_model_input_dimension, libsentil), Csize_t, (Ptr{Cvoid},), _ptr(m)))
 
 # Mirrors sentil_synthesis_result_t.
 struct _SynthesisResult
@@ -220,7 +220,7 @@ function synthesize(model::SystemModel, spec::Formula; bounds = nothing, smooth 
     bptr = bounds === nothing ? Ptr{Cvoid}(C_NULL) : _ptr(bounds)
     sref, sptr = _smooth_ref(smooth)
     out = Ref{_SynthesisResult}()
-    code = GC.@preserve model spec bounds sref ccall((:sentil_synthesize, libsentil[]), Int32,
+    code = GC.@preserve model spec bounds sref ccall((:sentil_synthesize, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SmoothConfig}, Csize_t, Int32, Csize_t, Ptr{_SynthesisResult}),
         _ptr(model), _ptr(spec), bptr, sptr, max_iters, Int32(backend), population, out)
     _rethrow_callback(model.state)
@@ -260,7 +260,7 @@ end
 
 function _destroy(c::Controller)
     if c.ptr != C_NULL
-        ccall((:sentil_controller_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), c.ptr)
+        ccall((:sentil_controller_destroy, libsentil), Cvoid, (Ptr{Cvoid},), c.ptr)
         c.ptr = C_NULL
     end
 end
@@ -274,7 +274,7 @@ function Controller(model::SystemModel, spec::Formula, input_width::Integer, bud
     sref, sptr = _smooth_ref(smooth)
     box = model.state
     mptr, spptr = _consume_all!(model, spec)
-    ptr = GC.@preserve bounds sref ccall((:sentil_controller_create, libsentil[]), Ptr{Cvoid},
+    ptr = GC.@preserve bounds sref ccall((:sentil_controller_create, libsentil), Ptr{Cvoid},
         (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, UInt64, Ptr{Cvoid}, Ptr{SmoothConfig}),
         mptr, spptr, input_width, budget_ns, bptr, sptr)
     Controller(ptr, box, Int(input_width))
@@ -284,7 +284,7 @@ end
 function control(c::Controller, state::AbstractVector{<:Real})
     s = convert(Vector{Float64}, state)
     out = Vector{Float64}(undef, c.input_width)
-    code = GC.@preserve c ccall((:sentil_controller_control, libsentil[]), Int32,
+    code = GC.@preserve c ccall((:sentil_controller_control, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}), _ptr(c), s, length(s), out)
     _rethrow_callback(c.state)
     check_error(code)
@@ -305,7 +305,7 @@ end
 
 function _destroy(f::SafetyFilter)
     if f.ptr != C_NULL
-        ccall((:sentil_safety_filter_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), f.ptr)
+        ccall((:sentil_safety_filter_destroy, libsentil), Cvoid, (Ptr{Cvoid},), f.ptr)
         f.ptr = C_NULL
     end
 end
@@ -314,7 +314,7 @@ close!(f::SafetyFilter) = _destroy(f)
 
 """A safety filter that keeps inputs inside a box, consuming the bounds."""
 SafetyFilter(bounds::Bounds) =
-    SafetyFilter(ccall((:sentil_safety_filter_create, libsentil[]), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(bounds)))
+    SafetyFilter(ccall((:sentil_safety_filter_create, libsentil), Ptr{Cvoid}, (Ptr{Cvoid},), _consume!(bounds)))
 
 """The input closest to `nominal` that satisfies the bounds and each barrier `(coeff, bound)`, meaning `coeff . u >= bound`."""
 function safe_input(sf::SafetyFilter, nominal::AbstractVector{<:Real};
@@ -331,7 +331,7 @@ function safe_input(sf::SafetyFilter, nominal::AbstractVector{<:Real};
         push!(bvec, Float64(bound))
     end
     out = Vector{Float64}(undef, n)
-    check_error(ccall((:sentil_safety_filter_filter, libsentil[]), Int32,
+    check_error(ccall((:sentil_safety_filter_filter, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Ptr{Float64}, Csize_t, Ptr{Float64}),
         _ptr(sf), nom, n, isempty(a) ? C_NULL : a, isempty(bvec) ? C_NULL : bvec, m, out))
     return out
@@ -351,7 +351,7 @@ end
 
 function _destroy(c::ChanceConstraint)
     if c.ptr != C_NULL
-        ccall((:sentil_chance_constraint_destroy, libsentil[]), Cvoid, (Ptr{Cvoid},), c.ptr)
+        ccall((:sentil_chance_constraint_destroy, libsentil), Cvoid, (Ptr{Cvoid},), c.ptr)
         c.ptr = C_NULL
     end
 end
@@ -360,14 +360,14 @@ close!(c::ChanceConstraint) = _destroy(c)
 
 """A constraint that the spec holds with at least `probability`, consuming the spec."""
 ChanceConstraint(spec::Formula, probability::Real; confidence::Real = 0.0, tightening::Real = 0.0) =
-    ChanceConstraint(ccall((:sentil_chance_constraint_create, libsentil[]), Ptr{Cvoid},
+    ChanceConstraint(ccall((:sentil_chance_constraint_create, libsentil), Ptr{Cvoid},
                            (Ptr{Cvoid}, Cdouble, Cdouble, Cdouble),
                            _consume!(spec), probability, confidence, tightening))
 
 """Validate the constraint over a stochastic system by sampling."""
 function validate(cc::ChanceConstraint, system::StochasticSystem; samples::Integer = 1000, seed::Integer = 42)
     out = Ref{ChanceReport}()
-    code = GC.@preserve system ccall((:sentil_chance_constraint_validate, libsentil[]), Int32,
+    code = GC.@preserve system ccall((:sentil_chance_constraint_validate, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, UInt64, UInt64, Ptr{ChanceReport}), _ptr(cc), _ptr(system), samples, seed, out)
     _rethrow_callback(system.state)
     check_error(code)
@@ -399,7 +399,7 @@ function find_counterexample(f::Formula, model::SystemModel, bounds = nothing;
     b = bounds === nothing ? unbounded_bounds(input_dimension(model)) : bounds
     sref, sptr = _smooth_ref(smooth)
     out = Ref{_Witness}()
-    code = GC.@preserve model sref b ccall((:sentil_formula_find_counterexample, libsentil[]), Int32,
+    code = GC.@preserve model sref b ccall((:sentil_formula_find_counterexample, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, Ptr{SmoothConfig}, Ptr{_Witness}),
         _ptr(f), _ptr(model), _ptr(b), max_iters, sptr, out)
     _rethrow_callback(model.state)
@@ -411,7 +411,7 @@ end
 function falsify(f::Formula, model::SystemModel, bounds = nothing; config::CmaConfig = CmaConfig(), restarts::Integer = 1)
     b = bounds === nothing ? unbounded_bounds(input_dimension(model)) : bounds
     out = Ref{_Witness}()
-    code = GC.@preserve model b ccall((:sentil_formula_falsify, libsentil[]), Int32,
+    code = GC.@preserve model b ccall((:sentil_formula_falsify, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, CmaConfig, Csize_t, Ptr{_Witness}),
         _ptr(f), _ptr(model), _ptr(b), config, restarts, out)
     _rethrow_callback(model.state)
@@ -429,7 +429,7 @@ function smooth_gradient(f::Formula, model::SystemModel, initial::AbstractVector
     cfg = Ref(config)
     value = Ref{Float64}(0.0)
     grad = Vector{Float64}(undef, length(inp))
-    code = GC.@preserve model ccall((:sentil_formula_smooth_gradient, libsentil[]), Int32,
+    code = GC.@preserve model ccall((:sentil_formula_smooth_gradient, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Float64}, Csize_t, Ptr{SmoothConfig}, Ptr{Float64}, Ptr{Float64}),
         _ptr(f), _ptr(model), init, length(init), inp, length(inp), cfg, value, grad)
     _rethrow_callback(model.state)
@@ -487,7 +487,7 @@ function maximize(objective, start::AbstractVector{<:Real}; bounds = nothing, ma
     box = _GradientBox(objective, nothing)
     point = Vector{Float64}(undef, n)
     value = Ref{Float64}(0.0)
-    code = GC.@preserve box b ccall((:sentil_maximize, libsentil[]), Int32,
+    code = GC.@preserve box b ccall((:sentil_maximize, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, Csize_t, Ptr{Float64}, Ptr{Float64}),
         _C_GRADIENT[], pointer_from_objref(box), s, n, _ptr(b), max_iters, point, value)
     box.err === nothing || throw(box.err)
@@ -503,7 +503,7 @@ function cma_es(objective, start::AbstractVector{<:Real}; bounds = nothing, conf
     box = _ObjectiveBox(objective, nothing)
     point = Vector{Float64}(undef, n)
     value = Ref{Float64}(0.0)
-    code = GC.@preserve box b ccall((:sentil_cma_es, libsentil[]), Int32,
+    code = GC.@preserve box b ccall((:sentil_cma_es, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, CmaConfig, Ptr{Float64}, Ptr{Float64}),
         _C_OBJECTIVE[], pointer_from_objref(box), s, n, _ptr(b), config, point, value)
     box.err === nothing || throw(box.err)
@@ -546,7 +546,7 @@ function cma_es_batched(objective, start::AbstractVector{<:Real}; bounds = nothi
     box = _BatchBox(objective, nothing)
     point = Vector{Float64}(undef, n)
     value = Ref{Float64}(0.0)
-    code = GC.@preserve box b ccall((:sentil_cma_es_batched, libsentil[]), Int32,
+    code = GC.@preserve box b ccall((:sentil_cma_es_batched, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}, Csize_t, Ptr{Cvoid}, CmaConfig, Ptr{Float64}, Ptr{Float64}),
         _C_BATCH[], pointer_from_objref(box), s, n, _ptr(b), config, point, value)
     box.err === nothing || throw(box.err)
@@ -596,7 +596,7 @@ function SystemModel(variables, dt::Real, horizon::Integer; input_dimension::Int
     names = String[String(v) for v in variables]
     box = _ModelBox(rollout, convert(Vector{Float64}, initial), length(names), Int(horizon) + 1, nothing)
     vtable = _ModelVtable(pointer_from_objref(box), input_dimension, pointer(box.initial), _C_ROLLOUT[])
-    ptr = GC.@preserve box ccall((:sentil_system_model_create_custom, libsentil[]), Ptr{Cvoid},
+    ptr = GC.@preserve box ccall((:sentil_system_model_create_custom, libsentil), Ptr{Cvoid},
         (Ptr{Cstring}, Csize_t, Cdouble, Csize_t, _ModelVtable),
         names, length(names), dt, horizon, vtable)
     SystemModel(ptr, box)
@@ -625,7 +625,7 @@ function mine_tightest_parameter(make, traces::AbstractVector{Trace}, lower::Rea
     box = _FormulaFnBox(make, nothing)
     trace_ptrs = Ptr{Cvoid}[_ptr(t) for t in traces]
     out = Ref{Float64}(0.0)
-    code = GC.@preserve box traces ccall((:sentil_mine_tightest_parameter, libsentil[]), Int32,
+    code = GC.@preserve box traces ccall((:sentil_mine_tightest_parameter, libsentil), Int32,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Ptr{Cvoid}}, Csize_t, Cdouble, Cdouble, Ptr{Float64}),
         _C_FORMULA_FN[], pointer_from_objref(box), trace_ptrs, length(trace_ptrs), lower, upper, out)
     box.err === nothing || throw(box.err)

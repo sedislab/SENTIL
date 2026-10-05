@@ -80,7 +80,7 @@ const jsonLd = {
       name: 'SENTIL',
       applicationCategory: 'DeveloperApplication',
       operatingSystem: 'Linux, macOS, Windows',
-      softwareVersion: '0.3.0',
+      softwareVersion: '0.3.1',
       url: SITE,
       downloadUrl: 'https://github.com/sedislab/SENTIL/releases',
       license: 'https://spdx.org/licenses/MIT.html',

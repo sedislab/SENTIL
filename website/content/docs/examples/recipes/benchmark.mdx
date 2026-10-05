@@ -66,7 +66,7 @@ make -C ../sentil-ffi bench-c && ../target/sentil_bench_c scalability > results/
 make -C ../sentil-ffi bench-cpp && ../target/sentil_bench_cpp scalability > results/sentil_scalability_cpp.jsonl
 python runners/sentil_runner.py scalability > results/sentil_scalability_python.jsonl
 SENTIL_LIB=../target/release/libsentil.so julia --project=../sentil-jl runners/sentil_runner.jl scalability > results/sentil_scalability_julia.jsonl
-java -cp ../sentil-java/target/sentil-0.3.0.jar runners/sentil_runner.java scalability > results/sentil_scalability_java.jsonl
+java -cp ../sentil-java/target/sentil-0.3.1.jar runners/sentil_runner.java scalability > results/sentil_scalability_java.jsonl
 matlab -batch "addpath('runners'); sentil_runner('scalability')" > results/sentil_scalability_matlab.jsonl
 ```
 

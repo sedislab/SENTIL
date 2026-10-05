@@ -23,7 +23,7 @@ aem start
 </Step>
 <Step>
 
-Get the SENTIL source. A clone leaves you on the default branch until you check out a tag; the archive is the 0.3.0 tree and needs no git.
+Get the SENTIL source. A clone leaves you on the default branch until you check out a tag; the archive is the 0.3.1 tree and needs no git.
 
 <Tabs items={["Clone","Tag archive"]}>
 <Tab value="Clone">
@@ -37,9 +37,9 @@ cd SENTIL
 <Tab value="Tag archive">
 
 ```bash
-curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -o sentil.tar.gz
+curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.tar.gz -o sentil.tar.gz
 tar -xzf sentil.tar.gz
-cd SENTIL-0.3.0
+cd SENTIL-0.3.1
 ```
 
 </Tab>
@@ -116,7 +116,7 @@ new_local_repository(
 </Step>
 <Step>
 
-Build the module, install it, and run its tests. The `sentil` in both `buildtool` commands is the name `cyberfile.xml` declares, alongside version 0.3.0, type `module`, and the Apollo dependencies `cyber` and `common-msgs`.
+Build the module, install it, and run its tests. The `sentil` in both `buildtool` commands is the name `cyberfile.xml` declares, alongside version 0.3.1, type `module`, and the Apollo dependencies `cyber` and `common-msgs`.
 
 ```bash
 buildtool build -p sentil
@@ -273,7 +273,7 @@ The three components, their shells, and their cadence:
 | `control/dag/sentil_control.dag` | Timer topology, `interval: 10` |
 | `monitor/launch/sentil_monitor.launch` | Module `sentil_safety_monitor`, process `sentil_monitor` |
 | `control/launch/sentil_control.launch` | Module `sentil_control`, process `sentil_control`, `exception_handler: respawn` |
-| `cyberfile.xml` | Package manifest: name `sentil`, version 0.3.0, type `module`, depends on `cyber` and `common-msgs` |
+| `cyberfile.xml` | Package manifest: name `sentil`, version 0.3.1, type `module`, depends on `cyber` and `common-msgs` |
 
 ## Channels
 

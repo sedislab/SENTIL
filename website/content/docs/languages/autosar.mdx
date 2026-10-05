@@ -16,7 +16,7 @@ There are three ways to install SENTIL for AUTOSAR. The `.deb` and `.rpm` on the
 <Steps>
 <Step>
 
-Download the package for your distribution: [`sentil-autosar-adaptive_0.3.0-1_amd64.deb`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-autosar-adaptive_0.3.0-1_amd64.deb) for apt, [`sentil-autosar-adaptive-0.3.0-1.x86_64.rpm`](https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-autosar-adaptive-0.3.0-1.x86_64.rpm) for dnf. Both are Linux x86_64 only, and both were built against vsomeip 3.7.3.
+Download the package for your distribution: [`sentil-autosar-adaptive_0.3.1-1_amd64.deb`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-autosar-adaptive_0.3.1-1_amd64.deb) for apt, [`sentil-autosar-adaptive-0.3.1-1.x86_64.rpm`](https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-autosar-adaptive-0.3.1-1.x86_64.rpm) for dnf. Both are Linux x86_64 only, and both were built against vsomeip 3.7.3.
 
 </Step>
 <Step>
@@ -57,7 +57,7 @@ The packages bundle the vsomeip runtime next to `libsentil.so` and declare no de
 Download the archive.
 
 ```bash
-curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-autosar-adaptive-0.3.0-ap-deliverable.tar.gz
+curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-autosar-adaptive-0.3.1-ap-deliverable.tar.gz
 ```
 
 </Step>
@@ -66,10 +66,10 @@ curl -LO https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-auto
 List it before unpacking, which is also the check that the download arrived whole.
 
 ```bash
-tar tzf sentil-autosar-adaptive-0.3.0-ap-deliverable.tar.gz
+tar tzf sentil-autosar-adaptive-0.3.1-ap-deliverable.tar.gz
 ```
 
-Every path sits under `sentil-autosar-adaptive-0.3.0-ap-deliverable/`, with `model/`, `manifest/`, `src/`, `cmake/`, `codegen/`, `CMakeLists.txt`, and `README.md` at its root.
+Every path sits under `sentil-autosar-adaptive-0.3.1-ap-deliverable/`, with `model/`, `manifest/`, `src/`, `cmake/`, `codegen/`, `CMakeLists.txt`, and `README.md` at its root.
 
 </Step>
 <Step>
@@ -77,7 +77,7 @@ Every path sits under `sentil-autosar-adaptive-0.3.0-ap-deliverable/`, with `mod
 Unpack it, then know what you have.
 
 ```bash
-tar xzf sentil-autosar-adaptive-0.3.0-ap-deliverable.tar.gz
+tar xzf sentil-autosar-adaptive-0.3.1-ap-deliverable.tar.gz
 ```
 
 `model/` holds the three ARXML service interfaces, `manifest/` the five deployment manifests and their vsomeip renderings, `src/` the two app mains alongside the transport-free `MonitorApp` and `ControlApp`, `cmake/` the toolchain files and `FindAraCom.cmake`, and `codegen/generate.sh` the hook that runs your vendor's ARXML generator. The archive ships no ara::com stub and no tests, so it is material for an AP project rather than a tree that builds where it stands. For a build you can run on a workstation, take the source route below.

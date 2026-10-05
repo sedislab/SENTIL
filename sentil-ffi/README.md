@@ -153,14 +153,14 @@ vcpkg install sentil
 ```
 
 ```bash
-conan install --requires=sentil/0.3.0
+conan install --requires=sentil/0.3.1
 ```
 
 On Linux, the release also ships distro packages you install directly; each drops `libsentil`, `sentil.h`, and the pkg-config and CMake files into the system prefix:
 
 ```bash
-sudo apt install ./libsentil-dev_0.3.0-1_amd64.deb      # Debian, Ubuntu
-sudo dnf install ./libsentil-devel-0.3.0-1.x86_64.rpm   # Fedora, RHEL
+sudo apt install ./libsentil-dev_0.3.1-1_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./libsentil-devel-0.3.1-1.x86_64.rpm   # Fedora, RHEL
 ```
 
 ### Prebuilt release
@@ -170,9 +170,9 @@ To skip the package managers, grab the self-contained tarball for your platform 
 #### Linux
 
 ```bash
-tar -xzf sentil-0.3.0-linux-x86_64.tar.gz
-export PKG_CONFIG_PATH=$PWD/sentil-0.3.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH
-export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.0-linux-x86_64:$CMAKE_PREFIX_PATH
+tar -xzf sentil-0.3.1-linux-x86_64.tar.gz
+export PKG_CONFIG_PATH=$PWD/sentil-0.3.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH
+export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.1-linux-x86_64:$CMAKE_PREFIX_PATH
 ```
 
 #### macOS
@@ -180,9 +180,9 @@ export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.0-linux-x86_64:$CMAKE_PREFIX_PATH
 The shared library is `libsentil.dylib`; the steps match Linux with the `macos-x86_64` or `macos-arm64` archive.
 
 ```bash
-tar -xzf sentil-0.3.0-macos-arm64.tar.gz
-export PKG_CONFIG_PATH=$PWD/sentil-0.3.0-macos-arm64/lib/pkgconfig:$PKG_CONFIG_PATH
-export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.0-macos-arm64:$CMAKE_PREFIX_PATH
+tar -xzf sentil-0.3.1-macos-arm64.tar.gz
+export PKG_CONFIG_PATH=$PWD/sentil-0.3.1-macos-arm64/lib/pkgconfig:$PKG_CONFIG_PATH
+export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.1-macos-arm64:$CMAKE_PREFIX_PATH
 ```
 
 #### Windows
@@ -190,8 +190,8 @@ export CMAKE_PREFIX_PATH=$PWD/sentil-0.3.0-macos-arm64:$CMAKE_PREFIX_PATH
 `tar` ships in Windows 10 and later. There is no pkg-config, so set `CMAKE_PREFIX_PATH` and let CMake find the package; MSVC links `sentil.dll` through the bundled import library.
 
 ```bash
-tar -xzf sentil-0.3.0-windows-x86_64.tar.gz
-$env:CMAKE_PREFIX_PATH = "$PWD\sentil-0.3.0-windows-x86_64"
+tar -xzf sentil-0.3.1-windows-x86_64.tar.gz
+$env:CMAKE_PREFIX_PATH = "$PWD\sentil-0.3.1-windows-x86_64"
 ```
 
 ### Build from source

@@ -9,7 +9,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.3.0"
+#define VERSION "0.3.1"
 
 static double now_ms(void) {
     struct timespec ts;

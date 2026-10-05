@@ -1,6 +1,6 @@
 {
   "name": "sentil",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Runtime verification for Signal Temporal Logic and its probabilistic extension PrSTL. Provides offline and streaming monitors, statistical model checking, and controller synthesis behind a C ABI with a C++17 header interface.",
   "homepage": "https://github.com/sedislab/SENTIL",
   "documentation": "https://sentil.pages.dev",

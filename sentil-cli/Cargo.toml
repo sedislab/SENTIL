@@ -17,7 +17,7 @@ gpu = ["sentil/gpu"]
 formats = ["sentil/parquet", "sentil/arrow", "sentil/sqlite"]
 
 [dependencies]
-sentil = { path = "../sentil-core", version = "0.3.0", default-features = false, features = [
+sentil = { path = "../sentil-core", version = "0.3.1", default-features = false, features = [
     "std",
     "statistical",
     "synthesis",
@@ -66,7 +66,7 @@ priority = "optional"
 assets = [
     ["target/release/sentil", "usr/bin/", "755"],
     ["target/release/build/sentil-cli-*/out/sentil.1", "usr/share/man/man1/", "644"],
-    ["target/release/build/sentil-cli-*/out/sentil.bash", "usr/share/bash-completion/completions/sentil", "644"],
-    ["target/release/build/sentil-cli-*/out/_sentil", "usr/share/zsh/vendor-completions/_sentil", "644"],
-    ["target/release/build/sentil-cli-*/out/sentil.fish", "usr/share/fish/vendor_completions.d/sentil.fish", "644"],
+    ["target/release/build/sentil-cli-*/out/sentil.bash", "usr/share/bash-completion/completions/", "644"],
+    ["target/release/build/sentil-cli-*/out/_sentil", "usr/share/zsh/vendor-completions/", "644"],
+    ["target/release/build/sentil-cli-*/out/sentil.fish", "usr/share/fish/vendor_completions.d/", "644"],
 ]

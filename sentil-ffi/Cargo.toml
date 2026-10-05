@@ -13,7 +13,7 @@ crate-type = ["cdylib", "staticlib"]
 doctest = false
 
 [dependencies]
-sentil = { path = "../sentil-core", version = "0.3.0", features = ["serde"] }
+sentil = { path = "../sentil-core", version = "0.3.1", features = ["serde"] }
 libc = "0.2"
 serde_json = "1.0"
 rand = { workspace = true }
@@ -37,6 +37,7 @@ copyright = "2025 Paapa Kwesi Quansah, Ernest Bonnah, and the SEDIS Lab"
 license-file = ["../LICENSE-MIT", "0"]
 section = "libdevel"
 priority = "optional"
+depends = "$auto, libc6 (>= 2.28)"
 assets = [
     ["target/release/libsentil.so", "usr/lib/", "644"],
     ["target/release/libsentil.a", "usr/lib/", "644"],

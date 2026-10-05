@@ -15,7 +15,7 @@ const INSTALL: { name: string; lang: string; code: string }[] = [
     code: `<dependency>
   <groupId>io.github.sedislab</groupId>
   <artifactId>sentil</artifactId>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
 </dependency>`,
   },
   { name: 'Julia', lang: 'julia', code: '] add Sentil' },

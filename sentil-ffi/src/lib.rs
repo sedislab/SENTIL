@@ -334,7 +334,7 @@ impl From<sentil::SoftKind> for SentilSoftKind {
 
 const VERSION_MAJOR: u32 = 0;
 const VERSION_MINOR: u32 = 3;
-const VERSION_PATCH: u32 = 0;
+const VERSION_PATCH: u32 = 1;
 
 #[no_mangle]
 pub extern "C" fn sentil_version(major: *mut u32, minor: *mut u32, patch: *mut u32) {
