@@ -1,7 +1,7 @@
 // Probabilistic monitoring: lift a noisy sensor and estimate satisfaction.
 //
-//   javac -cp ../target/sentil-0.3.0.jar Probabilistic.java
-//   java -cp ../target/sentil-0.3.0.jar:. Probabilistic
+//   javac -cp ../target/sentil-0.3.1.jar Probabilistic.java
+//   java -cp ../target/sentil-0.3.1.jar:. Probabilistic
 import io.github.sedislab.sentil.Formula;
 import io.github.sedislab.sentil.LiftingRegistry;
 import io.github.sedislab.sentil.NoiseModel;

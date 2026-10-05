@@ -29,7 +29,7 @@ When a project needs a specific heavy backend, name it in the manifest. The `gpu
 
 ```toml title="Cargo.toml"
 [dependencies]
-sentil = { version = "0.3.0", features = ["gpu", "parquet"] }
+sentil = { version = "0.3.1", features = ["gpu", "parquet"] }
 ```
 
 Note that `hdf5` expects a library already on the machine.
@@ -48,7 +48,7 @@ Dropping `std` as well gives the `no_std` monitor for microcontroller targets.
 Check it.
 
 ```bash
-cargo tree -p sentil --depth 0   # sentil v0.3.0
+cargo tree -p sentil --depth 0   # sentil v0.3.1
 ```
 
 Then run the [first monitor](#first-monitor) below.
@@ -77,7 +77,7 @@ Resolve it.
 cargo tree -p sentil --depth 0
 ```
 
-The line names the crate, version 0.3.0, and the git source with the commit written into your `Cargo.lock`.
+The line names the crate, version 0.3.1, and the git source with the commit written into your `Cargo.lock`.
 
 </Step>
 </Steps>

@@ -134,14 +134,14 @@ From Maven Central, with Maven:
 <dependency>
   <groupId>io.github.sedislab</groupId>
   <artifactId>sentil</artifactId>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
 or with Gradle:
 
 ```groovy
-implementation 'io.github.sedislab:sentil:0.3.0'
+implementation 'io.github.sedislab:sentil:0.3.1'
 ```
 
 The published jar bundles the native library for Linux, macOS, and Windows on common architectures, so nothing else is needed.
@@ -150,20 +150,20 @@ On JDK 24 and newer, the JVM prints a warning when a library on the class path l
 
 ### Prebuilt release
 
-To skip Maven, download the `sentil-0.3.0.jar` attached to the [GitHub release](https://github.com/sedislab/SENTIL/releases) and put it on the classpath directly; it carries the native library inside under `native/<os>-<arch>/`. The classpath separator differs by platform.
+To skip Maven, download the `sentil-0.3.1.jar` attached to the [GitHub release](https://github.com/sedislab/SENTIL/releases) and put it on the classpath directly; it carries the native library inside under `native/<os>-<arch>/`. The classpath separator differs by platform.
 
 #### Linux and macOS
 
 ```sh
-javac -cp sentil-0.3.0.jar MyMonitor.java
-java -cp .:sentil-0.3.0.jar MyMonitor
+javac -cp sentil-0.3.1.jar MyMonitor.java
+java -cp .:sentil-0.3.1.jar MyMonitor
 ```
 
 #### Windows
 
 ```bat
-javac -cp sentil-0.3.0.jar MyMonitor.java
-java -cp .;sentil-0.3.0.jar MyMonitor
+javac -cp sentil-0.3.1.jar MyMonitor.java
+java -cp .;sentil-0.3.1.jar MyMonitor
 ```
 
 ### Build from source
@@ -176,7 +176,7 @@ cd SENTIL/sentil-java
 mvn -DskipTests package
 ```
 
-That runs `cargo build --release` for the core, builds the shim with CMake, and writes `target/sentil-0.3.0.jar` with the native library inside under `native/<os>-<arch>/`. It produces `libsentil.so` on Linux, `libsentil.dylib` on macOS, and `sentil.dll` on Windows, and the loader picks the right one at run time. To assemble one jar that runs everywhere, build on each platform and merge the per-platform `native/` trees, which is what the release workflow does.
+That runs `cargo build --release` for the core, builds the shim with CMake, and writes `target/sentil-0.3.1.jar` with the native library inside under `native/<os>-<arch>/`. It produces `libsentil.so` on Linux, `libsentil.dylib` on macOS, and `sentil.dll` on Windows, and the loader picks the right one at run time. To assemble one jar that runs everywhere, build on each platform and merge the per-platform `native/` trees, which is what the release workflow does.
 
 ## Contributing
 

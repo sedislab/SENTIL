@@ -31,7 +31,7 @@ Check it, with your distro's `setup.bash` sourced.
 ros2 pkg xml sentil_ros | head -5
 ```
 
-The last two lines are `<name>sentil_ros</name>` and `<version>0.3.0</version>`.
+The last two lines are `<name>sentil_ros</name>` and `<version>0.3.1</version>`.
 
 </Step>
 </Steps>
@@ -53,7 +53,7 @@ Bring your own ROS 2 install. The commands below are the same shape, with these 
 </OsTab>
 <OsTab value="Windows">
 
-Run the build from a command prompt with ROS 2's `local_setup.bat` called. Substitute `set SENTIL_PREFIX=` for the `export`, `%SENTIL_PREFIX%` for `"$SENTIL_PREFIX"`, a writable directory for `/tmp/cpp-build`, and `call install\setup.bat` for `source install/setup.bash`. The core builds as `sentil.dll`, which the loader picks up from `PATH` rather than from `LD_LIBRARY_PATH`, and `install -D` does not exist here, so copy those three files into the prefix yourself. For a tagged release, `curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.zip` and `tar xf sentil.zip` replace the clone. Nothing in the repository is built or tested on Windows, so this path is unverified.
+Run the build from a command prompt with ROS 2's `local_setup.bat` called. Substitute `set SENTIL_PREFIX=` for the `export`, `%SENTIL_PREFIX%` for `"$SENTIL_PREFIX"`, a writable directory for `/tmp/cpp-build`, and `call install\setup.bat` for `source install/setup.bash`. The core builds as `sentil.dll`, which the loader picks up from `PATH` rather than from `LD_LIBRARY_PATH`, and `install -D` does not exist here, so copy those three files into the prefix yourself. For a tagged release, `curl -L -o sentil.zip https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.zip` and `tar xf sentil.zip` replace the clone. Nothing in the repository is built or tested on Windows, so this path is unverified.
 
 </OsTab>
 </OsTabs>
@@ -69,7 +69,7 @@ cd ~/ros2_ws/src
 git clone https://github.com/sedislab/SENTIL
 ```
 
-For a tagged release rather than the tip, extract the source archive in place of cloning: `curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz | tar xz`. That unpacks into `SENTIL-0.3.0`, so read that name for `SENTIL` in the next step.
+For a tagged release rather than the tip, extract the source archive in place of cloning: `curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.tar.gz | tar xz`. That unpacks into `SENTIL-0.3.1`, so read that name for `SENTIL` in the next step.
 
 </Step>
 <Step>

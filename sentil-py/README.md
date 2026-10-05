@@ -137,7 +137,7 @@ Every tagged release attaches prebuilt wheels to the [GitHub release](https://gi
 The shell expands the wildcard to the file you downloaded:
 
 ```bash
-pip install ./sentil-0.3.0-*.whl
+pip install ./sentil-0.3.1-*.whl
 ```
 
 #### Windows
@@ -145,7 +145,7 @@ pip install ./sentil-0.3.0-*.whl
 Pass the exact filename, since the shell leaves the wildcard unexpanded:
 
 ```bash
-pip install .\sentil-0.3.0-cp38-abi3-win_amd64.whl
+pip install .\sentil-0.3.1-cp38-abi3-win_amd64.whl
 ```
 
 ### Build from source

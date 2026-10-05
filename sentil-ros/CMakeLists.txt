@@ -25,7 +25,7 @@ find_package(rosidl_typesupport_introspection_cpp REQUIRED)
 find_package(rcpputils REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-set(SENTIL_VERSION "0.3.0" CACHE STRING "SENTIL release to fetch when no local library is found")
+set(SENTIL_VERSION "0.3.1" CACHE STRING "SENTIL release to fetch when no local library is found")
 set(SENTIL_LIB_DIR "" CACHE PATH "Directory holding libsentil; skips every other step when set")
 option(SENTIL_NO_DOWNLOAD "Never fetch a prebuilt libsentil from the release page" OFF)
 

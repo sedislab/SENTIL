@@ -110,9 +110,9 @@ The vendor include root supplies `ara/com/service.h`, `ara/log/log.h`, and `ara/
 To build without cloning, download the source archive for the tag you want and build it the same way. Tags are on the [releases page](https://github.com/sedislab/SENTIL/releases).
 
 ```
-curl -L -o sentil-v0.3.0.tar.gz https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz
-tar xzf sentil-v0.3.0.tar.gz
-cd SENTIL-0.3.0/sentil-autosar-adaptive
+curl -L -o sentil-v0.3.1.tar.gz https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.tar.gz
+tar xzf sentil-v0.3.1.tar.gz
+cd SENTIL-0.3.1/sentil-autosar-adaptive
 ```
 
 For an on-ECU layout, the packaging under `packaging/opt-layout` places the apps, manifests, and the compiled core under `/opt/sentil`.

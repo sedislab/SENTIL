@@ -8,7 +8,7 @@ import numpy as np
 
 import sentil
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 FORMULA = "always[0, 100](eventually[0, 10](x > 5))"
 
 def summarize(samples):

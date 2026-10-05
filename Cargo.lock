@@ -2855,7 +2855,7 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "sentil"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arrow",
  "bytemuck",
@@ -2886,7 +2886,7 @@ dependencies = [
 
 [[package]]
 name = "sentil-benchmarks"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rand",
  "rand_chacha",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "sentil-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anstyle",
  "assert_cmd",
@@ -2925,7 +2925,7 @@ dependencies = [
 
 [[package]]
 name = "sentil-embedded-deployment"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rand",
  "rand_chacha",
@@ -2936,7 +2936,7 @@ dependencies = [
 
 [[package]]
 name = "sentil-ffi"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cc",
  "libc",
@@ -2949,7 +2949,7 @@ dependencies = [
 
 [[package]]
 name = "sentil-py"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "numpy",
  "pyo3",

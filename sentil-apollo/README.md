@@ -132,14 +132,14 @@ In the Apollo dev container the flow is `aem start`, the two `buildtool` command
 To take a tagged release without cloning, download its source archive and the binary bundle for your platform, unpack both, and drop `sentil-apollo` in as `modules/sentil`:
 
 ```
-curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.0.tar.gz -o sentil.tar.gz
-curl -L https://github.com/sedislab/SENTIL/releases/download/v0.3.0/sentil-0.3.0-linux-x86_64.tar.gz -o sentil-bin.tar.gz
+curl -L https://github.com/sedislab/SENTIL/archive/refs/tags/v0.3.1.tar.gz -o sentil.tar.gz
+curl -L https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-linux-x86_64.tar.gz -o sentil-bin.tar.gz
 tar -xzf sentil.tar.gz
 tar -xzf sentil-bin.tar.gz
-cp -r SENTIL-0.3.0/sentil-apollo modules/sentil
+cp -r SENTIL-0.3.1/sentil-apollo modules/sentil
 ```
 
-The bundle already carries the headers, the shared object, and the oracle in the layout `bzl/sentil_cpp.BUILD` expects, so point `@sentil_cpp` at the unpacked `sentil-0.3.0-linux-x86_64` directory with no further staging and run the same `buildtool build -p sentil` and `buildtool install sentil` as above.
+The bundle already carries the headers, the shared object, and the oracle in the layout `bzl/sentil_cpp.BUILD` expects, so point `@sentil_cpp` at the unpacked `sentil-0.3.1-linux-x86_64` directory with no further staging and run the same `buildtool build -p sentil` and `buildtool install sentil` as above.
 
 ## Documentation
 

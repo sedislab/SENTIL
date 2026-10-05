@@ -3,7 +3,7 @@ if(POLICY CMP0144)
     cmake_policy(SET CMP0144 NEW)
 endif()
 project(SentilCpp
-    VERSION 0.3.0
+    VERSION 0.3.1
     DESCRIPTION "C++ bindings for SENTIL, runtime verification for STL and PrSTL"
     LANGUAGES CXX)
 

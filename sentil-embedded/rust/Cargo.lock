@@ -427,7 +427,7 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "sentil"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "libm",
  "num-traits",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "sentil-embedded"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cortex-m",
  "embedded-alloc",

@@ -70,7 +70,7 @@ class SentilRunner {
         long rss = peakRssBytes();
         String rssField = rss >= 0 ? Long.toString(rss) : "null";
         StringBuilder out = new StringBuilder();
-        out.append("{\"tool\":\"sentil\",\"version\":\"0.3.0\",\"language\":\"java\",\"benchmark\":\"")
+        out.append("{\"tool\":\"sentil\",\"version\":\"0.3.1\",\"language\":\"java\",\"benchmark\":\"")
                 .append(benchmark).append("\",");
         out.append(String.format("\"formula\":\"%s\",\"question\":\"%s\",\"size\":%d,\"robustness\":%.17g,",
                 FORMULA, question, size, robustness));

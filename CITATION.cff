@@ -20,8 +20,8 @@ url: "https://github.com/sedislab/SENTIL"
 license:
   - MIT
   - Apache-2.0
-version: "0.3.0"
-date-released: "2026-01-30"
+version: "0.3.1"
+date-released: "2026-10-05"
 
 preferred-citation:
   type: article

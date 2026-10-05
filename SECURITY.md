@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-SENTIL is at 0.3.0. While the project is in its 0.x line, security fixes land on the most recent release, so update to the latest version to receive them.
+SENTIL is at 0.3.1. While the project is in its 0.x line, security fixes land on the most recent release, so update to the latest version to receive them.
 
 ## Reporting a vulnerability
 

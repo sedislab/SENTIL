@@ -12,7 +12,7 @@ extern "C" {
 
 #define SENTIL_VERSION_MAJOR 0
 #define SENTIL_VERSION_MINOR 3
-#define SENTIL_VERSION_PATCH 0
+#define SENTIL_VERSION_PATCH 1
 
 typedef enum sentil_error {
     SENTIL_OK = 0,

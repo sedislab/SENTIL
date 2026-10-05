@@ -3,7 +3,7 @@ title: "Embedded"
 description: "The sentil-embedded target: the streaming STL monitor and on-board synthesis built no_std for 32-bit ARM and RISC-V microcontrollers, with the complete C ABI reference."
 ---
 
-The `sentil-embedded` target builds the SENTIL engine `no_std` for a microcontroller. You hand it a fixed block of memory once, feed it one sample per loop, and read back the robustness. The surface is a small C ABI declared in `Sentil.h` with a sketch-friendly `SentilMonitor` C++ class over it, and every packaging ships a precompiled `libsentil_embedded.a` per core at version 0.3.0; Rust enters only when you rebuild an archive yourself.
+The `sentil-embedded` target builds the SENTIL engine `no_std` for a microcontroller. You hand it a fixed block of memory once, feed it one sample per loop, and read back the robustness. The surface is a small C ABI declared in `Sentil.h` with a sketch-friendly `SentilMonitor` C++ class over it, and every packaging ships a precompiled `libsentil_embedded.a` per core at version 0.3.1; Rust enters only when you rebuild an archive yourself.
 
 ## Scope
 
@@ -70,7 +70,7 @@ platform = https://github.com/maxgerhardt/platform-raspberrypi.git
 board = pico
 framework = arduino
 board_build.core = earlephilhower
-lib_deps = sentil/Sentil@^0.3.0
+lib_deps = sentil/Sentil@^0.3.1
 build_flags = -L${PROJECT_DIR}/.pio/libdeps/pico/Sentil/src/cortex-m0plus -lsentil_embedded
 ```
 

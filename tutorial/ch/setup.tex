@@ -20,8 +20,8 @@ Inside a uv-managed project, \code{uv add sentil} adds it to your dependencies; 
 \textbf{Prebuilt release wheel}. Every tagged release attaches wheels to the GitHub release page; download the one matching your Python and platform, then install the file.
 
 \begin{lstlisting}[language=bash]
-pip install ./sentil-0.3.0-*.whl  # Linux/macOS
-pip install .\sentil-0.3.0-cp38-abi3-win_amd64.whl  # Windows: exact name
+pip install ./sentil-0.3.1-*.whl  # Linux/macOS
+pip install .\sentil-0.3.1-cp38-abi3-win_amd64.whl  # Windows: exact name
 \end{lstlisting}
 
 \code{pip install 'sentil[pandas]'} pulls pandas for DataFrame ingest and \code{pip install 'sentil[plotting]'} for the robustness plots. 
@@ -38,7 +38,7 @@ python -m pytest tests
 \section{Confirm it works}
 
 \begin{lstlisting}[language=bash]
-python3 -c "import sentil; print(sentil.__version__)"    # 0.3.0
+python3 -c "import sentil; print(sentil.__version__)"    # 0.3.1
 \end{lstlisting}
 
 Second, it actually monitors. Parse a formula, build a trace, read the robustness:

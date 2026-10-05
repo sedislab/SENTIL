@@ -4,14 +4,14 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: base
-    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    image: ghcr.io/sedislab/sentil-artifact:0.3.1
 
   sentil-modest:
     build:
       context: ..
       dockerfile: docker/Dockerfile
       target: base
-    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    image: ghcr.io/sedislab/sentil-artifact:0.3.1
     volumes:
       - ${MODEST_HOME:-.}:/opt/modest:ro
       - ../benchmarks/results:/sentil/benchmarks/results
@@ -22,7 +22,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: base
-    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    image: ghcr.io/sedislab/sentil-artifact:0.3.1
     volumes:
       - ${PRISM_HOME:-.}:/opt/prism:ro
       - ../benchmarks/results:/sentil/benchmarks/results
@@ -33,7 +33,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: base
-    image: ghcr.io/sedislab/sentil-artifact:0.3.0
+    image: ghcr.io/sedislab/sentil-artifact:0.3.1
     volumes:
       - ${UPPAAL_HOME:-.}:/opt/uppaal:ro
       - ../benchmarks/results:/sentil/benchmarks/results
@@ -44,7 +44,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: gpu
-    image: ghcr.io/sedislab/sentil-artifact:0.3.0-gpu
+    image: ghcr.io/sedislab/sentil-artifact:0.3.1-gpu
     deploy:
       resources:
         reservations:
