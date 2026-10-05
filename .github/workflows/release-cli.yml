@@ -32,6 +32,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.triple }}
+      - if: matrix.container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: cargo build --release -p sentil-cli --target ${{ matrix.triple }}
       - if: runner.os == 'Linux'
         run: packaging/check-glibc.sh target/${{ matrix.triple }}/release/sentil

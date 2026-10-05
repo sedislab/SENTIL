@@ -26,6 +26,9 @@ if(NOT TARGET Sentil::sentil)
         IMPORTED_LOCATION
             "${SENTIL_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}sentil${CMAKE_SHARED_LIBRARY_SUFFIX}"
         INTERFACE_INCLUDE_DIRECTORIES "${SENTIL_INCLUDE_DIR}")
+    if(WIN32)
+        set_target_properties(Sentil::sentil PROPERTIES IMPORTED_IMPLIB "${SENTIL_LIB_DIR}/sentil.dll.lib")
+    endif()
 endif()
 
 find_package(Threads REQUIRED)

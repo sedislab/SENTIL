@@ -9,4 +9,7 @@ if(NOT TARGET Sentil::sentil)
     set_target_properties(Sentil::sentil PROPERTIES
         IMPORTED_LOCATION "${SENTIL_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${SENTIL_INCLUDE_DIR}")
+    if(WIN32)
+        set_target_properties(Sentil::sentil PROPERTIES IMPORTED_IMPLIB "${SENTIL_PREFIX}/lib/sentil.dll.lib")
+    endif()
 endif()
