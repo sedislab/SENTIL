@@ -38,6 +38,7 @@ jobs:
           sed 's|@PREFIX@|/usr|' sentil-ffi/sentil.pc.in > sentil-ffi/sentil.pc
           cargo deb -p sentil-cli --target ${{ matrix.triple }} --no-build --output assets/
           cargo deb -p sentil-ffi --target ${{ matrix.triple }} --no-build --output assets/
+      - run: packaging/check-glibc.sh assets
       - uses: actions/upload-artifact@v4
         with:
           name: sentil-${{ matrix.triple }}

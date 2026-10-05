@@ -145,7 +145,7 @@ pip install ./sentil-0.3.0-*.whl
 Pass the exact filename, since the shell leaves the wildcard unexpanded:
 
 ```bash
-pip install .\sentil-0.3.0-cp311-cp311-win_amd64.whl
+pip install .\sentil-0.3.0-cp38-abi3-win_amd64.whl
 ```
 
 ### Build from source

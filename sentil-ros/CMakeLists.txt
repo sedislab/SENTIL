@@ -97,7 +97,7 @@ if(NOT SENTIL_LIBRARY)
   message(FATAL_ERROR
     "libsentil was not found and could not be fetched.\n"
     "Pick one:\n"
-    "  install the package:  sudo apt install ./libsentil-dev_${SENTIL_VERSION}_amd64.deb\n"
+    "  install the package:  sudo apt install ./libsentil-dev_${SENTIL_VERSION}-1_amd64.deb\n"
     "  build it yourself:    cargo build --release -p sentil-ffi\n"
     "  point at a copy:      colcon build --cmake-args -DSENTIL_LIB_DIR=/path/to/lib")
 endif()

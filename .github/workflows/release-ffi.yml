@@ -16,11 +16,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: ubuntu-latest, container: quay.io/pypa/manylinux_2_28_x86_64, name: linux-x86_64 }
           - { os: macos-15-intel, name: macos-x86_64 }
           - { os: macos-14, name: macos-arm64 }
           - { os: windows-latest, name: windows-x86_64 }
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -36,11 +37,14 @@ jobs:
           cp -r sentil-cpp/include/sentil "$stage/include/"
           cp benchmarks/deterministic/oracle.json "$stage/share/sentil/"
           cp sentil-ffi/cmake/SentilConfig.cmake.in "$stage/lib/cmake/Sentil/SentilConfig.cmake"
-          sed 's|@PREFIX@|/usr/local|' sentil-ffi/sentil.pc.in > "$stage/lib/pkgconfig/sentil.pc"
+          cp sentil-ffi/cmake/SentilConfigVersion.cmake.in "$stage/lib/cmake/Sentil/SentilConfigVersion.cmake"
+          sed "s|@PREFIX@|\${pcfiledir}/../..|" sentil-ffi/sentil.pc.in > "$stage/lib/pkgconfig/sentil.pc"
           for f in libsentil.so libsentil.dylib libsentil.a sentil.dll sentil.dll.lib; do
             cp "target/release/$f" "$stage/lib/" 2>/dev/null || true
           done
           tar -czf "$stage.tar.gz" "$stage"
+      - if: runner.os == 'Linux'
+        run: packaging/check-glibc.sh sentil-*-linux-x86_64
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.name }}
@@ -49,11 +53,13 @@ jobs:
   packages:
     name: deb and rpm
     runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-deb cargo-generate-rpm
       - run: cargo build --release -p sentil-ffi
+      - run: packaging/check-glibc.sh target/release/libsentil.so
       - name: pkg-config for /usr
         run: sed 's|@PREFIX@|/usr|' sentil-ffi/sentil.pc.in > sentil-ffi/sentil.pc
       - run: cargo deb -p sentil-ffi --no-build --output target/debian/
@@ -74,13 +80,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: assets
-      - name: checksum the assets
-        working-directory: assets
-        run: |
-          find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | while read -r f; do
-            printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f")"
-          done > SHA256SUMS
-          cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.RELEASE_EVENT_TOKEN || github.token }}

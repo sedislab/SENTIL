@@ -33,11 +33,16 @@ jobs:
   packages:
     name: deb and rpm
     runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake libboost-all-dev rpm
+        run: |
+          dnf -y install ninja-build golang
+          curl -fsSL https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz | tar xz
+          cd boost_1_83_0 && ./bootstrap.sh --with-libraries=filesystem && ./b2 -d0 link=static cxxflags=-fPIC install --prefix=/opt/boost
+          echo "BOOST_ROOT=/opt/boost" >> "$GITHUB_ENV"
       - name: build the SENTIL core and stage the install tree
         run: |
           cargo build --release -p sentil-ffi
@@ -72,6 +77,7 @@ jobs:
           install -m644 sentil-autosar-adaptive/manifest/*.json "$P/manifest/"
           install -m644 sentil-autosar-adaptive/manifest/vsomeip/*.json "$P/etc/vsomeip/"
           echo /opt/sentil/lib > pkgroot/etc/ld.so.conf.d/sentil-autosar.conf
+          packaging/check-glibc.sh pkgroot
       - name: build deb and rpm with nfpm
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0

@@ -31,8 +31,9 @@ if [ "$kind" = "full" ]; then
   cp "$out/libsentil.so" "$dest/lib/"
   cp "$out/libsentil.a" "$dest/lib/"
   cp sentil-ffi/include/sentil.h "$dest/include/"
-  sed 's|@PREFIX@|/usr/local|' sentil-ffi/sentil.pc.in > "$dest/lib/pkgconfig/sentil.pc"
+  sed "s|@PREFIX@|\${pcfiledir}/../..|" sentil-ffi/sentil.pc.in > "$dest/lib/pkgconfig/sentil.pc"
   cp sentil-ffi/cmake/SentilConfig.cmake.in "$dest/lib/cmake/Sentil/SentilConfig.cmake"
+  cp sentil-ffi/cmake/SentilConfigVersion.cmake.in "$dest/lib/cmake/Sentil/SentilConfigVersion.cmake"
 fi
 
 cp LICENSE-MIT LICENSE-APACHE "$dest/"
