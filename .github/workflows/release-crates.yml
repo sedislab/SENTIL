@@ -28,11 +28,12 @@ jobs:
       - name: verify the packages
         run: cargo package -p sentil -p sentil-ffi -p sentil-cli --allow-dirty
       - name: publish
-        if: github.event_name == 'push' && env.CARGO_REGISTRY_TOKEN != ''
+        if: (github.event_name == 'push' || !inputs.dry_run) && env.CARGO_REGISTRY_TOKEN != ''
         run: |
           version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_NAME" = "$version" ] && version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           for crate in sentil sentil-ffi sentil-cli; do
-            if cargo info "${crate}@${version}" >/dev/null 2>&1; then
+            if (cd "$RUNNER_TEMP" && cargo info "${crate}@${version}" >/dev/null 2>&1); then
               echo "${crate} ${version} is already on crates.io"
             else
               cargo publish -p "${crate}" --allow-dirty
