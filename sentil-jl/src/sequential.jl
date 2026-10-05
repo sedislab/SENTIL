@@ -28,7 +28,7 @@ BayesConfig(threshold::Real; bayes_factor::Real = 100.0,
 function check_sequential(f::Formula, trace::Trace, lifting::LiftingRegistry, config::SprtConfig)
     cfg = Ref(config)
     out = Ref{SprtResult}()
-    check_error(ccall((:sentil_formula_check_sequential, libsentil[]), Int32,
+    check_error(ccall((:sentil_formula_check_sequential, libsentil), Int32,
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SprtConfig}, Ptr{SprtResult}),
                       _ptr(f), _ptr(trace), _ptr(lifting), cfg, out))
     return out[]
@@ -37,7 +37,7 @@ end
 function check_sequential(m::Monitor, trace::Trace, lifting::LiftingRegistry, config::SprtConfig)
     cfg = Ref(config)
     out = Ref{SprtResult}()
-    check_error(ccall((:sentil_monitor_check_sequential, libsentil[]), Int32,
+    check_error(ccall((:sentil_monitor_check_sequential, libsentil), Int32,
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SprtConfig}, Ptr{SprtResult}),
                       _ptr(m), _ptr(trace), _ptr(lifting), cfg, out))
     return out[]
@@ -47,7 +47,7 @@ end
 function check_bayesian(f::Formula, trace::Trace, lifting::LiftingRegistry, config::BayesConfig)
     cfg = Ref(config)
     out = Ref{BayesResult}()
-    check_error(ccall((:sentil_formula_check_bayesian, libsentil[]), Int32,
+    check_error(ccall((:sentil_formula_check_bayesian, libsentil), Int32,
                       (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{BayesConfig}, Ptr{BayesResult}),
                       _ptr(f), _ptr(trace), _ptr(lifting), cfg, out))
     return out[]
@@ -78,7 +78,7 @@ function sequential_test(draw, config::SprtConfig)
     box = _BernoulliBox(draw, nothing)
     cfg = Ref(config)
     out = Ref{SprtResult}()
-    code = GC.@preserve box ccall((:sentil_sequential_test, libsentil[]), Int32,
+    code = GC.@preserve box ccall((:sentil_sequential_test, libsentil), Int32,
                                   (Ptr{SprtConfig}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{SprtResult}),
                                   cfg, _C_BERNOULLI[], pointer_from_objref(box), out)
     box.err === nothing || throw(box.err)
@@ -91,7 +91,7 @@ function bayes_sequential_test(draw, config::BayesConfig)
     box = _BernoulliBox(draw, nothing)
     cfg = Ref(config)
     out = Ref{BayesResult}()
-    code = GC.@preserve box ccall((:sentil_bayes_sequential_test, libsentil[]), Int32,
+    code = GC.@preserve box ccall((:sentil_bayes_sequential_test, libsentil), Int32,
                                   (Ptr{BayesConfig}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{BayesResult}),
                                   cfg, _C_BERNOULLI[], pointer_from_objref(box), out)
     box.err === nothing || throw(box.err)

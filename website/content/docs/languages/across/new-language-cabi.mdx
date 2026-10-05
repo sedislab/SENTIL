@@ -116,7 +116,7 @@ You do not have to reverse-engineer any of this. Two shipped bindings are small,
 Julia binds the ABI with `ccall` and no glue code, so it reads almost like the header. A parse is one call:
 
 ```julia
-h = ccall((:sentil_formula_parse, libsentil[]), Ptr{Cvoid}, (Cstring,), "G (speed > 5)")
+h = ccall((:sentil_formula_parse, libsentil), Ptr{Cvoid}, (Cstring,), "G (speed > 5)")
 h == C_NULL && _raise_last()
 ```
 
