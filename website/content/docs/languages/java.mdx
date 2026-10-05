@@ -9,7 +9,7 @@ Types that hold a native handle, `Formula`, `Trace`, `OnlineMonitor`, `NoiseMode
 
 ## Install
 
-Two ways in. The jar from Maven Central is the one to reach for, since it carries the compiled engine and a project with a JDK needs nothing else. A build from a checkout covers an unreleased change, a platform the published jar does not carry, or work on the binding itself. There is no download route: the releases page carries no Java asset, because Maven Central is where the jar is published.
+Two ways in. The jar from Maven Central is the one to reach for, since it carries the compiled engine and a project with a JDK needs nothing else. A build from a checkout covers an unreleased change, a platform the published jar does not carry, or work on the binding itself. The same jar is also attached to each GitHub release, for a project that puts it on the class path by hand.
 
 ### From Maven Central
 
@@ -55,7 +55,9 @@ public class Check {
 </Step>
 </Steps>
 
-The jar carries two shared libraries per platform under `native/<os>-<arch>/`, the engine and the JNI shim, each named the way its own platform names libraries: `libsentil.so` and `libsentil_jni.so` on Linux, the same pair with `.dylib` on macOS, `sentil.dll` and `sentil_jni.dll` on Windows. The first time you touch a native-backed type, both are extracted to a temporary directory and loaded, engine first, so the shim resolves the engine sitting beside it. There is nothing to configure, and no system property or environment variable overrides that path. Four platforms are inside the published jar: Linux x86_64, macOS x86_64, macOS arm64, and Windows x86_64. On anything else, Linux on arm64 included, the load throws an `UncheckedIOException` naming the folder it looked for, and the source build below is the way in.
+On JDK 24 and newer, the JVM prints a warning when a library on the class path loads native code, and a later JDK will refuse the load unless native access is enabled. Start `java` with `--enable-native-access=ALL-UNNAMED` to enable it. JDK 23 and older need no flag.
+
+The jar carries two shared libraries per platform under `native/<os>-<arch>/`, the engine and the JNI shim, each named the way its own platform names libraries: `libsentil.so` and `libsentil_jni.so` on Linux, the same pair with `.dylib` on macOS, `sentil.dll` and `sentil_jni.dll` on Windows. The first time you touch a native-backed type, both are extracted to a temporary directory and loaded, engine first, so the shim resolves the engine sitting beside it. There is nothing to configure, and no system property or environment variable overrides that path. Five platforms are inside the published jar: Linux x86_64 and arm64, macOS x86_64 and arm64, and Windows x86_64. On anything else, Windows on arm64 included, the load throws an `UncheckedIOException` naming the folder it looked for, and the source build below is the way in.
 
 ### From source
 

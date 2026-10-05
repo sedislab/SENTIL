@@ -146,6 +146,8 @@ implementation 'io.github.sedislab:sentil:0.3.0'
 
 The published jar bundles the native library for Linux, macOS, and Windows on common architectures, so nothing else is needed.
 
+On JDK 24 and newer, the JVM prints a warning when a library on the class path loads native code, and a later JDK will refuse the load unless native access is enabled. Start `java` with `--enable-native-access=ALL-UNNAMED` to enable it. JDK 23 and older need no flag.
+
 ### Prebuilt release
 
 To skip Maven, download the `sentil-0.3.0.jar` attached to the [GitHub release](https://github.com/sedislab/SENTIL/releases) and put it on the classpath directly; it carries the native library inside under `native/<os>-<arch>/`. The classpath separator differs by platform.
