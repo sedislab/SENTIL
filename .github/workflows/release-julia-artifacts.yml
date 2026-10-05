@@ -25,6 +25,8 @@ jobs:
           - { os: windows-latest, triple: x86_64-pc-windows-msvc, target: x86_64-pc-windows-msvc, lib: sentil.dll }
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
+    env:
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: gcc
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
