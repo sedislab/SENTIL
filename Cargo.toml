@@ -24,7 +24,7 @@ repository = "https://github.com/sedislab/SENTIL"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 rand = "0.9.2"
-rand_distr = "0.5.1"
+rand_distr = "0.6.0"
 rand_chacha = "0.9.0"
 csv = "1.4"
 rayon = "1"
