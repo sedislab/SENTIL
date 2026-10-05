@@ -2,50 +2,50 @@
 arch = "x86_64"
 libc = "glibc"
 os = "linux"
-git-tree-sha1 = "1b54b523398b370fd30ce89df39e1add7f9c1fd9"
+git-tree-sha1 = "4821340839d1299b2f4bf35d696f7daf4d7a6130"
 lazy = true
 
     [[libsentil.download]]
-    sha256 = "13bf4989ca29ed52781dc09e8fd81de979ca6f97a9de5acf1b830b31d6242c76"
+    sha256 = "41276f2bf08def8e2f42c933b79aefeaf0958cacaead8e2728bc3166ff72eac3"
     url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-x86_64-linux-gnu-julia.tar.gz"
 
 [[libsentil]]
 arch = "aarch64"
 libc = "glibc"
 os = "linux"
-git-tree-sha1 = "df2a02429ff9d80bc15d0e00a044d842538adfe6"
+git-tree-sha1 = "2adb409cb385fec4953eedfa4b98e6baa772ad8e"
 lazy = true
 
     [[libsentil.download]]
-    sha256 = "c77e64091848683bb21a0ab7c9a5f9500419548990ff93686af7df07fb98434e"
+    sha256 = "996b27647e52a864b1334d40c024e4cb8603148cc1ba7c43fe497ea4e49dc424"
     url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-aarch64-linux-gnu-julia.tar.gz"
 
 [[libsentil]]
 arch = "x86_64"
 os = "macos"
-git-tree-sha1 = "0ed514d644665ad594951405b5667dd25b5f7fa1"
+git-tree-sha1 = "af26d5844858d4cbf65925484d9f90b5b8f6f287"
 lazy = true
 
     [[libsentil.download]]
-    sha256 = "32dfc9f84c5140efc15f9699cffe0735405dd56f872ba54e28998b6970ea83a2"
+    sha256 = "51f3539d324a284221c7f949ce125aab6d2751763d08912d4c37a4a7621203de"
     url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-x86_64-apple-darwin-julia.tar.gz"
 
 [[libsentil]]
 arch = "aarch64"
 os = "macos"
-git-tree-sha1 = "8b638fd8ad932a4eaab463cd9454448c9c09a904"
+git-tree-sha1 = "4c3b1e59083a6e21271d9ba9efce3e8e34f41a39"
 lazy = true
 
     [[libsentil.download]]
-    sha256 = "63a20b5484b1e8d167c2088d8f31eb0bfa822e4f5880fabbc2665cc3d02e64fa"
+    sha256 = "7a12e1a1292ad291ae63f8b078cb60909e0bed9a3c12b3525ed0932ffe13ffb4"
     url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-aarch64-apple-darwin-julia.tar.gz"
 
 [[libsentil]]
 arch = "x86_64"
 os = "windows"
-git-tree-sha1 = "dcbb714352be36c491c81560df11d2541b8c9820"
+git-tree-sha1 = "2826e0da85e3a2b9dc9ce41e400ffc19446fc026"
 lazy = true
 
     [[libsentil.download]]
-    sha256 = "aea5ed241883db6b3a1cb841bb663f19a491c6f7776470c17d08bd089774afcf"
+    sha256 = "fb03aeff4ba8284d641876c63b6b7d661e7276c06fc85229db3bb711bcd46bb7"
     url = "https://github.com/sedislab/SENTIL/releases/download/v0.3.1/sentil-0.3.1-x86_64-pc-windows-msvc-julia.tar.gz"
